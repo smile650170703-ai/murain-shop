@@ -3,141 +3,230 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>MURAIN — 結帳頁面 v4</title>
+    <title>MURAIN — 結帳 (v6.1)</title>
     <style>
-        body { font-family: system-ui, sans-serif; margin: 0; background-color: #f9f9f9; }
-        .container { max-width: 600px; margin: 2rem auto; background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        .header { padding: 1.5rem; border-bottom: 1px solid #eee; }
-        .header h1 { margin: 0; font-size: 1.5rem; }
-        .cart { padding: 1.5rem; }
-        .cart-item { display: flex; justify-content: space-between; padding: 0.5rem 0; }
-        .cart-total { display: flex; justify-content: space-between; font-weight: bold; font-size: 1.2rem; padding-top: 1rem; border-top: 2px solid #333; margin-top: 1rem; }
-        .payment { padding: 1.5rem; border-top: 1px solid #eee; }
-        .payment h2 { margin: 0 0 1rem 0; font-size: 1.2rem; }
-        .payment-btn { display: block; width: 100%; font-size: 1.1rem; padding: 14px; margin-bottom: 0.75rem; border: none; border-radius: 8px; cursor: pointer; transition: background-color 0.2s; }
-        .btn-payuni { background-color: #5c3a93; color: white; }
-        .btn-language { background-color: #e60012; color: white; }
-        .btn-cod { background-color: #28a745; color: white; }
-        .btn-deposit { background-color: #ffc107; color: black; }
-        .payment-btn:disabled { background-color: #ccc; }
+        body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 600px; padding: 1rem; background-color: #f9f9f9; }
+        .container { background: #fff; border-radius: 8px; padding: 2rem; }
+        .cart-item { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #eee; }
+        .cart-item span { flex-basis: 33%; }
+        .total { font-size: 1.2rem; font-weight: bold; text-align: right; margin-top: 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        button { font-size: 1.1rem; padding: 12px 18px; border: none; background-color: #007aff; color: white; border-radius: 8px; cursor: pointer; width: 100%; }
+        button:disabled { background-color: #ccc; }
         #status { margin-top: 1rem; font-weight: bold; text-align: center; }
+        .bank-info { background: #f0f8ff; border: 1px solid #bde0ff; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
+        .bank-info h3 { margin-top: 0; }
+        .hidden { display: none; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header"><h1>您的訂單</h1></div>
-        <div class="cart" id="cart-details">
-            <p id="cart-loading">正在載入購物車...</p>
-            <div id="cart-items"></div>
-            <div id="cart-total-container" style="display:none;">
-                <div class="cart-total">
-                    <span>總金額</span>
-                    <span id="total-amount">NT$ 0</span>
-                </div>
+        <h2>結帳</h2>
+        <div id="cart-items">
             </div>
+        <div class="total" id="cart-total">
+            總計：$0
         </div>
-        <div class="payment">
-            <h2>選擇付款方式</h2>
-            <button class="payment-btn btn-payuni" id="btnPayuni" data-method="PAYUNI" disabled>PAYUNi 信用卡/ATM</button>
-            <button class="payment-btn btn-language" id="btnLanguage" data-method="LANGUAGE" disabled>零角無卡分期</button>
-            <button class="payment-btn btn-cod" id="btnCod" data-method="COD" disabled>7-11 貨到付款</button>
-            <button class="payment-btn btn-deposit" id="btnDeposit" data-method="DEPOSIT" disabled>新客專用 (預付$1000 + 尾款貨付)</button>
-            <p id="status"></p>
+        
+        <hr style="margin: 2rem 0;">
+
+        <div class="form-group">
+            <label for="payment_method">付款方式</label>
+            <select id="payment_method">
+                <option value="">— 請選擇 —</option>
+                <option value="BANK_TRANSFER">銀行匯款 (先付款)</option>
+                <option value="COD">7-11 貨到付款 (一般客戶)</option>
+                <option value="PAYUNI_CREDIT">PAYUNi 信用卡 (一次付清)</option>
+                <option value="PAYUNI_CREDIT_INST">PAYUNi 信用卡 (3/6/9 期)</option>
+                <option value="LANGUAGE_INST">零角 信用卡 (3 期)</option>
+            </select>
+        </div>
+
+        <button id="checkoutBtn">下一步：填寫物流</button>
+        <p id="status"></p>
+
+        <div id="bank-info-box" class="bank-info hidden">
+            <h3>銀行匯款資訊</h3>
+            <p>請於 24 小時內完成匯款，否則訂單將自動取消。</p>
+            <p>
+                銀行：(822) 中國信託<br>
+                帳號：222540458194
+            </p>
+            <p>匯款完成後，請點擊下方按鈕前往填寫您的「收件資訊」與「匯款後五碼」。</p>
+            <button id="goToShippingBtn" class="hidden">✅ 我已匯款，前往填寫物流</button>
         </div>
     </div>
-    <form id="payuniForm" method="POST" style="display:none;"></form>
+
+    <form id="paymentForm" method="POST" class="hidden"></form>
 
     <script>
         const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
         const urlParams = new URLSearchParams(window.location.search);
         const CART_TOKEN = urlParams.get('cart_token');
-        let ORDER_TOTAL = 0;
+        let CURRENT_ORDER = null;
 
-        window.addEventListener('load', async () => {
-            if (!CART_TOKEN) {
-                document.getElementById('cart-loading').textContent = '錯誤：找不到 cart_token。';
-                return;
-            }
+        const status = document.getElementById('status');
+        const checkoutBtn = document.getElementById('checkoutBtn');
+        const paymentMethodSelect = document.getElementById('payment_method');
+        const bankInfoBox = document.getElementById('bank-info-box');
+        const goToShippingBtn = document.getElementById('goToShippingBtn');
+
+        // --- 1. 載入購物車 ---
+        async function loadCart() {
+            if (!CART_TOKEN) { status.textContent = '錯誤：找不到購物車'; return; }
             try {
                 const res = await fetch(`${API_ENDPOINT}/cart/${CART_TOKEN}`);
                 const data = await res.json();
                 if (data.error) throw new Error(data.error);
+                
+                CURRENT_ORDER = data;
                 const itemsDiv = document.getElementById('cart-items');
-                if (data.items && data.items.length > 0) {
-                    data.items.forEach(item => {
-                        const itemEl = document.createElement('div');
-                        itemEl.className = 'cart-item';
-                        itemEl.innerHTML = `<span>${item.name || '商品'} (x${item.qty || 1})</span> <span>NT$ ${item.subtotal || 0}</span>`;
-                        itemsDiv.appendChild(itemEl);
-                    });
-                    ORDER_TOTAL = data.total_amount || 0;
-                    document.getElementById('total-amount').textContent = `NT$ ${ORDER_TOTAL}`;
-                    document.getElementById('cart-total-container').style.display = 'block';
-                    document.getElementById('cart-loading').style.display = 'none';
-                    document.querySelectorAll('.payment-btn').forEach(btn => btn.disabled = false);
-                } else {
-                    document.getElementById('cart-loading').textContent = '您的購物車是空的。';
-                }
-            } catch (err) {
-                document.getElementById('cart-loading').textContent = `載入購物車失敗: ${err.message}`;
-            }
-        });
-
-        document.querySelectorAll('.payment-btn').forEach(btn => {
-            btn.addEventListener('click', () => handlePayment(btn.dataset.method));
-        });
-
-        async function handlePayment(paymentMethod) {
-            const status = document.getElementById('status');
-            document.querySelectorAll('.payment-btn').forEach(btn => btn.disabled = true);
-            status.textContent = '處理中，請稍候...';
-            status.style.color = '#555';
-
-            try {
-                // (v4) 7-11 或 新客訂金，直接跳到 shipping.html
-                if (paymentMethod === 'COD' || paymentMethod === 'DEPOSIT') {
-                    status.textContent = '正在前往填寫收件資料...';
-                    window.location.href = `./shipping.html?cart_token=${CART_TOKEN}&method=${paymentMethod}`;
-                    return;
+                const totalDiv = document.getElementById('cart-total');
+                itemsDiv.innerHTML = '';
+                
+                if (data.items.length === 0) {
+                    itemsDiv.innerHTML = '<p>您的購物車是空的</p>';
+                    checkoutBtn.disabled = true;
                 }
                 
-                // 零角無卡 (檢查金額)
-                if (paymentMethod === 'LANGUAGE' && ORDER_TOTAL < 1000) {
-                   throw new Error('零角無卡分期，總金額需滿 $1,000 元');
-                }
-
-                // 呼叫後端 /checkout API
-                const res = await fetch(`${API_ENDPOINT}/checkout`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cart_token: CART_TOKEN, payment_method: paymentMethod })
+                data.items.forEach(item => {
+                    const itemEl = document.createElement('div');
+                    itemEl.className = 'cart-item';
+                    itemEl.innerHTML = `
+                        <span>${item.name}</span>
+                        <span>${item.qty} x $${item.unit_price_final}</span>
+                        <span style="text-align:right;">$${item.subtotal}</span>
+                    `;
+                    itemsDiv.appendChild(itemEl);
                 });
-                const data = await res.json();
-                if (data.error) throw new Error(data.error);
-                if (!data.submit_to) throw new Error('API 回應錯誤，找不到 submit_to 網址');
-
-                status.textContent = '建立訂單成功，正在導向付款頁面...';
                 
-                if (paymentMethod === 'PAYUNI') {
-                    const form = document.getElementById('payuniForm');
-                    form.action = data.submit_to;
-                    for (const key in data.fields) {
-                        const input = document.createElement('input');
-                        input.type = 'hidden';
-                        input.name = key;
-                        input.value = data.fields[key];
-                        form.appendChild(input);
-                    }
-                    form.submit();
-                } else if (paymentMethod === 'LANGUAGE') {
-                    window.location.href = data.submit_to; 
-                }
-            } catch (err) {
-                status.textContent = `建立訂單失敗: ${err.message}`;
-                status.style.color = 'red';
-                document.querySelectorAll('.payment-btn').forEach(btn => btn.disabled = false);
+                totalDiv.textContent = `總計：$${data.total_amount}`;
+                
+                // (v6) Q1/Q5: 檢查訂單狀態
+                handleStatus(data.status);
+                
+            } catch (e) {
+                status.textContent = '載入購物車失敗: ' + e.message;
             }
         }
+        
+        // (v6) Q1/Q5: 處理訂單狀態
+        function handleStatus(orderStatus) {
+            // (v6.1) Q5: 如果是新客訂金，隱藏選項
+            if (orderStatus === 'awaiting_deposit_proof') {
+                status.textContent = '狀態：新客訂金單，確認商品無誤後請按下一步';
+                paymentMethodSelect.classList.add('hidden');
+                document.querySelector('label[for="payment_method"]').classList.add('hidden');
+                checkoutBtn.textContent = '下一步：填寫物流 (訂金單)';
+            }
+            else if (orderStatus === 'awaiting_payment') {
+                status.textContent = '狀態：等待匯款中...';
+                paymentMethodSelect.value = 'BANK_TRANSFER';
+                paymentMethodSelect.disabled = true;
+                checkoutBtn.classList.add('hidden');
+                bankInfoBox.classList.remove('hidden');
+                goToShippingBtn.classList.remove('hidden');
+            } else if (orderStatus === 'awaiting_shipping_info') {
+                status.textContent = '狀態：已付款，等待填寫物流';
+                checkoutBtn.disabled = true;
+                paymentMethodSelect.disabled = true;
+                bankInfoBox.classList.add('hidden');
+                const link = document.createElement('a');
+                link.href = `shipping.html?cart_token=${CART_TOKEN}&method=PAID`;
+                link.textContent = '✅ 前往填寫物流資訊';
+                link.style.display = 'block';
+                link.style.textAlign = 'center';
+                status.insertAdjacentElement('afterend', link);
+            } else if (orderStatus !== 'pending' && orderStatus !== 'draft') {
+                status.textContent = `此訂單已完成或已失效 (狀態: ${orderStatus})，無法結帳。`;
+                checkoutBtn.disabled = true;
+                paymentMethodSelect.disabled = true;
+            }
+        }
+
+        // --- 2. 結帳按鈕 ---
+        checkoutBtn.addEventListener('click', async () => {
+            let payment_method = paymentMethodSelect.value;
+            
+            // (v6.1) Q5: 新客訂金單，付款方式固定
+            if (CURRENT_ORDER && CURRENT_ORDER.status === 'awaiting_deposit_proof') {
+                payment_method = 'DEPOSIT_COD';
+            }
+
+            if (!payment_method) {
+                status.textContent = '請選擇付款方式';
+                return;
+            }
+
+            checkoutBtn.disabled = true;
+            status.textContent = '建立訂單中...';
+
+            try {
+                const data = await apiPost('/checkout', { cart_token: CART_TOKEN, payment_method: payment_method });
+                
+                if (payment_method === 'BANK_TRANSFER') {
+                    // (v6.1) Q1: 銀行匯款
+                    status.textContent = '訂單已建立 (等待匯款)';
+                    checkoutBtn.classList.add('hidden');
+                    paymentMethodSelect.disabled = true;
+                    bankInfoBox.classList.remove('hidden');
+                    goToShippingBtn.classList.remove('hidden');
+                } 
+                else if (payment_method === 'COD') {
+                    // (v6.1) Q5: 貨到付款
+                    window.location.href = `shipping.html?cart_token=${CART_TOKEN}&method=COD`;
+                }
+                else if (payment_method === 'DEPOSIT_COD') {
+                     // (v6.1) Q5: 新客訂金
+                    window.location.href = `shipping.html?cart_token=${CART_TOKEN}&method=DEPOSIT`;
+                }
+                else if (data.submit_to && data.fields) { // PAYUNi
+                    submitForm(data.submit_to, data.fields);
+                } 
+                else if (data.submit_to) { // L IN G UAGE
+                    window.location.href = data.submit_to;
+                }
+            } catch (e) {
+                status.textContent = '結帳失敗: ' + e.message;
+                checkoutBtn.disabled = false;
+            }
+        });
+        
+        // (v5.1) Q1: 前往填寫物流 (匯款後)
+        goToShippingBtn.addEventListener('click', () => {
+            // (v6.1) Q5: 匯款後，狀態是 PAID
+            window.location.href = `shipping.html?cart_token=${CART_TOKEN}&method=PAID`;
+        });
+
+        // --- 3. 輔助函數 ---
+        async function apiPost(endpoint, body) {
+            const res = await fetch(`${API_ENDPOINT}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+            return data;
+        }
+
+        function submitForm(actionUrl, fields) {
+            const form = document.getElementById('paymentForm');
+            form.action = actionUrl;
+            form.innerHTML = '';
+            for (const key in fields) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = key;
+                input.value = fields[key];
+                form.appendChild(input);
+            }
+            form.submit();
+        }
+
+        loadCart();
     </script>
 </body>
 </html>
