@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>MURAIN — 管理後台 (v4.1)</title>
+    <title>MURAIN — 管理後台 (v4.2)</title>
     <style>
         body { font-family: system-ui, sans-serif; margin: 0; background-color: #f9f9f9; }
         .container { max-width: 1200px; margin: 2rem auto; }
@@ -58,7 +58,7 @@
             <button id="refresh-dashboard">重新整理</button>
             <table id="dashboard-table">
                 <thead>
-                    <tr><th>訂單號</th><th>狀態 (中文)</th><th>狀態 (Eng)</th><th>金額</th><th>付款方式</th><th>備註</th></tr>
+                    <tr><th>日期</th><th>訂單號</th><th>狀態 (中文)</th><th>狀態 (Eng)</th><th>金額</th><th>付款方式</th><th>備註</th></tr>
                 </thead>
                 <tbody></tbody>
             </table>
@@ -99,15 +99,14 @@
             <button id="export-cod" class="btn-secondary">匯出 7-11 貨付 (CSV)</button>
             <button id="export-mail" class="btn-secondary">匯出 郵寄 (CSV)</button>
             <p>(載入後，請使用瀏覽器的「列印」功能 (Ctrl+P) 來列印標籤)</p>
-            <div id="shipping-labels">
-                </div>
+            <div id="shipping-labels"></div>
         </div>
     </div>
 
     <script>
         const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
         let OP_KEY = '';
-        let CACHED_ORDERS = []; // (v4.1) 暫存訂單，供 CSV 匯出用
+        let CACHED_ORDERS = [];
 
         // --- 登入邏輯 ---
         document.getElementById('loginBtn').addEventListener('click', () => {
@@ -127,17 +126,15 @@
             button.addEventListener('click', () => {
                 document.querySelectorAll('.tab-link').forEach(btn => btn.classList.remove('active'));
                 document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-                
                 button.classList.add('active');
                 document.getElementById(button.dataset.tab).classList.add('active');
-                
                 if (button.dataset.tab === 'tab-dashboard') loadDashboard();
                 if (button.dataset.tab === 'tab-products') loadProducts();
                 if (button.dataset.tab === 'tab-shipping') loadShipping();
             });
         });
 
-        // --- 後台 API 呼叫 (v4.1 - 全部改成 POST) ---
+        // --- (v4.2) 修正 Bug：後台 API 呼叫 (全部使用 POST) ---
         async function apiCall(endpoint, payload = {}) {
             payload.op_key = OP_KEY; // 自動帶入密碼
             const res = await fetch(`${API_ENDPOINT}${endpoint}`, {
@@ -165,23 +162,34 @@
             };
             return map[status] || status;
         }
+        
+        // --- (v4.2) Q3: 日期格式化 ---
+        function formatDateTime(isoString) {
+            if (!isoString) return '';
+            try {
+                return new Date(isoString).toLocaleString('zh-TW', { 
+                    year: 'numeric', month: '2-digit', day: '2-digit', 
+                    hour: '2-digit', minute: '2-digit' 
+                });
+            } catch(e) { return isoString; }
+        }
 
         // --- Q3: 儀表板 ---
         document.getElementById('refresh-dashboard').addEventListener('click', loadDashboard);
         async function loadDashboard() {
             try {
-                // (v4.1) 修正 Bug: 改用 apiCall (POST)
                 const data = await apiCall('/admin/dashboard');
                 const tbody = document.getElementById('dashboard-table').getElementsByTagName('tbody')[0];
                 tbody.innerHTML = '';
                 if (data.orders.length === 0) {
-                     tbody.innerHTML = '<tr><td colspan="6">近 24 小時無訂單</td></tr>';
+                     tbody.innerHTML = '<tr><td colspan="7">近 24 小時無訂單</td></tr>';
                 }
                 data.orders.forEach(o => {
                     const row = tbody.insertRow();
                     row.innerHTML = `
-                        <td>${o.order_id}</td>
-                        <td>${translateStatus(o.status)}</td> <td>${o.status}</td>
+                        <td>${formatDateTime(o.created_at)}</td> <td>${o.order_id}</td>
+                        <td>${translateStatus(o.status)}</td>
+                        <td>${o.status}</td>
                         <td>${o.total_amount}</td>
                         <td>${o.payment_method || ''}</td>
                         <td>${o.gift_notes || ''}</td>
@@ -191,15 +199,15 @@
         }
 
         // --- Q5: 庫存管理 ---
-        document.getElementById('refresh-products').addEventListener('click', loadProducts);
-        async function loadProducts(barcode = null) { // (v4.1) Q2 支援搜尋
+        document.getElementById('refresh-products').addEventListener('click', () => loadProducts());
+        async function loadProducts(barcode = null) {
              try {
-                let payload = {};
+                let payload = { action: 'search' }; // (v4.2) 告訴後台我們要「搜尋」
                 if (barcode) {
                     payload.barcode = barcode;
                 }
                 
-                // (v4.1) 修正 Bug: 改用 apiCall (POST)
+                // (v4.2) 修正 Bug: 使用 apiCall (POST)
                 const data = await apiCall('/admin/products', payload);
                 
                 const tbody = document.getElementById('products-table').getElementsByTagName('tbody')[0];
@@ -221,20 +229,18 @@
             } catch (e) { alert('載入庫存失敗: ' + e.message); }
         }
         
-        // (v4.1) Q2: 搜尋 Barcode
         document.getElementById('product-search').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 loadProducts(e.target.value.trim());
             }
         });
         
-        // Q5: 新增商品
         document.getElementById('new-product-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const status = document.getElementById('product-status');
             try {
                 const payload = {
-                    action: 'create', // (v4.1) 告訴後台我們要「新增」
+                    action: 'create', // (v4.2) 告訴後台我們要「新增」
                     product: {
                         sku: document.getElementById('p_sku').value,
                         barcode: document.getElementById('p_barcode').value,
@@ -266,17 +272,17 @@
             const container = document.getElementById('shipping-labels');
             btn.disabled = true;
             container.innerHTML = '';
-            CACHED_ORDERS = []; // 清空暫存
+            CACHED_ORDERS = [];
             
              try {
-                // (v4.1) 修正 Bug: 改用 apiCall (POST)
+                // (v4.2) 修正 Bug: 使用 apiCall (POST)
                 const data = await apiCall('/admin/print-labels');
                 if (!data.orders || data.orders.length === 0) {
                     container.innerHTML = '<h3>沒有找到待出貨的訂單。</h3>';
                     return;
                 }
                 
-                CACHED_ORDERS = data.orders; // (v4.1) Q5 暫存訂單
+                CACHED_ORDERS = data.orders;
                 
                 data.orders.forEach(order => {
                     let shipping = {};
@@ -327,66 +333,30 @@
         // --- (v4.1) Q5: CSV 匯出 ---
         document.getElementById('export-cod').addEventListener('click', () => exportCSV('cod'));
         document.getElementById('export-mail').addEventListener('click', () => exportCSV('mail'));
-        
         function exportCSV(type) {
-            if (CACHED_ORDERS.length === 0) {
-                alert('請先「載入待出貨訂單」');
-                return;
-            }
-            
-            let csvContent = "";
-            let filteredOrders = [];
-            
+            if (CACHED_ORDERS.length === 0) { alert('請先「載入待出貨訂單」'); return; }
+            let csvContent = ""; let filteredOrders = [];
             if (type === 'cod') {
-                // (Q5) 7-11 貨到付款格式
                 csvContent = "取件人姓名,取件人手機,取件門市,溫層,商品名稱,訂單金額\n";
                 filteredOrders = CACHED_ORDERS.filter(o => o.status === 'awaiting_cod_shipment' || o.status === 'awaiting_deposit_proof');
-                
                 filteredOrders.forEach(o => {
-                    let s = {};
-                    try { s = JSON.parse(o.shipping_info || '{}'); } catch(e) {}
-                    csvContent += [
-                        s.name || '',
-                        s.phone || '',
-                        s.store_name || '',
-                        '常溫',
-                        '商品一批', // 7-11 不看這個
-                        o.total_amount || 0
-                    ].join(',') + '\n';
+                    let s = {}; try { s = JSON.parse(o.shipping_info || '{}'); } catch(e) {}
+                    csvContent += [s.name || '', s.phone || '', s.store_name || '','常溫','商品一批', o.total_amount || 0].join(',') + '\n';
                 });
-                
             } else {
-                // (Q5) 郵寄格式
                 csvContent = "收件人姓名,收件人手機,收件地址\n";
                 filteredOrders = CACHED_ORDERS.filter(o => o.status === 'paid');
-                
                 filteredOrders.forEach(o => {
-                    let s = {};
-                    try { s = JSON.parse(o.shipping_info || '{}'); } catch(e) {}
-                    csvContent += [
-                        s.name || '',
-                        s.phone || '',
-                        (s.address || '').replace(/,/g, ' ') // 把地址中的逗號換成空格
-                    ].join(',') + '\n';
+                    let s = {}; try { s = JSON.parse(o.shipping_info || '{}'); } catch(e) {}
+                    csvContent += [s.name || '', s.phone || '', (s.address || '').replace(/,/g, ' ')].join(',') + '\n';
                 });
             }
-            
-            if (filteredOrders.length === 0) {
-                alert(`沒有找到符合「${type}」類型的待出貨訂單`);
-                return;
-            }
-            
-            // 下載 CSV 檔案
-            const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' }); // 加上 BOM
-            const link = document.createElement("a");
-            const url = URL.createObjectURL(blob);
-            link.setAttribute("href", url);
-            link.setAttribute("download", `${type}_export_${new Date().toISOString().slice(0,10)}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            if (filteredOrders.length === 0) { alert(`沒有找到符合「${type}」類型的待出貨訂單`); return; }
+            const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a"); const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url); link.setAttribute("download", `${type}_export_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link); link.click(); document.body.removeChild(link);
         }
-
     </script>
 </body>
 </html>

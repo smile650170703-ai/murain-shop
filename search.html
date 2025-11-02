@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MURAIN — 主播庫存查詢 (v4.2)</title>
+    <style>
+        body { font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 90vh; background-color: #f4f4f5; }
+        .container { background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); padding: 2rem 3rem; width: 90%; max-width: 500px; }
+        h1 { margin-top: 0; color: #333; text-align: center; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+        .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        button { font-size: 1.1rem; padding: 12px 20px; border: none; background-color: #007aff; color: white; border-radius: 8px; cursor: pointer; width: 100%; }
+        button:disabled { background-color: #ccc; }
+        #result { margin-top: 1.5rem; padding: 1rem; background: #f9f9f9; border-radius: 8px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>主播庫存查詢</h1>
+        
+        <div id="login-box">
+            <div class="form-group">
+                <label for="op_key">請輸入主播密碼</label>
+                <input type="password" id="op_key">
+            </div>
+            <button id="loginBtn">登入</button>
+        </div>
+
+        <div id="search-box" class="hidden">
+            <div class="form-group">
+                <label for="barcode">商品 Barcode</label>
+                <input type="text" id="barcode" placeholder="輸入 Barcode 按 Enter...">
+            </div>
+            <div id="result">
+                <p>請輸入 Barcode 查詢庫存...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
+        let OP_KEY = '';
+
+        // --- 登入 ---
+        document.getElementById('loginBtn').addEventListener('click', () => {
+            OP_KEY = document.getElementById('op_key').value;
+            if (!OP_KEY) { alert('請輸入密碼'); return; }
+            document.getElementById('login-box').classList.add('hidden');
+            document.getElementById('search-box').classList.remove('hidden');
+        });
+
+        // --- 搜尋 ---
+        document.getElementById('barcode').addEventListener('keypress', async (e) => {
+            if (e.key !== 'Enter') return;
+            
+            const barcode = e.target.value.trim();
+            const resultDiv = document.getElementById('result');
+            if (!barcode) return;
+            
+            resultDiv.textContent = '查詢中...';
+            
+            try {
+                const res = await fetch(`${API_ENDPOINT}/streamer/search`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ barcode: barcode, op_key: OP_KEY })
+                });
+                
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                
+                if (data.ok) {
+                    const p = data.product;
+                    resultDiv.innerHTML = `
+                        <strong>${p.name} (SKU: ${p.sku})</strong><br>
+                        售價: ${p.price_live}<br>
+                        <strong style="color: green; font-size: 1.2rem;">可售庫存: ${data.available_stock}</strong><br>
+                        (總庫存: ${p.stock_on_hand}, 已預留: ${p.stock_reserved})
+                    `;
+                } else {
+                    resultDiv.textContent = data.message;
+                }
+            } catch (err) {
+                resultDiv.textContent = '查詢失敗: ' + err.message;
+            }
+        });
+    </script>
+</body>
+</html>
