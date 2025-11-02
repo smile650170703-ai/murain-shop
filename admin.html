@@ -24,6 +24,7 @@
         button:disabled { background-color: #ccc; }
         .btn-secondary { background-color: #6c757d; }
         .btn-ship { background-color: #28a745; font-size: 0.9rem; padding: 8px 12px; } /* Q3 */
+        .btn-cancel { background-color: #dc3545; font-size: 0.9rem; padding: 8px 12px; } /* Q3 */
         #status { margin-top: 1rem; font-weight: bold; }
         .hidden { display: none; }
         .label { width: 10cm; height: 15cm; border: 1px dashed #999; padding: 10px; box-sizing: border-box; margin: 1rem auto; page-break-after: always; overflow: hidden; background: #fff; }
@@ -32,7 +33,7 @@
         .label .section strong { font-size: 1.2rem; display: block; }
         .label .section span { font-size: 1.1rem; }
         .label .gift-notes { border-top: 1px solid #ccc; padding-top: 10px; margin-top: 10px; background: #fdfdea; }
-        @media print { body { margin: 0; } .container, .login-box { display: none; } #shipping-labels { display: block !important; } .label { border: none; margin: 0; } .btn-ship { display: none; } }
+        @media print { body { margin: 0; } .container, .login-box { display: none; } #shipping-labels { display: block !important; } .label { border: none; margin: 0; } .btn-ship, .btn-cancel { display: none; } }
     </style>
 </head>
 <body>
@@ -59,7 +60,7 @@
             <button id="refresh-dashboard">重新整理</button>
             <table id="dashboard-table">
                 <thead>
-                    <tr><th>日期</th><th>主播 (Q4)</th><th>訂單號</th><th>狀態 (中文)</th><th>金額</th><th>付款方式</th><th>備註</th></tr>
+                    <tr><th>日期</th><th>主播 (Q4)</th><th>訂單號</th><th>狀態 (中文)</th><th>金額</th><th>付款方式</th><th>備註</th><th>動作 (Q3)</th></tr>
                 </thead>
                 <tbody></tbody>
             </table>
@@ -152,7 +153,7 @@
                 'awaiting_cod_shipment': '待出貨 (7-11 貨付)',
                 'paid': '已付款 (待出貨)',
                 'shipped': '已出貨 (Q3)',
-                'expired': '已過期 (棄標)', 'cancelled': '已取消'
+                'expired': '已過期 (棄標)', 'cancelled': '已取消 (Q3)'
             };
             return map[status] || status;
         }
@@ -176,7 +177,7 @@
                 const tbody = document.getElementById('dashboard-table').getElementsByTagName('tbody')[0];
                 tbody.innerHTML = '';
                 if (data.orders.length === 0) {
-                     tbody.innerHTML = '<tr><td colspan="7">近 24 小時無訂單</td></tr>';
+                     tbody.innerHTML = '<tr><td colspan="8">近 24 小時無訂單</td></tr>';
                 }
                 data.orders.forEach(o => {
                     const row = tbody.insertRow();
@@ -187,8 +188,14 @@
                         <td>${o.total_amount}</td>
                         <td>${o.payment_method || ''}</td>
                         <td>${o.gift_notes || ''}</td>
+                        <td>
+                            ${(o.status !== 'shipped' && o.status !== 'cancelled') ? 
+                              `<button class="btn-cancel" data-orderid="${o.order_id}">取消訂單</button>` : ''}
+                        </td>
                     `;
                 });
+                // (v5) Q3: 幫「取消」按鈕加上事件
+                addAdminButtonListeners();
             } catch (e) { alert('載入訂單失敗: ' + e.message); }
         }
 
@@ -269,7 +276,7 @@
                     try { shipping = JSON.parse(order.shipping_info || '{}'); } catch(e) {}
                     const statusText = translateStatus(order.status);
                     let shippingDest = 'N/A';
-                    if (order.payment_method === '7-11' || order.payment_method === 'DEPOSIT_COD') {
+                    if (order.payment_method === '7-11_COD' || order.payment_method === 'DEPOSIT_COD') {
                          shippingDest = `${shipping.store_name || ''} (${shipping.store_address || '地址未填'})`;
                     } else if (order.payment_method === 'MAIL' || order.status === 'paid') {
                         shippingDest = `${shipping.address || '地址未填'}`;
@@ -279,15 +286,9 @@
                     label.className = 'label';
                     label.innerHTML = `
                         <h3>訂單：${order.order_id}</h3>
-                        <div class="section">
-                            <strong>日期：${formatDateTime(order.created_at)}</strong>
-                        </div>
-                        <div class="section">
-                            <strong>主播：${order.streamer_name || 'N/A'} (Q4)</strong>
-                        </div>
-                        <div class="section">
-                            <strong>狀態：${statusText}</strong>
-                        </div>
+                        <div class="section"> <strong>日期：${formatDateTime(order.created_at)}</strong> </div>
+                        <div class="section"> <strong>主播：${order.streamer_name || 'N/A'} (Q4)</strong> </div>
+                        <div class="section"> <strong>狀態：${statusText}</strong> </div>
                         <div class="section">
                             <strong>收件人：</strong>
                             <span>${shipping.name || 'N/A'} (${shipping.phone || 'N/A'})</span>
@@ -310,7 +311,7 @@
                 });
                 
                 // (v5) Q3: 幫按鈕加上事件
-                addShipButtonListeners();
+                addAdminButtonListeners();
                 
              } catch (e) {
                 alert('載入出貨單失敗: ' + e.message);
@@ -319,8 +320,9 @@
              }
         }
         
-        // (v5) Q3: 標記出貨 API 呼叫
-        function addShipButtonListeners() {
+        // (v5) Q3: 幫「標記出貨」和「取消訂單」按鈕加上事件
+        function addAdminButtonListeners() {
+            // 標記出貨
             document.querySelectorAll('.btn-ship').forEach(button => {
                 button.addEventListener('click', async (e) => {
                     const btn = e.target;
@@ -332,12 +334,33 @@
                     btn.textContent = '標記中...';
                     try {
                         await apiCall('/admin/mark-as-shipped', { order_id: order_id });
-                        // 成功！從畫面上移除這個標籤
                         btn.closest('.label').style.display = 'none';
                     } catch (err) {
                         alert('標記失敗: ' + err.message);
                         btn.disabled = false;
                         btn.textContent = '標記為已出貨';
+                    }
+                });
+            });
+            
+            // 取消訂單
+            document.querySelectorAll('.btn-cancel').forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    const btn = e.target;
+                    const order_id = btn.dataset.orderid;
+                    if (!confirm(`您確定要「取消」訂單 ${order_id} 嗎？\n(這會釋放預留庫存，此動作無法復原！)`)) {
+                        return;
+                    }
+                    btn.disabled = true;
+                    btn.textContent = '取消中...';
+                    try {
+                        await apiCall('/admin/cancel-order', { order_id: order_id });
+                        // 成功！重新整理儀表板
+                        loadDashboard();
+                    } catch (err) {
+                        alert('取消失敗: ' + err.message);
+                        btn.disabled = false;
+                        btn.textContent = '取消訂單';
                     }
                 });
             });
@@ -351,17 +374,20 @@
             let csvContent = ""; let filteredOrders = [];
             if (type === 'cod') {
                 csvContent = "取件人姓名,取件人手機,取件門市,溫層,商品名稱,訂單金額\n";
-                filteredOrders = CACHED_ORDERS.filter(o => o.status === 'awaiting_cod_shipment' || o.status === 'awaiting_deposit_proof');
+                // (v5) Q5: 區分 7-11_COD 和 DEPOSIT_COD
+                filteredOrders = CACHED_ORDERS.filter(o => o.payment_method === '7-11_COD' || o.payment_method === 'DEPOSIT_COD');
                 filteredOrders.forEach(o => {
                     let s = {}; try { s = JSON.parse(o.shipping_info || '{}'); } catch(e) {}
                     csvContent += [s.name || '', s.phone || '', s.store_name || '','常溫','商品一批', o.total_amount || 0].join(',') + '\n';
                 });
             } else {
                 csvContent = "收件人姓名,收件人手機,收件地址\n";
-                filteredOrders = CACHED_ORDERS.filter(o => o.status === 'paid');
+                // (v5) Q5: 區分 7-11_PAID 和 MAIL
+                filteredOrders = CACHED_ORDERS.filter(o => o.payment_method === 'MAIL' || o.payment_method === '7-11_PAID' || o.status === 'paid');
                 filteredOrders.forEach(o => {
                     let s = {}; try { s = JSON.parse(o.shipping_info || '{}'); } catch(e) {}
-                    csvContent += [s.name || '', s.phone || '', (s.address || '').replace(/,/g, ' ')].join(',') + '\n';
+                    const address = (o.payment_method === 'MAIL') ? (s.address || '') : `${s.store_name || ''} ${s.store_address || ''}`;
+                    csvContent += [s.name || '', s.phone || '', address.replace(/,/g, ' ')].join(',') + '\n';
                 });
             }
             if (filteredOrders.length === 0) { alert(`沒有找到符合「${type}」類型的待出貨訂單`); return; }
