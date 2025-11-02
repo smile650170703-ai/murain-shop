@@ -5,57 +5,143 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>MURAIN — 賣家開單</title>
     <style>
-        body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; display: grid; place-items: center; min-height: 90vh; background-color: #f4f4f5; }
-        .container { background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); padding: 2rem 3rem; text-align: center; }
-        h1 { margin-top: 0; color: #333; }
-        p { color: #555; }
-        button { font-size: 1.1rem; padding: 12px 24px; border: none; background-color: #007aff; color: white; border-radius: 8px; cursor: pointer; transition: background-color 0.2s; }
+        body { font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 90vh; background-color: #f4f4f5; }
+        .container { background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); padding: 2rem 3rem; width: 90%; max-width: 500px; }
+        h1 { margin-top: 0; color: #333; text-align: center; }
+        button { font-size: 1.1rem; padding: 12px 20px; border: none; background-color: #007aff; color: white; border-radius: 8px; cursor: pointer; transition: background-color 0.2s; width: 100%; }
         button:hover { background-color: #0056b3; }
-        #status { margin-top: 1rem; font-weight: bold; }
+        button:disabled { background-color: #ccc; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+        .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        #status, #cart-link { margin-top: 1rem; font-weight: bold; text-align: center; word-break: break-all; }
+        .hidden { display: none; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>直播主/賣家 專用頁</h1>
-        <p>點擊按鈕，為客人建立一個新的結帳連結。</p>
-        <button id="createCartBtn">建立新購物車</button>
-        <p id="status"></p>
+        <h1>直播主開單系統</h1>
+
+        <div id="step1">
+            <p>點擊按鈕，為客人建立一個新的購物車。</p>
+            <button id="createCartBtn">1. 建立新購物車</button>
+            <p id="status1"></p>
+        </div>
+
+        <div id="step2" class="hidden">
+            <h3 id="cart-title">購物車 (OD...)</h3>
+            <div class="form-group">
+                <label for="barcode">商品 Barcode</label>
+                <input type="text" id="barcode" placeholder="輸入商品 Barcode...">
+            </div>
+            <div class="form-group">
+                <label for="qty">數量</label>
+                <input type="number" id="qty" value="1" min="1">
+            </div>
+            <button id="addItemBtn">2. 加入商品</button>
+            <p id="status2"></p>
+        </div>
+        
+        <div id="step3" class="hidden">
+            <h3>✅ 結帳連結已產生</h3>
+            <p>請複製此連結傳送給客人：</p>
+            <input type="text" id="cart-link" readonly>
+            <button id="copyBtn">複製連結</button>
+        </div>
     </div>
 
     <script>
-        // 【注意】請確認您的後端 API 網址是否正確
         const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
+        let CURRENT_CART_TOKEN = null;
 
+        const step1 = document.getElementById('step1');
+        const step2 = document.getElementById('step2');
+        const step3 = document.getElementById('step3');
+        const status1 = document.getElementById('status1');
+        const status2 = document.getElementById('status2');
+
+        // --- 步驟一：建立購物車 ---
         document.getElementById('createCartBtn').addEventListener('click', async () => {
             const btn = document.getElementById('createCartBtn');
-            const status = document.getElementById('status');
-            
             btn.disabled = true;
-            status.textContent = '建立中，請稍候...';
-            status.style.color = '#555';
+            status1.textContent = '建立中...';
+            status1.style.color = '#555';
 
             try {
-                // 1. 呼叫後端 /cart/create API
                 const res = await fetch(`${API_ENDPOINT}/cart/create`, { method: 'POST' });
                 const data = await res.json();
-
                 if (data.error) throw new Error(data.error);
-                if (!data.cart_token) throw new Error('API 沒有回傳 cart_token');
 
-                // 2. 成功！導向到結帳頁，並帶上 cart_token
-                status.textContent = '建立成功！正在跳轉...';
-                status.style.color = 'green';
+                CURRENT_CART_TOKEN = data.cart_token;
                 
-                // 【注意】請確認您的前端 checkout 頁面名稱是否為 checkout.html
-                window.location.href = `./checkout.html?cart_token=${data.cart_token}`;
+                document.getElementById('cart-title').textContent = `購物車 (${data.order_id})`;
+                step1.classList.add('hidden');
+                step2.classList.remove('hidden');
+                step3.classList.remove('hidden');
+                
+                // 產生結帳連結
+                const checkoutUrl = `./checkout.html?cart_token=${CURRENT_CART_TOKEN}`;
+                const cartLinkInput = document.getElementById('cart-link');
+                cartLinkInput.value = (new URL(checkoutUrl, window.location.href)).href;
+
 
             } catch (err) {
                 console.error('建立購物車失敗:', err);
-                status.textContent = `建立失敗: ${err.message}`;
-                status.style.color = 'red';
+                status1.textContent = `建立失敗: ${err.message}`;
+                status1.style.color = 'red';
                 btn.disabled = false;
             }
         });
+
+        // --- 步驟二：加入商品 ---
+        document.getElementById('addItemBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('addItemBtn');
+            const barcode = document.getElementById('barcode').value;
+            const qty = parseInt(document.getElementById('qty').value, 10);
+            
+            if (!barcode || qty < 1) {
+                status2.textContent = '請輸入正確的 Barcode 和數量';
+                status2.style.color = 'red';
+                return;
+            }
+
+            btn.disabled = true;
+            status2.textContent = '加入中...';
+            status2.style.color = '#555';
+
+            try {
+                // 呼叫後端 /cart/{token}/add API
+                const res = await fetch(`${API_ENDPOINT}/cart/${CURRENT_CART_TOKEN}/add`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ barcode: barcode, qty: qty })
+                });
+
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                
+                status2.textContent = `加入成功！(總金額: ${data.total_amount})`;
+                status2.style.color = 'green';
+                document.getElementById('barcode').value = ''; // 清空輸入框
+                document.getElementById('qty').value = 1;
+
+            } catch (err) {
+                console.error('加入商品失敗:', err);
+                status2.textContent = `加入失敗: ${err.message}`;
+                status2.style.color = 'red';
+            } finally {
+                btn.disabled = false;
+            }
+        });
+        
+        // --- 步驟三：複製連結 ---
+        document.getElementById('copyBtn').addEventListener('click', () => {
+             const cartLinkInput = document.getElementById('cart-link');
+             cartLinkInput.select();
+             document.execCommand('copy');
+             alert('已複製結帳連結！');
+        });
+
     </script>
 </body>
 </html>
