@@ -13,9 +13,12 @@
         .form-group { margin-bottom: 1rem; }
         .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
         .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
-        button { display: block; width: 100%; font-size: 1.1rem; padding: 14px; border: none; border-radius: 8px; cursor: pointer; background-color: #28a745; color: white; }
+        button { display: block; width: 100%; font-size: 1.1rem; padding: 14px; border: none; border-radius: 8px; cursor: pointer; background-color: #28a745; color: white; margin-top: 10px; }
         button:disabled { background-color: #ccc; }
+        .btn-711 { background-color: #f0ad4e; color: black; }
         #status { margin-top: 1rem; font-weight: bold; text-align: center; }
+        .notice { background-color: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+        .hidden { display: none; }
     </style>
 </head>
 <body>
@@ -24,9 +27,24 @@
             <h1 id="page-title">填寫收件資料</h1>
         </div>
         
+        <div id="deposit-notice" class="notice hidden">
+            <h4>新客專用 (預付$1000 + 尾款貨付)</h4>
+            <p>請先匯款 $1,000 元訂金至以下帳戶，並於下方欄位填寫「匯款帳號後五碼」，我們會盡快為您對帳並出貨。</p>
+            <p><strong>銀行：</strong> (您的銀行代碼) (您的銀行名稱)<br>
+               <strong>帳號：</strong> (您的匯款帳號)</p>
+        </div>
+        
+        <div id="cod-notice" class="notice hidden">
+            <p>提醒您：0 元包裹（已付款）領取時**需核對證件**，請務必填寫**與證件相符**的「真實姓名」。</p>
+        </div>
+        
+        <div id="mail-notice" class="notice hidden">
+            <p>提醒您：中華郵政包裹**不會**電話聯絡，請確保收件地址隨時有人可簽收。</p>
+        </div>
+
         <form class="form" id="shippingForm">
             <div class="form-group">
-                <label for="name">收件人姓名</label>
+                <label for="name">收件人姓名 (請填真實姓名)</label>
                 <input type="text" id="name" name="name" required>
             </div>
             <div class="form-group">
@@ -34,68 +52,91 @@
                 <input type="tel" id="phone" name="phone" required>
             </div>
             
-            <div id="cod-fields" style="display:none;">
-                <div class="form-group">
-                    <label for="store_name">7-11 門市名稱</label>
-                    <input type="text" id="store_name" name="store_name" required>
+            <div id="cod-fields" class="hidden">
+                <button type="button" class="btn-711" id="btn-711-map">1. 點我選擇 7-11 門市</button>
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label for="store_name">門市名稱</label>
+                    <input type="text" id="store_name" name="store_name" readonly required placeholder="請點上方按鈕選擇">
+                </div>
+                 <div class="form-group">
+                    <label for="store_address">門市地址</label>
+                    <input type="text" id="store_address" name="store_address" readonly>
                 </div>
             </div>
 
-            <div id="mail-fields" style="display:none;">
+            <div id="mail-fields" class="hidden">
                 <div class="form-group">
                     <label for="address">郵寄地址</label>
                     <input type="text" id="address" name="address" required>
                 </div>
             </div>
+            
+            <div id="deposit-fields" class="hidden">
+                 <div class="form-group">
+                    <label for="deposit_proof">匯款帳號後五碼</label>
+                    <input type="text" id="deposit_proof" name="deposit_proof" required maxlength="5">
+                </div>
+            </div>
 
-            <button type="submit" id="submitBtn">完成訂單</button>
+            <button type="submit" id="submitBtn">2. 完成訂單</button>
             <p id="status"></p>
         </form>
     </div>
 
+    <script src="https://logistics-stage.ecpay.com.tw/Scripts/widget/zipcode/zipcode.js" data-api-key="2000132" data-type="CVS" data-name-id="store_name" data-addr-id="store_address" data-zip-id="" data-temp-shipping-id=""></script>
+    
     <script>
-        // 【注意】我們需要一個新的 API 來儲存收件資料
-        // 您後端 murain-api 需要新增一個 /cart/update-shipping 的 API
-        // 我會在「步驟三」教您怎麼做
         const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
         const urlParams = new URLSearchParams(window.location.search);
         const CART_TOKEN = urlParams.get('cart_token');
-        const METHOD = urlParams.get('method'); // 會是 'COD' 或其他
+        const METHOD = urlParams.get('method'); // 'COD', 'DEPOSIT', 或 'PAYUNI'/'LANGUAGE'
 
         // 1. 根據付款方式，顯示不同欄位
         window.addEventListener('load', () => {
             if (METHOD === 'COD') {
                 document.getElementById('page-title').textContent = '7-11 貨到付款';
-                document.getElementById('cod-fields').style.display = 'block';
+                document.getElementById('cod-notice').classList.remove('hidden');
+                document.getElementById('cod-fields').classList.remove('hidden');
+            } else if (METHOD === 'DEPOSIT') {
+                document.getElementById('page-title').textContent = '新客預付訂金';
+                document.getElementById('deposit-notice').classList.remove('hidden');
+                document.getElementById('cod-fields').classList.remove('hidden'); // 尾款用 7-11
+                document.getElementById('deposit-fields').classList.remove('hidden');
             } else {
+                // 預設是郵寄 (PAYUNI/LANGUAGE 付款後)
                 document.getElementById('page-title').textContent = '填寫郵寄資料';
-                document.getElementById('mail-fields').style.display = 'block';
-                // (您也可以從 checkout.html 傳送 'method=MAIL' 來控制)
+                document.getElementById('mail-notice').classList.remove('hidden');
+                document.getElementById('mail-fields').classList.remove('hidden');
             }
         });
 
         // 2. 提交表單
         document.getElementById('shippingForm').addEventListener('submit', async (e) => {
-            e.preventDefault(); // 防止表單傳統提交
-            
+            e.preventDefault();
             const btn = document.getElementById('submitBtn');
             const status = document.getElementById('status');
             btn.disabled = true;
             status.textContent = '儲存中...';
 
-            // 收集表單資料
             const formData = new FormData(e.target);
             const shippingData = Object.fromEntries(formData.entries());
+            
+            // 決定 shipping_method
+            let shipping_method = 'MAIL';
+            if (METHOD === 'COD' || METHOD === 'DEPOSIT') {
+                shipping_method = '7-11';
+            }
 
             try {
-                // 【注意】我們需要一個「新」的 API (我會在步驟三提供)
+                // 呼叫 v3 的新 API
                 const res = await fetch(`${API_ENDPOINT}/cart/update-shipping`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         cart_token: CART_TOKEN,
-                        shipping_method: METHOD === 'COD' ? '7-11' : 'MAIL',
-                        shipping_info: shippingData
+                        shipping_method: shipping_method,
+                        shipping_info: shippingData, // 包含 name, phone, store_name, address
+                        deposit_proof: shippingData.deposit_proof || null // (Q7)
                     })
                 });
                 
@@ -113,6 +154,6 @@
                 btn.disabled = false;
             }
         });
-    </V>
+    </script>
 </body>
 </html>

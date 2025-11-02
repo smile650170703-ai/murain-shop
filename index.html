@@ -3,24 +3,26 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>MURAIN — 賣家開單</title>
+    <title>MURAIN — 賣家開單 v3</title>
     <style>
         body { font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 90vh; background-color: #f4f4f5; }
         .container { background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); padding: 2rem 3rem; width: 90%; max-width: 500px; }
         h1 { margin-top: 0; color: #333; text-align: center; }
-        button { font-size: 1.1rem; padding: 12px 20px; border: none; background-color: #007aff; color: white; border-radius: 8px; cursor: pointer; transition: background-color 0.2s; width: 100%; }
+        button { font-size: 1.1rem; padding: 12px 20px; border: none; background-color: #007aff; color: white; border-radius: 8px; cursor: pointer; transition: background-color 0.2s; width: 100%; margin-top: 10px; }
         button:hover { background-color: #0056b3; }
         button:disabled { background-color: #ccc; }
         .form-group { margin-bottom: 1rem; }
         .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
-        .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        .form-group input, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
         #status, #cart-link { margin-top: 1rem; font-weight: bold; text-align: center; word-break: break-all; }
         .hidden { display: none; }
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .op-field { border-left: 3px solid #007aff; padding-left: 10px; margin-top: 10px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>直播主開單系統</h1>
+        <h1>直播主開單系統 (v3)</h1>
 
         <div id="step1">
             <p>點擊按鈕，為客人建立一個新的購物車。</p>
@@ -34,12 +36,31 @@
                 <label for="barcode">商品 Barcode</label>
                 <input type="text" id="barcode" placeholder="輸入商品 Barcode...">
             </div>
-            <div class="form-group">
-                <label for="qty">數量</label>
-                <input type="number" id="qty" value="1" min="1">
+            <div class="two-col">
+                <div class="form-group">
+                    <label for="qty">數量</label>
+                    <input type="number" id="qty" value="1" min="1">
+                </div>
+                <div class="form-group">
+                    <label for="op_key">主播密碼 (OP Key)</label>
+                    <input type="password" id="op_key" placeholder="(選填)">
+                </div>
+            </div>
+            <div class="form-group op-field hidden" id="override_field">
+                <label for="override_price">覆寫價格 (填 0 = 贈品)</label>
+                <input type="number" id="override_price" placeholder="輸入此商品「單價」...">
             </div>
             <button id="addItemBtn">2. 加入商品</button>
             <p id="status2"></p>
+            
+            <hr style="border:0; border-top: 1px solid #eee; margin: 2rem 0;">
+
+            <div class="form-group">
+                <label for="gift_notes">贈品/訂單備註 (Q3)</label>
+                <textarea id="gift_notes" rows="3" placeholder="(選填) 輸入贈品資訊或訂單備註..."></textarea>
+            </div>
+            <button id="saveNotesBtn">儲存備註</button>
+            <p id="status3"></p>
         </div>
         
         <div id="step3" class="hidden">
@@ -59,34 +80,38 @@
         const step3 = document.getElementById('step3');
         const status1 = document.getElementById('status1');
         const status2 = document.getElementById('status2');
+        const status3 = document.getElementById('status3');
+        const opKeyInput = document.getElementById('op_key');
+        const overrideField = document.getElementById('override_field');
+
+        // (v3) 監聽主播密碼，決定是否顯示「覆寫價格」欄位
+        opKeyInput.addEventListener('input', () => {
+            if (opKeyInput.value.trim() !== '') {
+                overrideField.classList.remove('hidden');
+            } else {
+                overrideField.classList.add('hidden');
+            }
+        });
 
         // --- 步驟一：建立購物車 ---
         document.getElementById('createCartBtn').addEventListener('click', async () => {
             const btn = document.getElementById('createCartBtn');
             btn.disabled = true;
             status1.textContent = '建立中...';
-            status1.style.color = '#555';
-
             try {
                 const res = await fetch(`${API_ENDPOINT}/cart/create`, { method: 'POST' });
                 const data = await res.json();
                 if (data.error) throw new Error(data.error);
 
                 CURRENT_CART_TOKEN = data.cart_token;
-                
                 document.getElementById('cart-title').textContent = `購物車 (${data.order_id})`;
                 step1.classList.add('hidden');
                 step2.classList.remove('hidden');
                 step3.classList.remove('hidden');
                 
-                // 產生結帳連結
                 const checkoutUrl = `./checkout.html?cart_token=${CURRENT_CART_TOKEN}`;
-                const cartLinkInput = document.getElementById('cart-link');
-                cartLinkInput.value = (new URL(checkoutUrl, window.location.href)).href;
-
-
+                document.getElementById('cart-link').value = (new URL(checkoutUrl, window.location.href)).href;
             } catch (err) {
-                console.error('建立購物車失敗:', err);
                 status1.textContent = `建立失敗: ${err.message}`;
                 status1.style.color = 'red';
                 btn.disabled = false;
@@ -98,35 +123,43 @@
             const btn = document.getElementById('addItemBtn');
             const barcode = document.getElementById('barcode').value;
             const qty = parseInt(document.getElementById('qty').value, 10);
+            const op_key = document.getElementById('op_key').value;
             
+            let payload = { barcode: barcode, qty: qty };
+
             if (!barcode || qty < 1) {
                 status2.textContent = '請輸入正確的 Barcode 和數量';
                 status2.style.color = 'red';
                 return;
             }
+            
+            // (v3) 如果有填主播密碼，才把 op_key 和 override_price 送出
+            if (op_key) {
+                payload.op_key = op_key;
+                const price = document.getElementById('override_price').value;
+                if (price !== '') { // 允許 0 元
+                    payload.override_price = parseInt(price, 10);
+                }
+            }
 
             btn.disabled = true;
             status2.textContent = '加入中...';
-            status2.style.color = '#555';
-
             try {
-                // 呼叫後端 /cart/{token}/add API
                 const res = await fetch(`${API_ENDPOINT}/cart/${CURRENT_CART_TOKEN}/add`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ barcode: barcode, qty: qty })
+                    body: JSON.stringify(payload)
                 });
-
                 const data = await res.json();
                 if (data.error) throw new Error(data.error);
                 
                 status2.textContent = `加入成功！(總金額: ${data.total_amount})`;
                 status2.style.color = 'green';
-                document.getElementById('barcode').value = ''; // 清空輸入框
+                document.getElementById('barcode').value = '';
                 document.getElementById('qty').value = 1;
+                document.getElementById('override_price').value = '';
 
             } catch (err) {
-                console.error('加入商品失敗:', err);
                 status2.textContent = `加入失敗: ${err.message}`;
                 status2.style.color = 'red';
             } finally {
@@ -134,10 +167,43 @@
             }
         });
         
+        // --- (v3) 儲存備註 (Q3) ---
+        document.getElementById('saveNotesBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('saveNotesBtn');
+            const op_key = document.getElementById('op_key').value;
+            const gift_notes = document.getElementById('gift_notes').value;
+
+            if (!op_key) {
+                status3.textContent = '儲存備註需要主播密碼';
+                status3.style.color = 'red';
+                return;
+            }
+            
+            btn.disabled = true;
+            status3.textContent = '儲存備註中...';
+            try {
+                const res = await fetch(`${API_ENDPOINT}/cart/${CURRENT_CART_TOKEN}/update-notes`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cart_token: CURRENT_CART_TOKEN, gift_notes, op_key })
+                });
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                
+                status3.textContent = '備註儲存成功！';
+                status3.style.color = 'green';
+
+            } catch (err) {
+                status3.textContent = `儲存失敗: ${err.message}`;
+                status3.style.color = 'red';
+            } finally {
+                btn.disabled = false;
+            }
+        });
+        
         // --- 步驟三：複製連結 ---
         document.getElementById('copyBtn').addEventListener('click', () => {
-             const cartLinkInput = document.getElementById('cart-link');
-             cartLinkInput.select();
+             document.getElementById('cart-link').select();
              document.execCommand('copy');
              alert('已複製結帳連結！');
         });

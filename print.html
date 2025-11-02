@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MURAIN — 出貨單列印 (v3)</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 1rem; background-color: #f9f9f9; }
+        .controls { max-width: 600px; margin: 1rem auto; background: #fff; border-radius: 8px; padding: 1.5rem; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+        .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        button { font-size: 1.1rem; padding: 12px 20px; border: none; background-color: #007aff; color: white; border-radius: 8px; cursor: pointer; width: 100%; }
+        button:disabled { background-color: #ccc; }
+        #status { margin-top: 1rem; font-weight: bold; }
+        
+        /* --- 熱感應標籤樣式 (Q6) --- */
+        #labels-container { margin-top: 2rem; }
+        .label {
+            width: 10cm; /* 熱感應標籤寬度 */
+            height: 15cm; /* 熱感應標籤高度 */
+            border: 1px dashed #999;
+            background: #fff;
+            padding: 10px;
+            box-sizing: border-box;
+            margin: 1rem auto;
+            page-break-after: always; /* 列印時自動分頁 */
+            overflow: hidden;
+        }
+        .label h3 { margin-top: 0; border-bottom: 2px solid #000; padding-bottom: 5px; }
+        .label .section { margin-bottom: 10px; }
+        .label .section strong { font-size: 1.2rem; display: block; }
+        .label .section span { font-size: 1.1rem; }
+        .label .gift-notes { border-top: 1px solid #ccc; padding-top: 10px; margin-top: 10px; background: #fdfdea; }
+        
+        /* 列印時，只顯示標籤 */
+        @media print {
+            body { margin: 0; background-color: #fff; }
+            .controls { display: none; }
+            #labels-container { margin: 0; }
+            .label { border: none; margin: 0; page-break-after: always; }
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <h2>出貨單列印 (Q6)</h2>
+        <div class="form-group">
+            <label for="op_key">主播密碼 (OP Key)</label>
+            <input type="password" id="op_key" placeholder="請輸入密碼以載入訂單">
+        </div>
+        <button id="loadBtn">載入待出貨訂單</button>
+        <p id="status"></p>
+    </div>
+
+    <div id="labels-container">
+        </div>
+
+    <script>
+        const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
+
+        document.getElementById('loadBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('loadBtn');
+            const status = document.getElementById('status');
+            const op_key = document.getElementById('op_key').value;
+            const container = document.getElementById('labels-container');
+            
+            if (!op_key) {
+                status.textContent = '請輸入主播密碼';
+                status.style.color = 'red';
+                return;
+            }
+
+            btn.disabled = true;
+            status.textContent = '載入中...';
+            container.innerHTML = ''; // 清空
+
+            try {
+                // 呼叫 v3 新增的 /admin/print-labels API
+                const res = await fetch(`${API_ENDPOINT}/admin/print-labels`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ op_key: op_key })
+                });
+                
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+
+                if (!data.orders || data.orders.length === 0) {
+                    status.textContent = '沒有找到待出貨的訂單。';
+                    status.style.color = 'green';
+                    return;
+                }
+                
+                status.textContent = `載入成功！共 ${data.orders.length} 筆訂單。`;
+                status.style.color = 'green';
+                
+                // 將訂單資料動態產生 HTML 標籤
+                data.orders.forEach(order => {
+                    let shipping = {};
+                    try {
+                        shipping = JSON.parse(order.shipping_info || '{}');
+                    } catch(e) {}
+                    
+                    const label = document.createElement('div');
+                    label.className = 'label';
+                    
+                    // (v3) 顯示訂單狀態 (待出貨/待付訂金)
+                    let statusText = '不明';
+                    if (order.status === 'paid') statusText = '✅ 已付款 (郵寄)';
+                    if (order.status === 'awaiting_cod_shipment') statusText = '📦 7-11 貨到付款';
+                    if (order.status === 'awaiting_deposit_proof') statusText = '⚠️ 待付訂金 (請勿出貨)';
+
+                    label.innerHTML = `
+                        <h3>訂單：${order.order_id}</h3>
+                        <div class="section">
+                            <strong>狀態：${statusText}</strong>
+                        </div>
+                        <div class="section">
+                            <strong>收件人：</strong>
+                            <span>${shipping.name || 'N/A'} (${shipping.phone || 'N/A'})</span>
+                        </div>
+                        <div class="section">
+                            <strong>寄送：(${order.payment_method || 'N/A'})</strong>
+                            <span>${shipping.store_name || ''}</span>
+                            <span>${shipping.store_address || shipping.address || 'N/A'}</span>
+                        </div>
+                        <div class="section gift-notes">
+                            <strong>主播備註 (Q3)：</strong>
+                            <span>${order.gift_notes || '(無)'}</span>
+                        </div>
+                        <div class="section">
+                            <strong>發票 (Q-ECPay)：</strong>
+                            <span>${order.invoice_status || 'N/A'}: ${order.invoice_no || ''}</span>
+                        </div>
+                    `;
+                    container.appendChild(label);
+                });
+
+            } catch (err) {
+                console.error('載入訂單失敗:', err);
+                status.textContent = `載入失敗: ${err.message}`;
+                status.style.color = 'red';
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
