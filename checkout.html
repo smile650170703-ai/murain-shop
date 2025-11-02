@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MURAIN — 結帳頁面</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 0; background-color: #f9f9f9; }
+        .container { max-width: 600px; margin: 2rem auto; background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .header { padding: 1.5rem; border-bottom: 1px solid #eee; }
+        .header h1 { margin: 0; font-size: 1.5rem; }
+        .cart { padding: 1.5rem; }
+        .cart-item { display: flex; justify-content: space-between; padding: 0.5rem 0; }
+        .cart-total { display: flex; justify-content: space-between; font-weight: bold; font-size: 1.2rem; padding-top: 1rem; border-top: 2px solid #333; margin-top: 1rem; }
+        .payment { padding: 1.5rem; border-top: 1px solid #eee; }
+        .payment h2 { margin: 0 0 1rem 0; font-size: 1.2rem; }
+        .payment-btn { display: block; width: 100%; font-size: 1.1rem; padding: 14px; margin-bottom: 0.75rem; border: none; border-radius: 8px; cursor: pointer; transition: background-color 0.2s; }
+        .btn-payuni { background-color: #5c3a93; color: white; }
+        .btn-language { background-color: #e60012; color: white; }
+        .btn-cod { background-color: #28a745; color: white; }
+        .payment-btn:disabled { background-color: #ccc; }
+        #status { margin-top: 1rem; font-weight: bold; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>您的訂單</h1>
+        </div>
+        
+        <div class="cart" id="cart-details">
+            <p id="cart-loading">正在載入購物車...</p>
+            <div id="cart-items"></div>
+            <div id="cart-total-container" style="display:none;">
+                <div class="cart-total">
+                    <span>總金額</span>
+                    <span id="total-amount">NT$ 0</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="payment">
+            <h2>選擇付款方式</h2>
+            <button class="payment-btn btn-payuni" id="btnPayuni" data-method="PAYUNI" disabled>PAYUNi 信用卡/ATM</button>
+            <button class="payment-btn btn-language" id="btnLanguage" data-method="LANGUAGE" disabled>零角無卡分期</button>
+            <button class="payment-btn btn-cod" id="btnCod" data-method="COD" disabled>7-11 貨到付款</button>
+            <p id="status"></p>
+        </div>
+    </div>
+
+    <form id="payuniForm" method="POST" style="display:none;"></form>
+
+    <script>
+        // 【注意】請確認您的後端 API 網址是否正確
+        const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
+        const urlParams = new URLSearchParams(window.location.search);
+        const CART_TOKEN = urlParams.get('cart_token');
+
+        // --- 1. 頁面載入時：讀取購物車 ---
+        window.addEventListener('load', async () => {
+            if (!CART_TOKEN) {
+                document.getElementById('cart-loading').textContent = '錯誤：找不到 cart_token。';
+                return;
+            }
+            
+            try {
+                // 呼叫後端 /cart/{token} API 取得內容
+                const res = await fetch(`${API_ENDPOINT}/cart/${CART_TOKEN}`);
+                const data = await res.json();
+                
+                if (data.error) throw new Error(data.error);
+
+                // 顯示品項
+                const itemsDiv = document.getElementById('cart-items');
+                if (data.items && data.items.length > 0) {
+                    data.items.forEach(item => {
+                        const itemEl = document.createElement('div');
+                        itemEl.className = 'cart-item';
+                        itemEl.innerHTML = `
+                            <span>${item.name || '商品'} (x${item.qty || 1})</span>
+                            <span>NT$ ${item.subtotal || 0}</span>
+                        `;
+                        itemsDiv.appendChild(itemEl);
+                    });
+                    
+                    // 顯示總金額
+                    document.getElementById('total-amount').textContent = `NT$ ${data.total_amount || 0}`;
+                    document.getElementById('cart-total-container').style.display = 'block';
+                    document.getElementById('cart-loading').style.display = 'none';
+                    
+                    // 啟用所有按鈕
+                    document.querySelectorAll('.payment-btn').forEach(btn => btn.disabled = false);
+                } else {
+                    document.getElementById('cart-loading').textContent = '您的購物車是空的。';
+                }
+
+            } catch (err) {
+                console.error('載入購物車失敗:', err);
+                document.getElementById('cart-loading').textContent = `載入購物車失敗: ${err.message}`;
+            }
+        });
+
+        // --- 2. 幫所有付款按鈕加上點擊事件 ---
+        document.querySelectorAll('.payment-btn').forEach(btn => {
+            btn.addEventListener('click', () => handlePayment(btn.dataset.method));
+        });
+
+        async function handlePayment(paymentMethod) {
+            const status = document.getElementById('status');
+            document.querySelectorAll('.payment-btn').forEach(btn => btn.disabled = true);
+            status.textContent = '處理中，請稍候...';
+            status.style.color = '#555';
+
+            try {
+                // 【關鍵邏輯】
+                // 1. 如果是「7-11 貨到付款」，直接跳到 shipping.html
+                if (paymentMethod === 'COD') {
+                    status.textContent = '正在前往填寫收件資料...';
+                    window.location.href = `./shipping.html?cart_token=${CART_TOKEN}&method=COD`;
+                    return;
+                }
+
+                // 2. 如果是「PAYUNi」或「零角無卡」，呼叫後端 /checkout API
+                const res = await fetch(`${API_ENDPOINT}/checkout`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        cart_token: CART_TOKEN,
+                        payment_method: paymentMethod // 傳送 PAYUNI 或 LANGUAGE
+                    })
+                });
+
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                if (!data.submit_to) throw new Error('API 回應錯誤，找不到 submit_to 網址');
+
+                status.textContent = '建立訂單成功，正在導向付款頁面...';
+                
+                // 【關鍵邏輯】
+                // 3A. PAYUNi：需要用「隱藏表單」POST 跳轉
+                if (paymentMethod === 'PAYUNI') {
+                    const form = document.getElementById('payuniForm');
+                    form.action = data.submit_to; // PAYUNi 的 API 網址
+                    
+                    // 把 PAYUNi 需要的欄位 (MerID, EncryptInfo...) 加到表單
+                    for (const key in data.fields) {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = key;
+                        input.value = data.fields[key];
+                        form.appendChild(input);
+                    }
+                    form.submit(); // 提交表單，跳轉
+                } 
+                // 3B. 零角無卡：直接用 GET 跳轉
+                else if (paymentMethod === 'LANGUAGE') {
+                    window.location.href = data.submit_to; // 中租的 payment_url_web
+                }
+
+            } catch (err) {
+                console.error('建立訂單失敗:', err);
+                status.textContent = `建立訂單失敗: ${err.message}`;
+                status.style.color = 'red';
+                document.querySelectorAll('.payment-btn').forEach(btn => btn.disabled = false);
+            }
+        }
+    </script>
+</body>
+</html>
