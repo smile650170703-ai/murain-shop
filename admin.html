@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MURAIN — 管理後台 (v4)</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 0; background-color: #f9f9f9; }
+        .container { max-width: 1200px; margin: 2rem auto; }
+        .login-box { max-width: 500px; margin: 2rem auto; background: #fff; border-radius: 8px; padding: 2rem; }
+        .tabs { display: flex; border-bottom: 1px solid #ccc; }
+        .tab-link { padding: 1rem 1.5rem; cursor: pointer; border: none; background: #eee; font-size: 1rem; }
+        .tab-link.active { background: #fff; border: 1px solid #ccc; border-bottom: 1px solid #fff; position: relative; top: 1px; }
+        .tab-content { display: none; background: #fff; padding: 2rem; border: 1px solid #ccc; border-top: none; }
+        .tab-content.active { display: block; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f4f4f4; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+        .form-group input { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        button { font-size: 1rem; padding: 10px 16px; border: none; background-color: #007aff; color: white; border-radius: 8px; cursor: pointer; }
+        button:disabled { background-color: #ccc; }
+        #status { margin-top: 1rem; font-weight: bold; }
+        .hidden { display: none; }
+        .label { width: 10cm; height: 15cm; border: 1px dashed #999; padding: 10px; box-sizing: border-box; margin: 1rem auto; page-break-after: always; overflow: hidden; background: #fff; }
+        .label h3 { margin-top: 0; border-bottom: 2px solid #000; padding-bottom: 5px; }
+        .label .section { margin-bottom: 10px; }
+        .label .section strong { font-size: 1.2rem; display: block; }
+        .label .section span { font-size: 1.1rem; }
+        .label .gift-notes { border-top: 1px solid #ccc; padding-top: 10px; margin-top: 10px; background: #fdfdea; }
+        @media print { body { margin: 0; } .container, .login-box { display: none; } #shipping-labels { display: block !important; } .label { border: none; margin: 0; } }
+    </style>
+</head>
+<body>
+
+    <div class="login-box" id="login-box">
+        <h2>管理後台</h2>
+        <div class="form-group">
+            <label for="op_key">請輸入主播/管理員密碼</label>
+            <input type="password" id="op_key">
+        </div>
+        <button id="loginBtn">登入</button>
+        <p id="login-status"></p>
+    </div>
+
+    <div class="container hidden" id="admin-panel">
+        <div class="tabs">
+            <button class="tab-link active" data-tab="tab-dashboard">儀表板 (訂單)</button>
+            <button class="tab-link" data-tab="tab-products">庫存管理</button>
+            <button class="tab-link" data-tab="tab-shipping">出貨管理 (熱感應)</button>
+        </div>
+
+        <div id="tab-dashboard" class="tab-content active">
+            <h2>儀表板 (近 24 小時訂單)</h2>
+            <button id="refresh-dashboard">重新整理</button>
+            <table id="dashboard-table">
+                <thead>
+                    <tr><th>訂單號</th><th>狀態</th><th>金額</th><th>付款方式</th><th>備註</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div id="tab-products" class="tab-content">
+            <h2>庫存管理</h2>
+            <button id="refresh-products">重新整理庫存</button>
+            <table id="products-table" style="margin-top:1rem;">
+                <thead>
+                    <tr><th>SKU</th><th>Barcode</th><th>名稱</th><th>售價</th><th>庫存</th><th>預留</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            
+            <h3 style="margin-top:2rem;">新增商品 (Q5)</h3>
+            <form id="new-product-form" style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group"><label>SKU (唯一)</label><input type="text" id="p_sku" required></div>
+                <div class="form-group"><label>Barcode</label><input type="text" id="p_barcode"></div>
+                <div class="form-group" style="grid-column: 1 / -1;"><label>名稱</label><input type="text" id="p_name" required></div>
+                <div class="form-group"><label>售價</label><input type="number" id="p_price_live" value="0"></div>
+                <div class="form-group"><label>成本</label><input type="number" id="p_cost" value="0"></div>
+                <div class="form-group"><label>庫存</label><input type="number" id="p_stock_on_hand" value="0"></div>
+                <div class="form-group" style="align-self: end;"><button type="submit">新增商品</button></div>
+            </form>
+            <p id="product-status"></p>
+        </div>
+
+        <div id="tab-shipping" class="tab-content">
+            <h2>出貨管理 (熱感應標籤)</h2>
+            <button id="load-shipping">載入待出貨訂單</button>
+            <p>(載入後，請使用瀏覽器的「列印」功能 (Ctrl+P) 來列印標籤)</p>
+            <div id="shipping-labels">
+                </div>
+        </div>
+    </div>
+
+    <script>
+        const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
+        let OP_KEY = '';
+
+        // --- 登入邏輯 ---
+        document.getElementById('loginBtn').addEventListener('click', () => {
+            const key = document.getElementById('op_key').value;
+            if (!key) {
+                document.getElementById('login-status').textContent = '請輸入密碼';
+                return;
+            }
+            OP_KEY = key;
+            document.getElementById('login-box').classList.add('hidden');
+            document.getElementById('admin-panel').classList.remove('hidden');
+            // 自動載入儀表板
+            loadDashboard();
+        });
+
+        // --- Tab 切換邏輯 ---
+        document.querySelectorAll('.tab-link').forEach(button => {
+            button.addEventListener('click', () => {
+                document.querySelectorAll('.tab-link').forEach(btn => btn.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                
+                button.classList.add('active');
+                document.getElementById(button.dataset.tab).classList.add('active');
+                
+                // 自動載入
+                if (button.dataset.tab === 'tab-dashboard') loadDashboard();
+                if (button.dataset.tab === 'tab-products') loadProducts();
+                if (button.dataset.tab === 'tab-shipping') loadShipping();
+            });
+        });
+
+        // --- 後台 API 呼叫 (v4) ---
+        async function apiCall(endpoint, payload = {}) {
+            payload.op_key = OP_KEY; // 自動帶入密碼
+            const res = await fetch(`${API_ENDPOINT}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+            return data;
+        }
+        
+        async function apiCallGet(endpoint) {
+             const res = await fetch(`${API_ENDPOINT}${endpoint}`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+            return data;
+        }
+
+        // --- Q3: 儀表板 ---
+        document.getElementById('refresh-dashboard').addEventListener('click', loadDashboard);
+        async function loadDashboard() {
+            try {
+                const data = await apiCall('/admin/dashboard');
+                const tbody = document.getElementById('dashboard-table').getElementsByTagName('tbody')[0];
+                tbody.innerHTML = ''; // 清空
+                if (data.orders.length === 0) {
+                     tbody.innerHTML = '<tr><td colspan="5">近 24 小時無訂單</td></tr>';
+                }
+                data.orders.forEach(o => {
+                    const row = tbody.insertRow();
+                    row.innerHTML = `
+                        <td>${o.order_id}</td>
+                        <td>${o.status}</td>
+                        <td>${o.total_amount}</td>
+                        <td>${o.payment_method || ''}</td>
+                        <td>${o.gift_notes || ''}</td>
+                    `;
+                });
+            } catch (e) { alert('載入訂單失敗: ' + e.message); }
+        }
+
+        // --- Q5: 庫存管理 ---
+        document.getElementById('refresh-products').addEventListener('click', loadProducts);
+        async function loadProducts() {
+             try {
+                // (v4) GET /admin/products (我們 v4 API 裡用 GET)
+                const res = await fetch(`${API_ENDPOINT}/admin/products`, {
+                    method: 'GET', // GET 不需 OP_KEY
+                });
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                
+                const tbody = document.getElementById('products-table').getElementsByTagName('tbody')[0];
+                tbody.innerHTML = '';
+                if (data.products.length === 0) {
+                     tbody.innerHTML = '<tr><td colspan="6">資料庫中沒有商品</td></tr>';
+                }
+                data.products.forEach(p => {
+                    const row = tbody.insertRow();
+                    row.innerHTML = `
+                        <td>${p.sku}</td>
+                        <td>${p.barcode}</td>
+                        <td>${p.name}</td>
+                        <td>${p.price_live}</td>
+                        <td>${p.stock_on_hand}</td>
+                        <td>${p.stock_reserved}</td>
+                    `;
+                });
+            } catch (e) { alert('載入庫存失敗: ' + e.message); }
+        }
+        
+        // Q5: 新增商品
+        document.getElementById('new-product-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const status = document.getElementById('product-status');
+            try {
+                const payload = {
+                    sku: document.getElementById('p_sku').value,
+                    barcode: document.getElementById('p_barcode').value,
+                    name: document.getElementById('p_name').value,
+                    price_live: parseInt(document.getElementById('p_price_live').value, 10),
+                    cost: parseInt(document.getElementById('p_cost').value, 10),
+                    stock_on_hand: parseInt(document.getElementById('p_stock_on_hand').value, 10)
+                };
+                if (!payload.sku || !payload.name) {
+                    throw new Error('SKU 和名稱為必填');
+                }
+                
+                await apiCall('/admin/products', payload);
+                status.textContent = '新增成功！';
+                status.style.color = 'green';
+                e.target.reset(); // 清空表單
+                loadProducts(); // 重新整理列表
+                
+            } catch (e) { 
+                status.textContent = '新增失敗: ' + e.message;
+                status.style.color = 'red';
+            }
+        });
+
+        // --- Q6: 出貨管理 ---
+        document.getElementById('load-shipping').addEventListener('click', loadShipping);
+        async function loadShipping() {
+            const btn = document.getElementById('load-shipping');
+            const container = document.getElementById('shipping-labels');
+            btn.disabled = true;
+            container.innerHTML = '';
+            
+             try {
+                const data = await apiCall('/admin/print-labels');
+                if (!data.orders || data.orders.length === 0) {
+                    container.innerHTML = '<h3>沒有找到待出貨的訂單。</h3>';
+                    return;
+                }
+                
+                data.orders.forEach(order => {
+                    let shipping = {};
+                    try { shipping = JSON.parse(order.shipping_info || '{}'); } catch(e) {}
+                    
+                    let statusText = '不明';
+                    let shippingDest = 'N/A';
+                    
+                    if (order.status === 'awaiting_cod_shipment') { // 7-11 貨付
+                         statusText = '📦 7-11 貨到付款';
+                         shippingDest = `${shipping.store_name || ''} (${shipping.store_address || '地址未填'})`;
+                    } else if (order.status === 'awaiting_deposit_proof') { // 待付訂金
+                        statusText = `⚠️ 待付訂金 (後五碼: ${order.deposit_proof || '未填'})`;
+                        shippingDest = `${shipping.store_name || ''} (${shipping.store_address || '地址未填'})`;
+                    } else if (order.status === 'paid') { // 已付款 (郵寄)
+                        statusText = '✅ 已付款 (郵寄)';
+                        shippingDest = `${shipping.address || '地址未填'}`;
+                    }
+
+                    const label = document.createElement('div');
+                    label.className = 'label';
+                    label.innerHTML = `
+                        <h3>訂單：${order.order_id}</h3>
+                        <div class="section">
+                            <strong>狀態：${statusText}</strong>
+                        </div>
+                        <div class="section">
+                            <strong>收件人：</strong>
+                            <span>${shipping.name || 'N/A'} (${shipping.phone || 'N/A'})</span>
+                        </div>
+                        <div class="section">
+                            <strong>寄送 (${order.payment_method || 'N/A'})：</strong>
+                            <span>${shippingDest}</span>
+                        </div>
+                        <div class="section gift-notes">
+                            <strong>主播備註 (Q3)：</strong>
+                            <span>${order.gift_notes || '(無)'}</span>
+                        </div>
+                        <div class="section">
+                            <strong>發票 (Q-ECPay)：</strong>
+                            <span>${order.invoice_status || 'N/A'}: ${order.invoice_no || ''}</span>
+                        </div>
+                    `;
+                    container.appendChild(label);
+                });
+             } catch (e) {
+                alert('載入出貨單失敗: ' + e.message);
+             } finally {
+                btn.disabled = false;
+             }
+        }
+
+    </script>
+</body>
+</html>
