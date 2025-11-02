@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>MURAIN — 管理後台 (v4.2)</title>
+    <title>MURAIN — 管理後台 (v5)</title>
     <style>
         body { font-family: system-ui, sans-serif; margin: 0; background-color: #f9f9f9; }
         .container { max-width: 1200px; margin: 2rem auto; }
@@ -23,6 +23,7 @@
         button { font-size: 1rem; padding: 10px 16px; border: none; background-color: #007aff; color: white; border-radius: 8px; cursor: pointer; margin-right: 10px; }
         button:disabled { background-color: #ccc; }
         .btn-secondary { background-color: #6c757d; }
+        .btn-ship { background-color: #28a745; font-size: 0.9rem; padding: 8px 12px; } /* Q3 */
         #status { margin-top: 1rem; font-weight: bold; }
         .hidden { display: none; }
         .label { width: 10cm; height: 15cm; border: 1px dashed #999; padding: 10px; box-sizing: border-box; margin: 1rem auto; page-break-after: always; overflow: hidden; background: #fff; }
@@ -31,7 +32,7 @@
         .label .section strong { font-size: 1.2rem; display: block; }
         .label .section span { font-size: 1.1rem; }
         .label .gift-notes { border-top: 1px solid #ccc; padding-top: 10px; margin-top: 10px; background: #fdfdea; }
-        @media print { body { margin: 0; } .container, .login-box { display: none; } #shipping-labels { display: block !important; } .label { border: none; margin: 0; } }
+        @media print { body { margin: 0; } .container, .login-box { display: none; } #shipping-labels { display: block !important; } .label { border: none; margin: 0; } .btn-ship { display: none; } }
     </style>
 </head>
 <body>
@@ -58,7 +59,7 @@
             <button id="refresh-dashboard">重新整理</button>
             <table id="dashboard-table">
                 <thead>
-                    <tr><th>日期</th><th>訂單號</th><th>狀態 (中文)</th><th>狀態 (Eng)</th><th>金額</th><th>付款方式</th><th>備註</th></tr>
+                    <tr><th>日期</th><th>主播 (Q4)</th><th>訂單號</th><th>狀態 (中文)</th><th>金額</th><th>付款方式</th><th>備註</th></tr>
                 </thead>
                 <tbody></tbody>
             </table>
@@ -67,15 +68,13 @@
         <div id="tab-products" class="tab-content">
             <h2>庫存管理</h2>
             <button id="refresh-products">重新整理庫存</button>
-            
             <div class="form-group" style="margin-top: 1rem; max-width: 400px;">
                 <label for="product-search">搜尋 Barcode</label>
                 <input type="text" id="product-search" placeholder="輸入 Barcode 按 Enter...">
             </div>
-            
             <table id="products-table" style="margin-top:1rem;">
                 <thead>
-                    <tr><th>SKU</th><th>Barcode</th><th>名稱</th><th>售價</th><th>庫存</th><th>預留</th></tr>
+                    <tr><th>SKU</th><th>Barcode</th><th>名稱</th><th>售價</th><th>庫存</th><th>預留 (Q1)</th></tr>
                 </thead>
                 <tbody></tbody>
             </table>
@@ -111,10 +110,7 @@
         // --- 登入邏輯 ---
         document.getElementById('loginBtn').addEventListener('click', () => {
             const key = document.getElementById('op_key').value;
-            if (!key) {
-                document.getElementById('login-status').textContent = '請輸入密碼';
-                return;
-            }
+            if (!key) { document.getElementById('login-status').textContent = '請輸入密碼'; return; }
             OP_KEY = key;
             document.getElementById('login-box').classList.add('hidden');
             document.getElementById('admin-panel').classList.remove('hidden');
@@ -134,9 +130,9 @@
             });
         });
 
-        // --- (v4.2) 修正 Bug：後台 API 呼叫 (全部使用 POST) ---
+        // --- (v4.2) 後台 API 呼叫 (全部使用 POST) ---
         async function apiCall(endpoint, payload = {}) {
-            payload.op_key = OP_KEY; // 自動帶入密碼
+            payload.op_key = OP_KEY;
             const res = await fetch(`${API_ENDPOINT}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -150,15 +146,13 @@
         // --- (v4.1) 中文翻譯機 (Q1) ---
         function translateStatus(status) {
             const map = {
-                'draft': '草稿 (未建立)',
-                'pending': '購物車 (未結帳)',
+                'draft': '草稿 (未建立)', 'pending': '購物車 (未結帳)',
                 'awaiting_payment': '等待付款中 (已選金流)',
                 'awaiting_deposit_proof': '等待訂金確認 (新客)',
                 'awaiting_cod_shipment': '待出貨 (7-11 貨付)',
                 'paid': '已付款 (待出貨)',
-                'shipped': '已出貨',
-                'expired': '已過期 (棄標)',
-                'cancelled': '已取消'
+                'shipped': '已出貨 (Q3)',
+                'expired': '已過期 (棄標)', 'cancelled': '已取消'
             };
             return map[status] || status;
         }
@@ -187,9 +181,9 @@
                 data.orders.forEach(o => {
                     const row = tbody.insertRow();
                     row.innerHTML = `
-                        <td>${formatDateTime(o.created_at)}</td> <td>${o.order_id}</td>
+                        <td>${formatDateTime(o.created_at)}</td>
+                        <td>${o.streamer_name || ''}</td> <td>${o.order_id}</td>
                         <td>${translateStatus(o.status)}</td>
-                        <td>${o.status}</td>
                         <td>${o.total_amount}</td>
                         <td>${o.payment_method || ''}</td>
                         <td>${o.gift_notes || ''}</td>
@@ -202,14 +196,9 @@
         document.getElementById('refresh-products').addEventListener('click', () => loadProducts());
         async function loadProducts(barcode = null) {
              try {
-                let payload = { action: 'search' }; // (v4.2) 告訴後台我們要「搜尋」
-                if (barcode) {
-                    payload.barcode = barcode;
-                }
-                
-                // (v4.2) 修正 Bug: 使用 apiCall (POST)
+                let payload = { action: 'search' };
+                if (barcode) { payload.barcode = barcode; }
                 const data = await apiCall('/admin/products', payload);
-                
                 const tbody = document.getElementById('products-table').getElementsByTagName('tbody')[0];
                 tbody.innerHTML = '';
                 if (!data.products || data.products.length === 0) {
@@ -223,16 +212,13 @@
                         <td>${p.name}</td>
                         <td>${p.price_live}</td>
                         <td>${p.stock_on_hand}</td>
-                        <td>${p.stock_reserved}</td>
-                    `;
+                        <td>${p.stock_reserved}</td> `;
                 });
             } catch (e) { alert('載入庫存失敗: ' + e.message); }
         }
         
         document.getElementById('product-search').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                loadProducts(e.target.value.trim());
-            }
+            if (e.key === 'Enter') { loadProducts(e.target.value.trim()); }
         });
         
         document.getElementById('new-product-form').addEventListener('submit', async (e) => {
@@ -240,7 +226,7 @@
             const status = document.getElementById('product-status');
             try {
                 const payload = {
-                    action: 'create', // (v4.2) 告訴後台我們要「新增」
+                    action: 'create',
                     product: {
                         sku: document.getElementById('p_sku').value,
                         barcode: document.getElementById('p_barcode').value,
@@ -250,9 +236,7 @@
                         stock_on_hand: parseInt(document.getElementById('p_stock_on_hand').value, 10)
                     }
                 };
-                if (!payload.product.sku || !payload.product.name) {
-                    throw new Error('SKU 和名稱為必填');
-                }
+                if (!payload.product.sku || !payload.product.name) { throw new Error('SKU 和名稱為必填'); }
                 
                 await apiCall('/admin/products', payload);
                 status.textContent = '新增成功！';
@@ -273,25 +257,19 @@
             btn.disabled = true;
             container.innerHTML = '';
             CACHED_ORDERS = [];
-            
              try {
-                // (v4.2) 修正 Bug: 使用 apiCall (POST)
                 const data = await apiCall('/admin/print-labels');
                 if (!data.orders || data.orders.length === 0) {
                     container.innerHTML = '<h3>沒有找到待出貨的訂單。</h3>';
                     return;
                 }
-                
                 CACHED_ORDERS = data.orders;
-                
                 data.orders.forEach(order => {
                     let shipping = {};
                     try { shipping = JSON.parse(order.shipping_info || '{}'); } catch(e) {}
-                    
-                    const statusText = translateStatus(order.status); // (v4.1) Q1 中文
+                    const statusText = translateStatus(order.status);
                     let shippingDest = 'N/A';
-                    
-                    if (order.payment_method === '7-11' || order.payment_method === 'DEPOSIT') {
+                    if (order.payment_method === '7-11' || order.payment_method === 'DEPOSIT_COD') {
                          shippingDest = `${shipping.store_name || ''} (${shipping.store_address || '地址未填'})`;
                     } else if (order.payment_method === 'MAIL' || order.status === 'paid') {
                         shippingDest = `${shipping.address || '地址未填'}`;
@@ -301,6 +279,12 @@
                     label.className = 'label';
                     label.innerHTML = `
                         <h3>訂單：${order.order_id}</h3>
+                        <div class="section">
+                            <strong>日期：${formatDateTime(order.created_at)}</strong>
+                        </div>
+                        <div class="section">
+                            <strong>主播：${order.streamer_name || 'N/A'} (Q4)</strong>
+                        </div>
                         <div class="section">
                             <strong>狀態：${statusText}</strong>
                         </div>
@@ -320,14 +304,43 @@
                             <strong>發票 (Q-ECPay)：</strong>
                             <span>${order.invoice_status || 'N/A'}: ${order.invoice_no || ''}</span>
                         </div>
+                        <button class="btn-ship" data-orderid="${order.order_id}">標記為已出貨</button>
                     `;
                     container.appendChild(label);
                 });
+                
+                // (v5) Q3: 幫按鈕加上事件
+                addShipButtonListeners();
+                
              } catch (e) {
                 alert('載入出貨單失敗: ' + e.message);
              } finally {
                 btn.disabled = false;
              }
+        }
+        
+        // (v5) Q3: 標記出貨 API 呼叫
+        function addShipButtonListeners() {
+            document.querySelectorAll('.btn-ship').forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    const btn = e.target;
+                    const order_id = btn.dataset.orderid;
+                    if (!confirm(`您確定要將訂單 ${order_id} 標記為「已出貨」嗎？\n(這會將它從此列表中移除)`)) {
+                        return;
+                    }
+                    btn.disabled = true;
+                    btn.textContent = '標記中...';
+                    try {
+                        await apiCall('/admin/mark-as-shipped', { order_id: order_id });
+                        // 成功！從畫面上移除這個標籤
+                        btn.closest('.label').style.display = 'none';
+                    } catch (err) {
+                        alert('標記失敗: ' + err.message);
+                        btn.disabled = false;
+                        btn.textContent = '標記為已出貨';
+                    }
+                });
+            });
         }
         
         // --- (v4.1) Q5: CSV 匯出 ---
