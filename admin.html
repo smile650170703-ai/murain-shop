@@ -99,6 +99,7 @@
             <button id="export-cod" class="btn-secondary">匯出 7-11 貨付 (CSV)</button>
             <button id="export-mail" class="btn-secondary">匯出 郵寄 (CSV)</button>
             <button id="batch-ship" class="btn-ship">一鍵標記「勾選」為已出貨</button>
+            <button id="export-zero-packages" class="btn-secondary" style="background-color: #ffc107; color: black;">匯出 0 元包裹</button>
             <p>(v6.1) 提醒：「等待訂金/付款」的訂單，請至「儀表板」確認。確認後，訂單狀態變為「等待填寫物流」，客人填寫完畢後才會出現在此處。</p>
             <div id="shipping-labels"></div>
         </div>
@@ -110,7 +111,6 @@
                 <div><label>結束日期</label><input type="date" id="report-end"></div>
                 <button id="load-report">載入報表</button>
                 <button id="export-report" class="btn-secondary">匯出總表 (CSV)</button>
-                <button id="export-zero-packages" class="btn-secondary" style="background-color: #ffc107; color: black;">匯出 0 元包裹</button>
             </div>
             <div style="overflow-x: auto;">
                 <table id="report-table">
@@ -226,7 +226,7 @@
                 }
                 data.orders.forEach(o => {
                     const row = tbody.insertRow();
-                    // (PATCH B4) --- 替換「編輯物流」按鈕為「內嵌輸入框」 ---
+                   // --- 這是「新的」程式碼 (恢復為簡單清單) ---
                     row.innerHTML = `
                         <td>${formatDateTime(o.created_at)}</td>
                         <td>${o.streamer_name || ''}</td>
@@ -235,32 +235,18 @@
                         <td>${o.deposit_proof || ''}</td>
                         <td>${o.total_amount}</td>
                         <td>${o.payment_method || ''}</td>
-                        
-                        <td><input type="number" class="input-shipping-cost" data-orderid="${o.order_id}" value="${o.shipping_cost||''}" style="width: 60px;" /></td>
-                        <td><input type="text" class="input-tracking" data-orderid="${o.order_id}" value="${o.tracking_number||''}" style="width: 100px;" /></td>
-                        
+                        <td>${o.shipping_cost || 0}</td>
+                        <td>${o.tracking_number || ''}</td>
                         <td>${o.gift_notes || ''}</td>
-                        
                         <td>
-                            <select class="select-shipping-type" data-orderid="${o.order_id}" style="width: 100px; margin-bottom: 5px;">
-                                <option value="" ${!o.shipping_type ? 'selected' : ''}>一般</option>
-                                <option value="7-11_COD" ${o.shipping_type === '7-11_COD' ? 'selected' : ''}>7-11 貨付</option>
-                                <option value="7-11_PAID" ${o.shipping_type === '7-11_PAID' ? 'selected' : ''}>7-11 (0元)</option>
-                                <option value="MAIL" ${o.shipping_type === 'MAIL' ? 'selected' : ''}>郵局</option>
-                            </select>
-                            
-                            <input type="text" class="input-pickup-store-name" data-orderid="${o.order_id}" placeholder="門市名稱" value="${o.pickup_store?.store_name||''}" style="width: 100px; margin-bottom: 5px;">
-                            <input type="text" class="input-pickup-store-address" data-orderid="${o.order_id}" placeholder="門市地址" value="${o.pickup_store?.store_address||''}" style="width: 100px; margin-bottom: 5px;">
-                            
-                            <button class="btn-save-shipping" data-orderid="${o.order_id}" style="background-color: #198754; font-size: 0.9rem; padding: 8px 12px; color: white;">儲存物流</button>
-                            <button class="btn-notify-ship" data-orderid="${o.order_id}" style="background-color: #0dcaf0; font-size: 0.9rem; padding: 8px 12px; color: black;">重發通知</button>
-                            
                             ${(o.status === 'awaiting_deposit_proof') ? 
                                 `<button class="btn-confirm" data-orderid="${o.order_id}">✅ 確認訂金</button>` : ''}
                             
                             ${(o.status !== 'shipped' && o.status !== 'cancelled') ? 
                                 `<button class="btn-cancel" data-orderid="${o.order_id}">取消訂單</button>` : ''}
                         </td>
+                    `;
+// --- 新的程式碼結束 ---
                     `;
                 });
                 addAdminButtonListeners();
@@ -342,6 +328,7 @@
                     }
                     const label = document.createElement('div');
                     label.className = 'label';
+                   // --- 這是「新的」程式碼 (將物流表單加到出貨單上) ---
                     label.innerHTML = `
                         <input type="checkbox" class="ship-checkbox" data-orderid="${order.order_id}" style="float:right; width: 25px; height: 25px;">
                         
@@ -365,8 +352,28 @@
                             <strong>發票：</strong>
                             <span>${order.invoice_status || 'N/A'}: ${order.invoice_no || ''}</span>
                         </div>
-                        <button class="btn-ship" data-orderid="${order.order_id}">標記為已出貨</button>
+                        
+                        <div class="section" style="border-top: 2px dashed #ccc; padding-top: 10px; margin-top: 15px;">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                <div class="form-group"><label>運費</label><input type="number" class="input-shipping-cost" data-orderid="${order.order_id}" value="${order.shipping_cost||''}"></div>
+                                <div class="form-group"><label>物流單號</label><input type="text" class="input-tracking" data-orderid="${order.order_id}" value="${order.tracking_number||''}"></div>
+                                <div class="form-group" style="grid-column: 1 / -1;"><label>物流類型</label>
+                                    <select class="select-shipping-type" data-orderid="${order.order_id}">
+                                        <option value="" ${!order.shipping_type ? 'selected' : ''}>一般</option>
+                                        <option value="7-11_COD" ${order.shipping_type === '7-11_COD' ? 'selected' : ''}>7-11 貨付</option>
+                                        <option value="7-11_PAID" ${order.shipping_type === '7-11_PAID' ? 'selected' : ''}>7-11 (0元)</option>
+                                        <option value="MAIL" ${order.shipping_type === 'MAIL' ? 'selected' : ''}>郵局</option>
+                                    </select>
+                                </div>
+                                <div class="form-group"><label>門市名稱</label><input type="text" class="input-pickup-store-name" data-orderid="${order.order_id}" value="${order.pickup_store?.store_name||''}"></div>
+                                <div class="form-group"><label>門市地址</label><input type="text" class="input-pickup-store-address" data-orderid="${order.order_id}" value="${order.pickup_store?.store_address||''}"></div>
+                            </div>
+                            <button class="btn-save-shipping" data-orderid="${order.order_id}" style="background-color: #198754; font-size: 0.9rem; padding: 8px 12px; color: white; width: auto;">儲存物流</button>
+                            <button class="btn-notify-ship" data-orderid="${order.order_id}" style="background-color: #0dcaf0; font-size: 0.9rem; padding: 8px 12px; color: black; width: auto;">重發通知</button>
+                        </div>
+                        <button class="btn-ship" data-orderid="${order.order_id}" style="width: 100%; margin-top: 10px;">(儲存後) 標記為已出貨</button>
                     `;
+// --- 新的程式碼結束 ---
                     container.appendChild(label);
                 });
                 addAdminButtonListeners();
@@ -450,9 +457,11 @@
                     pickup_store: pickup_store 
                   });
                   
+                  // --- 這是「新的」程式碼 (改為重新載入出貨單) ---
                   alert('已更新運費/單號，並嘗試發送通知。');
-                  loadDashboard(); //Reload
+                  loadShipping(); // (PATCH) 改為載入出貨單
                 } catch (err) {
+// --- 新的程式碼結束 ---
                   alert('儲存失敗: ' + err.message);
                   btn.disabled = false; btn.textContent = '儲存物流';
                 }

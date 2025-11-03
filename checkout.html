@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>MURAIN — 結帳 (v6.1)</title>
+    <title>MURAIN — 結帳 (v6.2)</title>
     <style>
         body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 600px; padding: 1rem; background-color: #f9f9f9; }
         .container { background: #fff; border-radius: 8px; padding: 2rem; }
@@ -16,8 +16,6 @@
         button { font-size: 1.1rem; padding: 12px 18px; border: none; background-color: #007aff; color: white; border-radius: 8px; cursor: pointer; width: 100%; }
         button:disabled { background-color: #ccc; }
         #status { margin-top: 1rem; font-weight: bold; text-align: center; }
-        .bank-info { background: #f0f8ff; border: 1px solid #bde0ff; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
-        .bank-info h3 { margin-top: 0; }
         .hidden { display: none; }
     </style>
 </head>
@@ -36,7 +34,7 @@
             <label for="payment_method">付款方式</label>
             <select id="payment_method">
                 <option value="">— 請選擇 —</option>
-                <option value="BANK_TRANSFER">銀行匯款 (先付款)</option>
+                <option value="PAYUNI_ATM">銀行匯款 (虛擬帳號自動對帳)</option>
                 <option value="COD">7-11 貨到付款 (一般客戶)</option>
                 <option value="PAYUNI_CREDIT">PAYUNi 信用卡 (一次付清)</option>
                 <option value="PAYUNI_CREDIT_INST">PAYUNi 信用卡 (3/6/9 期)</option>
@@ -47,17 +45,7 @@
         <button id="checkoutBtn">下一步：填寫物流</button>
         <p id="status"></p>
 
-        <div id="bank-info-box" class="bank-info hidden">
-            <h3>銀行匯款資訊</h3>
-            <p>請於 24 小時內完成匯款，否則訂單將自動取消。</p>
-            <p>
-                銀行：(822) 中國信託<br>
-                帳號：222540458194
-            </p>
-            <p>匯款完成後，請點擊下方按鈕前往填寫您的「收件資訊」與「匯款後五碼」。</p>
-            <button id="goToShippingBtn" class="hidden">✅ 我已匯款，前往填寫物流</button>
         </div>
-    </div>
 
     <form id="paymentForm" method="POST" class="hidden"></form>
 
@@ -70,8 +58,7 @@
         const status = document.getElementById('status');
         const checkoutBtn = document.getElementById('checkoutBtn');
         const paymentMethodSelect = document.getElementById('payment_method');
-        const bankInfoBox = document.getElementById('bank-info-box');
-        const goToShippingBtn = document.getElementById('goToShippingBtn');
+        // (PATCH) 移除 bankInfoBox, goToShippingBtn
 
         // --- 1. 載入購物車 ---
         async function loadCart() {
@@ -121,18 +108,12 @@
                 document.querySelector('label[for="payment_method"]').classList.add('hidden');
                 checkoutBtn.textContent = '下一步：填寫物流 (訂金單)';
             }
-            else if (orderStatus === 'awaiting_payment') {
-                status.textContent = '狀態：等待匯款中...';
-                paymentMethodSelect.value = 'BANK_TRANSFER';
-                paymentMethodSelect.disabled = true;
-                checkoutBtn.classList.add('hidden');
-                bankInfoBox.classList.remove('hidden');
-                goToShippingBtn.classList.remove('hidden');
-            } else if (orderStatus === 'awaiting_shipping_info') {
+            // (PATCH) 移除 awaiting_payment (手動匯款) 的邏輯
+            else if (orderStatus === 'awaiting_shipping_info') {
                 status.textContent = '狀態：已付款，等待填寫物流';
                 checkoutBtn.disabled = true;
                 paymentMethodSelect.disabled = true;
-                bankInfoBox.classList.add('hidden');
+                // (PATCH) 移除 bankInfoBox
                 const link = document.createElement('a');
                 link.href = `shipping.html?cart_token=${CART_TOKEN}&method=PAID`;
                 link.textContent = '✅ 前往填寫物流資訊';
@@ -164,25 +145,20 @@
             status.textContent = '建立訂單中...';
 
             try {
-                const data = await apiPost('/checkout', { cart_token: CART_TOKEN, payment_method: payment_method });
-                
-                if (payment_method === 'BANK_TRANSFER') {
-                    // (v6.1) Q1: 銀行匯款
-                    status.textContent = '訂單已建立 (等待匯款)';
-                    checkoutBtn.classList.add('hidden');
-                    paymentMethodSelect.disabled = true;
-                    bankInfoBox.classList.remove('hidden');
-                    goToShippingBtn.classList.remove('hidden');
-                } 
-                else if (payment_method === 'COD') {
-                    // (v6.1) Q5: 貨到付款
+                // (PATCH) 銀行匯款(COD) 和 新客(DEPOSIT_COD) 直接跳轉
+                if (payment_method === 'COD') {
                     window.location.href = `shipping.html?cart_token=${CART_TOKEN}&method=COD`;
+                    return;
                 }
                 else if (payment_method === 'DEPOSIT_COD') {
-                     // (v6.1) Q5: 新客訂金
                     window.location.href = `shipping.html?cart_token=${CART_TOKEN}&method=DEPOSIT`;
+                    return;
                 }
-                else if (data.submit_to && data.fields) { // PAYUNi
+
+                // (PATCH) 其他 (PAYUNI_ATM, PAYUNI_CREDIT, LANGUAGE) 全部走 /checkout API
+                const data = await apiPost('/checkout', { cart_token: CART_TOKEN, payment_method: payment_method });
+                
+                if (data.submit_to && data.fields) { // PAYUNi
                     submitForm(data.submit_to, data.fields);
                 } 
                 else if (data.submit_to) { // L IN G UAGE
@@ -194,11 +170,7 @@
             }
         });
         
-        // (v5.1) Q1: 前往填寫物流 (匯款後)
-        goToShippingBtn.addEventListener('click', () => {
-            // (v6.1) Q5: 匯款後，狀態是 PAID
-            window.location.href = `shipping.html?cart_token=${CART_TOKEN}&method=PAID`;
-        });
+        // (PATCH) 移除 goToShippingBtn 的監聽器
 
         // --- 3. 輔助函數 ---
         async function apiPost(endpoint, body) {
@@ -207,7 +179,9 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
-            const data = await res.json();
+            // (PATCH) 增強錯誤處理
+            let data;
+            try { data = await res.json(); } catch(e) { data = { error: `伺服器錯誤: ${res.status}` }}
             if (data.error) throw new Error(data.error);
             return data;
         }
