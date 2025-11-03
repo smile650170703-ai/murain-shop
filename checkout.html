@@ -1,171 +1,206 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>結帳 — MURAIN</title>
-  <style>
-    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial; padding:24px; color:#222}
-    .panel{max-width:900px;margin:36px auto;padding:20px;border:1px solid #eee;border-radius:8px;background:#fff}
-    .muted{color:#666;font-size:0.95rem}
-    .notice{padding:12px;border-radius:6px;background:#f6f8fa;border:1px solid #e3e8ee;margin-bottom:16px}
-    .btn{display:inline-block;padding:10px 16px;border-radius:6px;background:#0b62ff;color:#fff;text-decoration:none}
-  </style>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MURAIN — 結帳 (v6.2)</title>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 600px; padding: 1rem; background-color: #f9f9f9; }
+        .container { background: #fff; border-radius: 8px; padding: 2rem; }
+        .cart-item { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #eee; }
+        .cart-item span { flex-basis: 33%; }
+        .total { font-size: 1.2rem; font-weight: bold; text-align: right; margin-top: 1rem; }
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+        .form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
+        button { font-size: 1.1rem; padding: 12px 18px; border: none; background-color: #007aff; color: white; border-radius: 8px; cursor: pointer; width: 100%; }
+        button:disabled { background-color: #ccc; }
+        #status { margin-top: 1rem; font-weight: bold; text-align: center; }
+        .hidden { display: none; }
+    </style>
 </head>
 <body>
-  <div class="panel">
-    <h1>前往付款…</h1>
-    <div id="status" class="muted">系統正在準備付款表單，準備完成將會自動跳轉。若沒有自動跳轉，請按下「手動前往付款」按鈕。</div>
-    <div id="debug" style="margin-top:12px;"></div>
-    <div style="margin-top:18px;">
-      <a id="manual-btn" class="btn" href="#" style="display:none">手動前往付款</a>
-    </div>
-    <div style="margin-top:14px" class="muted">
-      注意：此檔案會嘗試下列順序尋找 checkout 物件：<br>
-      1) window.checkout（頁面上已有的全域物件）<br>
-      2) &lt;script id="checkout-data"&gt;裡的 JSON（如果後端直接把 checkout JSON 放在頁面）<br>
-      3) 嘗試用 URL query `cart_token` POST 到 <code>/checkout</code> 取得（如果頁面透過 query 傳 cart_token）<br>
-      若都找不到，畫面會顯示錯誤與可複製的 debug JSON，方便你手動回傳給後端測試人員。
-    </div>
-  </div>
+    <div class="container">
+        <h2>結帳</h2>
+        <div id="cart-items">
+            </div>
+        <div class="total" id="cart-total">
+            總計：$0
+        </div>
+        
+        <hr style="margin: 2rem 0;">
 
-<script>
-  // Create and submit a hidden form to the gateway (POST).
-  function postToGateway(submitTo, fields) {
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = submitTo;
-    form.style.display = 'none';
-    for (const k in fields) {
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = k;
-      input.value = fields[k] == null ? '' : String(fields[k]);
-      form.appendChild(input);
-    }
-    document.body.appendChild(form);
-    // small delay to let DOM update for debug visibility
-    setTimeout(()=> form.submit(), 250);
-  }
+        <div class="form-group">
+            <label for="payment_method">付款方式</label>
+            <select id="payment_method">
+                <option value="">— 請選擇 —</option>
+                <option value="PAYUNI_ATM">銀行匯款 (虛擬帳號自動對帳)</option>
+                <option value="COD">7-11 貨到付款 (一般客戶)</option>
+                <option value="PAYUNI_CREDIT">PAYUNi 信用卡 (一次付清)</option>
+                <option value="PAYUNI_CREDIT_INST">PAYUNi 信用卡 (3/6/9 期)</option>
+                <option value="LANGUAGE_INST">零角 信用卡 (3 期)</option>
+            </select>
+        </div>
 
-  async function fetchCheckoutFromApi(cartToken) {
-    try {
-      const resp = await fetch('/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cart_token: cartToken, payment_method: localStorage.__preferred_payment_method || null })
-      });
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const json = await resp.json();
-      return json;
-    } catch (e) {
-      return { error: 'fetch_failed', reason: String(e) };
-    }
-  }
+        <button id="checkoutBtn">下一步：填寫物流</button>
+        <p id="status"></p>
 
-  function readQueryParam(name) {
-    try {
-      const u = new URL(location.href);
-      return u.searchParams.get(name);
-    } catch (e) {
-      return null;
-    }
-  }
+        </div>
 
-  function showDebug(msg) {
-    const dbg = document.getElementById('debug');
-    if (typeof msg === 'object') msg = JSON.stringify(msg, null, 2);
-    dbg.innerText = msg;
-  }
+    <form id="paymentForm" method="POST" class="hidden"></form>
 
-  async function tryAutoPost() {
-    let checkout = null;
-    // 1) check window.checkout
-    if (window.checkout && typeof window.checkout === 'object') {
-      checkout = window.checkout;
-      document.getElementById('status').innerText = '發現 window.checkout，準備自動跳轉…';
-    }
+    <script>
+        const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
+        const urlParams = new URLSearchParams(window.location.search);
+        const CART_TOKEN = urlParams.get('cart_token');
+        let CURRENT_ORDER = null;
 
-    // 2) check script#checkout-data
-    if (!checkout) {
-      const el = document.getElementById('checkout-data');
-      if (el) {
-        try {
-          checkout = JSON.parse(el.textContent || el.innerText);
-          document.getElementById('status').innerText = '從 <script id="checkout-data"> 取得 checkout 資料，準備自動跳轉…';
-        } catch(e){}
-      }
-    }
+        const status = document.getElementById('status');
+        const checkoutBtn = document.getElementById('checkoutBtn');
+        const paymentMethodSelect = document.getElementById('payment_method');
+        // (PATCH) 移除 bankInfoBox, goToShippingBtn
 
-    // 3) try fetch /checkout with cart_token from URL
-    if (!checkout) {
-      const cartToken = readQueryParam('cart_token') || readQueryParam('token') || null;
-      if (cartToken) {
-        document.getElementById('status').innerText = '使用 cart_token 向 /checkout 要付款資料…';
-        const r = await fetchCheckoutFromApi(cartToken);
-        if (r && (r.fields || r.submit_to)) {
-          checkout = r;
-          document.getElementById('status').innerText = '從 /checkout 取得付款資料，準備自動跳轉…';
-        } else {
-          showDebug(r);
+        // --- 1. 載入購物車 ---
+        async function loadCart() {
+            if (!CART_TOKEN) { status.textContent = '錯誤：找不到購物車'; return; }
+            try {
+                const res = await fetch(`${API_ENDPOINT}/cart/${CART_TOKEN}`);
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                
+                CURRENT_ORDER = data;
+                const itemsDiv = document.getElementById('cart-items');
+                const totalDiv = document.getElementById('cart-total');
+                itemsDiv.innerHTML = '';
+                
+                if (data.items.length === 0) {
+                    itemsDiv.innerHTML = '<p>您的購物車是空的</p>';
+                    checkoutBtn.disabled = true;
+                }
+                
+                data.items.forEach(item => {
+                    const itemEl = document.createElement('div');
+                    itemEl.className = 'cart-item';
+                    itemEl.innerHTML = `
+                        <span>${item.name}</span>
+                        <span>${item.qty} x $${item.unit_price_final}</span>
+                        <span style="text-align:right;">$${item.subtotal}</span>
+                    `;
+                    itemsDiv.appendChild(itemEl);
+                });
+                
+                totalDiv.textContent = `總計：$${data.total_amount}`;
+                
+                // (v6) Q1/Q5: 檢查訂單狀態
+                handleStatus(data.status);
+                
+            } catch (e) {
+                status.textContent = '載入購物車失敗: ' + e.message;
+            }
         }
-      }
-    }
-
-    if (!checkout || !checkout.submit_to || !checkout.fields) {
-      document.getElementById('status').innerText = '找不到有效的付款資料 (checkout.submit_to / checkout.fields)。';
-      showDebug({
-        window_checkout: !!window.checkout,
-        has_script_checkout_data: !!document.getElementById('checkout-data'),
-        cart_token_in_url: readQueryParam('cart_token') || readQueryParam('token') || null,
-        hint: '確認後端是否把 checkout JSON 放到頁面 (window.checkout 或 <script id="checkout-data">) 或讓 /checkout 接受 cart_token 的 POST 並回傳付款表單。'
-      });
-      // show manual button if fallback is available (submit_to present in debug JSON)
-      const manual = document.getElementById('manual-btn');
-      manual.style.display = 'inline-block';
-      manual.onclick = function(e) {
-        e.preventDefault();
-        // if there is a JSON in debug place that contains submit_to and fields, allow manual post
-        try {
-          let candidate = window.checkout || (document.getElementById('checkout-data') && JSON.parse(document.getElementById('checkout-data').textContent));
-          if (candidate && candidate.submit_to && candidate.fields) {
-            postToGateway(candidate.submit_to, candidate.fields);
-          } else {
-            alert('沒有找到可用的付款資料，請檢查 debug 區塊。');
-          }
-        } catch(err) {
-          alert('手動提交失敗：' + err);
+        
+        // (v6) Q1/Q5: 處理訂單狀態
+        function handleStatus(orderStatus) {
+            // (v6.1) Q5: 如果是新客訂金，隱藏選項
+            if (orderStatus === 'awaiting_deposit_proof') {
+                status.textContent = '狀態：新客訂金單，確認商品無誤後請按下一步';
+                paymentMethodSelect.classList.add('hidden');
+                document.querySelector('label[for="payment_method"]').classList.add('hidden');
+                checkoutBtn.textContent = '下一步：填寫物流 (訂金單)';
+            }
+            // (PATCH) 移除 awaiting_payment (手動匯款) 的邏輯
+            else if (orderStatus === 'awaiting_shipping_info') {
+                status.textContent = '狀態：已付款，等待填寫物流';
+                checkoutBtn.disabled = true;
+                paymentMethodSelect.disabled = true;
+                // (PATCH) 移除 bankInfoBox
+                const link = document.createElement('a');
+                link.href = `shipping.html?cart_token=${CART_TOKEN}&method=PAID`;
+                link.textContent = '✅ 前往填寫物流資訊';
+                link.style.display = 'block';
+                link.style.textAlign = 'center';
+                status.insertAdjacentElement('afterend', link);
+            } else if (orderStatus !== 'pending' && orderStatus !== 'draft') {
+                status.textContent = `此訂單已完成或已失效 (狀態: ${orderStatus})，無法結帳。`;
+                checkoutBtn.disabled = true;
+                paymentMethodSelect.disabled = true;
+            }
         }
-      };
-      return;
-    }
 
-    // okay we have checkout.submit_to and checkout.fields
-    // Bind manual button to same action (in case popup blocking or user wants to click)
-    const manual = document.getElementById('manual-btn');
-    manual.style.display = 'inline-block';
-    manual.onclick = function(e) {
-      e.preventDefault();
-      postToGateway(checkout.submit_to, checkout.fields);
-    };
+        // --- 2. 結帳按鈕 ---
+        checkoutBtn.addEventListener('click', async () => {
+            let payment_method = paymentMethodSelect.value;
+            
+            // (v6.1) Q5: 新客訂金單，付款方式固定
+            if (CURRENT_ORDER && CURRENT_ORDER.status === 'awaiting_deposit_proof') {
+                payment_method = 'DEPOSIT_COD';
+            }
 
-    // Show masked debug (not exposing sensitive fields) for transparency
-    const safeFields = {};
-    for (const k in checkout.fields) {
-      safeFields[k] = (String(checkout.fields[k]).length > 12) ? String(checkout.fields[k]).slice(0,8) + '…' : checkout.fields[k];
-    }
-    showDebug({ submit_to: checkout.submit_to, fields_preview: safeFields });
+            if (!payment_method) {
+                status.textContent = '請選擇付款方式';
+                return;
+            }
 
-    // Auto-post now
-    postToGateway(checkout.submit_to, checkout.fields);
-  }
+            checkoutBtn.disabled = true;
+            status.textContent = '建立訂單中...';
 
-  document.addEventListener('DOMContentLoaded', tryAutoPost);
-</script>
+            try {
+                // (PATCH) 銀行匯款(COD) 和 新客(DEPOSIT_COD) 直接跳轉
+                if (payment_method === 'COD') {
+                    window.location.href = `shipping.html?cart_token=${CART_TOKEN}&method=COD`;
+                    return;
+                }
+                else if (payment_method === 'DEPOSIT_COD') {
+                    window.location.href = `shipping.html?cart_token=${CART_TOKEN}&method=DEPOSIT`;
+                    return;
+                }
 
-<!-- Optional: backend may inject checkout JSON here:
-<script id="checkout-data" type="application/json">{"submit_to":"https://www.payuni.com.tw/UPP/Pay","fields":{"MerID":"GOGO1586942584","EncryptInfo":"...","HashInfo":"..."}}</script>
-Or backend may set window.checkout = {...} before this script runs.
--->
+                // (PATCH) 其他 (PAYUNI_ATM, PAYUNI_CREDIT, LANGUAGE) 全部走 /checkout API
+                const data = await apiPost('/checkout', { cart_token: CART_TOKEN, payment_method: payment_method });
+                
+                if (data.submit_to && data.fields) { // PAYUNi
+                    submitForm(data.submit_to, data.fields);
+                } 
+                else if (data.submit_to) { // L IN G UAGE
+                    window.location.href = data.submit_to;
+                }
+            } catch (e) {
+                status.textContent = '結帳失敗: ' + e.message;
+                checkoutBtn.disabled = false;
+            }
+        });
+        
+        // (PATCH) 移除 goToShippingBtn 的監聽器
+
+        // --- 3. 輔助函數 ---
+        async function apiPost(endpoint, body) {
+            const res = await fetch(`${API_ENDPOINT}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            // (PATCH) 增強錯誤處理
+            let data;
+            try { data = await res.json(); } catch(e) { data = { error: `伺服器錯誤: ${res.status}` }}
+            if (data.error) throw new Error(data.error);
+            return data;
+        }
+
+        function submitForm(actionUrl, fields) {
+            const form = document.getElementById('paymentForm');
+            form.action = actionUrl;
+            form.innerHTML = '';
+            for (const key in fields) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = key;
+                input.value = fields[key];
+                form.appendChild(input);
+            }
+            form.submit();
+        }
+
+        loadCart();
+    </script>
 </body>
 </html>
