@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>填寫物流</title></head>
+<body>
+  <h1>填寫物流資訊</h1>
+  <form id="shippingForm">
+    收件人：<input id="s_name" required /><br/>
+    電話：<input id="s_phone" required /><br/>
+    運送方式：
+    <select id="shipping_method">
+      <option value="7-11">7-11 取貨</option>
+      <option value="MAIL">郵寄</option>
+    </select><br/>
+    郵寄地址：<input id="s_address" /><br/>
+    <div id="storeInfo" style="display:none;">
+      已選門市：<span id="store-name-display"></span> (<span id="store-id-display"></span>)
+    </div>
+    <form id="e-map-form" action="https://emap.ezship.com.tw/e-map" method="POST" target="_blank" style="display:none;">
+      <input name="callback" id="emap_callback_field" />
+      <input name="merchant" value="your-merchant-id" />
+    </form>
+    <button id="selectStoreBtn" type="button">選擇 7-11 門市 (電子地圖)</button>
+    <button id="submitBtn" type="submit">送出</button>
+  </form>
+  <p id="status"></p>
+
+<script>
+const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
+const urlParams = new URLSearchParams(window.location.search);
+const CART_TOKEN = urlParams.get('cart_token');
+const PAYMENT_METHOD = urlParams.get('method') || '';
+let SELECTED_STORE = {};
+
+const shippingForm = document.getElementById('shippingForm');
+const shippingMethodSelect = document.getElementById('shipping_method');
+const selectStoreBtn = document.getElementById('selectStoreBtn');
+const storeInfo = document.getElementById('storeInfo');
+const submitBtn = document.getElementById('submitBtn');
+const status = document.getElementById('status');
+
+function parseStoreFromUrl() {
+  const p = new URLSearchParams(window.location.search);
+  const sid = p.get('store_id') || p.get('sto_id');
+  const sname = p.get('store_name') || p.get('sto_name');
+  const saddr = p.get('store_address') || p.get('sto_addr');
+  if (sid) {
+    SELECTED_STORE = { store_id: sid, store_name: sname || '', store_address: saddr || '' };
+    document.getElementById('store-name-display').textContent = SELECTED_STORE.store_name;
+    document.getElementById('store-id-display').textContent = SELECTED_STORE.store_id;
+    storeInfo.style.display = 'block';
+  }
+}
+
+function handleShippingMethodChange() {
+  const method = shippingMethodSelect.value;
+  document.getElementById('s_address').required = (method === 'MAIL');
+  storeInfo.style.display = (method === '7-11' && SELECTED_STORE.store_id) ? 'block' : 'none';
+}
+
+selectStoreBtn.addEventListener('click', openStoreMap);
+
+function openStoreMap() {
+  localStorage.setItem(`murain_customer_name_${CART_TOKEN}`, document.getElementById('s_name').value);
+  localStorage.setItem(`murain_customer_phone_${CART_TOKEN}`, document.getElementById('s_phone').value);
+  const callbackUrl = `${location.origin}${location.pathname}?cart_token=${encodeURIComponent(CART_TOKEN)}&method=${encodeURIComponent(PAYMENT_METHOD)}&return_from_emap=1`;
+  document.getElementById('emap_callback_field').value = callbackUrl;
+  document.getElementById('e-map-form').submit();
+}
+
+function loadTempCustomerInfo() {
+  const name = localStorage.getItem(`murain_customer_name_${CART_TOKEN}`);
+  const phone = localStorage.getItem(`murain_customer_phone_${CART_TOKEN}`);
+  if (name) document.getElementById('s_name').value = name;
+  if (phone) document.getElementById('s_phone').value = phone;
+}
+
+parseStoreFromUrl();
+loadTempCustomerInfo();
+handleShippingMethodChange();
+shippingMethodSelect.addEventListener('change', handleShippingMethodChange);
+
+shippingForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  submitBtn.disabled = true;
+  status.textContent = '資料送出中...';
+
+  const s_name = document.getElementById('s_name').value;
+  const s_phone = document.getElementById('s_phone').value;
+  const selected_shipping = shippingMethodSelect.value;
+  let shipping_info = { name: s_name, phone: s_phone };
+
+  if (selected_shipping === '7-11') {
+    if (!SELECTED_STORE.store_id) {
+      status.textContent = '請先選擇 7-11 門市';
+      submitBtn.disabled = false; return;
+    }
+    shipping_info = { ...shipping_info, ...SELECTED_STORE };
+  } else if (selected_shipping === 'MAIL') {
+    shipping_info.address = document.getElementById('s_address').value;
+  }
+
+  try {
+    const payload = { cart_token: CART_TOKEN, shipping_method: selected_shipping, shipping_info, deposit_proof: null };
+    const res = await fetch(`${API_ENDPOINT}/shipping`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (data.redirect_to) window.location.href = data.redirect_to;
+    else status.textContent = '已完成，請稍候';
+  } catch (err) {
+    status.textContent = `送出失敗: ${err.message}`;
+    submitBtn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

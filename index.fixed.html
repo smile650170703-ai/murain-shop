@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MURAIN - 建單 / 加商品</title>
+</head>
+<body>
+  <h1>建立購物車</h1>
+  <div id="step1">
+    主播名稱：<input id="streamer_name" />
+    <button id="createCartBtn">建立（舊客）</button>
+    <button id="createDepositBtn">建立（新客訂金）</button>
+    <p id="status1"></p>
+  </div>
+
+  <div id="step2" class="hidden" style="display:none;">
+    <h2 id="cart-title"></h2>
+    條碼：<input id="barcode" />
+    數量：<input id="qty" value="1" type="number" min="1" />
+    覆寫價格（選填）：<input id="override_price" />
+    OP_KEY（授權，可留空）：<input id="op_key" />
+    <button id="addItemBtn">加入商品</button>
+    <p id="status2"></p>
+  </div>
+
+  <div id="step3" class="hidden" style="display:none;">
+    分享連結：<input id="cart-link" style="width:80%;" />
+  </div>
+
+<script>
+const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
+let CURRENT_CART_TOKEN = null;
+
+const step1 = document.getElementById('step1');
+const step2 = document.getElementById('step2');
+const step3 = document.getElementById('step3');
+const status1 = document.getElementById('status1');
+const status2 = document.getElementById('status2');
+
+document.getElementById('createCartBtn').addEventListener('click', () => createCart('OLD'));
+document.getElementById('createDepositBtn').addEventListener('click', () => createCart('DEPOSIT'));
+
+async function createCart(customerType) {
+  const btn1 = document.getElementById('createCartBtn');
+  const btn2 = document.getElementById('createDepositBtn');
+  btn1.disabled = true; btn2.disabled = true;
+  status1.textContent = '建立中...';
+  const streamerName = document.getElementById('streamer_name').value;
+  if (!streamerName) { status1.textContent = '請先輸入主播名稱'; status1.style.color='red'; btn1.disabled=false; btn2.disabled=false; return; }
+  try {
+    const res = await fetch(`${API_ENDPOINT}/cart/create`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ streamer_name: streamerName, customer_type: customerType })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    CURRENT_CART_TOKEN = data.cart_token;
+    document.getElementById('cart-title').textContent = `購物車 (${data.order_id})`;
+    step1.style.display = 'none'; step2.style.display = ''; step3.style.display = '';
+    document.getElementById('cart-link').value = (new URL(data.share_url, window.location.href)).href;
+    status1.textContent = '建立成功';
+  } catch (err) {
+    status1.textContent = `建立失敗: ${err.message}`;
+    status1.style.color = 'red';
+  } finally {
+    btn1.disabled = false; btn2.disabled = false;
+  }
+}
+
+document.getElementById('addItemBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('addItemBtn');
+  const barcode = document.getElementById('barcode').value;
+  const qty = parseInt(document.getElementById('qty').value, 10) || 1;
+  const op_key = document.getElementById('op_key').value;
+  let payload = { barcode, qty };
+  if (!barcode || qty < 1) { status2.textContent = '請輸入正確的 Barcode 和數量'; status2.style.color='red'; return; }
+  if (op_key) {
+    payload.op_key = op_key;
+    const price = document.getElementById('override_price').value;
+    if (price !== '') payload.override_price = parseInt(price, 10);
+  }
+  btn.disabled = true; status2.textContent = '加入中...';
+  try {
+    const res = await fetch(`${API_ENDPOINT}/cart/${CURRENT_CART_TOKEN}/add`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    status2.textContent = `加入成功！(總金額: ${data.total_amount})`; status2.style.color='green';
+    document.getElementById('barcode').value=''; document.getElementById('qty').value=1; document.getElementById('override_price').value='';
+  } catch (err) {
+    status2.textContent = `加入失敗: ${err.message}`; status2.style.color='red';
+  } finally { btn.disabled = false; }
+});
+</script>
+</body>
+</html>
