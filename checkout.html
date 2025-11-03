@@ -3,166 +3,169 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>MURAIN - Checkout (自動導向金流)</title>
+  <title>結帳 — MURAIN</title>
   <style>
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;margin:24px;color:#222}
-    .card{max-width:820px;margin:0 auto;padding:18px;border:1px solid #eee;border-radius:8px;background:#fff}
-    input,select,button,textarea{font-size:14px;padding:8px;margin:6px 0;width:100%;box-sizing:border-box}
-    label{font-weight:600;margin-top:8px;display:block}
-    pre{background:#f7f7f7;padding:10px;border-radius:6px;overflow:auto}
-    .muted{color:#666;font-size:13px}
-    .ok{color:green}
-    .err{color:#b22222}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial; padding:24px; color:#222}
+    .panel{max-width:900px;margin:36px auto;padding:20px;border:1px solid #eee;border-radius:8px;background:#fff}
+    .muted{color:#666;font-size:0.95rem}
+    .notice{padding:12px;border-radius:6px;background:#f6f8fa;border:1px solid #e3e8ee;margin-bottom:16px}
+    .btn{display:inline-block;padding:10px 16px;border-radius:6px;background:#0b62ff;color:#fff;text-decoration:none}
   </style>
 </head>
 <body>
-  <div class="card">
-    <h2>結帳（自動導向金流）</h2>
-    <p class="muted">說明：此頁會呼叫後端 <code>/checkout</code> API（POST {cart_token, payment_method}），
-       取得金流回傳的 <code>submit_to</code> 與 <code>fields</code>，然後自動建立隱藏表單並送出給金流（PayUni / ECPay 等）。</p>
-
-    <label>Cart Token（可從建立 cart 的回傳取得）</label>
-    <input id="cartToken" placeholder="例如：4ce150d8..." />
-
-    <label>付款方式 (payment_method)</label>
-    <select id="paymentMethod">
-      <option value="PAYUNI_CREDIT">PAYUNI_CREDIT（信用卡）</option>
-      <option value="PAYUNI_CVS">PAYUNI_CVS（超商代碼）</option>
-      <option value="ECPAY_CVS">ECPAY_CVS（綠界超取/超商）</option>
-      <option value="COD">COD（貨到付款）</option>
-    </select>
-
-    <button id="goBtn">開始結帳並自動導向金流</button>
-    <div id="status" class="muted" style="margin-top:10px"></div>
-
-    <h3>回傳與備援</h3>
-    <p class="muted">若自動導向失敗，下面會顯示後端回傳及一個手動提交表單供你按下。</p>
-    <pre id="raw" style="height:160px">尚未呼叫 /checkout</pre>
-    <div id="fallback" style="margin-top:10px"></div>
+  <div class="panel">
+    <h1>前往付款…</h1>
+    <div id="status" class="muted">系統正在準備付款表單，準備完成將會自動跳轉。若沒有自動跳轉，請按下「手動前往付款」按鈕。</div>
+    <div id="debug" style="margin-top:12px;"></div>
+    <div style="margin-top:18px;">
+      <a id="manual-btn" class="btn" href="#" style="display:none">手動前往付款</a>
+    </div>
+    <div style="margin-top:14px" class="muted">
+      注意：此檔案會嘗試下列順序尋找 checkout 物件：<br>
+      1) window.checkout（頁面上已有的全域物件）<br>
+      2) &lt;script id="checkout-data"&gt;裡的 JSON（如果後端直接把 checkout JSON 放在頁面）<br>
+      3) 嘗試用 URL query `cart_token` POST 到 <code>/checkout</code> 取得（如果頁面透過 query 傳 cart_token）<br>
+      若都找不到，畫面會顯示錯誤與可複製的 debug JSON，方便你手動回傳給後端測試人員。
+    </div>
   </div>
 
-  <script>
-    // Helper: 建立並提交隱藏表單到金流端
-    function postToGateway(submitTo, fields) {
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = submitTo;
-      form.style.display = 'none';
-      for (const k of Object.keys(fields || {})) {
-        const value = fields[k] === null || fields[k] === undefined ? '' : String(fields[k]);
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = k;
-        input.value = value;
-        form.appendChild(input);
-      }
-      document.body.appendChild(form);
-      // For debugging: expose form on window if needed
-      window._lastGatewayForm = form;
-      try {
-        form.submit();
-      } catch (err) {
-        console.error('form.submit() failed', err);
-        // leave fallback UI for manual submission
+<script>
+  // Create and submit a hidden form to the gateway (POST).
+  function postToGateway(submitTo, fields) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = submitTo;
+    form.style.display = 'none';
+    for (const k in fields) {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = k;
+      input.value = fields[k] == null ? '' : String(fields[k]);
+      form.appendChild(input);
+    }
+    document.body.appendChild(form);
+    // small delay to let DOM update for debug visibility
+    setTimeout(()=> form.submit(), 250);
+  }
+
+  async function fetchCheckoutFromApi(cartToken) {
+    try {
+      const resp = await fetch('/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cart_token: cartToken, payment_method: localStorage.__preferred_payment_method || null })
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const json = await resp.json();
+      return json;
+    } catch (e) {
+      return { error: 'fetch_failed', reason: String(e) };
+    }
+  }
+
+  function readQueryParam(name) {
+    try {
+      const u = new URL(location.href);
+      return u.searchParams.get(name);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function showDebug(msg) {
+    const dbg = document.getElementById('debug');
+    if (typeof msg === 'object') msg = JSON.stringify(msg, null, 2);
+    dbg.innerText = msg;
+  }
+
+  async function tryAutoPost() {
+    let checkout = null;
+    // 1) check window.checkout
+    if (window.checkout && typeof window.checkout === 'object') {
+      checkout = window.checkout;
+      document.getElementById('status').innerText = '發現 window.checkout，準備自動跳轉…';
+    }
+
+    // 2) check script#checkout-data
+    if (!checkout) {
+      const el = document.getElementById('checkout-data');
+      if (el) {
+        try {
+          checkout = JSON.parse(el.textContent || el.innerText);
+          document.getElementById('status').innerText = '從 <script id="checkout-data"> 取得 checkout 資料，準備自動跳轉…';
+        } catch(e){}
       }
     }
 
-    // Call backend /checkout to get submit_to and fields, then post
-    async function doCheckout(cartToken, paymentMethod) {
-      const statusEl = document.getElementById('status');
-      const rawEl = document.getElementById('raw');
-      const fallbackEl = document.getElementById('fallback');
-      statusEl.textContent = '呼叫 /checkout ...';
-      fallbackEl.innerHTML = '';
-      try {
-        const res = await fetch('/checkout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cart_token: cartToken, payment_method: paymentMethod })
-        });
-        const data = await res.json();
-        rawEl.textContent = JSON.stringify(data, null, 2);
-        if (!res.ok) {
-          statusEl.innerHTML = '<span class="err">/checkout 回傳錯誤 (HTTP '+res.status+')</span>';
-          return;
-        }
-        if (data.error) {
-          statusEl.innerHTML = '<span class="err">錯誤：'+data.error+'</span>';
-          return;
-        }
-        // Expected shape: { submit_to: 'https://...', fields: { MerID: '...', EncryptInfo: '...', ... }, order_id, total }
-        if (data.submit_to && data.fields) {
-          statusEl.innerHTML = '<span class="ok">已取得金流參數，準備導向</span>';
-          // small delay so user sees message (and to allow devtools to show network)
-          setTimeout(() => postToGateway(data.submit_to, data.fields), 300);
-          // Also create fallback manual form
-          createFallbackForm(fallbackEl, data.submit_to, data.fields);
+    // 3) try fetch /checkout with cart_token from URL
+    if (!checkout) {
+      const cartToken = readQueryParam('cart_token') || readQueryParam('token') || null;
+      if (cartToken) {
+        document.getElementById('status').innerText = '使用 cart_token 向 /checkout 要付款資料…';
+        const r = await fetchCheckoutFromApi(cartToken);
+        if (r && (r.fields || r.submit_to)) {
+          checkout = r;
+          document.getElementById('status').innerText = '從 /checkout 取得付款資料，準備自動跳轉…';
         } else {
-          // Some backends may return fields under data.fields or different structure; show for debugging
-          statusEl.innerHTML = '<span class="err">回傳格式非預期，請查看下方 raw 內容</span>';
+          showDebug(r);
         }
-      } catch (err) {
-        console.error(err);
-        statusEl.innerHTML = '<span class="err">呼叫 /checkout 發生例外，請查看 console</span>';
-        rawEl.textContent = String(err);
       }
     }
 
-    // Create a visible manual form as fallback so user can click Submit if auto fails
-    function createFallbackForm(container, submitTo, fields) {
-      container.innerHTML = '';
-      const note = document.createElement('div');
-      note.className = 'muted';
-      note.textContent = '備援：若自動導向失敗，請按下下面按鈕手動送出表單到金流。';
-      container.appendChild(note);
-      const f = document.createElement('form');
-      f.method = 'POST';
-      f.action = submitTo;
-      for (const k of Object.keys(fields || {})) {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = k;
-        input.value = fields[k] === null || fields[k] === undefined ? '' : String(fields[k]);
-        f.appendChild(input);
-      }
-      const btn = document.createElement('button');
-      btn.type = 'submit';
-      btn.textContent = '手動送出到金流';
-      btn.style.marginTop = '8px';
-      f.appendChild(btn);
-      container.appendChild(f);
-    }
-
-    // Helpers to read token from query params and auto-run
-    function getParam(name) {
-      return new URLSearchParams(window.location.search).get(name);
-    }
-
-    document.getElementById('goBtn').addEventListener('click', () => {
-      const cartToken = document.getElementById('cartToken').value.trim();
-      const paymentMethod = document.getElementById('paymentMethod').value;
-      if (!cartToken) {
-        alert('請填入 cart token');
-        return;
-      }
-      doCheckout(cartToken, paymentMethod);
-    });
-
-    // Auto-run if cart_token present in URL (e.g., ?cart_token=...&payment_method=PAYUNI_CREDIT)
-    window.addEventListener('DOMContentLoaded', () => {
-      const qToken = getParam('cart_token') || getParam('token') || getParam('t');
-      const qPm = getParam('payment_method') || getParam('pm');
-      if (qToken) {
-        document.getElementById('cartToken').value = qToken;
-        if (qPm) {
-          document.getElementById('paymentMethod').value = qPm;
+    if (!checkout || !checkout.submit_to || !checkout.fields) {
+      document.getElementById('status').innerText = '找不到有效的付款資料 (checkout.submit_to / checkout.fields)。';
+      showDebug({
+        window_checkout: !!window.checkout,
+        has_script_checkout_data: !!document.getElementById('checkout-data'),
+        cart_token_in_url: readQueryParam('cart_token') || readQueryParam('token') || null,
+        hint: '確認後端是否把 checkout JSON 放到頁面 (window.checkout 或 <script id="checkout-data">) 或讓 /checkout 接受 cart_token 的 POST 並回傳付款表單。'
+      });
+      // show manual button if fallback is available (submit_to present in debug JSON)
+      const manual = document.getElementById('manual-btn');
+      manual.style.display = 'inline-block';
+      manual.onclick = function(e) {
+        e.preventDefault();
+        // if there is a JSON in debug place that contains submit_to and fields, allow manual post
+        try {
+          let candidate = window.checkout || (document.getElementById('checkout-data') && JSON.parse(document.getElementById('checkout-data').textContent));
+          if (candidate && candidate.submit_to && candidate.fields) {
+            postToGateway(candidate.submit_to, candidate.fields);
+          } else {
+            alert('沒有找到可用的付款資料，請檢查 debug 區塊。');
+          }
+        } catch(err) {
+          alert('手動提交失敗：' + err);
         }
-        // small delay to render page then auto-run
-        setTimeout(() => {
-          document.getElementById('goBtn').click();
-        }, 250);
-      }
-    });
-  </script>
+      };
+      return;
+    }
+
+    // okay we have checkout.submit_to and checkout.fields
+    // Bind manual button to same action (in case popup blocking or user wants to click)
+    const manual = document.getElementById('manual-btn');
+    manual.style.display = 'inline-block';
+    manual.onclick = function(e) {
+      e.preventDefault();
+      postToGateway(checkout.submit_to, checkout.fields);
+    };
+
+    // Show masked debug (not exposing sensitive fields) for transparency
+    const safeFields = {};
+    for (const k in checkout.fields) {
+      safeFields[k] = (String(checkout.fields[k]).length > 12) ? String(checkout.fields[k]).slice(0,8) + '…' : checkout.fields[k];
+    }
+    showDebug({ submit_to: checkout.submit_to, fields_preview: safeFields });
+
+    // Auto-post now
+    postToGateway(checkout.submit_to, checkout.fields);
+  }
+
+  document.addEventListener('DOMContentLoaded', tryAutoPost);
+</script>
+
+<!-- Optional: backend may inject checkout JSON here:
+<script id="checkout-data" type="application/json">{"submit_to":"https://www.payuni.com.tw/UPP/Pay","fields":{"MerID":"GOGO1586942584","EncryptInfo":"...","HashInfo":"..."}}</script>
+Or backend may set window.checkout = {...} before this script runs.
+-->
 </body>
 </html>
