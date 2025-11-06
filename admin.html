@@ -80,24 +80,39 @@
 
       <div id="tab-dashboard" class="tab-content active">
         <h2>儀表板 (近 7 天訂單)</h2>
+        <!-- BEGIN: bulk controls 插入點：貼在 <h2> 與 refresh button 之間 -->
+<div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+  <label style="display:flex; align-items:center; gap:6px;">
+    <input id="dashboard-select-all" type="checkbox" />
+    <span class="muted">全選</span>
+  </label>
+  <button id="bulk-cancel-btn" class="btn-cancel small">批量取消</button>
+  <button id="bulk-delete-btn" class="btn-cancel small" style="background:#8b0000;">批量刪除</button>
+  <div class="muted">（先勾選左側項目，按鈕會提示輸入管理密碼）</div>
+</div>
+<!-- END: bulk controls -->
+
         <button id="refresh-dashboard">重新整理</button>
         <div style="overflow-x: auto; margin-top: 12px;">
           <table id="dashboard-table">
             <thead>
-              <tr>
-                <th>日期</th>
-                <th>主播</th>
-                <th>訂單號</th>
-                <th>狀態</th>
-                <th>後五碼</th>
-                <th>金額</th>
-                <th>付款方式</th>
-                <th>運費(Q5)</th>
-                <th>單號(Q7)</th>
-                <th>備註</th>
-                <th>動作</th>
-              </tr>
-            </thead>
+              <thead>
+  <tr>
+    <th style="width:36px;"></th> <!-- checkbox col -->
+    <th>日期</th>
+    <th>主播</th>
+    <th>訂單號</th>
+    <th>狀態</th>
+    <th>後五碼</th>
+    <th>金額</th>
+    <th>付款方式</th>
+    <th>運費(Q5)</th>
+    <th>單號(Q7)</th>
+    <th>備註</th>
+    <th>動作</th>
+  </tr>
+</thead>
+
             <tbody></tbody>
           </table>
         </div>
@@ -203,15 +218,22 @@
   }
 
   /* --- helpers --- */
-  function translateStatus(status) {
+  // 在 <script> 標籤內
+function translateStatus(status) {
+    if (!status) return '';
     const map = {
-      'draft': '草稿 (未建立)', 'pending': '購物車 (未結帳)',
-      'awaiting_payment': '等待付款 (金流)','awaiting_shipping_info': '等待填寫物流 (Q5)',
-      'awaiting_deposit_proof': '等待訂金確認 (新客)','awaiting_cod_shipment': '待出貨 (貨付)',
-      'paid': '已付款 (待出貨)','shipped': '已出貨 (Q3)','expired': '已過期 (棄標)','cancelled': '已取消 (Q3)'
+        'awaiting_payment': '待付款',
+        'awaiting_deposit_proof': '待確認訂金',
+        'paid': '已付款',
+        'shipped': '已出貨',
+        'cancelled': '已取消',
+        'deleted': '已刪除', // 確保 'deleted' 被翻譯
+        'draft': '草稿(不建立)' // 確保 'draft' 被翻譯
+        // ... 添加其他您可能有的狀態
     };
-    return map[status] || status;
-  }
+    // 如果沒有對應的翻譯，就顯示原始狀態
+    return map[status.toLowerCase()] || status; 
+}
   function formatDateTime(isoString) { if (!isoString) return ''; try { return new Date(isoString).toLocaleString('zh-TW'); } catch(e) { return isoString; } }
 
   /* ------------------- LOGIN --- */
@@ -257,41 +279,49 @@
   document.getElementById('refresh-dashboard').addEventListener('click', loadDashboard);
   async function loadDashboard() {
   const tbody = document.getElementById('dashboard-table').getElementsByTagName('tbody')[0];
-  tbody.innerHTML = '<tr><td colspan="11">載入中...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="11">載入中...</td></td></tr>';
   try {
     const data = await apiCall('/admin/dashboard', {});
     tbody.innerHTML = '';
     
-    // --- 【修正開始：新增過濾邏輯】 ---
-    const visibleOrders = (data.orders || []).filter(o => (o.status || '').toLowerCase() !== 'deleted');
+    // --- 【修正：過濾 deleted 和 cancelled 的訂單】 ---
+    const ignoredStatuses = ['deleted', 'cancelled'];
+    const visibleOrders = (data.orders || []).filter(o => 
+        !ignoredStatuses.includes((o.status || '').toLowerCase())
+    );
     // --- 【修正結束】 ---
 
-    if (visibleOrders.length === 0) { // 使用 visibleOrders
-      tbody.innerHTML = '<tr><td colspan="11">近 7 天無訂單</td></tr>';
+    if (visibleOrders.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="11">近 7 天無活動中或待處理訂單</td></tr>';
     } else {
       // 迭代 visibleOrders 來渲染表格
       visibleOrders.forEach(o => {
         const row = tbody.insertRow();
+        // 假設您的 formatDateTime 和 translateStatus 函數已經存在
         row.innerHTML = `
-          <td>${formatDateTime(o.created_at)}</td>
-          <td>${o.streamer_name || ''}</td>
-          <td>${o.order_id}</td>
-          <td>${translateStatus(o.status)}</td>
-          <td>${o.deposit_proof || ''}</td>
-          <td>${o.total_amount}</td>
-          <td>${o.payment_method || ''}</td>
-          <td>${o.shipping_cost || 0}</td>
-          <td>${o.tracking_number || ''}</td>
-          <td>${o.gift_notes || ''}</td>
-          <td>
-            ${(o.status === 'awaiting_deposit_proof') ? `<button class="btn-confirm small" data-orderid="${o.order_id}">✅ 確認訂金</button>` : ''}
-            ${(o.status !== 'shipped' && o.status !== 'cancelled' && o.status !== 'deleted') ? `<button class="btn-cancel small" data-orderid="${o.order_id}">取消訂單</button>` : ''}
-            <button class="btn-delete-order small" data-orderid="${o.order_id}" style="background:#dc3545; margin-top:6px;">刪除訂單</button>
-          </td>
+  <td><input type="checkbox" class="order-checkbox" value="${o.order_id}"></td>
+  <td>${formatDateTime(o.created_at)}</td>
+  <td>${o.streamer_name || ''}</td>
+  <td>${o.order_id}</td>
+  <td>${translateStatus(o.status)}</td>
+  <td>${o.deposit_proof || ''}</td>
+  <td>${o.total_amount}</td>
+  <td>${o.payment_method || ''}</td>
+  <td>${o.shipping_cost || 0}</td>
+  <td>${o.tracking_number || ''}</td>
+  <td>${o.gift_notes || ''}</td>
+  <td>
+    ${(o.status === 'awaiting_deposit_proof') ? `<button class="btn-confirm small" data-orderid="${o.order_id}">✅ 確認訂金</button>` : ''}
+    <button class="btn-cancel small" data-orderid="${o.order_id}">取消訂單</button>
+    <button class="btn-delete-order small" data-orderid="${o.order_id}" style="background:#dc3545; margin-top:6px;">刪除訂單</button>
+  </td>
+`;
+
         `;
       });
     }
     addAdminButtonListeners();
+    resetSelectAll(); 
   } catch (e) { 
     tbody.innerHTML = `<tr><td colspan="11">載入訂單失敗: ${e.message}</td></tr>`;
     alert('載入訂單失敗: ' + e.message); 
