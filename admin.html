@@ -256,41 +256,47 @@
   /* ------------------- DASHBOARD --- */
   document.getElementById('refresh-dashboard').addEventListener('click', loadDashboard);
   async function loadDashboard() {
-    const tbody = document.getElementById('dashboard-table').getElementsByTagName('tbody')[0];
-    tbody.innerHTML = '<tr><td colspan="11">載入中...</td></tr>';
-    try {
-      const data = await apiCall('/admin/dashboard', {});
-      tbody.innerHTML = '';
-      if (!data.orders || data.orders.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="11">近 7 天無訂單</td></tr>';
-      } else {
-        data.orders.forEach(o => {
-          const row = tbody.insertRow();
-          row.innerHTML = `
-            <td>${formatDateTime(o.created_at)}</td>
-            <td>${o.streamer_name || ''}</td>
-            <td>${o.order_id}</td>
-            <td>${translateStatus(o.status)}</td>
-            <td>${o.deposit_proof || ''}</td>
-            <td>${o.total_amount}</td>
-            <td>${o.payment_method || ''}</td>
-            <td>${o.shipping_cost || 0}</td>
-            <td>${o.tracking_number || ''}</td>
-            <td>${o.gift_notes || ''}</td>
-            <td>
-              ${(o.status === 'awaiting_deposit_proof') ? `<button class="btn-confirm small" data-orderid="${o.order_id}">✅ 確認訂金</button>` : ''}
-              ${(o.status !== 'shipped' && o.status !== 'cancelled') ? `<button class="btn-cancel small" data-orderid="${o.order_id}">取消訂單</button>` : ''}
-              <button class="btn-delete-order small" data-orderid="${o.order_id}" style="background:#dc3545; margin-top:6px;">刪除訂單</button>
-            </td>
-          `;
-        });
-      }
-      addAdminButtonListeners(); // 重新綁定事件
-    } catch (e) { 
-      tbody.innerHTML = `<tr><td colspan="11">載入訂單失敗: ${e.message}</td></tr>`;
-      alert('載入訂單失敗: ' + e.message); 
+  const tbody = document.getElementById('dashboard-table').getElementsByTagName('tbody')[0];
+  tbody.innerHTML = '<tr><td colspan="11">載入中...</td></tr>';
+  try {
+    const data = await apiCall('/admin/dashboard', {});
+    tbody.innerHTML = '';
+    
+    // --- 【修正開始：新增過濾邏輯】 ---
+    const visibleOrders = (data.orders || []).filter(o => (o.status || '').toLowerCase() !== 'deleted');
+    // --- 【修正結束】 ---
+
+    if (visibleOrders.length === 0) { // 使用 visibleOrders
+      tbody.innerHTML = '<tr><td colspan="11">近 7 天無訂單</td></tr>';
+    } else {
+      // 迭代 visibleOrders 來渲染表格
+      visibleOrders.forEach(o => {
+        const row = tbody.insertRow();
+        row.innerHTML = `
+          <td>${formatDateTime(o.created_at)}</td>
+          <td>${o.streamer_name || ''}</td>
+          <td>${o.order_id}</td>
+          <td>${translateStatus(o.status)}</td>
+          <td>${o.deposit_proof || ''}</td>
+          <td>${o.total_amount}</td>
+          <td>${o.payment_method || ''}</td>
+          <td>${o.shipping_cost || 0}</td>
+          <td>${o.tracking_number || ''}</td>
+          <td>${o.gift_notes || ''}</td>
+          <td>
+            ${(o.status === 'awaiting_deposit_proof') ? `<button class="btn-confirm small" data-orderid="${o.order_id}">✅ 確認訂金</button>` : ''}
+            ${(o.status !== 'shipped' && o.status !== 'cancelled' && o.status !== 'deleted') ? `<button class="btn-cancel small" data-orderid="${o.order_id}">取消訂單</button>` : ''}
+            <button class="btn-delete-order small" data-orderid="${o.order_id}" style="background:#dc3545; margin-top:6px;">刪除訂單</button>
+          </td>
+        `;
+      });
     }
+    addAdminButtonListeners();
+  } catch (e) { 
+    tbody.innerHTML = `<tr><td colspan="11">載入訂單失敗: ${e.message}</td></tr>`;
+    alert('載入訂單失敗: ' + e.message); 
   }
+}
 
   /* ------------------- PRODUCTS --- */
   document.getElementById('refresh-products').addEventListener('click', () => loadProducts());
