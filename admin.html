@@ -37,6 +37,7 @@
     .label .gift-notes { border-top: 1px solid #ccc; padding-top: 10px; margin-top: 10px; background: #fdfdea; }
     @media print { body { margin: 0; } .container, .login-box { display: none; } #shipping-labels { display: block !important; } .label { border: none; margin: 0; } .btn-ship, .btn-cancel, .btn-confirm, .btn-edit { display: none; } }
 
+    /* small helpers */
     .flex { display:flex; gap:8px; align-items:center; }
     .muted { color:#666; font-size:0.9rem; }
     .small { font-size:0.9rem; padding:6px 10px; }
@@ -62,9 +63,6 @@
       <h3 id="confirmTitle">請輸入管理密碼確認</h3>
       <input id="confirmInput" type="password" placeholder="管理密碼" style="width:100%; padding:8px; margin:8px 0;">
       <div style="font-size:0.9rem; color:#666; margin-bottom:8px;" id="confirmHint"></div>
-      <div style="text-align:left; font-size:0.9rem; color:#444; margin-bottom:8px;">
-        <label><input id="confirmAlsoReload" type="checkbox"> 操作完成後重新載入頁面（預設僅移除選取列）</label>
-      </div>
       <div style="text-align:right;">
         <button id="confirmCancel" type="button" class="small btn-secondary">取消</button>
         <button id="confirmOk" type="button" class="small">確認</button>
@@ -82,43 +80,42 @@
 
       <div id="tab-dashboard" class="tab-content active">
         <h2>儀表板 (近 7 天訂單)</h2>
-
-        <!-- bulk controls -->
-        <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
-          <label style="display:flex; align-items:center; gap:6px;">
-            <input id="dashboard-select-all" type="checkbox" />
-            <span class="muted">全選</span>
-          </label>
-          <button id="bulk-cancel-btn" class="btn-cancel small">批量取消</button>
-          <button id="bulk-delete-btn" class="btn-cancel small" style="background:#8b0000;">批量刪除</button>
-          <div class="muted">（先勾選左側項目，按鈕會提示輸入管理密碼）</div>
-        </div>
+        <!-- BEGIN: bulk controls 插入點：貼在 <h2> 與 refresh button 之間 -->
+<div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+  <label style="display:flex; align-items:center; gap:6px;">
+    <input id="dashboard-select-all" type="checkbox" />
+    <span class="muted">全選</span>
+  </label>
+  <button id="bulk-cancel-btn" class="btn-cancel small">批量取消</button>
+  <button id="bulk-delete-btn" class="btn-cancel small" style="background:#8b0000;">批量刪除</button>
+  <div class="muted">（先勾選左側項目，按鈕會提示輸入管理密碼）</div>
+</div>
+<!-- END: bulk controls -->
 
         <button id="refresh-dashboard">重新整理</button>
         <div style="overflow-x: auto; margin-top: 12px;">
           <table id="dashboard-table">
             <thead>
-              <tr>
-                <th style="width:36px;"></th> <!-- checkbox col -->
-                <th>日期</th>
-                <th>主播</th>
-                <th>訂單號</th>
-                <th>狀態</th>
-                <th>後五碼</th>
-                <th>金額</th>
-                <th>付款方式</th>
-                <th>運費(Q5)</th>
-                <th>單號(Q7)</th>
-                <th>備註</th>
-                <th>動作</th>
-              </tr>
-            </thead>
+  <tr>
+    <th style="width:36px;"></th> <!-- checkbox col -->
+    <th>日期</th>
+    <th>主播</th>
+    <th>訂單號</th>
+    <th>狀態</th>
+    <th>後五碼</th>
+    <th>金額</th>
+    <th>付款方式</th>
+    <th>運費(Q5)</th>
+    <th>單號(Q7)</th>
+    <th>備註</th>
+    <th>動作</th>
+  </tr>
+</thead>
             <tbody></tbody>
           </table>
         </div>
       </div>
 
-      <!-- 其餘頁面略（保持不變） -->
       <div id="tab-products" class="tab-content">
           <h2>庫存管理</h2>
           <div class="flex" style="margin-bottom:8px;">
@@ -197,21 +194,26 @@
   let CACHED_ORDERS = [];
   let CACHED_REPORT_ORDERS = [];
 
+  /* --- apiCall (adds op_key automatically) --- */
   async function apiCall(endpoint, payload = {}) {
     if (!payload) payload = {};
-    if (OP_KEY && !payload.op_key) payload.op_key = OP_KEY;
+    // attach op_key if available and not already present
+    if (OP_KEY && !payload.op_key && !payload.password) payload.op_key = OP_KEY;
+
     const res = await fetch(`${API_ENDPOINT}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+
     const data = await res.json().catch(() => ({ error: 'Server returned non-JSON response.' }));
-    if (!res.ok || data.error || (data.ok === false)) {
+    if (!res.ok || data.error || !data.ok) {
       throw new Error(data.error || `Server error ${res.status} or data not ok.`);
     }
     return data;
   }
 
+  /* --- helpers --- */
   function translateStatus(status) {
     if (!status) return '';
     const map = {
@@ -227,7 +229,7 @@
   }
   function formatDateTime(isoString) { if (!isoString) return ''; try { return new Date(isoString).toLocaleString('zh-TW'); } catch(e) { return isoString; } }
 
-  // --- login
+  /* ------------------- LOGIN --- */
   document.getElementById('loginBtn').addEventListener('click', async () => {
     const key = document.getElementById('op_key').value.trim();
     const status = document.getElementById('login-status');
@@ -235,11 +237,13 @@
     OP_KEY = key;
     status.textContent = '登入中...';
     try {
-      await apiCall('/admin/dashboard', { op_key: key });
+      // 驗證 dashboard（需要 op_key）
+      await apiCall('/admin/dashboard', {});
       status.textContent = '登入成功';
       document.getElementById('login-box').classList.add('hidden');
       document.getElementById('admin-panel').classList.remove('hidden');
       loadDashboard();
+
       const today = new Date().toISOString().split('T')[0];
       document.getElementById('report-start').value = today;
       document.getElementById('report-end').value = today;
@@ -249,7 +253,7 @@
     }
   });
 
-  // tabs
+  /* ------------------- TABS --- */
   document.querySelectorAll('.tab-link').forEach(button => {
     button.addEventListener('click', () => {
       document.querySelectorAll('.tab-link').forEach(btn => btn.classList.remove('active'));
@@ -264,61 +268,71 @@
     });
   });
 
+  /* ------------------- DASHBOARD --- */
   document.getElementById('refresh-dashboard').addEventListener('click', loadDashboard);
-
   async function loadDashboard() {
     const tbody = document.getElementById('dashboard-table').getElementsByTagName('tbody')[0];
     tbody.innerHTML = '<tr><td colspan="12">載入中...</td></td></tr>';
     try {
       const data = await apiCall('/admin/dashboard', {});
-      CACHED_ORDERS = data.orders || [];
-
-      // filter out cancelled/deleted
-      const ignoredStatuses = ['deleted', 'cancelled'];
-      const visibleOrders = CACHED_ORDERS.filter(o => !ignoredStatuses.includes((o.status || '').toLowerCase()));
-
       tbody.innerHTML = '';
+
+      // 過濾 deleted 和 cancelled 的訂單（前端二次保險）
+      const ignoredStatuses = ['deleted', 'cancelled'];
+      const visibleOrders = (data.orders || []).filter(o =>
+          !ignoredStatuses.includes((o.status || '').toLowerCase())
+      );
+
       if (visibleOrders.length === 0) {
         tbody.innerHTML = '<tr><td colspan="12">近 7 天無活動中或待處理訂單</td></tr>';
       } else {
         visibleOrders.forEach(o => {
           const row = tbody.insertRow();
-          row.dataset.orderId = o.order_id;
           row.innerHTML = `
-            <td><input type="checkbox" class="order-checkbox" value="${o.order_id}"></td>
-            <td>${formatDateTime(o.created_at)}</td>
-            <td>${o.streamer_name || ''}</td>
-            <td>${o.order_id}</td>
-            <td>${translateStatus(o.status)}</td>
-            <td>${o.deposit_proof || ''}</td>
-            <td>${o.total_amount}</td>
-            <td>${o.payment_method || ''}</td>
-            <td>${o.shipping_cost || 0}</td>
-            <td>${o.tracking_number || ''}</td>
-            <td>${o.gift_notes || ''}</td>
-            <td>
-              ${(o.status === 'awaiting_deposit_proof') ? `<button class="btn-confirm small" data-orderid="${o.order_id}">✅ 確認訂金</button>` : ''}
-              <button class="btn-cancel small" data-orderid="${o.order_id}">取消訂單</button>
-              <button class="btn-delete-order small" data-orderid="${o.order_id}" style="background:#dc3545; margin-top:6px;">刪除訂單</button>
-            </td>
-          `;
+  <td><input type="checkbox" class="order-checkbox" value="${o.order_id}"></td>
+  <td>${formatDateTime(o.created_at)}</td>
+  <td>${o.streamer_name || ''}</td>
+  <td>${o.order_id}</td>
+  <td>${translateStatus(o.status)}</td>
+  <td>${o.deposit_proof || ''}</td>
+  <td>${o.total_amount}</td>
+  <td>${o.payment_method || ''}</td>
+  <td>${o.shipping_cost || 0}</td>
+  <td>${o.tracking_number || ''}</td>
+  <td>${o.gift_notes || ''}</td>
+  <td>
+    ${(o.status === 'awaiting_deposit_proof') ? `<button class="btn-confirm small" data-orderid="${o.order_id}">✅ 確認訂金</button>` : ''}
+    <button class="btn-cancel small" data-orderid="${o.order_id}">取消訂單</button>
+    <button class="btn-delete-order small" data-orderid="${o.order_id}" style="background:#dc3545; margin-top:6px;">刪除訂單</button>
+  </td>
+`;
         });
       }
       addAdminButtonListeners();
       resetSelectAll();
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="12">載入訂單失敗: ${e.message}</td></tr>`;
+      console.error('載入訂單失敗', e);
       alert('載入訂單失敗: ' + e.message);
     }
   }
 
-  // products
+  function resetSelectAll() {
+    const sel = document.getElementById('dashboard-select-all');
+    sel.checked = false;
+    sel.onchange = () => {
+      const checked = sel.checked;
+      document.querySelectorAll('.order-checkbox').forEach(cb => cb.checked = checked);
+    };
+  }
+
+  /* ------------------- PRODUCTS --- */
   document.getElementById('refresh-products').addEventListener('click', () => loadProducts());
   async function loadProducts(barcode = null) {
     const tbody = document.getElementById('products-table').getElementsByTagName('tbody')[0];
     tbody.innerHTML = '<tr><td colspan="7">載入中...</td></tr>';
     try {
-      let payload = { action: 'search', op_key: OP_KEY };
+      let payload = { action: 'search' };
       if (barcode) payload.barcode = barcode;
       const data = await apiCall('/admin/products', payload);
       tbody.innerHTML = '';
@@ -331,13 +345,19 @@
                            <td><button class="btn-delete-inv small" data-sku="${p.sku}" style="background:#dc3545;">刪除商品</button></td>`;
         });
       }
-      addAdminButtonListeners();
+      addAdminButtonListeners(); // rebind
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="7">載入庫存失敗: ${e.message}</td></tr>`;
+      console.error('載入庫存失敗', e);
       alert('載入庫存失敗: ' + e.message);
     }
   }
-  document.getElementById('product-search').addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); loadProducts(e.target.value.trim()); }});
+  document.getElementById('product-search').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      loadProducts(e.target.value.trim());
+    }
+  });
 
   document.getElementById('new-product-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -354,7 +374,7 @@
           cost: parseInt(document.getElementById('p_cost').value, 10) || 0,
           stock_on_hand: parseInt(document.getElementById('p_stock_on_hand').value, 10) || 0
         },
-        op_key: OP_KEY
+        // apiCall會自動加 op_key
       };
       if (!payload.product.sku || !payload.product.name) throw new Error('SKU 和名稱為必填');
       await apiCall('/admin/products', payload);
@@ -362,10 +382,11 @@
       e.target.reset(); loadProducts();
     } catch (e) {
       status.textContent = '新增失敗: ' + e.message; status.style.color = 'red';
+      console.error('新增商品失敗', e);
     }
   });
 
-  // shipping (保留你原來邏輯)
+  /* ------------------- SHIPPING --- */
   document.getElementById('load-shipping').addEventListener('click', loadShipping);
   async function loadShipping() {
     const btn = document.getElementById('load-shipping');
@@ -374,13 +395,14 @@
     container.innerHTML = '載入中...';
     CACHED_ORDERS = [];
     try {
-      const data = await apiCall('/admin/print-labels', {}); // 若無此 endpoint，請後端補
+      const data = await apiCall('/admin/print-labels', {});
       if (!data.orders || data.orders.length === 0) {
         container.innerHTML = '<h3>沒有找到「真正」待出貨的訂單。</h3>';
         return;
       }
       CACHED_ORDERS = data.orders;
       container.innerHTML = '';
+
       data.orders.forEach(order => {
         let shipping = {}; try { shipping = JSON.parse(order.shipping_info || '{}'); } catch(e) {}
         const statusText = translateStatus(order.status);
@@ -447,24 +469,34 @@
       addAdminButtonListeners();
     } catch (e) {
       container.innerHTML = `<h3>載入出貨單失敗: ${e.message}</h3>`;
+      console.error('載入出貨單失敗', e);
       alert('載入出貨單失敗: ' + e.message);
     } finally {
       btn.disabled = false;
     }
   }
 
-  // reports (保留)
+  /* ------------------- REPORTS --- */
   document.getElementById('load-report').addEventListener('click', () => loadReport());
   document.getElementById('export-report').addEventListener('click', () => exportReport());
+
   async function loadReport() {
-    const btn = document.getElementById('load-report'); btn.disabled = true;
+    const btn = document.getElementById('load-report');
+    btn.disabled = true;
     const tbody = document.getElementById('report-table').getElementsByTagName('tbody')[0];
     tbody.innerHTML = '<tr><td colspan="12">載入中...</td></tr>';
     CACHED_REPORT_ORDERS = [];
     try {
-      const data = await apiCall('/admin/export-orders', { start_date: document.getElementById('report-start').value, end_date: document.getElementById('report-end').value });
-      if (!data.orders || data.orders.length === 0) { tbody.innerHTML = '<tr><td colspan="12">在此日期範圍內無訂單</td></tr>'; return; }
-      CACHED_REPORT_ORDERS = data.orders; tbody.innerHTML = '';
+      const data = await apiCall('/admin/export-orders', {
+        start_date: document.getElementById('report-start').value,
+        end_date: document.getElementById('report-end').value
+      });
+      if (!data.orders || data.orders.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="12">在此日期範圍內無訂單</td></tr>';
+        return;
+      }
+      CACHED_REPORT_ORDERS = data.orders;
+      tbody.innerHTML = '';
       data.orders.forEach(o => {
         let s = {}; try { s = JSON.parse(o.shipping_info || '{}'); } catch(e) {}
         const shippingDest = (o.payment_method === 'MAIL') ? s.address : s.store_name;
@@ -486,8 +518,11 @@
       });
     } catch (e) {
       tbody.innerHTML = `<tr><td colspan="12">載入失敗: ${e.message}</td></tr>`;
+      console.error('載入報表失敗', e);
       alert('載入報表失敗: ' + e.message);
-    } finally { btn.disabled = false; }
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   function exportReport() {
@@ -521,9 +556,9 @@
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   }
 
-  /* ================= Admin buttons & bulk handlers ================= */
+  /* ================= Admin buttons: delete/cancel/ship handlers ================= */
   function addAdminButtonListeners() {
-    // ship buttons
+    // mark shipped
     document.querySelectorAll('.btn-ship').forEach(button => {
       button.onclick = async (e) => {
         const btn = e.target; const order_id = btn.dataset.orderid;
@@ -539,19 +574,29 @@
       };
     });
 
-    // cancel single
+    // cancel
     document.querySelectorAll('.btn-cancel').forEach(button => {
       button.onclick = (e) => {
         const order_id = e.target.dataset.orderid;
-        showConfirmModal({ title: `取消訂單 ${order_id}`, hint: '訂單狀態將變為「已取消」，請再次輸入密碼確認。', action: 'cancel-order', targets: [order_id] });
+        showConfirmModal({
+          title: `取消訂單 ${order_id}`,
+          hint: '訂單狀態將變為「已取消」，請再次輸入密碼確認。',
+          action: 'cancel-order',
+          target: order_id
+        });
       };
     });
 
-    // delete single
+    // delete order (使用 Confirm Modal)
     document.querySelectorAll('.btn-delete-order').forEach(button => {
       button.onclick = (e) => {
         const id = e.target.dataset.orderid;
-        showConfirmModal({ title: `刪除訂單 ${id}`, hint: '刪除後會釋放預留庫存，此操作無法復原！', action: 'delete-order', targets: [id] });
+        showConfirmModal({
+          title: `刪除訂單 ${id}`,
+          hint: '刪除後會釋放預留庫存，此操作無法復原！',
+          action: 'delete-order',
+          target: id
+        });
       };
     });
 
@@ -583,8 +628,16 @@
           const type = container.querySelector(`.select-shipping-type[data-orderid="${id}"]`).value;
           const storeName = container.querySelector(`.input-pickup-store-name[data-orderid="${id}"]`).value;
           const storeAddr = container.querySelector(`.input-pickup-store-address[data-orderid="${id}"]`).value;
+
           const pickup_store = (storeName || storeAddr) ? { store_name: storeName, store_address: storeAddr } : undefined;
-          await apiCall('/admin/update-shipping-details', { order_id: id, shipping_cost: cost, tracking_number: tn, shipping_type: type, ...(pickup_store ? { pickup_store } : {}) });
+
+          await apiCall('/admin/update-shipping-details', {
+            order_id: id,
+            shipping_cost: cost,
+            tracking_number: tn,
+            shipping_type: type,
+            ...(pickup_store ? { pickup_store } : {})
+          });
           alert('已更新運費/單號。');
           loadShipping();
         } catch (err) {
@@ -611,7 +664,7 @@
       };
     });
 
-    // batch ship already implemented earlier (shipping page)
+    // batch ship
     document.getElementById('batch-ship').onclick = async (e) => {
       const btn = e.target;
       const checkedBoxes = document.querySelectorAll('#shipping-labels .ship-checkbox:checked');
@@ -627,73 +680,56 @@
       finally { btn.disabled = false; btn.textContent = '一鍵標記「勾選」為已出貨'; }
     };
 
-    // delete inventory (保留原樣)
+    // delete inventory (使用 Confirm Modal)
     document.querySelectorAll('.btn-delete-inv').forEach(button => {
       button.onclick = (e) => {
         const sku = e.target.dataset.sku;
-        showConfirmModal({ title: `刪除商品 ${sku}`, hint: '將嘗試 soft-delete (active=0)。請再次輸入密碼確認。', action: 'delete-inventory', targets: [sku] });
+        showConfirmModal({
+          title: `刪除商品 ${sku}`,
+          hint: '將嘗試 soft-delete (active=0)。請再次輸入密碼確認。',
+          action: 'delete-inventory',
+          target: sku
+        });
       };
     });
-
-    // hooks: checkbox behaviours
-    document.querySelectorAll('.order-checkbox').forEach(cb => {
-      cb.addEventListener('change', () => {
-        updateSelectAllState();
-      });
-    });
-
-    document.getElementById('dashboard-select-all').onclick = (e) => {
-      const checked = e.target.checked;
-      document.querySelectorAll('.order-checkbox').forEach(cb => cb.checked = checked);
-    };
-
   } // addAdminButtonListeners end
 
-  /* ==================== Confirm Modal logic (single + bulk) ==================== */
+  /* ==================== Confirm Modal logic ==================== */
   function showConfirmModal(opts) {
     const modal = document.getElementById('confirmModal');
     document.getElementById('confirmTitle').textContent = opts.title || '請輸入管理密碼確認';
     document.getElementById('confirmHint').textContent = opts.hint || '';
     modal.dataset.action = opts.action || '';
-    // store targets as JSON string for bulk
-    modal.dataset.targets = JSON.stringify(opts.targets || []);
+    modal.dataset.target = opts.target || '';
     document.getElementById('confirmInput').value = '';
-    document.getElementById('confirmAlsoReload').checked = true;
     modal.style.display = 'flex';
   }
   function hideConfirmModal() {
     const modal = document.getElementById('confirmModal');
     modal.style.display = 'none';
-    delete modal.dataset.action; delete modal.dataset.targets;
+    delete modal.dataset.action; delete modal.dataset.target;
   }
   document.getElementById('confirmCancel').addEventListener('click', hideConfirmModal);
   document.getElementById('confirmOk').addEventListener('click', async () => {
     const modal = document.getElementById('confirmModal');
     const pwd = document.getElementById('confirmInput').value;
-    const alsoReload = document.getElementById('confirmAlsoReload').checked;
     const action = modal.dataset.action;
-    let targets = [];
-    try { targets = JSON.parse(modal.dataset.targets || '[]'); } catch(e) { targets = []; }
+    const target = modal.dataset.target;
+    if (!pwd && !OP_KEY) { alert('請輸入密碼'); return; }
 
-    if (!pwd) { alert('請輸入密碼'); return; }
+    // prefer OP_KEY if logged in, otherwise use entered pwd
+    const usedPwd = OP_KEY || pwd;
+
     try {
       if (action === 'delete-order') {
-        const id = targets[0];
-        await apiCall('/admin/delete-order', { order_id: id, password: pwd });
-        if (alsoReload) loadDashboard(); else removeOrderRowFromDOM(id);
+        await performDeleteOrder(target, usedPwd);
+        loadDashboard();
       } else if (action === 'cancel-order') {
-        const id = targets[0];
-        await apiCall('/admin/cancel-order', { order_id: id, password: pwd });
-        if (alsoReload) loadDashboard(); else removeOrderRowFromDOM(id);
+        await performCancelOrder(target, usedPwd);
+        loadDashboard();
       } else if (action === 'delete-inventory') {
-        const sku = targets[0];
-        await apiCall('/admin/delete-inventory', { sku, password: pwd });
+        await performDeleteInventory(target, usedPwd);
         loadProducts();
-      } else if (action === 'bulk-cancel' || action === 'bulk-delete') {
-        const order_ids = targets;
-        const act = (action === 'bulk-cancel') ? 'cancel' : 'delete';
-        await apiCall('/admin/bulk-update', { action: act, order_ids, password: pwd });
-        if (alsoReload) loadDashboard(); else order_ids.forEach(removeOrderRowFromDOM);
       } else {
         alert('未知操作');
       }
@@ -703,40 +739,36 @@
     }
   });
 
-  // helper remove single row
-  function removeOrderRowFromDOM(orderId) {
-    const row = document.querySelector(`[data-order-id="${orderId}"]`);
-    if (row) row.remove();
+  /* ==================== Delete / Cancel / Upload functions (call backend) ==================== */
+  async function performDeleteOrder(order_id, password) {
+    const res = await fetch(`${API_ENDPOINT}/admin/delete-order`, {
+      method: 'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ op_key: password, order_id })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error || !data.ok) throw new Error(data.error || 'delete-order failed');
+    alert('已刪除訂單 ' + order_id);
+    return data;
+  }
+  async function performCancelOrder(order_id, password) {
+    const res = await fetch(`${API_ENDPOINT}/admin/cancel-order`, {
+      method: 'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ op_key: password, order_id })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error || !data.ok) throw new Error(data.error || 'cancel-order failed');
+    alert('已取消訂單 ' + order_id);
+    return data;
+  }
+  async function performDeleteInventory(sku, password) {
+    const res = await fetch(`${API_ENDPOINT}/admin/delete-inventory`, {
+      method: 'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ op_key: password, sku })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error || !data.ok) throw new Error(data.error || 'delete-inventory failed');
+    alert(`SKU ${sku} 刪除完成 (${data.action || 'done'})`);
+    return data;
   }
 
-  /* ==================== Bulk buttons (hook to modal) ==================== */
-  document.getElementById('bulk-cancel-btn').addEventListener('click', () => {
-    const selected = Array.from(document.querySelectorAll('.order-checkbox:checked')).map(cb => cb.value);
-    if (selected.length === 0) { alert('請先勾選要取消的訂單'); return; }
-    showConfirmModal({ title: `批量取消 ${selected.length} 筆訂單`, hint: '訂單狀態將變成「已取消」。請再次輸入密碼確認。', action: 'bulk-cancel', targets: selected });
-  });
-
-  document.getElementById('bulk-delete-btn').addEventListener('click', () => {
-    const selected = Array.from(document.querySelectorAll('.order-checkbox:checked')).map(cb => cb.value);
-    if (selected.length === 0) { alert('請先勾選要刪除的訂單'); return; }
-    showConfirmModal({ title: `批量刪除 ${selected.length} 筆訂單`, hint: '刪除後會釋放預留庫存，操作無法回復。請再次輸入密碼確認。', action: 'bulk-delete', targets: selected });
-  });
-
-  /* ==================== helper: Update select-all checkbox state ==================== */
-  function resetSelectAll() {
-    const all = document.querySelectorAll('.order-checkbox');
-    const allChecked = all.length > 0 && Array.from(all).every(cb => cb.checked);
-    document.getElementById('dashboard-select-all').checked = allChecked;
-  }
-  function updateSelectAllState() {
-    const all = document.querySelectorAll('.order-checkbox');
-    const checked = document.querySelectorAll('.order-checkbox:checked');
-    const selAll = document.getElementById('dashboard-select-all');
-    if (all.length === 0) selAll.checked = false;
-    else selAll.checked = (checked.length === all.length);
-  }
-
-  /* ==================== Excel upload handler (unchanged) ==================== */
+  /* ==================== Excel upload (SheetJS) ==================== */
   document.getElementById('upload-inventory-btn').addEventListener('click', async () => {
     const fi = document.getElementById('inventory-file');
     if (!fi.files || fi.files.length === 0) { alert('請先選擇 Excel 檔'); return; }
@@ -774,10 +806,13 @@
             };
           }).filter(r => r.sku);
           if (normalized.length === 0) return reject(new Error('沒有合法的 SKU 欄位'));
-          const pwd = prompt('請輸入管理密碼（password/op_key）以送出上傳');
+
+          // use OP_KEY (if logged in); otherwise ask once
+          const pwd = OP_KEY || prompt('請輸入管理密碼（password/op_key）以送出上傳');
           if (!pwd) return reject(new Error('未輸入密碼'));
+
           const res = await fetch(`${API_ENDPOINT}/admin/upload-inventory`, {
-            method: 'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ password: pwd, rows: normalized })
+            method: 'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ op_key: pwd, rows: normalized })
           });
           const json = await res.json();
           if (!res.ok || json.error || !json.ok) return reject(new Error(json.error || 'upload failed'));
@@ -790,12 +825,14 @@
     });
   }
 
-  /* ==================== CSV export helpers (保持原樣) ==================== */
+  /* ------------------- CSV export helpers (COD / MAIL / zero packages) ------------------- */
   document.getElementById('export-cod').addEventListener('click', () => exportCSV('cod'));
   document.getElementById('export-mail').addEventListener('click', () => exportCSV('mail'));
+
   function exportCSV(type) {
     if (!CACHED_ORDERS || CACHED_ORDERS.length === 0) { alert('請先「載入待出貨訂單」'); return; }
     let csvContent = ""; let filteredOrders = [];
+
     if (type === 'cod') {
       csvContent = "取件人姓名,取件人手機,取件門市,溫層,商品名稱,訂單金額\n";
       filteredOrders = CACHED_ORDERS.filter(o => o.payment_method === '7-11_COD' || o.payment_method === 'DEPOSIT_COD');
@@ -819,16 +856,25 @@
         csvContent += quotedRow.join(',') + '\n';
       });
     }
+
     if (filteredOrders.length === 0) { alert(`沒有找到符合「${type}」類型的待出貨訂單`); return; }
+
     const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a"); const url = URL.createObjectURL(blob);
     link.setAttribute("href", url); link.setAttribute("download", `${type}_export_${new Date().toISOString().slice(0,10)}.csv`);
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   }
 
-  // small helper to ensure later listeners rebind
-  function addAdminButtonListenersSafe() { try { addAdminButtonListeners(); } catch(e){} }
-</script>
+  document.getElementById('export-zero-packages').addEventListener('click', async () => {
+    try {
+      const data = await apiCall('/admin/export-zero-packages', {});
+      if (!data.csv) { alert('沒有 0 元包裹可匯出'); return; }
+      const blob = new Blob([new Uint8Array([0xEF,0xBB,0xBF]), data.csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = 'zero-packages.csv';
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    } catch (e) { alert('匯出 0 元包裹失敗: ' + e.message); }
+  });
 
+</script>
 </body>
 </html>
