@@ -82,18 +82,169 @@
           <button class="tab-link" data-tab="tab-reports">總訂單報表 (Q6)</button>
       </div>
 
-      <div id="tab-dashboard" class="tab-content active">
-          <h2>儀表板 (近 7 天訂單)</h2>
-          <button id="refresh-dashboard">重新整理</button>
-          <div style="overflow-x: auto; margin-top: 12px;">
-              <table id="dashboard-table">
-                  <thead>
-                      <tr><th>日期</th><th>主播</th><th>訂單號</th><th>狀態</th><th>後五碼</th><th>金額</th><th>付款方式</th><th>運費(Q5)</th><th>單號(Q7)</th><th>備註</th><th>動作</th></tr>
-                  </thead>
-                  <tbody></tbody>
-              </table>
-          </div>
-      </div>
+      <!-- Replace your current <div id="tab-dashboard">...</div> with this block -->
+<div id="tab-dashboard" class="tab-content active">
+  <h2>儀表板 (近 7 天訂單)</h2>
+  <button id="refresh-dashboard">重新整理</button>
+  <div style="overflow-x: auto; margin-top: 12px;">
+    <table id="dashboard-table">
+      <thead>
+        <tr>
+          <th>日期</th>
+          <th>主播</th>
+          <th>訂單號</th>
+          <th>狀態</th>
+          <th>後五碼</th>
+          <th>金額</th>
+          <th>付款方式</th>
+          <th>運費(Q5)</th>
+          <th>單號(Q7)</th>
+          <th>備註</th>
+          <th>動作</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+/* Dashboard loader + delete/cancel handlers
+   NOTE: uses op_key auth; change op_key value if needed.
+*/
+const ADMIN_AUTH = { op_key: '88' }; // <-- 把 '88' 換成你的 op_key（或改成 { password: '...' }）
+
+async function fetchDashboard() {
+  try {
+    const res = await fetch('/admin/dashboard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ADMIN_AUTH)
+    });
+    const j = await res.json();
+    if (!j.ok) {
+      console.warn('dashboard load failed', j);
+      alert('載入失敗: ' + (j.error || JSON.stringify(j)));
+      return [];
+    }
+    return j.orders || [];
+  } catch (e) {
+    console.error(e);
+    alert('載入儀表板發生錯誤 (請看 Console)');
+    return [];
+  }
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  try { return new Date(iso).toLocaleString(); } catch { return iso; }
+}
+
+function buildTableHTML(orders) {
+  const rows = (orders || []).map(o => {
+    let si = {};
+    try { si = JSON.parse(o.shipping_info || '{}'); } catch(e){}
+    const recipient = si.name || '';
+    const phone = si.phone || '';
+    const addr = si.address || si.store_name || '';
+    const orderDate = formatDate(o.created_at);
+    const depositLast5 = (o.deposit_proof || '').slice(-5);
+    const actions = `
+      <button class="btn-cancel-order" data-order-id="${o.order_id}">取消訂單</button>
+      <button class="btn-delete-order" data-order-id="${o.order_id}">刪除訂單</button>
+    `;
+    return `
+      <tr data-order-id="${o.order_id}">
+        <td>${orderDate}</td>
+        <td>${o.streamer_name || ''}</td>
+        <td>${o.order_id}</td>
+        <td>${o.status || ''}</td>
+        <td>${depositLast5 || ''}</td>
+        <td>${o.total_amount ?? 0}</td>
+        <td>${o.payment_method || ''}</td>
+        <td>${o.shipping_cost ?? 0}</td>
+        <td>${o.tracking_number || ''}</td>
+        <td>${o.gift_notes || ''}</td>
+        <td>${actions}</td>
+      </tr>
+    `;
+  }).join('');
+  return `<tbody>${rows || '<tr><td colspan="11">目前無訂單</td></tr>'}</tbody>`;
+}
+
+async function loadAndRenderDashboard() {
+  const table = document.getElementById('dashboard-table');
+  if (!table) return;
+  table.querySelector('tbody').innerHTML = '<tr><td colspan="11">載入中…</td></tr>';
+  const orders = await fetchDashboard();
+  // Filter out deleted status just in case
+  const visible = (orders || []).filter(o => (o.status || '').toLowerCase() !== 'deleted');
+  table.innerHTML = table.querySelector('thead') ? table.querySelector('thead').outerHTML + buildTableHTML(visible) : buildTableHTML(visible);
+}
+
+// Event delegation for delete/cancel
+document.addEventListener('click', async (e) => {
+  const del = e.target.closest('.btn-delete-order');
+  if (del) {
+    const orderId = del.dataset.orderId;
+    if (!orderId) return alert('找不到 order_id');
+    if (!confirm(`確定要刪除訂單 ${orderId}？此操作不可還原`)) return;
+    try {
+      const res = await fetch('/admin/delete-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...ADMIN_AUTH, order_id: orderId })
+      });
+      const j = await res.json();
+      if (j.ok) {
+        // reload to reflect removal
+        await loadAndRenderDashboard();
+      } else {
+        alert('刪除失敗：' + (j.error || JSON.stringify(j)));
+      }
+    } catch (err) {
+      console.error(err);
+      alert('刪除發生錯誤，請看 console');
+    }
+    return;
+  }
+
+  const cancelBtn = e.target.closest('.btn-cancel-order');
+  if (cancelBtn) {
+    const orderId = cancelBtn.dataset.orderId;
+    if (!orderId) return;
+    if (!confirm(`確定取消訂單 ${orderId}？`)) return;
+    try {
+      // 若你的後端取消 endpoint 名稱不同（/admin/cancel-order）請改這裡
+      const res = await fetch('/admin/cancel-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...ADMIN_AUTH, order_id: orderId })
+      });
+      const j = await res.json();
+      if (j.ok) {
+        await loadAndRenderDashboard();
+      } else {
+        alert('取消失敗：' + (j.error || JSON.stringify(j)));
+      }
+    } catch (err) {
+      console.error(err);
+      alert('取消發生錯誤，請看 console');
+    }
+    return;
+  }
+});
+
+// bind refresh button
+document.getElementById('refresh-dashboard')?.addEventListener('click', (ev) => {
+  ev.preventDefault();
+  loadAndRenderDashboard();
+});
+
+// auto load once DOM ready
+window.addEventListener('DOMContentLoaded', loadAndRenderDashboard);
+</script>
+
 
       <div id="tab-products" class="tab-content">
           <h2>庫存管理</h2>
