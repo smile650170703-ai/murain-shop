@@ -80,39 +80,38 @@
 
       <div id="tab-dashboard" class="tab-content active">
         <h2>儀表板 (近 7 天訂單)</h2>
+
         <!-- BEGIN: bulk controls 插入點：貼在 <h2> 與 refresh button 之間 -->
-<div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
-  <label style="display:flex; align-items:center; gap:6px;">
-    <input id="dashboard-select-all" type="checkbox" />
-    <span class="muted">全選</span>
-  </label>
-  <button id="bulk-cancel-btn" class="btn-cancel small">批量取消</button>
-  <button id="bulk-delete-btn" class="btn-cancel small" style="background:#8b0000;">批量刪除</button>
-  <div class="muted">（先勾選左側項目，按鈕會提示輸入管理密碼）</div>
-</div>
-<!-- END: bulk controls -->
+        <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+          <label style="display:flex; align-items:center; gap:6px;">
+            <input id="dashboard-select-all" type="checkbox" />
+            <span class="muted">全選</span>
+          </label>
+          <button id="bulk-cancel-btn" class="btn-cancel small">批量取消</button>
+          <button id="bulk-delete-btn" class="btn-cancel small" style="background:#8b0000;">批量刪除</button>
+          <div class="muted">（先勾選左側項目，按鈕會提示輸入管理密碼）</div>
+        </div>
+        <!-- END: bulk controls -->
 
         <button id="refresh-dashboard">重新整理</button>
         <div style="overflow-x: auto; margin-top: 12px;">
           <table id="dashboard-table">
             <thead>
-              <thead>
-  <tr>
-    <th style="width:36px;"></th> <!-- checkbox col -->
-    <th>日期</th>
-    <th>主播</th>
-    <th>訂單號</th>
-    <th>狀態</th>
-    <th>後五碼</th>
-    <th>金額</th>
-    <th>付款方式</th>
-    <th>運費(Q5)</th>
-    <th>單號(Q7)</th>
-    <th>備註</th>
-    <th>動作</th>
-  </tr>
-</thead>
-
+              <tr>
+                <th style="width:36px;"></th> <!-- checkbox col -->
+                <th>日期</th>
+                <th>主播</th>
+                <th>訂單號</th>
+                <th>狀態</th>
+                <th>後五碼</th>
+                <th>金額</th>
+                <th>付款方式</th>
+                <th>運費(Q5)</th>
+                <th>單號(Q7)</th>
+                <th>備註</th>
+                <th>動作</th>
+              </tr>
+            </thead>
             <tbody></tbody>
           </table>
         </div>
@@ -199,9 +198,6 @@
   /* --- apiCall (adds op_key automatically) --- */
   async function apiCall(endpoint, payload = {}) {
     if (!payload) payload = {};
-    // NOTE: For security-sensitive actions like delete, the modal/function
-    // logic below will prompt for a separate 'password' (OP_KEY) to pass
-    // to the backend, but for convenience, we attach OP_KEY for *most* calls.
     if (OP_KEY && !payload.op_key) payload.op_key = OP_KEY;
 
     const res = await fetch(`${API_ENDPOINT}${endpoint}`, {
@@ -218,8 +214,7 @@
   }
 
   /* --- helpers --- */
-  // 在 <script> 標籤內
-function translateStatus(status) {
+  function translateStatus(status) {
     if (!status) return '';
     const map = {
         'awaiting_payment': '待付款',
@@ -227,13 +222,11 @@ function translateStatus(status) {
         'paid': '已付款',
         'shipped': '已出貨',
         'cancelled': '已取消',
-        'deleted': '已刪除', // 確保 'deleted' 被翻譯
-        'draft': '草稿(不建立)' // 確保 'draft' 被翻譯
-        // ... 添加其他您可能有的狀態
+        'deleted': '已刪除',
+        'draft': '草稿(不建立)'
     };
-    // 如果沒有對應的翻譯，就顯示原始狀態
     return map[status.toLowerCase()] || status; 
-}
+  }
   function formatDateTime(isoString) { if (!isoString) return ''; try { return new Date(isoString).toLocaleString('zh-TW'); } catch(e) { return isoString; } }
 
   /* ------------------- LOGIN --- */
@@ -244,7 +237,6 @@ function translateStatus(status) {
     OP_KEY = key;
     status.textContent = '登入中...';
     try {
-      // 簡單驗證
       await apiCall('/admin/dashboard', { op_key: key });
       status.textContent = '登入成功';
       document.getElementById('login-box').classList.add('hidden');
@@ -278,27 +270,23 @@ function translateStatus(status) {
   /* ------------------- DASHBOARD --- */
   document.getElementById('refresh-dashboard').addEventListener('click', loadDashboard);
   async function loadDashboard() {
-  const tbody = document.getElementById('dashboard-table').getElementsByTagName('tbody')[0];
-  tbody.innerHTML = '<tr><td colspan="11">載入中...</td></td></tr>';
-  try {
-    const data = await apiCall('/admin/dashboard', {});
-    tbody.innerHTML = '';
-    
-    // --- 【修正：過濾 deleted 和 cancelled 的訂單】 ---
-    const ignoredStatuses = ['deleted', 'cancelled'];
-    const visibleOrders = (data.orders || []).filter(o => 
-        !ignoredStatuses.includes((o.status || '').toLowerCase())
-    );
-    // --- 【修正結束】 ---
+    const tbody = document.getElementById('dashboard-table').getElementsByTagName('tbody')[0];
+    tbody.innerHTML = '<tr><td colspan="12">載入中...</td></tr>';
+    try {
+      const data = await apiCall('/admin/dashboard', {});
+      tbody.innerHTML = '';
+      
+      const ignoredStatuses = ['deleted', 'cancelled'];
+      const visibleOrders = (data.orders || []).filter(o => 
+          !ignoredStatuses.includes((o.status || '').toLowerCase())
+      );
 
-    if (visibleOrders.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="11">近 7 天無活動中或待處理訂單</td></tr>';
-    } else {
-      // 迭代 visibleOrders 來渲染表格
-      visibleOrders.forEach(o => {
-        const row = tbody.insertRow();
-        // 假設您的 formatDateTime 和 translateStatus 函數已經存在
-        row.innerHTML = `
+      if (visibleOrders.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="12">近 7 天無活動中或待處理訂單</td></tr>';
+      } else {
+        visibleOrders.forEach(o => {
+          const row = tbody.insertRow();
+          row.innerHTML = `
   <td><input type="checkbox" class="order-checkbox" value="${o.order_id}"></td>
   <td>${formatDateTime(o.created_at)}</td>
   <td>${o.streamer_name || ''}</td>
@@ -316,17 +304,15 @@ function translateStatus(status) {
     <button class="btn-delete-order small" data-orderid="${o.order_id}" style="background:#dc3545; margin-top:6px;">刪除訂單</button>
   </td>
 `;
-
-        `;
-      });
+        });
+      }
+      addAdminButtonListeners();
+      resetSelectAll();
+    } catch (e) { 
+      tbody.innerHTML = `<tr><td colspan="12">載入訂單失敗: ${e.message}</td></tr>`;
+      alert('載入訂單失敗: ' + e.message); 
     }
-    addAdminButtonListeners();
-    resetSelectAll(); 
-  } catch (e) { 
-    tbody.innerHTML = `<tr><td colspan="11">載入訂單失敗: ${e.message}</td></tr>`;
-    alert('載入訂單失敗: ' + e.message); 
   }
-}
 
   /* ------------------- PRODUCTS --- */
   document.getElementById('refresh-products').addEventListener('click', () => loadProducts());
@@ -394,21 +380,19 @@ function translateStatus(status) {
     container.innerHTML = '載入中...';
     CACHED_ORDERS = [];
     try {
-      // 這裡假設 /admin/print-labels 回傳的是待出貨的訂單
       const data = await apiCall('/admin/print-labels', {});
       if (!data.orders || data.orders.length === 0) {
         container.innerHTML = '<h3>沒有找到「真正」待出貨的訂單。</h3>';
         return;
       }
       CACHED_ORDERS = data.orders;
-      container.innerHTML = ''; // Clear '載入中...'
+      container.innerHTML = '';
 
       data.orders.forEach(order => {
         let shipping = {}; try { shipping = JSON.parse(order.shipping_info || '{}'); } catch(e) {}
         const statusText = translateStatus(order.status);
         let shippingDest = 'N/A';
         if (order.payment_method && (order.payment_method.includes('7-11') || order.payment_method.includes('DEPOSIT'))) {
-          // 修正：如果 pickup_store 存在，優先使用
           const storeName = order.pickup_store?.store_name || shipping.store_name || '';
           const storeAddr = order.pickup_store?.store_address || shipping.store_address || '地址未填';
           shippingDest = `${storeName} (${storeAddr})`;
@@ -418,7 +402,6 @@ function translateStatus(status) {
         
         const label = document.createElement('div');
         label.className = 'label';
-        // 使用 order.shipping_type 決定 select 的值，確保欄位數據來源一致
         const currentShippingType = order.shipping_type || '';
         const currentStoreName = order.pickup_store?.store_name || '';
         const currentStoreAddress = order.pickup_store?.store_address || '';
@@ -543,16 +526,13 @@ function translateStatus(status) {
         o.invoice_no || '',
         s.name || '',
         s.phone || '',
-        // 替換逗號以免 CSV 格式錯誤
         (shippingDest || '').replace(/,/g, ' '),
         o.deposit_proof || '',
         (o.gift_notes || '').replace(/,/g, ' ')
       ];
-      // 加入雙引號包住欄位，處理內容中的逗號
       const quotedRow = row.map(cell => `"${String(cell).replace(/"/g, '""')}"`);
       csvContent += quotedRow.join(',') + '\n';
     });
-    // BOM for proper display of Chinese in Excel
     const blob = new Blob([new Uint8Array([0xEF,0xBB,0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a"); const url = URL.createObjectURL(blob);
     link.setAttribute("href", url); link.setAttribute("download", `report_export_${new Date().toISOString().slice(0,10)}.csv`);
@@ -568,9 +548,8 @@ function translateStatus(status) {
         if (!confirm(`您確定要將訂單 ${order_id} 標記為「已出貨」嗎？`)) return;
         btn.disabled = true; btn.textContent = '標記中...';
         try {
-          // 這裡假設 mark-as-shipped 會使用 OP_KEY 驗證
           await apiCall('/admin/mark-as-shipped', { order_id });
-          btn.closest('.label')?.remove(); // 從出貨清單移除
+          btn.closest('.label')?.remove();
         } catch (err) {
           alert('標記失敗: ' + err.message);
           btn.disabled = false; btn.textContent = '(儲存後) 標記為已出貨';
@@ -578,7 +557,7 @@ function translateStatus(status) {
       };
     });
 
-    // cancel
+    // cancel (single)
     document.querySelectorAll('.btn-cancel').forEach(button => {
       button.onclick = (e) => {
         const order_id = e.target.dataset.orderid;
@@ -591,7 +570,7 @@ function translateStatus(status) {
       };
     });
 
-    // delete order (使用 Confirm Modal)
+    // delete order (single)
     document.querySelectorAll('.btn-delete-order').forEach(button => {
       button.onclick = (e) => {
         const id = e.target.dataset.orderid;
@@ -640,11 +619,10 @@ function translateStatus(status) {
             shipping_cost: cost, 
             tracking_number: tn, 
             shipping_type: type, 
-            // 只有當 pickup_store 有值時才傳遞，避免覆蓋後端已有資料
             ...(pickup_store ? { pickup_store } : {}) 
           });
           alert('已更新運費/單號。');
-          loadShipping(); // 重新載入以更新列表
+          loadShipping();
         } catch (err) {
           alert('儲存失敗: ' + err.message);
           btn.disabled = false; btn.textContent = '儲存物流';
@@ -669,22 +647,6 @@ function translateStatus(status) {
       };
     });
 
-    // batch ship
-    document.getElementById('batch-ship').onclick = async (e) => {
-      const btn = e.target;
-      const checkedBoxes = document.querySelectorAll('#shipping-labels .ship-checkbox:checked');
-      if (checkedBoxes.length === 0) { alert('請先勾選您要「批次標記出貨」的訂單'); return; }
-      const order_ids = Array.from(checkedBoxes).map(cb => cb.dataset.orderid);
-      if (!confirm(`您確定要將「${order_ids.length}」筆訂單全部標記為「已出貨」嗎？`)) return;
-      btn.disabled = true; btn.textContent = '批次處理中...';
-      try {
-        await apiCall('/admin/batch-ship', { order_ids });
-        alert(`成功標記 ${order_ids.length} 筆訂單為已出貨！`);
-        loadShipping();
-      } catch (err) { alert('批次標記失敗: ' + err.message); }
-      finally { btn.disabled = false; btn.textContent = '一鍵標記「勾選」為已出貨'; }
-    };
-
     // delete inventory (使用 Confirm Modal)
     document.querySelectorAll('.btn-delete-inv').forEach(button => {
       button.onclick = (e) => {
@@ -696,6 +658,17 @@ function translateStatus(status) {
           target: sku 
         });
       };
+    });
+
+    // listen for order-checkbox changes to sync "select all"
+    const allCheckboxes = document.querySelectorAll('.order-checkbox');
+    allCheckboxes.forEach(cb => {
+      cb.addEventListener('change', () => {
+        const all = Array.from(document.querySelectorAll('.order-checkbox'));
+        const checked = Array.from(document.querySelectorAll('.order-checkbox:checked'));
+        const sel = document.getElementById('dashboard-select-all');
+        if (sel) sel.checked = all.length > 0 && checked.length === all.length;
+      });
     });
   } // addAdminButtonListeners end
 
@@ -769,6 +742,96 @@ function translateStatus(status) {
     return data;
   }
 
+  /* ==================== Helpers for bulk selection / bulk actions ==================== */
+  function getSelectedOrderIds() {
+    return Array.from(document.querySelectorAll('.order-checkbox:checked')).map(cb => cb.value);
+  }
+  function resetSelectAll() {
+    const sel = document.getElementById('dashboard-select-all');
+    if (sel) sel.checked = false;
+  }
+  // select-all checkbox handler
+  const selAllEl = document.getElementById('dashboard-select-all');
+  if (selAllEl) {
+    selAllEl.addEventListener('change', (e) => {
+      const checked = e.target.checked;
+      document.querySelectorAll('.order-checkbox').forEach(cb => cb.checked = checked);
+    });
+  }
+
+  // bulk-cancel handler
+  const bulkCancelBtn = document.getElementById('bulk-cancel-btn');
+  if (bulkCancelBtn) {
+    bulkCancelBtn.addEventListener('click', async () => {
+      const ids = getSelectedOrderIds();
+      if (ids.length === 0) { alert('請先勾選至少一筆訂單'); return; }
+      if (!confirm(`確定要取消這 ${ids.length} 筆訂單嗎？`)) return;
+      const pwd = prompt('請輸入管理密碼以確認批量取消');
+      if (!pwd) return alert('已取消操作');
+
+      // 先嘗試 single bulk API
+      try {
+        await apiCall('/admin/bulk-update', { action: 'cancel', order_ids: ids, password: pwd });
+        alert('批量取消成功');
+        loadDashboard();
+        return;
+      } catch (err) {
+        // fallback to per-order calls
+        console.warn('bulk-update failed, fallback to per-order cancel:', err);
+        const failed = [];
+        for (const id of ids) {
+          try {
+            // use per-order API
+            await performCancelOrder(id, pwd);
+          } catch (e) {
+            failed.push(id);
+          }
+        }
+        if (failed.length === 0) {
+          alert('批次取消完成（逐筆）');
+        } else {
+          alert('以下訂單取消失敗：' + failed.join(', '));
+        }
+        loadDashboard();
+      }
+    });
+  }
+
+  // bulk-delete handler
+  const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+  if (bulkDeleteBtn) {
+    bulkDeleteBtn.addEventListener('click', async () => {
+      const ids = getSelectedOrderIds();
+      if (ids.length === 0) { alert('請先勾選至少一筆訂單'); return; }
+      if (!confirm(`確定要刪除這 ${ids.length} 筆訂單？（此操作不可復原）`)) return;
+      const pwd = prompt('請輸入管理密碼以確認批量刪除');
+      if (!pwd) return alert('已取消操作');
+
+      try {
+        await apiCall('/admin/bulk-update', { action: 'delete', order_ids: ids, password: pwd });
+        alert('批量刪除成功');
+        loadDashboard();
+        return;
+      } catch (err) {
+        console.warn('bulk-update delete failed, fallback to per-order delete:', err);
+        const failed = [];
+        for (const id of ids) {
+          try {
+            await performDeleteOrder(id, pwd);
+          } catch (e) {
+            failed.push(id);
+          }
+        }
+        if (failed.length === 0) {
+          alert('批次刪除完成（逐筆）');
+        } else {
+          alert('以下訂單刪除失敗：' + failed.join(', '));
+        }
+        loadDashboard();
+      }
+    });
+  }
+
   /* ==================== Excel upload (SheetJS) ==================== */
   document.getElementById('upload-inventory-btn').addEventListener('click', async () => {
     const fi = document.getElementById('inventory-file');
@@ -834,7 +897,6 @@ function translateStatus(status) {
     
     if (type === 'cod') {
       csvContent = "取件人姓名,取件人手機,取件門市,溫層,商品名稱,訂單金額\n";
-      // 篩選 7-11 貨付相關訂單
       filteredOrders = CACHED_ORDERS.filter(o => o.payment_method === '7-11_COD' || o.payment_method === 'DEPOSIT_COD');
       filteredOrders.forEach(o => {
         let s = {}; try { s = JSON.parse(o.shipping_info || '{}'); } catch(e) {}
@@ -843,17 +905,14 @@ function translateStatus(status) {
         const quotedRow = row.map(cell => `"${String(cell).replace(/"/g, '""')}"`);
         csvContent += quotedRow.join(',') + '\n';
       });
-    } else { // Mail / 7-11 Paid (零元包裹，但非 0 元包裹功能)
+    } else {
       csvContent = "收件人姓名,收件人手機,收件地址\n";
       filteredOrders = CACHED_ORDERS.filter(o => o.payment_method === 'MAIL' || o.payment_method === '7-11_PAID');
       filteredOrders.forEach(o => {
         let s = {}; try { s = JSON.parse(o.shipping_info || '{}'); } catch(e) {}
-        // 使用 pickup_store 優先
         const storeName = o.pickup_store?.store_name || s.store_name || '';
         const storeAddress = o.pickup_store?.store_address || s.store_address || '';
-        
         const address = (o.payment_method === 'MAIL') ? (s.address || '') : `${storeName} ${storeAddress}`;
-        
         const row = [s.name || '', s.phone || '', address];
         const quotedRow = row.map(cell => `"${String(cell).replace(/"/g, '""')}"`);
         csvContent += quotedRow.join(',') + '\n';
@@ -861,8 +920,6 @@ function translateStatus(status) {
     }
     
     if (filteredOrders.length === 0) { alert(`沒有找到符合「${type}」類型的待出貨訂單`); return; }
-    
-    // BOM for proper display of Chinese in Excel
     const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a"); const url = URL.createObjectURL(blob);
     link.setAttribute("href", url); link.setAttribute("download", `${type}_export_${new Date().toISOString().slice(0,10)}.csv`);
