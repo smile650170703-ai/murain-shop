@@ -43,6 +43,7 @@
     .small { font-size:0.9rem; padding:6px 10px; }
   </style>
 
+  <!-- xlsx 用於上傳Excel -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -87,7 +88,6 @@
     <input id="dashboard-select-all" type="checkbox" />
     <span class="muted">全選</span>
   </label>
-  <button id="bulk-cancel-btn" class="btn-cancel small">批量取消</button>
   <button id="bulk-delete-btn" class="btn-cancel small" style="background:#8b0000;">批量刪除</button>
   <div class="muted">（先勾選左側項目，按鈕會提示輸入管理密碼）</div>
 </div>
@@ -108,7 +108,6 @@
     <th>運費(Q5)</th>
     <th>單號(Q7)</th>
     <th>備註</th>
-    <th>動作</th>
   </tr>
 </thead>
             <tbody></tbody>
@@ -135,7 +134,7 @@
           </div>
           <table id="products-table" style="margin-top:1rem;">
               <thead>
-                  <tr><th>SKU</th><th>Barcode</th><th>名稱</th><th>售價</th><th>庫存</th><th>預留</th><th>操作</th></tr>
+                  <tr><th>SKU</th><th>Barcode</th><th>名稱</th><th>售價</th><th>庫存</th><th>預留</th></tr>
               </thead>
               <tbody></tbody>
           </table>
@@ -148,7 +147,7 @@
               <div class="form-group"><label>售價</label><input type="number" id="p_price_live" value="0"></div>
               <div class="form-group"><label>成本</label><input type="number" id="p_cost" value="0"></div>
               <div class="form-group"><label>庫存</label><input type="number" id="p_stock_on_hand" value="0"></div>
-              <div class="form-group" style="align-self: end;"><button type="submit" class="small">新增商品</button></div>
+              <div class="form-group" style="align-self: end;"><button id="create-product-btn" type="submit" class="small">新增商品</button></div>
           </form>
           <p id="product-status"></p>
       </div>
@@ -189,150 +188,298 @@
   </form>
 
 <script>
+/*
+  完整 admin.html（簡化版）：
+  - 請確保 API_ENDPOINT 設為你的 Worker URL
+  - OP_KEY 預設為空字串（安全），你可在本地測試時改為 '88'
+*/
 document.addEventListener('DOMContentLoaded', () => {
-  try {
-    const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
-    let OP_KEY = '88';
-    let CACHED_ORDERS = [];
-    let CACHED_REPORT_ORDERS = [];
+  // ---------- 配置（你要改這裡） ----------
+  const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
+  let OP_KEY = ''; // <- 為安全，預設空。測試時可改成 '88'，但上線前請清空。
+  // ---------------------------------------
 
-    function apiCall(endpoint, payload = {}) {
-      if (!payload) payload = {};
-      if (OP_KEY && !payload.op_key) payload.op_key = OP_KEY;
-      return fetch(`${API_ENDPOINT}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }).then(async res => {
-        let data;
-        try { data = await res.json(); } catch(e) { throw new Error('Server returned non-JSON'); }
-        if (!res.ok || data.error || !data.ok) throw new Error(data.error || 'Server error');
-        return data;
-      });
-    }
-
-    function translateStatus(status) {
-      if (!status) return '';
-      const map = {
-        'awaiting_payment': '待付款',
-        'awaiting_deposit_proof': '待確認訂金',
-        'paid': '已付款',
-        'shipped': '已出貨',
-        'cancelled': '已取消',
-        'deleted': '已刪除',
-        'draft': '草稿(不建立)'
-      };
-      return map[String(status).toLowerCase()] || status;
-    }
-    function formatDateTime(isoString) { if (!isoString) return ''; try { return new Date(isoString).toLocaleString('zh-TW'); } catch(e) { return isoString; } }
-
-    /* LOGIN */
-    const loginBtn = document.getElementById('loginBtn');
-    if (loginBtn) {
-      loginBtn.addEventListener('click', async () => {
-        const keyInput = document.getElementById('op_key');
-        const statusEl = document.getElementById('login-status');
-        const key = keyInput ? keyInput.value.trim() : '';
-        if (!statusEl) return;
-        if (!key) { statusEl.textContent = '請輸入密碼'; return; }
-        OP_KEY = key;
-        statusEl.textContent = '登入中...';
-        try {
-          await apiCall('/admin/dashboard', { op_key: key });
-          statusEl.textContent = '登入成功';
-          const lb = document.getElementById('login-box');
-          const ap = document.getElementById('admin-panel');
-          if (lb) lb.classList.add('hidden');
-          if (ap) ap.classList.remove('hidden');
-          loadDashboard();
-          const today = new Date().toISOString().split('T')[0];
-          const rs = document.getElementById('report-start');
-          const re = document.getElementById('report-end');
-          if (rs) rs.value = today;
-          if (re) re.value = today;
-        } catch (e) {
-          console.error('[login error]', e);
-          statusEl.textContent = '密鑰錯誤或伺服器無回應';
-          OP_KEY = '';
-        }
-      });
-    } else {
-      console.warn('loginBtn not found on page — login disabled');
-    }
-
-    /* tabs */
-    const tabLinks = document.querySelectorAll('.tab-link');
-    if (tabLinks && tabLinks.length) {
-      tabLinks.forEach(button => {
-        button.addEventListener('click', () => {
-          document.querySelectorAll('.tab-link').forEach(btn => btn.classList.remove('active'));
-          document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-          button.classList.add('active');
-          const tabId = button.dataset.tab;
-          const target = document.getElementById(tabId);
-          if (target) target.classList.add('active');
-          if (tabId === 'tab-dashboard') loadDashboard();
-          if (tabId === 'tab-products') loadProducts();
-          if (tabId === 'tab-shipping') loadShipping();
-          if (tabId === 'tab-reports') loadReport();
-        });
-      });
-    } else {
-      console.warn('No .tab-link elements found');
-    }
-
-    /* DASHBOARD */
-    const refreshBtn = document.getElementById('refresh-dashboard');
-    if (refreshBtn) refreshBtn.addEventListener('click', loadDashboard);
-
-    async function loadDashboard() {
-      try {
-        const tbody = document.getElementById('dashboard-table').getElementsByTagName('tbody')[0];
-        if (tbody) tbody.innerHTML = '<tr><td colspan="12">載入中...</td></tr>';
-        const data = await apiCall('/admin/dashboard', {});
-        // double-filter on client side: 忽略 deleted/cancelled regardless
-        const ignoredStatuses = ['deleted', 'cancelled'];
-        const visibleOrders = (data.orders || []).filter(o => {
-          const s = (o.status || '').toString().trim().toLowerCase();
-          return s && !ignoredStatuses.includes(s);
-        });
-
-        // render table (簡單示範)
-        if (tbody) {
-          if (!visibleOrders.length) {
-            tbody.innerHTML = '<tr><td colspan="12">沒有訂單</td></tr>';
-            return;
-          }
-          tbody.innerHTML = visibleOrders.map(o => {
-            return `<tr>
-              <td>${formatDateTime(o.created_at)}</td>
-              <td>${o.streamer_name || ''}</td>
-              <td>${o.order_id}</td>
-              <td>${translateStatus(o.status)}</td>
-              <td>${o.total_amount || 0}</td>
-              <td>${o.payment_method || ''}</td>
-              <td>${o.shipping_cost || 0}</td>
-              <td>${o.tracking_number || ''}</td>
-              <td>${o.deposit_proof || ''}</td>
-              <td>${o.gift_notes || ''}</td>
-              <td>${o.shipping_info ? '有' : ''}</td>
-            </tr>`;
-          }).join('');
-        }
-      } catch (e) {
-        console.error('[loadDashboard] ', e);
-        const tbody = document.getElementById('dashboard-table')?.getElementsByTagName('tbody')[0];
-        if (tbody) tbody.innerHTML = `<tr><td colspan="12">載入失敗: ${String(e.message||e)}</td></tr>`;
-      }
-    }
-
-    // 你原來的 loadProducts / loadShipping / loadReport 等函式也請放在這裡（或保留原本）
-    // ...
-  } catch (e) {
-    console.error('Admin script top-level error', e);
+  // --- 基本 helper
+  function jfetch(endpoint, payload = {}) {
+    if (!payload) payload = {};
+    if (OP_KEY && !payload.op_key) payload.op_key = OP_KEY;
+    return fetch(`${API_ENDPOINT}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(async res => {
+      let data;
+      try { data = await res.json(); } catch(e) { throw new Error('Non-JSON response'); }
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      return data;
+    });
   }
-}); // DOMContentLoaded wrapper end
+
+  function fmtDate(iso){ if(!iso) return ''; try { return new Date(iso).toLocaleString('zh-TW'); } catch(e){ return iso; } }
+  function translateStatus(s){
+    if(!s) return '';
+    const map = { awaiting_payment:'待付款', awaiting_deposit_proof:'待確認訂金', paid:'已付款', shipped:'已出貨', cancelled:'已取消', deleted:'已刪除', draft:'草稿' };
+    return map[(s||'').toLowerCase()] || s;
+  }
+
+  // --- UI 元件
+  const loginBtn = document.getElementById('loginBtn');
+  const loginStatus = document.getElementById('login-status');
+  const loginBox = document.getElementById('login-box');
+  const adminPanel = document.getElementById('admin-panel');
+
+  // debug quick diagnostic
+  console.log('=== quick admin UI diagnostic ===');
+  console.log('document.location:', location.href);
+  console.log('API_ENDPOINT (should be worker):', API_ENDPOINT);
+  console.log('OP_KEY (global?)', OP_KEY);
+
+  // --- 登入
+  if (loginBtn) {
+    loginBtn.addEventListener('click', async () => {
+      const key = document.getElementById('op_key').value.trim();
+      if (!key) { loginStatus.textContent = '請輸入密碼'; return; }
+      OP_KEY = key;
+      loginStatus.textContent = '登入中...';
+      try {
+        await jfetch('/admin/dashboard', { op_key: key });
+        loginStatus.textContent = '登入成功';
+        loginBox.classList.add('hidden');
+        adminPanel.classList.remove('hidden');
+        // 設定今天為報表日期預設
+        const today = new Date().toISOString().split('T')[0];
+        const rs = document.getElementById('report-start');
+        const re = document.getElementById('report-end');
+        if (rs) rs.value = today;
+        if (re) re.value = today;
+        loadDashboard();
+      } catch (e) {
+        console.error('[login error]', e);
+        loginStatus.textContent = '密鑰錯誤或伺服器無回應';
+        OP_KEY = '';
+      }
+    });
+  }
+
+  // --- tabs
+  document.querySelectorAll('.tab-link').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-link').forEach(b=>b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c=>c.classList.remove('active'));
+      btn.classList.add('active');
+      const id = btn.dataset.tab;
+      const target = document.getElementById(id);
+      if (target) target.classList.add('active');
+      if (id === 'tab-dashboard') loadDashboard();
+      if (id === 'tab-products') loadProducts();
+      if (id === 'tab-shipping') loadShipping();
+      if (id === 'tab-reports') loadReport();
+    });
+  });
+
+  // ================== DASHBOARD ==================
+  document.getElementById('refresh-dashboard').addEventListener('click', loadDashboard);
+  document.getElementById('dashboard-select-all').addEventListener('change', (e) => {
+    const checked = e.target.checked;
+    document.querySelectorAll('#dashboard-table tbody input[data-order-id]').forEach(cb => cb.checked = checked);
+  });
+  document.getElementById('bulk-delete-btn').addEventListener('click', async () => {
+    const selected = Array.from(document.querySelectorAll('#dashboard-table tbody input[data-order-id]:checked')).map(i => i.dataset.orderId);
+    if (!selected.length) { alert('請先勾選欲刪除的訂單'); return; }
+    const pwd = prompt('請輸入管理密碼以確認刪除（此動作會還原預留庫存）');
+    if (!pwd) return;
+    try {
+      for (const id of selected) {
+        await jfetch('/admin/delete-order', { op_key: pwd, order_id: id });
+      }
+      alert('已刪除選取訂單');
+      loadDashboard();
+    } catch (e) {
+      console.error(e);
+      alert('刪除失敗：' + e.message);
+    }
+  });
+
+  async function loadDashboard(){
+    const tbody = document.querySelector('#dashboard-table tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="12">載入中...</td></tr>';
+    try {
+      const data = await jfetch('/admin/dashboard', {});
+      const rows = (data.orders || []).filter(o => !['deleted'].includes((o.status||'').toLowerCase()));
+      if (!rows.length) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="12">沒有訂單</td></tr>';
+        return;
+      }
+      if (tbody) {
+        tbody.innerHTML = rows.map(o => {
+          return `<tr>
+            <td><input type="checkbox" data-order-id="${o.order_id}"></td>
+            <td>${fmtDate(o.created_at)}</td>
+            <td>${o.streamer_name || ''}</td>
+            <td>${o.order_id}</td>
+            <td>${translateStatus(o.status)}</td>
+            <td>${(o.deposit_proof || '').slice(-5)}</td>
+            <td>${o.total_amount || 0}</td>
+            <td>${o.payment_method || ''}</td>
+            <td>${o.shipping_cost || 0}</td>
+            <td>${o.tracking_number || ''}</td>
+            <td>${o.gift_notes || ''}</td>
+          </tr>`;
+        }).join('');
+      }
+    } catch (e) {
+      console.error('[loadDashboard]', e);
+      if (tbody) tbody.innerHTML = `<tr><td colspan="12">載入失敗: ${String(e.message||e)}</td></tr>`;
+    }
+  }
+
+  // ================== PRODUCTS ==================
+  document.getElementById('refresh-products').addEventListener('click', loadProducts);
+  document.getElementById('upload-inventory-btn').addEventListener('click', onUploadInventory);
+  document.getElementById('product-search').addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const v = e.target.value.trim();
+      if (!v) { loadProducts(); return; }
+      try {
+        // search by barcode
+        const all = await jfetch('/admin/products', { action: 'search' });
+        const found = (all.products || []).filter(p => (p.barcode||'').toString().includes(v) || (p.sku||'').toString().includes(v));
+        renderProducts(found);
+      } catch (err) { console.error(err); alert('搜尋失敗'); }
+    }
+  });
+
+  document.getElementById('create-product-btn').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const p = {
+      sku: document.getElementById('p_sku').value.trim(),
+      barcode: document.getElementById('p_barcode').value.trim(),
+      name: document.getElementById('p_name').value.trim(),
+      price_live: Number(document.getElementById('p_price_live').value||0),
+      cost: Number(document.getElementById('p_cost').value||0),
+      stock_on_hand: Number(document.getElementById('p_stock_on_hand').value||0)
+    };
+    if (!p.sku) { alert('請輸入 SKU'); return; }
+    try {
+      await jfetch('/admin/products', { action: 'create', product: p });
+      document.getElementById('product-status').textContent = '新增成功';
+      loadProducts();
+    } catch (e) {
+      console.error(e); alert('新增失敗: ' + e.message);
+    }
+  });
+
+  async function loadProducts(){
+    const tbody = document.querySelector('#products-table tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7">載入中...</td></tr>';
+    try {
+      const data = await jfetch('/admin/products', { action: 'search' });
+      const prods = data.products || [];
+      renderProducts(prods);
+    } catch (e) {
+      console.error('[loadProducts]', e);
+      if (tbody) tbody.innerHTML = `<tr><td colspan="7">載入失敗: ${String(e.message||e)}</td></tr>`;
+    }
+  }
+  function renderProducts(list){
+    const tbody = document.querySelector('#products-table tbody');
+    if (!tbody) return;
+    if (!list || !list.length) { tbody.innerHTML = '<tr><td colspan="7">沒有商品</td></tr>'; return; }
+    tbody.innerHTML = list.map(p => `<tr>
+      <td>${p.sku}</td><td>${p.barcode||''}</td><td>${p.name||''}</td><td>${p.price_live||0}</td><td>${p.stock_on_hand||0}</td><td>${p.stock_reserved||0}</td>
+    </tr>`).join('');
+  }
+
+  // 上傳 Excel/CSV (使用 xlsx lib)
+  async function onUploadInventory(){
+    const f = document.getElementById('inventory-file').files[0];
+    if (!f) { alert('請先選擇檔案'); return; }
+    try {
+      const buf = await f.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      if (!json || !json.length) { alert('檔案沒有資料'); return; }
+      // map to expected fields: sku, barcode, name, price_live, cost, stock_on_hand
+      const rows = json.map(r => ({
+        sku: (r.sku || r.SKU || r.Sku || r['商品編號'] || '').toString(),
+        barcode: r.barcode || r.BARCODE || r.Barcode || r['條碼'] || '',
+        name: r.name || r.NAME || r.Name || r['名稱'] || '',
+        price_live: Number(r.price_live || r.price || r['售價'] || 0),
+        cost: Number(r.cost || r.Cost || r['成本'] || 0),
+        stock_on_hand: Number(r.stock_on_hand || r.stock || r['庫存'] || 0)
+      })).filter(x => x.sku);
+      if (!rows.length) { alert('找不到有效 SKU'); return; }
+      const confirmUpload = confirm(`將上傳 ${rows.length} 筆資料。確定？`);
+      if (!confirmUpload) return;
+      const res = await jfetch('/admin/upload-inventory', { rows });
+      alert('上傳完成，處理: ' + (res.rows_processed||0));
+      loadProducts();
+    } catch (e) {
+      console.error('[upload inventory]', e);
+      alert('上傳失敗: ' + e.message);
+    }
+  }
+
+  // ================== SHIPPING (stub / minimal) ==================
+  document.getElementById('load-shipping').addEventListener('click', loadShipping);
+  async function loadShipping(){
+    // 目前僅示範：呼叫 /admin/dashboard 抓 status 為 awaiting_shipping_info 的訂單，或依你需求改
+    const labels = document.getElementById('shipping-labels');
+    if (labels) labels.innerHTML = '載入中...';
+    try {
+      const data = await jfetch('/admin/dashboard', {});
+      const orders = (data.orders || []).filter(o => (o.status||'').toLowerCase() === 'awaiting_shipping_info');
+      if (!orders.length) { if (labels) labels.innerHTML = '<p>沒有待出貨訂單</p>'; return; }
+      if (labels) labels.innerHTML = orders.map(o => `<div class="label"><h3>${o.order_id}</h3><div>收件人: ${(o.shipping_info && o.shipping_info.name) || ''}</div><div>運費: ${o.shipping_cost||0}</div></div>`).join('');
+    } catch (e) {
+      console.error('[loadShipping]', e);
+      if (labels) labels.innerHTML = '<p>載入失敗: ' + e.message + '</p>';
+    }
+  }
+
+  // ================== REPORTS ==================
+  document.getElementById('load-report').addEventListener('click', loadReport);
+  async function loadReport(){
+    const start = document.getElementById('report-start').value;
+    const end = document.getElementById('report-end').value;
+    const tbody = document.querySelector('#report-table tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="12">載入中...</td></tr>';
+    if (!start || !end) { if (tbody) tbody.innerHTML = '<tr><td colspan="12">請選擇日期</td></tr>'; return; }
+    try {
+      const res = await jfetch('/admin/export-orders', { start_date: start, end_date: end });
+      const rows = res.orders || [];
+      if (!rows.length) { if (tbody) tbody.innerHTML = '<tr><td colspan="12">沒有資料</td></tr>'; return; }
+      if (tbody) {
+        tbody.innerHTML = rows.map(o => `<tr>
+          <td>${fmtDate(o.created_at)}</td><td>${o.streamer_name||''}</td><td>${o.order_id}</td><td>${translateStatus(o.status)}</td><td>${o.total_amount||0}</td><td>${o.payment_method||''}</td><td>${o.shipping_cost||0}</td><td>${o.tracking_number||''}</td><td>${o.invoice_no||''}</td><td>${(o.shipping_info && o.shipping_info.name) || ''}</td><td>${(o.shipping_info && o.shipping_info.phone) || ''}</td><td>${(o.shipping_info && (o.shipping_info.address || o.shipping_info.store_name)) || ''}</td>
+        </tr>`).join('');
+      }
+    } catch (e) {
+      console.error('[loadReport]', e);
+      if (tbody) tbody.innerHTML = `<tr><td colspan="12">載入失敗: ${String(e.message||e)}</td></tr>`;
+    }
+  }
+
+  // ================== 防止未定義錯誤 (stub safety) ==================
+  // (若你已經在別處實作這些函式，可以移除下面三個 stub)
+  window.loadProducts = window.loadProducts || loadProducts;
+  window.loadShipping = window.loadShipping || loadShipping;
+  window.loadReport = window.loadReport || loadReport;
+
+  // 自動偵測是否已登入（如果 OP_KEY 預先有值）
+  if (OP_KEY) {
+    // 嘗試用 OP_KEY 驗證一次
+    jfetch('/admin/dashboard', {}).then(() => {
+      loginBox.classList.add('hidden');
+      adminPanel.classList.remove('hidden');
+      loadDashboard();
+    }).catch(e => console.log('[auto-auth failed]', e.message||e));
+  }
+});
 </script>
 
 </body>
-</html> 
+</html>
+
