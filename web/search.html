@@ -1,0 +1,56 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>主播庫存查詢</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f4f4f5;display:grid;place-items:center;min-height:100vh;margin:0}
+    .card{background:#fff;max-width:720px;width:92%;padding:28px;border-radius:14px;box-shadow:0 6px 20px rgba(0,0,0,.08)}
+    h1{margin:0 0 16px;font-weight:700;color:#222;text-align:center}
+    label{font-weight:600;color:#333}
+    input{width:100%;padding:12px 14px;border:1px solid #d9d9df;border-radius:10px;font-size:16px;box-sizing:border-box;margin:6px 0 14px}
+    button{width:100%;padding:12px 16px;border:0;border-radius:10px;background:#0d6efd;color:#fff;font-size:16px;cursor:pointer}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    #status{margin-top:12px;text-align:center;font-weight:600}
+    #result{margin-top:18px}
+    .item{display:flex;justify-content:space-between;border-bottom:1px dashed #eee;padding:10px 0}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>主播庫存查詢</h1>
+    <label for="q">請輸入主播名稱</label>
+    <input id="q" placeholder="例如：小藍" />
+    <button id="go">查詢</button>
+    <div id="status"></div>
+    <div id="result"></div>
+  </div>
+
+  <script>
+  const API = 'https://murain-api.smile650170703.workers.dev';
+  const $ = id => document.getElementById(id);
+  $('go').addEventListener('click', async()=>{
+    const name = $('q').value.trim();
+    if(!name){ $('status').textContent='請先輸入主播名稱'; $('status').style.color='crimson'; return; }
+    $('status').textContent='查詢中...'; $('status').style.color='#333';
+    $('result').innerHTML='';
+    try{
+      const r = await fetch(`${API}/inventory/search?streamer=${encodeURIComponent(name)}`);
+      const data = await r.json();
+      if(data.error) throw new Error(data.error);
+      if(!data.items || !data.items.length){ $('status').textContent='沒有找到庫存'; return; }
+      $('status').textContent='';
+      data.items.forEach(x=>{
+        const div=document.createElement('div'); div.className='item';
+        div.innerHTML=`<span>${x.name}</span><span>${x.qty}</span>`;
+        $('result').appendChild(div);
+      });
+    }catch(e){
+      $('status').textContent='查詢失敗：'+(e.message||e);
+      $('status').style.color='crimson';
+    }
+  });
+  </script>
+</body>
+</html>

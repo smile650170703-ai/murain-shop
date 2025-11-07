@@ -1,0 +1,140 @@
+﻿<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>主播主控系統 (v5.1)</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f4f4f5;display:grid;place-items:center;min-height:100vh;margin:0}
+    .container{background:#fff;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.08);padding:28px 32px;width:92%;max-width:560px}
+    h1{margin:0 0 16px;text-align:center}
+    .row{margin:10px 0}
+    label{display:block;font-weight:600;margin-bottom:6px}
+    input,textarea{width:100%;padding:12px;border:1px solid #d9d9df;border-radius:10px;box-sizing:border-box}
+    button{width:100%;padding:12px;border:0;border-radius:10px;background:#007aff;color:#fff;font-size:16px;cursor:pointer}
+    .btn-yellow{background:#ffc107;color:#000}
+    #status1,#status2,#status3{margin-top:8px;font-weight:600;text-align:center}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>主播主控系統 (v5.1)</h1>
+    <div class="row">
+      <label for="streamer_name">主播暱稱 (Q4)</label>
+      <input id="streamer_name" placeholder="請輸入您的暱稱">
+    </div>
+    <div class="row">
+      <button id="createCartBtn">1. 建立［一般客人］結帳單</button>
+    </div>
+    <div class="row">
+      <button id="createDepositBtn" class="btn-yellow">1. 建立［訂金客人］結帳單</button>
+    </div>
+    <div id="status1"></div>
+
+    <hr style="margin:18px 0;border:0;border-top:1px solid #eee">
+
+    <div id="step2" style="display:none">
+      <h3 id="cart-title">購物車</h3>
+      <div class="row">
+        <label for="barcode">商品條碼</label>
+        <input id="barcode" placeholder="輸入商品條碼">
+      </div>
+      <div class="row">
+        <label for="qty">數量</label>
+        <input id="qty" type="number" min="1" value="1">
+      </div>
+      <div class="row">
+        <label for="op_key">主播密碼（覆寫價格需填）</label>
+        <input id="op_key" type="password" placeholder="選填">
+      </div>
+      <div class="row">
+        <label for="override_price">覆寫單價（留空=不覆寫）</label>
+        <input id="override_price" type="number" placeholder="選填">
+      </div>
+      <div class="row">
+        <button id="addItemBtn">2. 加入商品</button>
+      </div>
+      <div id="status2"></div>
+
+      <hr style="margin:18px 0;border:0;border-top:1px solid #eee">
+
+      <div class="row">
+        <label for="gift_notes">贈品/訂單備註 (Q3)</label>
+        <textarea id="gift_notes" rows="3" placeholder="選填"></textarea>
+      </div>
+      <div class="row">
+        <button id="saveNotesBtn">儲存備註</button>
+      </div>
+      <div id="status3"></div>
+    </div>
+
+    <div id="step3" style="display:none">
+      <h3>結帳連結已產生</h3>
+      <input id="cart-link" readonly>
+      <button id="copyBtn">複製連結</button>
+    </div>
+  </div>
+
+  <script>
+  const API = 'https://murain-api.smile650170703.workers.dev';
+  let CURRENT_CART_TOKEN = null;
+  const $=id=>document.getElementById(id);
+
+  async function createCart(type){
+    $('status1').textContent='建立中...';
+    try{
+      const r = await fetch(`${API}/cart/create`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ streamer_name: $('streamer_name').value.trim(), customer_type: type })
+      });
+      const data = await r.json();
+      if(data.error) throw new Error(data.error);
+      CURRENT_CART_TOKEN = data.cart_token;
+      $('cart-title').textContent = `購物車（${data.order_id}）`;
+      $('step2').style.display='block';
+      $('step3').style.display='block';
+      $('status1').textContent='';
+      $('cart-link').value = (new URL(data.share_url, window.location.href)).href;
+    }catch(e){ $('status1').textContent='建立失敗：'+(e.message||e); }
+  }
+
+  $('createCartBtn').onclick = ()=>createCart('OLD');
+  $('createDepositBtn').onclick = ()=>createCart('DEPOSIT');
+
+  $('addItemBtn').onclick = async ()=>{
+    $('status2').textContent='加入中...';
+    const payload={ barcode:$('barcode').value.trim(), qty:parseInt($('qty').value,10) || 1 };
+    const op=$('op_key').value.trim(), price=$('override_price').value.trim();
+    if(op){ payload.op_key=op; if(price!=='') payload.override_price=parseInt(price,10); }
+    try{
+      const r = await fetch(`${API}/cart/${CURRENT_CART_TOKEN}/add`,{
+        method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)
+      });
+      const data = await r.json();
+      if(data.error) throw new Error(data.error);
+      $('status2').textContent=`已加入，總金額 $${data.total_amount}`;
+      $('barcode').value='';
+      $('qty').value=1;
+      $('override_price').value='';
+    }catch(e){ $('status2').textContent='加入失敗：'+(e.message||e); }
+  };
+
+  $('saveNotesBtn').onclick = async ()=>{
+    $('status3').textContent='儲存中...';
+    try{
+      const r = await fetch(`${API}/cart/${CURRENT_CART_TOKEN}/update-notes`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ cart_token: CURRENT_CART_TOKEN, gift_notes: $('gift_notes').value, op_key: $('op_key').value })
+      });
+      const data = await r.json();
+      if(data.error) throw new Error(data.error);
+      $('status3').textContent='備註已更新';
+    }catch(e){ $('status3').textContent='儲存失敗：'+(e.message||e); }
+  };
+
+  $('copyBtn').onclick = ()=>{
+    $('cart-link').select(); document.execCommand('copy'); alert('已複製結帳連結');
+  };
+  </script>
+</body>
+</html>
