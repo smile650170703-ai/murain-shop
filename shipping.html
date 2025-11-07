@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>MURAIN ???��? (v6.1)</title>
+    <title>MURAIN — 物流 (v6.1)</title>
     <style>
         body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 600px; padding: 1rem; background-color: #f9f9f9; }
         .container { background: #fff; border-radius: 8px; padding: 2rem; }
@@ -20,53 +20,53 @@
 </head>
 <body>
     <div class="container">
-        <h2>填寫?�件資�?</h2>
+        <h2>填寫收件資訊</h2>
         <form id="shipping-form">
             <div class="form-group">
-                <label for="s_name">?�件人�???/label>
+                <label for="s_name">收件人姓名</label>
                 <input type="text" id="s_name" required>
             </div>
             <div class="form-group">
-                <label for="s_phone">?�件人�?�?/label>
+                <label for="s_phone">收件人手機</label>
                 <input type="tel" id="s_phone" required>
             </div>
 
             <div class="form-group">
-                <label for="shipping_method">寄送方�?/label>
+                <label for="shipping_method">寄送方式</label>
                 <select id="shipping_method">
-                    <option value="7-11">7-11 (?��??��?)</option>
-                    <option value="MAIL">?��?/宅�?</option>
+                    <option value="7-11">7-11 (電子地圖)</option>
+                    <option value="MAIL">郵寄/宅配</option>
                 </select>
             </div>
 
             <div id="7-11-group">
                 <button type="button" id="select-store-btn" class="store-map-btn">
-                    點�??��? 7-11 ?��?(官方?��?)
+                    點我選擇 7-11 門市 (官方地圖)
                 </button>
                 <div id="store-info" class="hidden">
-                    <strong>已選?��?市�?</strong>
+                    <strong>已選擇門市：</strong>
                     <span id="store-name-display"></span> (<span id="store-id-display"></span>)
                 </div>
             </div>
 
             <div id="mail-group" class="hidden">
                 <div class="form-group">
-                    <label for="s_address">?��??��?</label>
+                    <label for="s_address">郵寄地址</label>
                     <input type="text" id="s_address">
                 </div>
             </div>
             
             <div id="bank-proof-group" class="form-group hidden">
-                <label for="deposit_proof">?�款帳�?後�?�?(必填)</label>
+                <label for="deposit_proof">匯款帳號後五碼 (必填)</label>
                 <input type="text" id="deposit_proof" inputmode="numeric" maxlength="5">
             </div>
             
             <div id="deposit-proof-group" class="form-group hidden">
-                <label for="deposit_proof_cod">訂�??�款後�?�?(必填)</label>
+                <label for="deposit_proof_cod">訂金匯款後五碼 (必填)</label>
                 <input type="text" id="deposit_proof_cod" inputmode="numeric" maxlength="5">
             </div>
             
-            <button type="submit" id="submitBtn">確�??�出</button>
+            <button type="submit" id="submitBtn">確認送出</button>
             <p id="status"></p>
         </form>
     </div>
@@ -80,7 +80,7 @@
         const API_ENDPOINT = 'https://murain-api.smile650170703.workers.dev';
         const urlParams = new URLSearchParams(window.location.search);
         const CART_TOKEN = urlParams.get('cart_token');
-        // (v6.1) Q5: 結帳?�傳來�?付款?��? (PAID, COD, DEPOSIT)
+        // (v6.1) Q5: 結帳頁傳來的付款方式 (PAID, COD, DEPOSIT)
         const PAYMENT_METHOD = urlParams.get('method'); 
 
         const status = document.getElementById('status');
@@ -96,56 +96,56 @@
         const selectStoreBtn = document.getElementById('select-store-btn');
         const storeInfo = document.getElementById('store-info');
         
-        // (v6.1) ?��?�?URL ?�到??7-11 ?�市�?�?
+        // (v6.1) 儲存從 URL 拿到的 7-11 門市資訊
         let SELECTED_STORE = {
             store_id: urlParams.get('store_id') || null,
             store_name: urlParams.get('store_name') || null,
             store_address: urlParams.get('store_address') || null,
         };
 
-        // --- 1. ?��??��???---
+        // --- 1. 初始化頁面 ---
         async function initializePage() {
             if (!CART_TOKEN) {
-                status.textContent = '?�誤：找不到購物�?;
+                status.textContent = '錯誤：找不到購物車';
                 submitBtn.disabled = true;
                 return;
             }
             
-            // (v6.1) Q5: ?��?付款?��?，決定顯�??��?欄�?
-            if (PAYMENT_METHOD === 'PAID') { // ?�行匯�??��?
+            // (v6.1) Q5: 根據付款方式，決定顯示/隱藏欄位
+            if (PAYMENT_METHOD === 'PAID') { // 銀行匯款/金流
                 groupBankProof.classList.remove('hidden');
                 document.getElementById('deposit_proof').required = true;
-                // ?��??��??��??�給已�?�?
+                // 郵寄選項只開放給已付款
                 document.getElementById('shipping_method').disabled = false;
-            } else if (PAYMENT_METHOD === 'DEPOSIT') { // ?�客訂�?
+            } else if (PAYMENT_METHOD === 'DEPOSIT') { // 新客訂金
                 groupDepositProof.classList.remove('hidden');
                 document.getElementById('deposit_proof_cod').required = true;
-                // 訂�??�強??7-11
+                // 訂金單強制 7-11
                 shippingMethodSelect.value = '7-11';
                 shippingMethodSelect.disabled = true;
-            } else if (PAYMENT_METHOD === 'COD') { // 一?�貨�?
-                 // 貨�?強制 7-11
+            } else if (PAYMENT_METHOD === 'COD') { // 一般貨付
+                 // 貨付強制 7-11
                 shippingMethodSelect.value = '7-11';
                 shippingMethodSelect.disabled = true;
             } else {
-                 status.textContent = '?�誤：�?款方式�??�確';
+                 status.textContent = '錯誤：付款方式不明確';
                  submitBtn.disabled = true;
                  return;
             }
             
-            // 觸發一�?change
+            // 觸發一次 change
             handleShippingMethodChange();
             
-            // (v6.1) Q5: ??��?��??��?
+            // (v6.1) Q5: 監聽物流方式
             shippingMethodSelect.addEventListener('change', handleShippingMethodChange);
             
-            // (v6.1) Q5: ??��?��??��??��?
+            // (v6.1) Q5: 監聽電子地圖按鈕
             selectStoreBtn.addEventListener('click', openStoreMap);
             
-            // (v6.1) 載入 localStorage ?�暫存�???(姓�?/?�話)
+            // (v6.1) 載入 localStorage 的暫存資料 (姓名/電話)
             loadTempCustomerInfo();
             
-            // (v6.1) 檢查 URL ?�否??7-11 ?�傳?��?�?
+            // (v6.1) 檢查 URL 是否有 7-11 回傳的門市
             checkStoreMapResult();
         }
         
@@ -156,21 +156,21 @@
             document.getElementById('s_address').required = (method === 'MAIL');
         }
         
-        // (v6.1) Q5: ?�叫 7-11 官方?��??��?
+        // (v6.1) Q5: 呼叫 7-11 官方電子地圖
         function openStoreMap() {
-            // 1. ?��?姓�??�電�?
+            // 1. 暫存姓名和電話
             localStorage.setItem(`murain_customer_name_${CART_TOKEN}`, document.getElementById('s_name').value);
             localStorage.setItem(`murain_customer_phone_${CART_TOKEN}`, document.getElementById('s_phone').value);
             
-            // 2. 設�??�呼 URL
+            // 2. 設定回呼 URL
             const callbackUrl = `${API_ENDPOINT}/shipping/711-callback?cart_token=${CART_TOKEN}&method=${PAYMENT_METHOD}`;
             document.getElementById('e-map-callback-url').value = callbackUrl;
             
-            // 3. ?�交表單，跳轉至 7-11
+            // 3. 提交表單，跳轉至 7-11
             document.getElementById('e-map-form').submit();
         }
         
-        // (v6.1) Q5: 載入 7-11 跳�??��?姓�?/?�話
+        // (v6.1) Q5: 載入 7-11 跳轉前的姓名/電話
         function loadTempCustomerInfo() {
             const name = localStorage.getItem(`murain_customer_name_${CART_TOKEN}`);
             const phone = localStorage.getItem(`murain_customer_phone_${CART_TOKEN}`);
@@ -178,29 +178,29 @@
             if (phone) document.getElementById('s_phone').value = phone;
         }
         
-        // (v6.1) Q5: ?�面載入?��?檢查 URL ?�否??7-11 ?�傳?��???
+        // (v6.1) Q5: 頁面載入時，檢查 URL 是否有 7-11 回傳的資料
         function checkStoreMapResult() {
             if (SELECTED_STORE.store_id) {
-                // 顯示已選?��??��?
+                // 顯示已選擇的門市
                 document.getElementById('store-name-display').textContent = SELECTED_STORE.store_name;
                 document.getElementById('store-id-display').textContent = SELECTED_STORE.store_id;
                 storeInfo.classList.remove('hidden');
                 
-                // ?��??��? 7-11
+                // 自動選擇 7-11
                 shippingMethodSelect.value = '7-11';
                 handleShippingMethodChange();
                 
-                // (v6.1) 清�? URL
+                // (v6.1) 清理 URL
                 const cleanUrl = window.location.pathname + `?cart_token=${CART_TOKEN}&method=${PAYMENT_METHOD}`;
                 window.history.replaceState({}, document.title, cleanUrl);
             }
         }
 
-        // --- 2. ?�交表單 ---
+        // --- 2. 提交表單 ---
         shippingForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             submitBtn.disabled = true;
-            status.textContent = '資�??�出�?..';
+            status.textContent = '資料送出中...';
 
             const s_name = document.getElementById('s_name').value;
             const s_phone = document.getElementById('s_phone').value;
@@ -210,7 +210,7 @@
             
             if (selected_shipping === '7-11') {
                 if (!SELECTED_STORE.store_id) {
-                    status.textContent = '請�??��??�選??7-11 ?��?;
+                    status.textContent = '請點擊按鈕選擇 7-11 門市';
                     submitBtn.disabled = false;
                     return;
                 }
@@ -220,7 +220,7 @@
                 shipping_info.address = document.getElementById('s_address').value;
             }
 
-            // (v6.1) Q1/Q5: ?��?後�?�?
+            // (v6.1) Q1/Q5: 取得後五碼
             let proof = '';
             if (PAYMENT_METHOD === 'PAID') {
                 proof = document.getElementById('deposit_proof').value;
@@ -228,7 +228,7 @@
                 proof = document.getElementById('deposit_proof_cod').value;
             }
             if (!proof && (PAYMENT_METHOD === 'PAID' || PAYMENT_METHOD === 'DEPOSIT')) {
-                 status.textContent = '請填寫匯款�?五碼';
+                 status.textContent = '請填寫匯款後五碼';
                  submitBtn.disabled = false;
                  return;
             }
@@ -249,15 +249,15 @@
                 const data = await res.json();
                 if (data.error) throw new Error(data.error);
 
-                // (v6.1) 清除?��?
+                // (v6.1) 清除暫存
                 localStorage.removeItem(`murain_customer_name_${CART_TOKEN}`);
                 localStorage.removeItem(`murain_customer_phone_${CART_TOKEN}`);
 
-                // 跳�??��??��?
+                // 跳轉到結果頁
                 window.location.href = `order-result.html?order_id=${data.order_id}&status=${data.status}`;
                 
             } catch (e) {
-                status.textContent = '?�交失�?: ' + e.message;
+                status.textContent = '提交失敗: ' + e.message;
                 submitBtn.disabled = false;
             }
         });
