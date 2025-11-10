@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>直播主開單（OP）</title>
+  <style>
+    body { font-family: system-ui, 'Noto Sans TC', sans-serif; background:#f6f7fb; margin:0; }
+    .wrap { max-width: 720px; margin: 24px auto; padding: 0 12px; }
+    .card { background:#fff; border-radius:14px; box-shadow:0 8px 24px rgba(0,0,0,.08); padding:18px; }
+    .row { display:flex; gap:10px; }
+    input, textarea { width:100%; padding:12px; border:1px solid #ddd; border-radius:10px; }
+    button { padding:12px 16px; border:0; border-radius:12px; background:#111; color:#fff; cursor:pointer; }
+    .btn-outline { background:#fff; color:#111; border:1px solid #ddd; }
+    .muted { color:#666; font-size:.92rem; }
+    table { width:100%; border-collapse: collapse; margin-top:10px; }
+    th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; }
+    .right { text-align:right; }
+    .ok { color:#0a0; }
+    .danger { color:#b00; }
+    .toolbar { display:flex; gap:10px; flex-wrap:wrap; }
+    .pill { background:#111; color:#fff; padding:8px 12px; border-radius:999px; font-size:.9rem; }
+    .copy { margin-left:6px; }
+  </style>
+
+  <!-- 重要：改成你的 API 網址 -->
+  <script>window.API_BASE="https://api.murain.tw"</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h2>直播主開單（OP）</h2>
+    <div class="muted" id="cartinfo">購物車尚未建立</div>
+
+    <div style="margin-top:10px" class="row">
+      <input id="op_name" placeholder="主播名稱（必填）" />
+      <button id="btn-newcart">1. 建立購物車</button>
+    </div>
+
+    <div style="margin-top:12px" class="row">
+      <input id="sku" placeholder="商品 Barcode / SKU" />
+      <input id="qty" type="number" min="1" value="1" style="max-width:120px" />
+      <input id="opkey" placeholder="主播密碼（OP Key, 用來改價）" />
+    </div>
+
+    <div class="row" style="margin-top:8px">
+      <input id="price_override" type="number" placeholder="（可選）改後單價，需輸入 OP Key" />
+      <button id="btn-add">2. 加入商品</button>
+    </div>
+
+    <div id="hint" class="muted" style="margin-top:8px"></div>
+
+    <table id="itemsTbl">
+      <thead><tr><th>SKU</th><th>品名</th><th class="right">單價</th><th class="right">數量</th><th class="right">小計</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="right" style="margin-top:6px;font-weight:700">合計 NT$ <span id="total">0</span></div>
+
+    <div style="margin-top:12px">
+      <textarea id="note" rows="3" placeholder="贈品／訂單備註（會寫進訂單 shipping_info.note）"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="btn-save-note" class="btn-outline">儲存備註</button>
+        <span id="noteSaved" class="muted"></span>
+      </div>
+    </div>
+
+    <div style="margin-top:14px" class="toolbar">
+      <span class="muted">產生結帳連結：</span>
+      <button class="btn-outline" id="link-new">新客匯款</button>
+      <button class="btn-outline" id="link-mix">老客 7-11 COD / 其他金流</button>
+    </div>
+    <div id="out" style="margin-top:10px; display:none;">
+      <div class="muted">把此連結傳給客人：</div>
+      <div><span class="pill" id="share"></span><button id="copy" class="btn-outline copy">複製</button></div>
+      <div style="text-align:center;margin-top:8px;"><img id="qr" alt="QR"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API=(window.API_BASE||'').replace(/\/$/,'')||'';
+let CART_TOKEN='', ORDER_ID='';
+
+async function jsGet(u){ const r=await fetch(API+u); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+async function jsPost(u,d){ const r=await fetch(API+u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d||{})}); if(!r.ok){ throw new Error(`HTTP ${r.status}: ` + await r.text()); } return r.json(); }
+function fmt(n){ return (n||0).toLocaleString(); }
+function setInfo(){ const el=document.getElementById('cartinfo'); el.innerHTML = CART_TOKEN ? `購物車：<b>${ORDER_ID}</b> <span class="muted">（${CART_TOKEN}）</span>` : '購物車尚未建立'; }
+
+async function ensureCart(){
+  if (CART_TOKEN) return;
+  const name=(document.getElementById('op_name').value||'').trim();
+  if(!name){ alert('請先填主播名稱'); return; }
+  const r=await jsPost('/cart/create',{ streamer_name: name, customer_type: 'live' });
+  CART_TOKEN=r.cart_token; ORDER_ID=r.order_id;
+  setInfo(); await refresh();
+}
+
+async function refresh(){
+  if(!CART_TOKEN) return;
+  const r=await jsGet('/cart/'+CART_TOKEN);
+  const tbody=document.querySelector('#itemsTbl tbody');
+  tbody.innerHTML='';
+  let total=0;
+  (r.items||[]).forEach(i=>{
+    total += i.price*i.qty;
+    const tr=document.createElement('tr');
+    tr.innerHTML = `<td>${i.sku}</td><td>${i.name}</td><td class="right">NT$ ${fmt(i.price)}</td><td class="right">${i.qty}</td><td class="right">NT$ ${fmt(i.price*i.qty)}</td><td class="right"><button class="btn-outline" data-sku="${i.sku}">刪除</button></td>`;
+    tbody.appendChild(tr);
+  });
+  document.getElementById('total').innerText = fmt(total);
+}
+
+async function addItem(){
+  await ensureCart();
+  if(!CART_TOKEN) return;
+  const sku=(document.getElementById('sku').value||'').trim();
+  const qty=parseInt(document.getElementById('qty').value||'1',10);
+  const op_key=(document.getElementById('opkey').value||'').trim();
+  const override=document.getElementById('price_override').value;
+  if(!sku || qty<=0){ alert('請輸入 Barcode 與數量'); return; }
+  // 試著從 DB 撈品名與價格（若無就用 sku 當名、需要手填價格或用 override）
+  let prod=null;
+  try { prod = await jsGet('/product/'+encodeURIComponent(sku)); } catch(e){}
+  let name = (prod && prod.product && prod.product.name) || sku;
+  let price = (prod && prod.product && prod.product.price) || null;
+  // 若 DB 沒價、但輸入了 override，就用 override
+  const body = { cart_token: CART_TOKEN, sku, name, qty };
+  if (override) body.price = parseInt(override,10);
+  if (op_key) body.op_key = op_key;
+  const r = await jsPost('/cart/add', body);
+  document.getElementById('hint').innerHTML = `<span class="ok">已加入：${name} × ${qty}</span>`;
+  document.getElementById('sku').value=''; document.getElementById('qty').value='1'; document.getElementById('price_override').value='';
+  await refresh();
+}
+
+async function saveNote(){
+  if(!CART_TOKEN) return alert('請先建立購物車');
+  const note=document.getElementById('note').value||'';
+  await jsPost('/cart/note', { cart_token: CART_TOKEN, note });
+  document.getElementById('noteSaved').innerText='已儲存';
+  setTimeout(()=>document.getElementById('noteSaved').innerText='', 1200);
+}
+
+function makeLink(flow){
+  if(!CART_TOKEN) return alert('請先建立購物車');
+  const url = `${location.origin}/checkout.html?cart_token=${encodeURIComponent(CART_TOKEN)}&flow=${flow}`;
+  document.getElementById('share').innerText = url;
+  document.getElementById('qr').src = 'https://chart.googleapis.com/chart?chs=240x240&cht=qr&chl=' + encodeURIComponent(url);
+  document.getElementById('out').style.display='block';
+}
+
+// 事件
+document.getElementById('btn-newcart').addEventListener('click', ensureCart);
+document.getElementById('btn-add').addEventListener('click', addItem);
+document.getElementById('btn-save-note').addEventListener('click', saveNote);
+document.getElementById('link-new').addEventListener('click', ()=>makeLink('new'));
+document.getElementById('link-mix').addEventListener('click', ()=>makeLink('mix'));
+document.getElementById('copy').addEventListener('click', ()=>{
+  navigator.clipboard.writeText(document.getElementById('share').innerText);
+  document.getElementById('copy').innerText='已複製';
+  setTimeout(()=>document.getElementById('copy').innerText='複製', 1000);
+});
+document.querySelector('#itemsTbl tbody').addEventListener('click', async (e)=>{
+  if(e.target.matches('button[data-sku]')){
+    const sku=e.target.getAttribute('data-sku');
+    await jsPost('/cart/add', { cart_token: CART_TOKEN, sku, qty: 0 }); // qty=0 視為移除
+    await refresh();
+  }
+});
+</script>
+</body>
+</html>
