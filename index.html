@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>MURAIN — 一頁式網站</title>
+<style>body{font-family:system-ui,'Noto Sans TC',sans-serif;margin:0;background:#f8f8fb}.wrap{max-width:960px;margin:0 auto;padding:1rem}header{text-align:center;padding:1rem 0}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}.card{background:#fff;border-radius:12px;padding:12px;box-shadow:0 4px 10px rgba(0,0,0,.05);display:flex;flex-direction:column}.bar{position:sticky;bottom:0;background:#111;color:#fff;padding:12px;display:flex;justify-content:space-between;align-items:center}button{padding:8px 12px;border:0;border-radius:10px;background:#111;color:#fff}.btn-outline{background:#fff;color:#111;border:1px solid #ddd}.muted{color:#666;font-size:.9rem}</style>
+<!-- 可選：若未在 Pages 加環境變數，請在這裡手動指定 API -->
+<!-- <script>window.API_BASE="https://api.murain.tw"</script> -->
+</head>
+<body><div class="wrap"><header><div class="muted">MURAIN / 栩願國際</div><h1>一頁式介紹 + 快速購物</h1><p class="muted">示範頁，請自行替換商品。</p></header><section class="grid" id="list"></section></div>
+<div class="bar"><div><span id="total">NT$ 0</span>（<span id="count">0</span> 件）</div><div><button class="btn-outline" id="refresh">重讀</button><button id="go-checkout">前往結帳</button></div></div>
+<script>
+const API=(window.API_BASE||'').replace(/\/$/,'')||'';let CART_TOKEN=localStorage.getItem('cart_token')||'';
+async function post(u,d){const r=await fetch(API+u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d||{})});return r.json();}
+async function get(u){const r=await fetch(API+u);return r.json();}
+async function ensureCart(){if(CART_TOKEN) return; const r=await post('/cart/create',{streamer_name:'Public',customer_type:'web'});CART_TOKEN=r.cart_token;localStorage.setItem('cart_token',CART_TOKEN);}
+const products=[{sku:'MK123',name:'玫瑰絲漾洗髮精 500ml',price:580},{sku:'MK124',name:'全方位蛋白修護精華 250ml',price:720},{sku:'CB101',name:'COACH 經典托特（示範）',price:8990},{sku:'TB202',name:'TORY BURCH 小方包（示範）',price:11800}];
+function render(){const el=document.getElementById('list');el.innerHTML=products.map(p=>`<div class="card"><div class="muted">SKU: ${p.sku}</div><h3>${p.name}</h3><div class="price">NT$ ${p.price.toLocaleString()}</div><div style="display:flex; gap:6px; align-items:center;"><label>數量 <input class="qty" type="number" min="1" value="1" id="q_${p.sku}"/></label><button onclick="addItem('${p.sku}')">加入購物車</button></div></div>`).join('');}
+async function addItem(sku){await ensureCart();const p=products.find(x=>x.sku===sku);const q=parseInt(document.getElementById('q_'+sku).value,10)||1;const r=await post('/cart/add',{cart_token:CART_TOKEN,sku:p.sku,name:p.name,price:p.price,qty:q});updateBar(r);}
+function updateBar(data){if(!data||!data.items) return;const count=data.items.reduce((s,i)=>s+i.qty,0);const total=data.items.reduce((s,i)=>s+i.price*i.qty,0);document.getElementById('count').innerText=count;document.getElementById('total').innerText='NT$ '+total.toLocaleString();}
+document.getElementById('go-checkout').addEventListener('click',async ()=>{await ensureCart();location.href='./checkout.html?cart_token='+CART_TOKEN;});
+document.getElementById('refresh').addEventListener('click',async ()=>{if(!CART_TOKEN) return; const r=await get('/cart/'+CART_TOKEN); updateBar({items:r.items||[]});});
+(async ()=>{await ensureCart();render();const r=await get('/cart/'+CART_TOKEN);updateBar({items:r.items||[]});})();</script></body></html>
