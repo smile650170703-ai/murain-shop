@@ -1,141 +1,160 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>後台管理（MURAIN）</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>後台管理</title>
+  <script>window.API_BASE="https://your-worker-domain";</script>
   <style>
-    body { font-family: system-ui, 'Noto Sans TC', sans-serif; margin:0; background:#f5f6fa; }
-    .wrap { max-width: 1000px; margin: 0 auto; padding: 12px; }
-    .card { background:#fff; border-radius:14px; box-shadow:0 8px 24px rgba(0,0,0,.08); padding:16px; margin:10px 0; }
-    .row { display:flex; gap:10px; flex-wrap:wrap; }
-    input, button, select, textarea { padding:10px; border-radius:10px; border:1px solid #ddd; }
-    button { background:#111; color:#fff; border:0; cursor:pointer; }
-    .btn-outline { background:#fff; color:#111; border:1px solid #ddd; }
-    table { width:100%; border-collapse: collapse; }
-    th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; }
-    .muted { color:#666; font-size:.92rem; }
-    .right { text-align:right; }
-    .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
-    .pill { background:#111; color:#fff; padding:6px 10px; border-radius:999px; font-size:.85rem; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f6f7fb;margin:0;color:#111}
+    .wrap{max-width:1000px;margin:20px auto;padding:0 14px}
+    h1{font-size:20px;margin:0 0 12px 0}
+    .card{background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.06);padding:16px 16px 18px 16px;margin:12px 0}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    input,select,button,a.btn-outline{padding:10px 12px;border-radius:10px;border:1px solid #dcdde3;background:#fff}
+    input{min-width:220px}
+    button{background:#111;color:#fff;border:0;cursor:pointer}
+    .btn-outline{background:#fff !important;color:#111 !important;border:1px solid #dcdde3;text-decoration:none}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{padding:8px 10px;border-bottom:1px solid #eee} th{background:#fafafb;text-align:left}
+    .right{text-align:right}.mono{font-family:ui-monospace,Consolas,monospace}
+    .muted{color:#666}
   </style>
-  <script>window.API_BASE="https://api.murain.tw"</script>
 </head>
 <body>
-<div class="wrap">
-  <h2>後台管理</h2>
-  <div class="card">
-    <div class="row">
-      <input id="key" placeholder="Admin Key（與 Worker 環境變數 ADMIN_KEY 相同）" style="flex:1" />
-      <button id="saveKey" class="btn-outline">儲存 Key</button>
-      <span class="muted">儲存後會放在本機瀏覽器</span>
+  <div id="gate" style="position:fixed;inset:0;background:#f5f6fa;display:flex;align-items:center;justify-content:center;z-index:9999">
+    <div style="background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:24px; width:min(92vw,380px)">
+      <h3 style="margin:0 0 12px 0">管理後台登入</h3>
+      <input id="gate_key" type="password" placeholder="Admin Key" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:10px">
+      <button id="gate_go" style="margin-top:10px;width:100%;padding:12px;border:0;border-radius:10px;background:#111;color:#fff;cursor:pointer">進入</button>
+      <div id="gate_msg" style="margin-top:8px;color:#b00;font-size:.9rem"></div>
     </div>
   </div>
 
-  <div class="card">
-    <h3>一、上傳商品（CSV / JSON）</h3>
-    <div class="muted">欄位：sku,name,price,stock_qty</div>
-    <div class="row" style="margin-top:6px">
-      <input type="file" id="file" accept=".csv,.json,text/csv,application/json" />
-      <button id="upload">上傳</button>
-      <a class="btn-outline" href="#" id="dl-template">下載 CSV 範本</a>
-    </div>
-    <div id="uploadResult" class="muted"></div>
-  </div>
+  <div class="wrap">
+    <h1>後台管理</h1>
 
-  <div class="card">
-    <h3>二、訂單查詢</h3>
-    <div class="row">
-      <input id="q" placeholder="關鍵字（order_id / 姓名 / 電話 / 門市）" style="flex:1" />
-      <button id="search" class="btn-outline">查詢</button>
-      <a class="btn-outline" id="exportOrders" href="#">匯出 Orders.csv</a>
-      <a class="btn-outline" id="exportItems" href="#">匯出 OrderItems.csv</a>
+    <div class="card">
+      <div class="row">
+        <input id="key" placeholder="Admin Key">
+        <button id="saveKey">儲存 Key</button>
+        <span class="muted">儲存後會放在本機瀏覽器</span>
+      </div>
     </div>
-    <table id="orders" style="margin-top:10px">
-      <thead><tr><th>Order</th><th>金額</th><th>付款</th><th>狀態</th><th>客資</th><th>操作</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </div>
-<div class="card">
-  <h3>快速調整庫存（單筆）</h3>
-  <div class="row">
-    <input id="adj_sku" placeholder="SKU（必填）" style="max-width:220px">
-    <input id="adj_delta" type="number" value="1" style="max-width:120px">
-    <button id="btn_minus1" class="btn-outline">-1</button>
-    <button id="btn_plus1"  class="btn-outline">+1</button>
-    <button id="btn_adj">送出調整</button>
-    <button id="btn_stock" class="btn-outline">查目前庫存</button>
-  </div>
-  <div id="adj_result" class="muted"></div>
-</div>
 
-  <div class="card">
-    <h3>三、出貨與通知</h3>
-    <div class="row">
-      <input id="ship_order" placeholder="Order ID" class="mono" style="flex:1" />
-      <input id="ship_carrier" placeholder="物流（7-11/黑貓/...）" />
-      <input id="ship_no" placeholder="貨運單號" class="mono" />
-      <input id="ship_fee" type="number" placeholder="運費（整數）" style="max-width:120px" />
+    <div class="card">
+      <h3>一、上傳商品（CSV / JSON）</h3>
+      <div class="row">
+        <input type="file" id="file">
+        <button id="upload">上傳</button>
+        <a id="dl-template" class="btn-outline" href="#">下載 CSV 範本</a>
+      </div>
+      <div id="uploadResult" class="muted" style="margin-top:8px"></div>
     </div>
-    <div class="row" style="margin-top:6px">
-      <button id="btn-ship">登記出貨</button>
-      <button id="btn-notify" class="btn-outline">發送寄出通知（LINE Notify / 內建訊息）</button>
-      <a id="btn-print" class="btn-outline" target="_blank">列印熱感應小白單</a>
+
+    <div class="card">
+      <h3>二、訂單查詢</h3>
+      <div class="row">
+        <input id="q" placeholder="關鍵字（order_id / 姓名 / 電話 / 門市）" style="flex:1">
+        <button id="search" class="btn-outline">查詢</button>
+        <a id="exportOrders" class="btn-outline" href="#">匯出 Orders.csv</a>
+        <a id="exportItems"  class="btn-outline" href="#">匯出 OrderItems.csv</a>
+      </div>
+      <table id="orders">
+        <thead>
+          <tr><th>Order</th><th class="right">金額</th><th>付款</th><th>狀態</th><th>客資</th><th>操作</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
-    <div id="shipResult" class="muted"></div>
+
+    <div class="card">
+      <h3>三、快速調整庫存（單筆）</h3>
+      <div class="row">
+        <input id="adj_sku" placeholder="SKU（必填）">
+        <input id="adj_delta" type="number" value="1" style="max-width:120px">
+        <button id="btn_minus1" class="btn-outline">-1</button>
+        <button id="btn_plus1"  class="btn-outline">+1</button>
+        <button id="btn_adj">送出調整</button>
+        <button id="btn_stock" class="btn-outline">查目前庫存</button>
+      </div>
+      <div id="adj_result" class="muted" style="margin-top:6px"></div>
+    </div>
+
+    <div class="card">
+      <h3>四、出貨與通知</h3>
+      <div class="row">
+        <input id="ship_order" placeholder="Order ID">
+        <select id="ship_carrier">
+          <option value="">物流（7-11/黑貓/...）</option>
+          <option>7-11</option><option>全家</option><option>黑貓</option><option>郵局</option>
+        </select>
+        <input id="ship_no" placeholder="貨運單號">
+        <input id="ship_fee" type="number" placeholder="運費（整數）">
+      </div>
+      <div class="row">
+        <button id="btn-ship">登記出貨</button>
+        <button id="btn-notify" class="btn-outline">發送寄出通知（LINE Notify / 內建訊息）</button>
+        <a id="btn-print" class="btn-outline" href="#">列印熱感應小白單</a>
+      </div>
+      <div id="shipResult" class="muted" style="margin-top:6px"></div>
+    </div>
+
+    <div class="card">
+      <h3>五、商品清單 / 庫存</h3>
+      <div class="row">
+        <input id="pq" placeholder="關鍵字（SKU / 名稱）" style="flex:1">
+        <button id="psearch" class="btn-outline">查詢</button>
+        <a id="exportProducts" class="btn-outline" href="#">匯出 Products.csv</a>
+      </div>
+      <table id="ptbl" style="margin-top:10px">
+        <thead><tr><th>SKU</th><th>名稱</th><th class="right">售價</th><th class="right">庫存</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <div class="row" style="margin-top:6px;align-items:center">
+        <button id="pprev" class="btn-outline">上一頁</button>
+        <span id="pinfo" class="muted"></span>
+        <button id="pnext" class="btn-outline">下一頁</button>
+      </div>
+    </div>
   </div>
-</div>
-<div class="card">
-  <h3>四、商品清單 / 庫存</h3>
-  <div class="row">
-    <input id="pq" placeholder="關鍵字（SKU / 名稱）" style="flex:1">
-    <button id="psearch" class="btn-outline">查詢</button>
-    <a id="exportProducts" class="btn-outline" href="#">匯出 Products.csv</a>
-  </div>
-  <table id="ptbl" style="margin-top:10px">
-    <thead>
-      <tr><th>SKU</th><th>名稱</th><th class="right">售價</th><th class="right">庫存</th></tr>
-    </thead>
-    <tbody></tbody>
-  </table>
-  <div class="row" style="margin-top:6px;align-items:center">
-    <button id="pprev" class="btn-outline">上一頁</button>
-    <span id="pinfo" class="muted"></span>
-    <button id="pnext" class="btn-outline">下一頁</button>
-  </div>
-</div>
 
 <script>
-const API = (window.API_BASE || '').replace(/\/+$/,'');  // 去掉結尾斜線
-function key(){ return localStorage.getItem('ADMIN_KEY') || ''; }
-function setKey(v){ localStorage.setItem('ADMIN_KEY', v || ''); }
+const API = (window.API_BASE || '').replace(/\/+$/,'');
+function key(){ try{return localStorage.getItem('ADMIN_KEY')||''}catch(_){return ''} }
+function setKey(v){ try{localStorage.setItem('ADMIN_KEY', v||'')}catch(_){} }
 
-// --- 初始化 Admin Key 與匯出連結 ---
+async function gateTry(){
+  const k = (document.getElementById('gate_key').value || '').trim();
+  if(!k){ document.getElementById('gate_msg').textContent='請輸入 Key'; return; }
+  const r = await fetch(API + '/admin/auth', { method:'POST', headers:{ 'Authorization':'Bearer '+k } });
+  if(r.ok){
+    setKey(k); document.getElementById('key').value = k;
+    updateExportLinks(); document.getElementById('gate').style.display='none';
+  }else{
+    document.getElementById('gate_msg').textContent='Key 錯誤';
+  }
+}
+document.getElementById('gate_go').onclick = gateTry;
+document.getElementById('gate_key').addEventListener('keydown', e=>{ if(e.key==='Enter') gateTry(); });
+(async ()=>{ const k = key(); if(k){ const r = await fetch(API + '/admin/auth', { method:'POST', headers:{ 'Authorization':'Bearer '+k } }); if(r.ok) document.getElementById('gate').style.display='none'; } })();
+
 function updateExportLinks(){
   const k = encodeURIComponent(key());
   document.getElementById('exportOrders').href = API + '/admin/export/orders.csv?key=' + k;
   document.getElementById('exportItems').href  = API + '/admin/export/order_items.csv?key=' + k;
+  document.getElementById('exportProducts').href  = API + '/admin/export/products.csv?key=' + k + '&q=' + encodeURIComponent(document.getElementById('pq').value||'');
 }
-document.getElementById('saveKey').onclick = () => {
-  setKey(document.getElementById('key').value);
-  updateExportLinks();
-  alert('已儲存');
-};
-document.getElementById('key').value = key();
-updateExportLinks();
+document.getElementById('saveKey').onclick=()=>{ setKey(document.getElementById('key').value); updateExportLinks(); alert('已儲存'); };
+document.getElementById('key').value = key(); updateExportLinks();
 
-// --- 下載 CSV 範本 ---
 document.getElementById('dl-template').addEventListener('click', (e)=>{
   e.preventDefault();
-  const csv = 'sku,name,price,stock_qty\nAA001,示範商品A,299,100\nBB002,示範商品B,499,50\n';
+  const csv = 'sku,name,price,stock_qty\\nAA001,示範商品A,299,100\\nBB002,示範商品B,499,50\\n';
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'products_template.csv';
-  a.click();
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'products_template.csv'; a.click();
 });
 
-// --- 上傳商品（CSV/JSON）---
 document.getElementById('upload').onclick = async () => {
   const f = document.getElementById('file').files[0];
   if (!f) { alert('請選擇檔案'); return; }
@@ -144,7 +163,7 @@ document.getElementById('upload').onclick = async () => {
   if (f.name.toLowerCase().endsWith('.json')) {
     rows = JSON.parse(txt);
   } else {
-    const lines = txt.trim().split(/\r?\n/);
+    const lines = txt.trim().split(/\\r?\\n/);
     const header = lines[0].split(',').map(s=>s.trim());
     for (let i=1;i<lines.length;i++){
       const cols = lines[i].split(',').map(s=>s.trim());
@@ -165,14 +184,12 @@ document.getElementById('upload').onclick = async () => {
   document.getElementById('uploadResult').textContent = '回應：'+t;
 };
 
-// --- 查詢訂單 ---
 document.getElementById('search').onclick = async () => {
   const r = await fetch(API+'/admin/orders?q='+encodeURIComponent(document.getElementById('q').value||''), {
     headers: { 'Authorization':'Bearer '+key() }
   });
   const data = await r.json();
-  const tb = document.querySelector('#orders tbody');
-  tb.innerHTML='';
+  const tb = document.querySelector('#orders tbody'); tb.innerHTML='';
   (data.list||[]).forEach(o=>{
     const info = o.shipping_info || {};
     const row = document.createElement('tr');
@@ -181,14 +198,11 @@ document.getElementById('search').onclick = async () => {
       <td>${o.payment_method||''}</td>
       <td>${o.status||''}</td>
       <td>${info.name||''} / ${info.phone||''} / ${info.email||''} / ${info.store||info.address||''}</td>
-      <td>
-        <a href="${location.origin}/admin-print.html?order_id=${encodeURIComponent(o.order_id)}&key=${encodeURIComponent(key())}" target="_blank">列印</a>
-      </td>`;
+      <td><a href="${location.origin}/admin-print.html?order_id=${encodeURIComponent(o.order_id)}&key=${encodeURIComponent(key())}" target="_blank">列印</a></td>`;
     tb.appendChild(row);
   });
 };
 
-// --- 出貨登記 / 通知 / 列印 ---
 document.getElementById('btn-ship').onclick = async ()=>{
   const body = {
     order_id: document.getElementById('ship_order').value.trim(),
@@ -222,21 +236,16 @@ document.getElementById('btn-print').onclick = (e)=>{
   window.open(`./admin-print.html?order_id=${encodeURIComponent(id)}&key=${encodeURIComponent(key())}`,'_blank');
 };
 
-// =================== 單筆庫存調整 ===================
-// 需要頁面上有：#adj_sku, #adj_delta, #btn_minus1, #btn_plus1, #btn_adj, #btn_stock, #adj_result
 async function checkStock(){
   const sku = document.getElementById('adj_sku').value.trim();
   if(!sku) return alert('請先輸入 SKU');
   const r = await fetch(API + '/product/' + encodeURIComponent(sku));
   const data = await r.json();
   if (!data.found) {
-    document.getElementById('adj_result').textContent = '找不到此 SKU（請用上傳商品建立）';
-    return;
+    document.getElementById('adj_result').textContent = '找不到此 SKU（請用上傳商品建立）'; return;
   }
-  document.getElementById('adj_result').textContent =
-    `【${data.product.sku}】${data.product.name} 目前庫存：${data.product.stock_qty}`;
+  document.getElementById('adj_result').textContent = `【${data.product.sku}】${data.product.name} 目前庫存：${data.product.stock_qty}`;
 }
-
 async function adjustStock(delta){
   const sku = document.getElementById('adj_sku').value.trim();
   if(!sku) return alert('請先輸入 SKU');
@@ -249,7 +258,6 @@ async function adjustStock(delta){
   document.getElementById('adj_result').textContent = '回應：' + txt;
   if (r.ok) await checkStock();
 }
-
 document.getElementById('btn_minus1').onclick = () => {
   const v = parseInt(document.getElementById('adj_delta').value || '1', 10);
   adjustStock(-Math.abs(v));
@@ -264,17 +272,13 @@ document.getElementById('btn_adj').onclick = () => {
   adjustStock(v);
 };
 document.getElementById('btn_stock').onclick = checkStock;
-</script>
-<script>
-// ======== 商品清單 / 庫存 ========
-let pOffset = 0; const pLimit = 50;
 
+let pOffset = 0; const pLimit = 50;
 function updateExportProductsLink(){
   const q = encodeURIComponent(document.getElementById('pq').value || '');
   const k = encodeURIComponent(key());
   document.getElementById('exportProducts').href = `${API}/admin/export/products.csv?key=${k}&q=${q}`;
 }
-
 async function loadProducts(){
   const q = document.getElementById('pq').value || '';
   const r = await fetch(`${API}/admin/products?q=${encodeURIComponent(q)}&limit=${pLimit}&offset=${pOffset}`, {
@@ -284,10 +288,7 @@ async function loadProducts(){
   const tb = document.querySelector('#ptbl tbody'); tb.innerHTML = '';
   (data.list || []).forEach(p=>{
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td class="mono">${p.sku}</td>
-                    <td>${p.name}</td>
-                    <td class="right">${p.price}</td>
-                    <td class="right">${p.stock_qty}</td>`;
+    tr.innerHTML = `<td class="mono">${p.sku}</td><td>${p.name}</td><td class="right">${p.price}</td><td class="right">${p.stock_qty}</td>`;
     tb.appendChild(tr);
   });
   const total = data.total || 0;
@@ -298,17 +299,9 @@ async function loadProducts(){
   document.getElementById('pnext').disabled = pOffset + pLimit >= total;
   updateExportProductsLink();
 }
-
 document.getElementById('psearch').onclick = () => { pOffset = 0; loadProducts(); };
 document.getElementById('pprev').onclick   = () => { pOffset = Math.max(0, pOffset - pLimit); loadProducts(); };
 document.getElementById('pnext').onclick   = () => { pOffset = pOffset + pLimit; loadProducts(); };
-
-// 如果你想一打開頁面就載入列表，取消下一行的註解：
-// loadProducts();
-
-// 已在前面的 saveKey 時有呼叫 updateExportLinks()，建議在那裡也加上：
-//   loadProducts();  // 儲存 Key 後順便載入一次
 </script>
-
 </body>
 </html>
