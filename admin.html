@@ -265,6 +265,50 @@ document.getElementById('btn_adj').onclick = () => {
 };
 document.getElementById('btn_stock').onclick = checkStock;
 </script>
+<script>
+// ======== 商品清單 / 庫存 ========
+let pOffset = 0; const pLimit = 50;
+
+function updateExportProductsLink(){
+  const q = encodeURIComponent(document.getElementById('pq').value || '');
+  const k = encodeURIComponent(key());
+  document.getElementById('exportProducts').href = `${API}/admin/export/products.csv?key=${k}&q=${q}`;
+}
+
+async function loadProducts(){
+  const q = document.getElementById('pq').value || '';
+  const r = await fetch(`${API}/admin/products?q=${encodeURIComponent(q)}&limit=${pLimit}&offset=${pOffset}`, {
+    headers: { 'Authorization': 'Bearer ' + key() }
+  });
+  const data = await r.json();
+  const tb = document.querySelector('#ptbl tbody'); tb.innerHTML = '';
+  (data.list || []).forEach(p=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="mono">${p.sku}</td>
+                    <td>${p.name}</td>
+                    <td class="right">${p.price}</td>
+                    <td class="right">${p.stock_qty}</td>`;
+    tb.appendChild(tr);
+  });
+  const total = data.total || 0;
+  const start = total ? (pOffset + 1) : 0;
+  const end   = Math.min(total, pOffset + (data.list?.length || 0));
+  document.getElementById('pinfo').textContent = `${start}-${end} / ${total}`;
+  document.getElementById('pprev').disabled = pOffset <= 0;
+  document.getElementById('pnext').disabled = pOffset + pLimit >= total;
+  updateExportProductsLink();
+}
+
+document.getElementById('psearch').onclick = () => { pOffset = 0; loadProducts(); };
+document.getElementById('pprev').onclick   = () => { pOffset = Math.max(0, pOffset - pLimit); loadProducts(); };
+document.getElementById('pnext').onclick   = () => { pOffset = pOffset + pLimit; loadProducts(); };
+
+// 如果你想一打開頁面就載入列表，取消下一行的註解：
+// loadProducts();
+
+// 已在前面的 saveKey 時有呼叫 updateExportLinks()，建議在那裡也加上：
+//   loadProducts();  // 儲存 Key 後順便載入一次
+</script>
 
 </body>
 </html>
