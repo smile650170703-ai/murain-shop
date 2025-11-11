@@ -56,6 +56,18 @@
       <tbody></tbody>
     </table>
   </div>
+<div class="card">
+  <h3>快速調整庫存（單筆）</h3>
+  <div class="row">
+    <input id="adj_sku" placeholder="SKU（必填）" style="max-width:220px">
+    <input id="adj_delta" type="number" value="1" style="max-width:120px">
+    <button id="btn_minus1" class="btn-outline">-1</button>
+    <button id="btn_plus1"  class="btn-outline">+1</button>
+    <button id="btn_adj">送出調整</button>
+    <button id="btn_stock" class="btn-outline">查目前庫存</button>
+  </div>
+  <div id="adj_result" class="muted"></div>
+</div>
 
   <div class="card">
     <h3>三、出貨與通知</h3>
@@ -75,22 +87,36 @@
 </div>
 
 <script>
-const API=(window.API_BASE||'').replace(/\/$/,'')||'';
-function key(){ return localStorage.getItem('ADMIN_KEY')||''; }
-function setKey(v){ localStorage.setItem('ADMIN_KEY', v||''); }
+const API = (window.API_BASE || '').replace(/\/+$/,'');  // 去掉結尾斜線
+function key(){ return localStorage.getItem('ADMIN_KEY') || ''; }
+function setKey(v){ localStorage.setItem('ADMIN_KEY', v || ''); }
 
-document.getElementById('saveKey').onclick=()=>{ setKey(document.getElementById('key').value); alert('已儲存'); };
+// --- 初始化 Admin Key 與匯出連結 ---
+function updateExportLinks(){
+  const k = encodeURIComponent(key());
+  document.getElementById('exportOrders').href = API + '/admin/export/orders.csv?key=' + k;
+  document.getElementById('exportItems').href  = API + '/admin/export/order_items.csv?key=' + k;
+}
+document.getElementById('saveKey').onclick = () => {
+  setKey(document.getElementById('key').value);
+  updateExportLinks();
+  alert('已儲存');
+};
 document.getElementById('key').value = key();
+updateExportLinks();
 
-// Template CSV
+// --- 下載 CSV 範本 ---
 document.getElementById('dl-template').addEventListener('click', (e)=>{
   e.preventDefault();
   const csv = 'sku,name,price,stock_qty\nAA001,示範商品A,299,100\nBB002,示範商品B,499,50\n';
   const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'products_template.csv'; a.click();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'products_template.csv';
+  a.click();
 });
 
-// Upload products
+// --- 上傳商品（CSV/JSON）---
 document.getElementById('upload').onclick = async () => {
   const f = document.getElementById('file').files[0];
   if (!f) { alert('請選擇檔案'); return; }
@@ -120,7 +146,7 @@ document.getElementById('upload').onclick = async () => {
   document.getElementById('uploadResult').textContent = '回應：'+t;
 };
 
-// Search orders
+// --- 查詢訂單 ---
 document.getElementById('search').onclick = async () => {
   const r = await fetch(API+'/admin/orders?q='+encodeURIComponent(document.getElementById('q').value||''), {
     headers: { 'Authorization':'Bearer '+key() }
@@ -143,11 +169,7 @@ document.getElementById('search').onclick = async () => {
   });
 };
 
-// Export links
-document.getElementById('exportOrders').href = API+'/admin/export/orders.csv?key='+encodeURIComponent(key());
-document.getElementById('exportItems').href  = API+'/admin/export/order_items.csv?key='+encodeURIComponent(key());
-
-// Shipment
+// --- 出貨登記 / 通知 / 列印 ---
 document.getElementById('btn-ship').onclick = async ()=>{
   const body = {
     order_id: document.getElementById('ship_order').value.trim(),
@@ -180,6 +202,50 @@ document.getElementById('btn-print').onclick = (e)=>{
   if(!id) return alert('請先輸入 Order ID');
   window.open(`./admin-print.html?order_id=${encodeURIComponent(id)}&key=${encodeURIComponent(key())}`,'_blank');
 };
+
+// =================== 單筆庫存調整 ===================
+// 需要頁面上有：#adj_sku, #adj_delta, #btn_minus1, #btn_plus1, #btn_adj, #btn_stock, #adj_result
+async function checkStock(){
+  const sku = document.getElementById('adj_sku').value.trim();
+  if(!sku) return alert('請先輸入 SKU');
+  const r = await fetch(API + '/product/' + encodeURIComponent(sku));
+  const data = await r.json();
+  if (!data.found) {
+    document.getElementById('adj_result').textContent = '找不到此 SKU（請用上傳商品建立）';
+    return;
+  }
+  document.getElementById('adj_result').textContent =
+    `【${data.product.sku}】${data.product.name} 目前庫存：${data.product.stock_qty}`;
+}
+
+async function adjustStock(delta){
+  const sku = document.getElementById('adj_sku').value.trim();
+  if(!sku) return alert('請先輸入 SKU');
+  const r = await fetch(API + '/admin/products/adjust_stock', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json','Authorization':'Bearer ' + key()},
+    body: JSON.stringify({ sku, delta })
+  });
+  const txt = await r.text();
+  document.getElementById('adj_result').textContent = '回應：' + txt;
+  if (r.ok) await checkStock();
+}
+
+document.getElementById('btn_minus1').onclick = () => {
+  const v = parseInt(document.getElementById('adj_delta').value || '1', 10);
+  adjustStock(-Math.abs(v));
+};
+document.getElementById('btn_plus1').onclick = () => {
+  const v = parseInt(document.getElementById('adj_delta').value || '1', 10);
+  adjustStock(Math.abs(v));
+};
+document.getElementById('btn_adj').onclick = () => {
+  const v = parseInt(document.getElementById('adj_delta').value || '1', 10);
+  if (!Number.isFinite(v)) return alert('請輸入整數');
+  adjustStock(v);
+};
+document.getElementById('btn_stock').onclick = checkStock;
 </script>
+
 </body>
 </html>
