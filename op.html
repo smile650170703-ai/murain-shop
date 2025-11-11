@@ -1,226 +1,180 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>直播主開單（OP / 強化版）</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>直播主開單（v5.1）</title>
+  <script>window.API_BASE="https://your-worker-domain";</script>
   <style>
-    body { font-family: system-ui, 'Noto Sans TC', sans-serif; background:#f6f7fb; margin:0; }
-    .wrap { max-width: 760px; margin: 24px auto; padding: 0 12px; }
-    .card { background:#fff; border-radius:14px; box-shadow:0 8px 24px rgba(0,0,0,.08); padding:18px; }
-    .row { display:flex; gap:10px; flex-wrap:wrap; }
-    input, textarea, select { width:100%; padding:12px; border:1px solid #ddd; border-radius:10px; }
-    button { padding:12px 16px; border:0; border-radius:12px; background:#111; color:#fff; cursor:pointer; }
-    .btn-outline { background:#fff; color:#111; border:1px solid #ddd; }
-    .muted { color:#666; font-size:.92rem; }
-    table { width:100%; border-collapse: collapse; margin-top:10px; }
-    th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; }
-    .right { text-align:right; }
-    .pill { background:#111; color:#fff; padding:8px 12px; border-radius:999px; font-size:.9rem; word-break: break-all; }
-    .copy { margin-left:6px; }
-    .bad { color:#b00 }
-    .ok { color:#0a0 }
-    .chips { display:flex; gap:8px; flex-wrap:wrap; }
-    .chip { padding:8px 10px; border-radius:10px; border:1px solid #ddd; background:#fff; cursor:pointer; font-size:.9rem; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f6f7fb;margin:0;color:#111}
+    .wrap{max-width:800px;margin:20px auto;padding:0 14px}
+    h1{font-size:22px;margin:0 0 12px 0}
+    .card{background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.06);padding:16px 16px 18px;margin:12px 0}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    input,select,button{padding:10px 12px;border-radius:10px;border:1px solid #dcdde3;background:#fff}
+    button{background:#0d63ff;color:#fff;border:0;cursor:pointer}
+    .btn-dim{background:#111}
+    .muted{color:#666}
+    .mono{font-family:ui-monospace,Consolas,monospace}
+    #op_gate{position:fixed;inset:0;background:#f5f6fa;display:flex;align-items:center;justify-content:center;z-index:9999}
   </style>
-  <script>window.API_BASE="https://api.murain.tw"</script>
 </head>
 <body>
-<div class="wrap">
-  <div class="card">
-    <h2>直播主開單（OP / 強化版）</h2>
-    <div class="muted" id="cartinfo">購物車尚未建立</div>
-
-    <div class="row" style="margin-top:10px">
-      <input id="op_name" placeholder="主播名稱（必填）" />
-      <button id="btn-newcart">1. 建立購物車</button>
-    </div>
-
-    <div class="row" style="margin-top:12px">
-      <input id="sku" placeholder="商品 Barcode / SKU" />
-      <input id="qty" type="number" min="1" value="1" style="max-width:120px" />
-      <input id="opkey" placeholder="主播密碼（OP Key, 用來改價）" />
-    </div>
-
-    <div class="row" style="margin-top:8px">
-      <input id="price_override" type="number" placeholder="（可選）改後單價，需輸入 OP Key" />
-      <button id="btn-add">2. 加入商品</button>
-    </div>
-
-    <div class="muted" style="margin-top:6px">快速組合價（會直接把數字帶到「改後單價」欄）：</div>
-    <div class="chips" style="margin-top:6px">
-      <div class="chip" data-discount="-50">-50</div>
-      <div class="chip" data-discount="-100">-100</div>
-      <div class="chip" data-abs="999">特價 999</div>
-    </div>
-
-    <div id="hint" class="muted" style="margin-top:8px"></div>
-
-    <table id="itemsTbl">
-      <thead><tr><th>SKU</th><th>品名</th><th class="right">單價</th><th class="right">數量</th><th class="right">小計</th><th></th></tr></thead>
-      <tbody></tbody>
-    </table>
-
-    <div class="right" style="margin-top:6px;font-weight:700">合計 NT$ <span id="total">0</span></div>
-
-    <div style="margin-top:12px">
-      <div class="row">
-        <textarea id="note" rows="3" placeholder="贈品／訂單備註（會寫進訂單 shipping_info.note）"></textarea>
-      </div>
-      <div class="row" style="margin-top:8px; align-items:center;">
-        <select id="freebies" style="max-width:260px">
-          <option value="">常用贈品（選一加入備註）</option>
-          <option>贈 手提袋</option>
-          <option>贈 保養試用包</option>
-          <option>贈 免運券下次用</option>
-          <option>贈 髮帶</option>
-        </select>
-        <input id="freebie_custom" placeholder="自訂贈品（輸入後按加入）" />
-        <button class="btn-outline" id="btn-add-freebie">加入贈品到備註</button>
-        <button class="btn-outline" id="btn-save-note">儲存備註</button>
-        <span id="noteSaved" class="muted"></span>
-      </div>
-    </div>
-
-    <div style="margin-top:14px" class="row" >
-      <span class="muted" style="align-self:center">產生結帳連結：</span>
-      <button class="btn-outline" id="link-new">新客匯款</button>
-      <button class="btn-outline" id="link-mix">老客 7-11 COD / 其他金流</button>
-    </div>
-    <div id="out" style="margin-top:10px; display:none;">
-      <div class="muted">把此連結傳給客人：</div>
-      <div><span class="pill" id="share"></span><button id="copy" class="btn-outline copy">複製</button></div>
-      <div style="text-align:center;margin-top:8px;"><img id="qr" alt="QR"></div>
+  <div id="op_gate">
+    <div style="background:#fff;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:24px; width:min(92vw,380px)">
+      <h3 style="margin:0 0 12px 0">主播開單登入</h3>
+      <input id="op_gate_key" type="password" placeholder="OP Key" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:10px">
+      <button id="op_gate_go" style="margin-top:10px;width:100%;padding:12px;border:0;border-radius:10px;background:#111;color:#fff;cursor:pointer">進入</button>
+      <div id="op_gate_msg" style="margin-top:8px;color:#b00;font-size:.9rem"></div>
     </div>
   </div>
-</div>
+
+  <div class="wrap">
+    <h1>直播主開單系統（v5.1）</h1>
+
+    <div class="card">
+      <div class="row">
+        <input id="streamer" placeholder="輸入直播主名稱（必填）" style="flex:1">
+      </div>
+      <div class="row">
+        <button id="btn-new" class="btn-dim">建立購物車</button>
+        <span id="cartinfo" class="muted"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>1. 加入商品</h3>
+      <div class="row">
+        <input id="sku" placeholder="商品 Barcode" style="flex:1">
+        <input id="qty" type="number" value="1" style="max-width:100px">
+        <input id="opkey" placeholder="主播密碼（OP Key）">
+      </div>
+      <div class="row">
+        <button id="btn-add">2. 加入商品</button>
+        <button id="btn-50" class="btn-dim">-50</button>
+        <button id="btn-100" class="btn-dim">-100</button>
+        <button id="btn-999" class="btn-dim">特價999</button>
+        <input id="override" type="number" placeholder="改後單價（選填）" style="max-width:140px">
+      </div>
+      <div class="row">
+        <select id="gift">
+          <option value="">（選擇常用贈品）</option>
+          <option>贈 保養試用包</option><option>贈 眼罩</option><option>贈 免運券</option>
+        </select>
+        <input id="gift_custom" placeholder="自訂贈品文字">
+        <button id="add_gift" class="btn-dim">加入贈品到備註</button>
+      </div>
+      <div class="row"><textarea id="note" rows="3" placeholder="備註（贈品或其他說明）" style="flex:1;border-radius:10px;border:1px solid #dcdde3;padding:10px"></textarea></div>
+      <div class="row"><button id="save_note" class="btn-dim">儲存備註</button></div>
+    </div>
+
+    <div class="card">
+      <h3>2. 產生結帳連結</h3>
+      <div class="row">
+        <button id="btn-bank" class="btn-dim">新客匯款</button>
+        <button id="btn-cod"  class="btn-dim">老客 7-11 COD / 其他金流</button>
+      </div>
+      <div class="row">
+        <input id="checkout" class="mono" readonly style="flex:1">
+        <button id="copy" class="btn-dim">複製連結</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>購物車內容</h3>
+      <div id="items" class="mono"></div>
+      <div class="muted" id="total"></div>
+    </div>
+  </div>
 
 <script>
-const API=(window.API_BASE||'').replace(/\/$/,'')||'';
-let CART_TOKEN='', ORDER_ID='';
+const API = (window.API_BASE || '').replace(/\/+$/,'');
+let CART_TOKEN = '';
 
-async function jsGet(u){ const r=await fetch(API+u); if(!r.ok) throw new Error(await r.text()); return r.json(); }
-async function jsPost(u,d){ const r=await fetch(API+u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d||{})}); if(!r.ok){ throw new Error(`HTTP ${r.status}: ` + await r.text()); } return r.json(); }
-function fmt(n){ return (n||0).toLocaleString(); }
-function setInfo(){ const el=document.getElementById('cartinfo'); el.innerHTML = CART_TOKEN ? `購物車：<b>${ORDER_ID}</b> <span class="muted">（${CART_TOKEN}）</span>` : '購物車尚未建立'; }
+function setOPKey(v){ try{ localStorage.setItem('OP_KEY', v||''); }catch(_){} }
+function getOPKey(){ try{ return localStorage.getItem('OP_KEY')||''; }catch(_){ return '' } }
 
-async function ensureCart(){
-  if (CART_TOKEN) return;
-  const name=(document.getElementById('op_name').value||'').trim();
-  if(!name){ alert('請先填主播名稱'); return; }
-  const r=await jsPost('/cart/create',{ streamer_name: name, customer_type: 'live' });
-  CART_TOKEN=r.cart_token; ORDER_ID=r.order_id;
-  setInfo(); await refresh();
+async function opGateTry(){
+  const k = (document.getElementById('op_gate_key').value || '').trim();
+  if(!k){ document.getElementById('op_gate_msg').textContent='請輸入 OP Key'; return; }
+  const r = await fetch(API + '/op/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ key:k }) });
+  if(r.ok){ setOPKey(k); document.getElementById('opkey').value=k; document.getElementById('op_gate').style.display='none'; }
+  else{ document.getElementById('op_gate_msg').textContent='OP Key 錯誤'; }
 }
+document.getElementById('op_gate_go').onclick = opGateTry;
+document.getElementById('op_gate_key').addEventListener('keydown', e=>{ if(e.key==='Enter') opGateTry(); });
+(async ()=>{ const k=getOPKey(); if(k){ const r=await fetch(API+'/op/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:k})}); if(r.ok){ document.getElementById('op_gate').style.display='none'; document.getElementById('opkey').value=k; } } })();
 
+function renderItems(list){
+  const el = document.getElementById('items');
+  if(!list || !list.length){ el.textContent='（空）'; return; }
+  el.innerHTML = list.map(i=>`${i.sku} x${i.qty} — ${i.name} @ ${i.price}`).join('\\n');
+}
+function setTotal(n){ document.getElementById('total').textContent = '總額：NT$ ' + (n||0); }
 async function refresh(){
   if(!CART_TOKEN) return;
-  const r=await jsGet('/cart/'+CART_TOKEN);
-  const tbody=document.querySelector('#itemsTbl tbody');
-  tbody.innerHTML='';
-  let total=0;
-  (r.items||[]).forEach(i=>{
-    total += i.price*i.qty;
-    const tr=document.createElement('tr');
-    tr.innerHTML = `<td>${i.sku}</td><td>${i.name}</td><td class="right">NT$ ${fmt(i.price)}</td><td class="right">${i.qty}</td><td class="right">NT$ ${fmt(i.price*i.qty)}</td><td class="right"><button class="btn-outline" data-sku="${i.sku}">刪除</button></td>`;
-    tbody.appendChild(tr);
-  });
-  document.getElementById('total').innerText = fmt(total);
+  const r = await fetch(API+'/cart/'+CART_TOKEN);
+  const d = await r.json();
+  renderItems(d.items||[]); setTotal(d.total||0);
 }
+async function ensureCart(){
+  if(CART_TOKEN) return;
+  const name = (document.getElementById('streamer').value||'').trim();
+  if(!name) return alert('請輸入直播主名稱');
+  const r = await fetch(API+'/cart/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({streamer_name:name,customer_type:'live'})});
+  const d = await r.json(); CART_TOKEN = d.cart_token; document.getElementById('cartinfo').textContent = '購物車：'+d.order_id;
+}
+document.getElementById('btn-new').onclick = ensureCart;
 
-async function addItem(){
+async function addItem(withOverride=null){
   await ensureCart();
   if(!CART_TOKEN) return;
-  const sku=(document.getElementById('sku').value||'').trim();
-  const qty=parseInt(document.getElementById('qty').value||'1',10);
-  const op_key=(document.getElementById('opkey').value||'').trim();
-  const override=document.getElementById('price_override').value;
-  if(!sku || qty<=0){ alert('請輸入 Barcode 與數量'); return; }
-
-  let prod=null;
-  try { prod = await jsGet('/product/'+encodeURIComponent(sku)); } catch(e){}
-  let name = (prod && prod.product && prod.product.name) || sku;
-
-  const body = { cart_token: CART_TOKEN, sku, name, qty };
-  if (override) body.price = parseInt(override,10);
-  if (op_key) body.op_key = op_key;
-  const r = await jsPost('/cart/add', body);
-  document.getElementById('hint').innerHTML = `<span class="ok">已加入：${name} × ${qty}</span>`;
-  document.getElementById('sku').value=''; document.getElementById('qty').value='1'; // 不清除 override
-  await refresh();
+  const sku = document.getElementById('sku').value.trim(); if(!sku) return alert('請輸入 Barcode');
+  const qty = parseInt(document.getElementById('qty').value||'1',10)||1;
+  const opk = document.getElementById('opkey').value.trim();
+  const body = { cart_token:CART_TOKEN, sku, qty, op_key: opk };
+  if(withOverride!==null) body.price = withOverride;
+  const r = await fetch(API+'/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d = await r.json();
+  if(!r.ok){ alert(JSON.stringify(d)); return; }
+  renderItems(d.items||[]); setTotal(d.total||0);
 }
+document.getElementById('btn-add').onclick = ()=> addItem( document.getElementById('override').value? parseInt(document.getElementById('override').value,10): null );
+document.getElementById('btn-50').onclick  = async ()=>{
+  const sku = document.getElementById('sku').value.trim(); if(!sku) return alert('先輸入 Barcode');
+  const r = await fetch(API+'/product/'+encodeURIComponent(sku)); const d = await r.json();
+  const p = (d.product && d.product.price) || 0; document.getElementById('override').value = Math.max(0, p-50); await addItem(parseInt(document.getElementById('override').value,10));
+};
+document.getElementById('btn-100').onclick  = async ()=>{
+  const sku = document.getElementById('sku').value.trim(); if(!sku) return alert('先輸入 Barcode');
+  const r = await fetch(API+'/product/'+encodeURIComponent(sku)); const d = await r.json();
+  const p = (d.product && d.product.price) || 0; document.getElementById('override').value = Math.max(0, p-100); await addItem(parseInt(document.getElementById('override').value,10));
+};
+document.getElementById('btn-999').onclick = ()=>{ document.getElementById('override').value=999; addItem(999); };
 
-async function saveNote(){
+document.getElementById('add_gift').onclick = ()=>{
+  const sel = document.getElementById('gift').value || '';
+  const cus = document.getElementById('gift_custom').value || '';
+  const txt = (sel && cus) ? (sel + '、' + cus) : (sel || cus);
+  document.getElementById('note').value = (document.getElementById('note').value || '') + (txt? ('\\n' + txt):'');
+};
+document.getElementById('save_note').onclick = async ()=>{
   if(!CART_TOKEN) return alert('請先建立購物車');
-  const note=document.getElementById('note').value||'';
-  await jsPost('/cart/note', { cart_token: CART_TOKEN, note });
-  document.getElementById('noteSaved').innerText='已儲存';
-  setTimeout(()=>document.getElementById('noteSaved').innerText='', 1200);
-}
+  const r = await fetch(API+'/cart/note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cart_token:CART_TOKEN,note:document.getElementById('note').value||''})});
+  alert(r.ok ? '已儲存' : '失敗');
+};
 
-function makeLink(flow){
+function setCheckoutLink(u){ document.getElementById('checkout').value = u||''; }
+async function makeCheckout(type){
   if(!CART_TOKEN) return alert('請先建立購物車');
-  const url = `${location.origin}/checkout.html?cart_token=${encodeURIComponent(CART_TOKEN)}&flow=${flow}`;
-  document.getElementById('share').innerText = url;
-  document.getElementById('qr').src = 'https://chart.googleapis.com/chart?chs=240x240&cht=qr&chl=' + encodeURIComponent(url);
-  document.getElementById('out').style.display='block';
+  const r = await fetch(API+'/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cart_token:CART_TOKEN,payment_method:type,shipping:{}})});
+  const d = await r.json();
+  if(!r.ok){ alert(JSON.stringify(d)); return; }
+  const base = location.origin.replace(/\/+$/,''); setCheckoutLink(`${base}/checkout.html?cart_token=${encodeURIComponent(CART_TOKEN)}`);
 }
-
-// 快捷組合價
-document.querySelectorAll('.chip[data-discount]').forEach(el=>{
-  el.addEventListener('click', async ()=>{
-    const sku=(document.getElementById('sku').value||'').trim();
-    if(!sku){ alert('請先輸入 Barcode/SKU'); return; }
-    try {
-      const res=await jsGet('/product/'+encodeURIComponent(sku));
-      const base=res && res.product ? Number(res.product.price) : NaN;
-      if(!Number.isFinite(base)){ alert('查不到原價，請手動輸入改後單價'); return; }
-      const off=parseInt(el.getAttribute('data-discount'),10);
-      document.getElementById('price_override').value = Math.max(0, base + off);
-    } catch(e){ alert('讀取價格失敗'); }
-  });
-});
-document.querySelectorAll('.chip[data-abs]').forEach(el=>{
-  el.addEventListener('click', ()=>{
-    const v=parseInt(el.getAttribute('data-abs'),10);
-    document.getElementById('price_override').value = v;
-  });
-});
-
-// 贈品加入備註
-document.getElementById('freebies').addEventListener('change', ()=>{
-  const v=document.getElementById('freebies').value;
-  if(!v) return;
-  const box=document.getElementById('note');
-  box.value = (box.value ? (box.value + '；') : '') + v;
-  document.getElementById('freebies').value='';
-});
-document.getElementById('btn-add-freebie').addEventListener('click', ()=>{
-  const v=(document.getElementById('freebie_custom').value||'').trim();
-  if(!v) return;
-  const box=document.getElementById('note');
-  box.value = (box.value ? (box.value + '；') : '') + v;
-  document.getElementById('freebie_custom').value='';
-});
-
-// 事件
-document.getElementById('btn-newcart').addEventListener('click', ensureCart);
-document.getElementById('btn-add').addEventListener('click', addItem);
-document.getElementById('btn-save-note').addEventListener('click', saveNote);
-document.getElementById('link-new').addEventListener('click', ()=>makeLink('new'));
-document.getElementById('link-mix').addEventListener('click', ()=>makeLink('mix'));
-document.getElementById('copy').addEventListener('click', ()=>{
-  navigator.clipboard.writeText(document.getElementById('share').innerText);
-  document.getElementById('copy').innerText='已複製';
-  setTimeout(()=>document.getElementById('copy').innerText='複製', 1000);
-});
-document.querySelector('#itemsTbl tbody').addEventListener('click', async (e)=>{
-  if(e.target.matches('button[data-sku]')){
-    const sku=e.target.getAttribute('data-sku');
-    await jsPost('/cart/add', { cart_token: CART_TOKEN, sku, qty: 0 });
-    await refresh();
-  }
-});
+document.getElementById('btn-bank').onclick = ()=> makeCheckout('bank_transfer');
+document.getElementById('btn-cod').onclick  = ()=> makeCheckout('cod_711');
+document.getElementById('copy').onclick = ()=>{ const el=document.getElementById('checkout'); el.select(); document.execCommand('copy'); };
 </script>
 </body>
 </html>
