@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>列印小白單</title>
+  <style>
+    @page { size: 80mm auto; margin: 5mm; }
+    body { font-family: 'Noto Sans TC', system-ui, sans-serif; }
+    .wrap { width: 72mm; }
+    .center { text-align:center; }
+    .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .muted { color:#666; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { padding: 2mm 0; border-bottom: 1px dashed #ddd; }
+    .right { text-align:right; }
+  </style>
+  <script>window.API_BASE="https://api.murain.tw"</script>
+</head>
+<body>
+<div class="wrap">
+  <div class="center">
+    <h3 style="margin:0">出貨明細</h3>
+    <div class="muted" id="ts"></div>
+  </div>
+  <div style="margin:4mm 0">
+    <div>訂單：<span class="mono" id="oid"></span></div>
+    <div>收件：<span id="cname"></span>　電話：<span id="cphone"></span></div>
+    <div>聯絡：<span id="cemail"></span></div>
+    <div>門市/地址：<span id="caddr"></span></div>
+  </div>
+  <table id="tbl">
+    <thead><tr><th>品名</th><th class="right">單價</th><th class="right">數量</th><th class="right">小計</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div class="right" style="margin-top:3mm">合計 NT$ <span id="total">0</span></div>
+  <div class="muted" id="note" style="margin-top:3mm"></div>
+  <div class="muted">* 此單據供內部使用</div>
+</div>
+<script>
+const API=(window.API_BASE||'').replace(/\/$/,'')||'';
+const p=new URLSearchParams(location.search);
+const order_id=p.get('order_id'); const key=p.get('key');
+document.getElementById('oid').innerText = order_id||'';
+document.getElementById('ts').innerText = new Date().toLocaleString();
+(async ()=>{
+  const r = await fetch(API+'/admin/order/'+encodeURIComponent(order_id), { headers:{'Authorization':'Bearer '+key} });
+  const data = await r.json();
+  const info = data.shipping_info || {};
+  document.getElementById('cname').innerText = info.name||'';
+  document.getElementById('cphone').innerText = info.phone||'';
+  document.getElementById('cemail').innerText = info.email||'';
+  document.getElementById('caddr').innerText = info.store || info.address || '';
+  document.getElementById('note').innerText = info.note ? ('備註：'+info.note) : '';
+  const tb=document.querySelector('#tbl tbody'); tb.innerHTML='';
+  let total=0;
+  (data.items||[]).forEach(i=>{
+    total += i.price*i.qty;
+    const tr=document.createElement('tr');
+    tr.innerHTML = `<td>${i.name}</td><td class="right">${i.price}</td><td class="right">${i.qty}</td><td class="right">${i.price*i.qty}</td>`;
+    tb.appendChild(tr);
+  });
+  document.getElementById('total').innerText = total;
+  setTimeout(()=>window.print(), 300);
+})();
+</script>
+</body>
+</html>
