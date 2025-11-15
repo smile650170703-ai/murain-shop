@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -5,7 +6,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>MURAIN — 主播開單 (安全版)</title>
   <style>
-    :root { --fg:#222; --bg:#f6f7fb; --card:#fff; --pri:#111; --mut:#777; }
+    :root { --fg:#222; --bg:#f6f7fb; --card:#fff; --mut:#777; }
     * { box-sizing: border-box; }
     body { margin:0; font-family: system-ui, -apple-system, 'Noto Sans TC', Arial, sans-serif; color:var(--fg); background:var(--bg);}
     .wrap { max-width: 980px; margin: 24px auto; padding: 0 16px; }
@@ -33,12 +34,17 @@
 </head>
 <body>
   <div class="wrap">
-    <div id="gate" class="card">
+    <div id="gate" class="card" style="position:relative;z-index:2;pointer-events:auto;">
       <h2>主播開單登入</h2>
       <div class="row">
         <div class="col-6">
           <label>OP 密碼</label>
-          <input id="op_key" type="password" placeholder="請輸入 OP Key (預設 88)" />
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input id="op_key" type="password" placeholder="請輸入 OP Key (預設 88)"
+                   autocomplete="current-password" autofocus
+                   style="flex:1;pointer-events:auto;" />
+            <button id="togglePwd" type="button" class="btn subtle" style="width:auto;">顯示</button>
+          </div>
         </div>
         <div class="col-3">
           <label>&nbsp;</label>
@@ -159,126 +165,141 @@ const API = window.API_BASE;
 let CART = null;
 let OP = "";
 
-function $(q) {{ return document.querySelector(q); }}
-function el(tag, attrs, ...kids) {{
+// Utilities
+function $(q) { return document.querySelector(q); }
+function el(tag, attrs, ...kids) {
   const n = document.createElement(tag);
   (attrs||[]).forEach(([k,v]) => n.setAttribute(k,v));
   kids.forEach(k => typeof k==='string' ? n.appendChild(document.createTextNode(k)) : n.appendChild(k));
   return n;
-}}
+}
 const fmt = n => (n||0).toLocaleString();
 
-async function authAndShow() {{
-  const r = await fetch(API + '/op/auth', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{key:OP}})}});
+async function authAndShow() {
+  const r = await fetch(API + '/op/auth', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({key:OP})});
   if(!r.ok) throw new Error('OP 驗證失敗');
-  $('#gate').classList.add('hide');
-  $('#app').classList.remove('hide');
-}}
+  document.getElementById('gate').classList.add('hide');
+  document.getElementById('app').classList.remove('hide');
+}
 
-$('#btnLogin').onclick = async () => {{
-  try {{
-    OP = ($('#op_key').value||'').trim();
-    if(!OP) OP='88';
+document.getElementById('btnLogin').onclick = async () => {
+  try {
+    OP = (document.getElementById('op_key').value||'').trim() || '88';
     await authAndShow();
     localStorage.setItem('OP_KEY', OP);
-  }} catch(e) {{ alert(e.message||e); }}
-}};
+  } catch(e) { alert(e.message||e); }
+};
 
-window.addEventListener('load', async () => {{
+window.addEventListener('load', async () => {
+  const opInput = document.getElementById('op_key');
+  // unlock + focus
+  opInput.disabled = false;
+  opInput.readOnly = false;
+  opInput.style.pointerEvents = 'auto';
+  setTimeout(() => { try { opInput.focus(); } catch(e){} }, 0);
+  opInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnLogin').click(); });
+  document.getElementById('togglePwd').addEventListener('click', () => {
+    const t = opInput.getAttribute('type') === 'password' ? 'text' : 'password';
+    opInput.setAttribute('type', t);
+    document.getElementById('togglePwd').textContent = (t === 'password') ? '顯示' : '隱藏';
+    opInput.focus();
+  });
+
   const cached = localStorage.getItem('OP_KEY');
-  if(cached) {{ OP = cached; try {{ await authAndShow(); }} catch {{ /* ignore */ }} }}
-  // pills
-  document.querySelectorAll('.pill').forEach(p => p.addEventListener('click', () => {{
-    const d = p.getAttribute('data-d'); const sp = p.getAttribute('data-p');
-    if(d) {{ // -50 / -100 → 直接在價格欄位加上負數調整
-      const cur = parseInt($('#price').value||'0',10)||0;
-      $('#price').value = String(cur + parseInt(d,10));
-    }} else if (sp) {{
-      $('#price').value = sp;
-    }}
-  }}));
-}});
+  if(cached) { OP = cached; try { await authAndShow(); } catch { /* ignore */ } }
 
-$('#btnCreate').onclick = async () => {{
-  try {{
-    const body = {{ streamer_name: $('#streamer').value.trim()||'主播', customer_type: $('#ctype').value }};
-    const r = await fetch(API + '/cart/create', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify(body)}});
+  // pills
+  document.querySelectorAll('.pill').forEach(p => p.addEventListener('click', () => {
+    const d = p.getAttribute('data-d'); const sp = p.getAttribute('data-p');
+    if(d) {
+      const cur = parseInt(document.getElementById('price').value||'0',10)||0;
+      document.getElementById('price').value = String(cur + parseInt(d,10));
+    } else if (sp) {
+      document.getElementById('price').value = sp;
+    }
+  }));
+});
+
+document.getElementById('btnCreate').onclick = async () => {
+  try {
+    const body = { streamer_name: document.getElementById('streamer').value.trim()||'主播', customer_type: document.getElementById('ctype').value };
+    const r = await fetch(API + '/cart/create', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
     const data = await r.json();
     if(!data.ok) throw new Error(data.error||'create failed');
     CART = data.cart_token;
-    $('#cartToken').textContent = CART;
+    document.getElementById('cartToken').textContent = CART;
     render();
-  }} catch(e) {{ alert(e.message||e); }}
-}};
+  } catch(e) { alert(e.message||e); }
+};
 
-$('#btnAdd').onclick = async () => {{
+document.getElementById('btnAdd').onclick = async () => {
   if(!CART) return alert('請先建立購物車');
-  const sku = $('#sku').value.trim();
-  const qty = parseInt($('#qty').value||'1',10)||1;
-  const price = parseInt($('#price').value||'0',10);
+  const sku = document.getElementById('sku').value.trim();
+  const qty = parseInt(document.getElementById('qty').value||'1',10)||1;
+  const price = parseInt(document.getElementById('price').value||'0',10);
   if(!sku) return alert('請輸入 SKU');
-  const body = {{ cart_token:CART, sku, qty }};
-  if(!isNaN(price) && $('#price').value) body.price = price;
+  const body = { cart_token:CART, sku, qty };
+  if(!isNaN(price) && document.getElementById('price').value) body.price = price;
   body.op_key = OP;
-  const r = await fetch(API + '/cart/add', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify(body)}});
+  const r = await fetch(API + '/cart/add', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   const data = await r.json();
   if(!data.ok) return alert(data.error||'加入失敗');
-  $('#sku').value=''; $('#qty').value='1'; $('#price').value='';
+  document.getElementById('sku').value=''; document.getElementById('qty').value='1'; document.getElementById('price').value='';
   render();
-}};
+};
 
-$('#btnNote').onclick = async () => {{
+document.getElementById('btnNote').onclick = async () => {
   if(!CART) return alert('請先建立購物車');
-  const g = $('#gift').value || '';
-  const note = (g?'[贈品]'+g+' ':'') + ($('#note').value||'');
-  const r = await fetch(API + '/cart/note', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{cart_token:CART,note}})}});
+  const g = document.getElementById('gift').value || '';
+  const note = (g?'[贈品]'+g+' ':'') + (document.getElementById('note').value||'');
+  const r = await fetch(API + '/cart/note', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cart_token:CART,note})});
   const t = await r.text(); alert(/ok/.test(t)?'已儲存':'失敗');
-}};
+};
 
-$('#btnClear').onclick = async () => {{
+document.getElementById('btnClear').onclick = async () => {
   if(!CART) return;
   if(!confirm('確定要清空購物車？')) return;
-  const r = await fetch(API + '/cart/clear', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{cart_token:CART, op_key:OP}})}});
+  const r = await fetch(API + '/cart/clear', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cart_token:CART, op_key:OP})});
   if(!r.ok) return alert('清空失敗（權限或其他原因）');
   render();
-}};
+};
 
-function toLink(pm) {{
+function toLink(pm) {
   if(!CART) return alert('請先建立購物車');
   const u = new URL(location.origin + '/checkout.html');
   u.searchParams.set('cart_token', CART);
   u.searchParams.set('pm', pm);
-  $('#share').value = u.toString();
-}}
-$('#linkBank').onclick = () => toLink('bank_transfer');
-$('#linkCod').onclick  = () => toLink('cod_711');
+  document.getElementById('share').value = u.toString();
+}
+document.getElementById('linkBank').onclick = () => toLink('bank_transfer');
+document.getElementById('linkCod').onclick  = () => toLink('cod_711');
 
-async function render() {{
+async function render() {
   if(!CART) return;
   const r = await fetch(API + '/cart/' + CART);
   const data = await r.json();
-  const tb = $('#lines'); tb.innerHTML='';
-  (data.items||[]).forEach(it => {{
+  const tb = document.getElementById('lines'); tb.innerHTML='';
+  (data.items||[]).forEach(it => {
     const tr = el('tr',[],
       el('td',[], it.sku || ''),
       el('td',[], it.name || ''),
       el('td',[['class','right']], 'NT$ ' + fmt(it.price)),
       el('td',[['class','right']], String(it.qty||0)),
       el('td',[['class','right']], 'NT$ ' + fmt((it.price||0)*(it.qty||0))),
-      el('td',[], (function() {{
+      el('td',[], (function() {
         const b = el('button',[['class','btn subtle']], '移除');
-        b.onclick = async () => {{
-          const r = await fetch(API + '/cart/remove', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{cart_token:CART, sku: it.sku, op_key:OP}})}});
+        b.onclick = async () => {
+          const r = await fetch(API + '/cart/remove', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cart_token:CART, sku: it.sku, op_key:OP})});
           if(!r.ok) return alert('移除失敗（權限或其他原因）');
           render();
-        }};
+        };
         return b;
-      }})())
+      })())
     );
     tb.appendChild(tr);
-  }});
-  $('#total').textContent = fmt(data.total||0);
-}}
+  });
+  document.getElementById('total').textContent = fmt(data.total||0);
+}
 </script>
 </body>
 </html>
