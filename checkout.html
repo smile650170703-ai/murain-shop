@@ -1,248 +1,544 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>MURAIN — 結帳</title>
-  <style>
-    :root { --bg:#f7f7f8; --card:#fff; --txt:#222; --muted:#6b7280; --pri:#111; --pri2:#000; }
-    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial, "Noto Sans TC", "PingFang TC", sans-serif;background:var(--bg);color:var(--txt);}
-    .wrap{max-width:820px;margin:24px auto;padding:0 16px;}
-    .card{background:var(--card);border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.05);padding:20px;margin-bottom:16px;}
-    h1{font-size:20px;margin:0 0 8px}
-    .row{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0}
-    .col{flex:1 1 220px;min-width:220px}
-    label{display:block;font-size:12px;color:var(--muted);margin:0 0 6px}
-    input,select,button,textarea{width:100%;box-sizing:border-box;font-size:16px;border:1px solid #e5e7eb;border-radius:10px;padding:12px 12px;background:#fff}
-    textarea{resize:vertical;min-height:90px}
-    .btn{background:#111;color:#fff;border:none;cursor:pointer}
-    .btn[disabled]{opacity:.5;cursor:not-allowed}
-    .btn-outline{background:#fff;border:1px solid #111;color:#111}
-    .muted{color:var(--muted);font-size:12px}
-    .bar{display:flex;gap:10px;flex-wrap:wrap}
-    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace}
-    .pill{display:inline-block;background:#111;color:#fff;border-radius:999px;padding:6px 10px;font-size:12px}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>MURAIN — 結帳</title>
+<style>
+  *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
+  body{margin:0;background:#0b1222;color:#e2e8f0}
+  .wrap{max-width:720px;margin:0 auto;padding:16px 16px calc(env(safe-area-inset-bottom,0) + 90px)}
+  h1{margin:0 0 8px;font-size:22px}
+  .card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:14px;box-shadow:0 10px 30px rgba(0,0,0,.4);margin-top:12px}
+  label{display:block;font-size:14px;margin:8px 2px 6px}
+  input,select,textarea{width:100%;padding:14px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(2,6,23,.6);color:#e2e8f0}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media (max-width:720px){.row{grid-template-columns:1fr}}
+  .tabs{display:flex;gap:8px;overflow:auto}
+  .tab{flex:1;min-width:140px;text-align:center;padding:10px 12px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.04);font-weight:800}
+  .tab.active{background:#22d3ee;color:#0b1222;border-color:#22d3ee}
+  .hr{height:1px;background:rgba(255,255,255,.12);margin:12px 0}
+  .toolbar{position:fixed;left:0;right:0;bottom:0;padding:10px 14px calc(env(safe-area-inset-bottom,0) + 10px);display:flex;gap:10px;background:linear-gradient(0deg,rgba(11,18,34,.95),rgba(11,18,34,.6) 90%,transparent);backdrop-filter: blur(10px)}
+  .btn{flex:1;border:0;border-radius:14px;padding:14px;font-weight:900;letter-spacing:.4px;cursor:pointer}
+  .primary{background:#22d3ee;color:#0b1222}
+  .secondary{background:transparent;color:#e2e8f0;border:1px solid rgba(255,255,255,.2)}
+  .copy{border:1px dashed rgba(255,255,255,.25);padding:10px;border-radius:10px;display:flex;gap:8px;align-items:center;justify-content:space-between}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .muted{opacity:.75;font-size:12px}
+  .list{margin-top:8px;font-size:13px;line-height:1.5}
+</style>
 </head>
 <body>
-<div class="wrap">
+<main class="wrap">
+  <h1>結帳</h1>
+
   <div class="card">
-    <h1>結帳</h1>
-    <div class="muted">* 此頁需要帶 <span class="mono">?cart_token=...</span> 開啟</div>
+    <div class="row">
+      <div>
+        <label>商品小計（NT$）</label>
+        <input id="subtotal" type="number" min="0" step="1" readonly />
+        <div id="itemsBox" class="list muted"></div>
+      </div>
+      <div>
+        <label>應付金額</label>
+        <input id="total" type="text" readonly />
+      </div>
+    </div>
+    <label>備註（選填）</label>
+    <textarea id="note" placeholder="…"></textarea>
+    <div class="muted">此頁一定要用結帳連結進入（帶 <code>cart_token</code>）。</div>
   </div>
 
-  <!-- 訂購人 -->
   <div class="card">
-    <h1>收件人資料</h1>
-    <div class="row">
-      <div class="col">
-        <label>姓名</label>
-        <input id="name" placeholder="請輸入收件人姓名" required />
-      </div>
-      <div class="col">
-        <label>電話</label>
-        <input id="phone" placeholder="09xx..." inputmode="tel" required />
-      </div>
-      <div class="col">
-        <label>Email（可填 LINE 用戶ID 代替）</label>
-        <input id="email" placeholder="user@example.com" inputmode="email" />
-      </div>
+    <div class="tabs" id="payTabs">
+      <button class="tab active" data-pay="COD">7-11 貨到付款</button>
+      <button class="tab" data-pay="PAID">線上付款</button>
+      <button class="tab" data-pay="DEPOSIT">ATM 匯款</button>
+      <button class="tab" data-pay="ZEROCARD">無卡零角</button>
     </div>
-    <div class="row">
-      <div class="col">
-        <label>備註（選填）</label>
-        <textarea id="note" placeholder="贈品或其他備註（選填）"></textarea>
-      </div>
-    </div>
-  </div>
 
-  <!-- 7-11 門市 -->
-  <div class="card">
-    <h1>取貨門市 — 7-ELEVEN</h1>
-    <div class="bar">
-      <button class="btn" id="btnCvs">選擇 7-11 門市</button>
-      <span class="pill" id="cvsTag" style="display:none"></span>
+    <!-- COD: 僅 7-11 -->
+    <div id="paneCOD">
+      <div class="row" style="margin-top:6px">
+        <div><label>姓名 *</label><input id="cod_name" required /></div>
+        <div><label>電話 *</label><input id="cod_phone" required /></div>
+      </div>
+      <div class="row">
+        <div><label>7-11 門市代號 *</label><input id="cod_store_id" required /></div>
+        <div><label>7-11 門市名稱 *</label><input id="cod_store_name" required /></div>
+      </div>
+      <label>7-11 門市地址 *</label>
+      <input id="cod_store_addr" required />
+      <button class="btn secondary" id="mapCOD">開啟 7-11 門市地圖</button>
     </div>
-    <div class="row" style="margin-top:10px">
-      <div class="col">
-        <label>門市代號</label>
-        <input id="cvs_id" readonly />
-      </div>
-      <div class="col">
-        <label>門市名稱</label>
-        <input id="cvs_name" readonly />
-      </div>
-      <div class="col">
-        <label>門市地址</label>
-        <input id="cvs_addr" readonly />
-      </div>
-    </div>
-    <div class="muted">* 送出前必須選店；目前使用 ECPay 官方地圖。</div>
-  </div>
 
-  <!-- 付款 -->
-  <div class="card">
-    <h1>付款方式</h1>
-    <div class="row">
-      <div class="col">
-        <select id="pay" aria-label="付款方式">
-          <option value="bank_transfer">新客匯款（ATM/轉帳）</option>
-          <option value="cod_711">7-11 貨到付款（老客）</option>
-          <option value="online_pay">線上支付（PayUNI）</option>
+    <!-- PAID: 可 7-11 或 郵寄 -->
+    <div id="panePAID" hidden>
+      <label style="margin-top:8px">選擇管道</label>
+      <select id="paid_channel">
+        <option value="card_once">信用卡 一次付（零利率）</option>
+        <option value="card_inst">信用卡 分期（3/6/9 零利率）</option>
+        <option value="linepay">LINE Pay</option>
+        <option value="af">AF 先享後付</option>
+      </select>
+      <div id="cardInstBox" hidden>
+        <label>分期期數（零利率）</label>
+        <select id="inst_months">
+          <option value="3">3</option>
+          <option value="6">6</option>
+          <option value="9">9</option>
         </select>
       </div>
-      <div class="col">
-        <label>應付總額（由主播頁計算）</label>
-        <input id="total" class="mono" readonly placeholder="從購物車取得…" />
+
+      <div class="hr"></div>
+      <div class="row">
+        <div>
+          <label>運送方式</label>
+          <select id="paid_ship_method">
+            <option value="711">7-11 取貨</option>
+            <option value="post">中華郵政寄送</option>
+          </select>
+        </div>
+        <div></div>
+      </div>
+
+      <div id="paid711">
+        <div class="row">
+          <div><label>姓名 *</label><input id="ship_name_paid" required /></div>
+          <div><label>電話 *</label><input id="ship_phone_paid" required /></div>
+        </div>
+        <div class="row">
+          <div><label>7-11 門市代號 *</label><input id="ship_store_id_paid" required /></div>
+          <div><label>7-11 門市名稱 *</label><input id="ship_store_name_paid" required /></div>
+        </div>
+        <label>7-11 門市地址 *</label>
+        <input id="ship_store_addr_paid" required />
+        <button class="btn secondary" id="mapPAID">開啟 7-11 門市地圖</button>
+      </div>
+
+      <div id="paidPOST" hidden>
+        <div class="row">
+          <div><label>姓名 *</label><input id="paid_post_name" required /></div>
+          <div><label>電話 *</label><input id="paid_post_phone" required /></div>
+        </div>
+        <div class="row">
+          <div><label>郵遞區號 *</label><input id="paid_post_zip" required /></div>
+          <div><label>郵寄地址 *</label><input id="paid_post_addr" required /></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DEPOSIT: 新/舊 客製 -->
+    <div id="paneDEPOSIT" hidden>
+      <div id="newDeposit" hidden>
+        <div class="row" style="margin-top:6px">
+          <div><label>匯款後五碼 *</label><input id="dep_last5_new" required /></div>
+          <div></div>
+        </div>
+
+        <label>方式</label>
+        <select id="dep_new_mode">
+          <option value="partial">支付 1000（尾款 7-11 貨到）</option>
+          <option value="full">全額匯款</option>
+        </select>
+
+        <div id="dep_new_partial">
+          <div class="hr"></div>
+          <div class="row">
+            <div><label>姓名 *</label><input id="dep_new_partial_name" required /></div>
+            <div><label>電話 *</label><input id="dep_new_partial_phone" required /></div>
+          </div>
+          <div class="row">
+            <div><label>7-11 門市代號 *</label><input id="dep_new_partial_store_id" required /></div>
+            <div><label>7-11 門市名稱 *</label><input id="dep_new_partial_store_name" required /></div>
+          </div>
+          <label>7-11 門市地址 *</label>
+          <input id="dep_new_partial_store_addr" required />
+          <button class="btn secondary" id="mapDEPnewP">開啟 7-11 門市地圖</button>
+        </div>
+
+        <div id="dep_new_full" hidden>
+          <div class="hr"></div>
+          <div class="row">
+            <div>
+              <label>收件方式</label>
+              <select id="dep_new_full_ship">
+                <option value="711">7-11 取貨</option>
+                <option value="post">中華郵政寄送</option>
+              </select>
+            </div>
+            <div></div>
+          </div>
+          <div id="dep_new_full_711">
+            <div class="row">
+              <div><label>姓名 *</label><input id="dep_new_full_name" required /></div>
+              <div><label>電話 *</label><input id="dep_new_full_phone" required /></div>
+            </div>
+            <div class="row">
+              <div><label>7-11 門市代號 *</label><input id="dep_new_full_store_id" required /></div>
+              <div><label>7-11 門市名稱 *</label><input id="dep_new_full_store_name" required /></div>
+            </div>
+            <label>7-11 門市地址 *</label>
+            <input id="dep_new_full_store_addr" required />
+            <button class="btn secondary" id="mapDEPnewF">開啟 7-11 門市地圖</button>
+          </div>
+          <div id="dep_new_full_post" hidden>
+            <div class="row">
+              <div><label>收件人姓名 *</label><input id="dep_new_full_post_name" required /></div>
+              <div><label>收件人電話 *</label><input id="dep_new_full_post_phone" required /></div>
+            </div>
+            <div class="row">
+              <div><label>郵遞區號 *</label><input id="dep_new_full_post_zip" required /></div>
+              <div><label>郵寄地址 *</label><input id="dep_new_full_post_addr" required /></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="oldDeposit" hidden>
+        <div class="copy">
+          <div>
+            郵局代號：<span class="mono">822</span>　　帳號：<span class="mono">222540458194</span>
+          </div>
+          <button id="copyBank" class="btn secondary" style="flex:0 0 auto">複製</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <div><label>匯款後五碼 *</label><input id="dep_last5_old" required /></div>
+          <div></div>
+        </div>
+        <div class="row">
+          <div>
+            <label>收件方式</label>
+            <select id="dep_old_ship">
+              <option value="711">7-11 取貨</option>
+              <option value="post">中華郵政寄送</option>
+            </select>
+          </div>
+          <div></div>
+        </div>
+        <div id="dep_old_711">
+          <div class="row">
+            <div><label>姓名 *</label><input id="dep_old_name" required /></div>
+            <div><label>電話 *</label><input id="dep_old_phone" required /></div>
+          </div>
+          <div class="row">
+            <div><label>7-11 門市代號 *</label><input id="dep_old_store_id" required /></div>
+            <div><label>7-11 門市名稱 *</label><input id="dep_old_store_name" required /></div>
+          </div>
+          <label>7-11 門市地址 *</label>
+          <input id="dep_old_store_addr" required />
+          <button class="btn secondary" id="mapDEPOld711">開啟 7-11 門市地圖</button>
+        </div>
+        <div id="dep_old_post" hidden>
+          <div class="row">
+            <div><label>收件人姓名 *</label><input id="dep_old_post_name" required /></div>
+            <div><label>收件人電話 *</label><input id="dep_old_post_phone" required /></div>
+          </div>
+          <div class="row">
+            <div><label>郵遞區號 *</label><input id="dep_old_post_zip" required /></div>
+            <div><label>郵寄地址 *</label><input id="dep_old_post_addr" required /></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ZEROCARD: 可 7-11 或 郵寄 -->
+    <div id="paneZEROCARD" hidden>
+      <div class="row">
+        <div>
+          <label>期數</label>
+          <select id="zc_months">
+            <option value="3">3</option><option value="6">6</option><option value="9">9</option>
+            <option value="12">12</option><option value="18">18</option><option value="24">24</option>
+          </select>
+        </div>
+        <div>
+          <label>每期金額</label>
+          <input id="zc_calc" readonly />
+        </div>
+      </div>
+
+      <div class="hr"></div>
+      <div class="row">
+        <div>
+          <label>運送方式</label>
+          <select id="zc_ship_method">
+            <option value="711">7-11 取貨</option>
+            <option value="post">中華郵政寄送</option>
+          </select>
+        </div>
+        <div></div>
+      </div>
+
+      <div id="zc711">
+        <div class="row">
+          <div><label>姓名 *</label><input id="ship_name_zc" required /></div>
+          <div><label>電話 *</label><input id="ship_phone_zc" required /></div>
+        </div>
+        <div class="row">
+          <div><label>7-11 門市代號 *</label><input id="ship_store_id_zc" required /></div>
+          <div><label>7-11 門市名稱 *</label><input id="ship_store_name_zc" required /></div>
+        </div>
+        <label>7-11 門市地址 *</label>
+        <input id="ship_store_addr_zc" required />
+        <button class="btn secondary" id="mapZC">開啟 7-11 門市地圖</button>
+      </div>
+
+      <div id="zcPOST" hidden>
+        <div class="row">
+          <div><label>姓名 *</label><input id="zc_post_name" required /></div>
+          <div><label>電話 *</label><input id="zc_post_phone" required /></div>
+        </div>
+        <div class="row">
+          <div><label>郵遞區號 *</label><input id="zc_post_zip" required /></div>
+          <div><label>郵寄地址 *</label><input id="zc_post_addr" required /></div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- 送出 -->
-  <div class="card">
-    <div class="bar">
-      <button class="btn" id="submitBtn">送出訂單</button>
-      <button class="btn-outline" id="onlineBtn" type="button">線上支付</button>
-    </div>
-    <div class="muted" id="tip"></div>
+  <div class="toolbar">
+    <button id="submitBtn" class="btn primary">送出</button>
   </div>
-</div>
+</main>
 
 <script>
-/* ===== 固定設定 ===== */
-const API = 'https://api.murain.tw';
-const PAYUNI_LINK = 'https://api.payuni.com.tw/api/uop/receive_info/2/1/GOGO1586942584/8UoSwkh2D82d9G9Vqm2m';
+/* ===== 設定 ===== */
+const API=(window.API_BASE||'https://api.murain.tw').replace(/\/$/,'');
+const RATE_TABLE={3:0,6:4.0,9:5.5,12:6.5,18:9.0,24:11.5};
+const NEW_DEPOSIT_AMOUNT=1000;
 
-/* ===== 小工具 ===== */
-const $ = (s, r=document) => r.querySelector(s);
-const $$ = (s, r=document) => [...r.querySelectorAll(s)];
-const qs = new URLSearchParams(location.search);
-const cartToken = qs.get('cart_token') || '';
-function money(n){ return 'NT$ ' + (Number(n)||0).toLocaleString(); }
-function toast(t){ $('#tip').textContent = t; }
-async function post(url, data){
-  const r = await fetch(url, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(data) });
-  const txt = await r.text();
-  try { return { ok:r.ok, status:r.status, data: JSON.parse(txt) }; }
-  catch { return { ok:r.ok, status:r.status, data: txt }; }
+/* ===== 工具 ===== */
+const $=(s,r=document)=>r.querySelector(s); const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const money=n=>'NT$ '+Number(n||0).toLocaleString();
+const qs=new URLSearchParams(location.search);
+const cartToken=qs.get('cart_token')||'';
+const customer=(qs.get('customer')||'old').toLowerCase();   // new | old
+const initialMode=(qs.get('mode')||'').toUpperCase();       // COD/PAID/DEPOSIT/ZEROCARD
+
+function setTotal(v){ $('#subtotal').value=Number(v||0); $('#total').value=money(v||0); }
+
+/* ===== Tabs ===== */
+const tabs=$$('#payTabs .tab'); tabs.forEach(t=>t.addEventListener('click',()=>{
+  tabs.forEach(x=>x.classList.remove('active')); t.classList.add('active');
+  const k=t.dataset.pay;
+  ['COD','PAID','DEPOSIT','ZEROCARD'].forEach(x=>$('#pane'+x).hidden=(x!==k));
+  if(k==='DEPOSIT'){ initDepositPane(); }
+  if(k==='PAID'){ $('#paid_ship_method').value='711'; updatePaidShip(); }
+  if(k==='ZEROCARD'){ $('#zc_ship_method').value='711'; updateZcShip(); calcZC();}
+}));
+
+/* ===== PAID ===== */
+$('#paid_channel').addEventListener('change',()=>{ $('#cardInstBox').hidden = ($('#paid_channel').value!=='card_inst'); });
+$('#paid_ship_method').addEventListener('change',updatePaidShip);
+function updatePaidShip(){
+  const v=$('#paid_ship_method').value;
+  $('#paid711').hidden=(v!=='711');
+  $('#paidPOST').hidden=(v!=='post');
 }
 
-/* ===== 7-11 門市地圖（ECPay） ===== */
-const ECPAY_MAP_URL = 'https://logistics.ecpay.com.tw/Express/map';
-const cvsParams = new URLSearchParams({
-  MerchantID: '2000132',        // 測試商店（僅開地圖，不下物流單）
-  LogisticsType: 'CVS',
-  LogisticsSubType: 'UNIMARTC2C',
-  IsCollection: 'N',
-  Device: '0'
-});
-let cvsWin=null;
-$('#btnCvs').addEventListener('click', ()=>{
-  const url = `${ECPAY_MAP_URL}?${cvsParams.toString()}`;
-  cvsWin = window.open(url, 'ecpay_cvs', 'width=1000,height=720');
-});
-
-/* 接收選店結果（ECPay 用 postMessage 回傳） */
-function parseEcpayData(payload){
-  if (!payload) return null;
-  // 可能是字串 querystring / JSON / 物件；全部兜容
-  try{
-    if (typeof payload === 'string') {
-      // 嘗試 JSON
-      try { payload = JSON.parse(payload); }
-      catch { // querystring
-        const p = new URLSearchParams(payload);
-        payload = Object.fromEntries(p.entries());
-      }
-    }
-  }catch(e){}
-  const id   = payload.CVSStoreID   || payload.StoreID   || payload.cvs_id   || payload.cvsid;
-  const name = payload.CVSStoreName || payload.StoreName || payload.cvs_name || payload.cvsname;
-  const addr = payload.CVSAddress   || payload.CVSStoreAddress || payload.Address || payload.cvs_addr || payload.cvsaddress;
-  return (id && name) ? { id, name, addr: addr || '' } : null;
+/* ===== DEPOSIT ===== */
+function initDepositPane(){
+  if(customer==='new'){
+    $('#newDeposit').hidden=false; $('#oldDeposit').hidden=true;
+    $('#dep_new_mode').value='partial'; updateNewDepositMode();
+  }else{
+    $('#newDeposit').hidden=true; $('#oldDeposit').hidden=false;
+    $('#dep_old_ship').value='711'; updateOldShip();
+  }
 }
-window.addEventListener('message', (ev)=>{
-  // 只接受 ecpay logistics 網域
-  try{
-    const h = new URL(ev.origin).hostname;
-    if (!/ecpay\.com\.tw$/.test(h)) return;
-  }catch(e){ return; }
+$('#dep_new_mode').addEventListener('change', updateNewDepositMode);
+function updateNewDepositMode(){
+  const v=$('#dep_new_mode').value;
+  $('#dep_new_partial').hidden=(v!=='partial');
+  $('#dep_new_full').hidden=(v!=='full');
+  if(v==='full'){ $('#dep_new_full_ship').value='711'; updateNewFullShip(); }
+}
+$('#dep_new_full_ship').addEventListener('change', updateNewFullShip);
+function updateNewFullShip(){
+  const v=$('#dep_new_full_ship').value;
+  $('#dep_new_full_711').hidden=(v!=='711');
+  $('#dep_new_full_post').hidden=(v!=='post');
+}
 
-  const data = parseEcpayData(ev.data);
-  if (!data) return;
-  $('#cvs_id').value = data.id;
-  $('#cvs_name').value = data.name;
-  $('#cvs_addr').value = data.addr || '';
-  $('#cvsTag').style.display = 'inline-block';
-  $('#cvsTag').textContent = `${data.id}・${data.name}`;
-  cvsWin && cvsWin.close();
-});
+$('#dep_old_ship').addEventListener('change', updateOldShip);
+function updateOldShip(){
+  const v=$('#dep_old_ship').value;
+  $('#dep_old_711').hidden=(v!=='711');
+  $('#dep_old_post').hidden=(v!=='post');
+}
 
-/* ===== 初始化：讀購物車金額 ===== */
-(async ()=>{
-  if (!cartToken){ toast('缺少 cart_token'); $('#submitBtn').disabled = true; return; }
+/* ===== ZEROCARD ===== */
+$('#zc_months').addEventListener('change',calcZC);
+$('#zc_ship_method').addEventListener('change',updateZcShip);
+function calcZC(){
+  const total=Number($('#subtotal').value||0);
+  const m=Number($('#zc_months').value||3);
+  const rate=(m===3)?0:(RATE_TABLE[m]||0);
+  const gross=Math.round(total*(1+rate/100));
+  const per=Math.ceil(gross/m);
+  $('#zc_calc').value=`約 NT$ ${per.toLocaleString()} × ${m}（總計 NT$ ${gross.toLocaleString()}）`;
+}
+function updateZcShip(){
+  const v=$('#zc_ship_method').value;
+  $('#zc711').hidden=(v!=='711');
+  $('#zcPOST').hidden=(v!=='post');
+}
+
+/* ===== 地圖/複製 ===== */
+$('#mapCOD').addEventListener('click',()=>window.open('https://emap.pcsc.com.tw/','_blank'));
+$('#mapPAID').addEventListener('click',()=>window.open('https://emap.pcsc.com.tw/','_blank'));
+$('#mapDEPOld711').addEventListener('click',()=>window.open('https://emap.pcsc.com.tw/','_blank'));
+$('#mapDEPnewP').addEventListener('click',()=>window.open('https://emap.pcsc.com.tw/','_blank'));
+$('#mapDEPnewF').addEventListener('click',()=>window.open('https://emap.pcsc.com.tw/','_blank'));
+$('#mapZC').addEventListener('click',()=>window.open('https://emap.pcsc.com.tw/','_blank'));
+$('#copyBank').addEventListener('click', async()=>{ try{ await navigator.clipboard.writeText('822 222540458194'); }catch(e){} });
+
+/* ===== 載入購物車 ===== */
+async function loadCart(){
+  if(!cartToken){ alert('缺少 cart_token，請由正確結帳連結進入'); return; }
   try{
     const r = await fetch(`${API}/cart/${cartToken}`);
-    const data = await r.json();
-    const v = data && data.total_amount || 0;
-    $('#total').value = money(v);
-  }catch(e){ /* 不擋流程 */ }
+    const j = await r.json();
+    if(!r.ok){ throw new Error(j.error||'cart error'); }
+    setTotal(j.total_amount||0);
+    // 展示清單
+    const lines=(j.items||[]).map(it=>`• ${it.name||it.sku} × ${it.qty}　NT$ ${Number(it.subtotal||0).toLocaleString()}`);
+    $('#itemsBox').textContent = lines.join('\n');
+  }catch(e){
+    console.error(e); alert('讀取購物車失敗，請重試');
+  }
+}
+
+/* ===== 送出 ===== */
+function required(v){ return v && String(v).trim().length>0; }
+
+$('#submitBtn').addEventListener('click', async()=>{
+  if(!cartToken){ return alert('缺少 cart_token'); }
+  const activeTab = document.querySelector('.tab.active')?.dataset.pay || 'COD';
+  let payment_method = '';
+  let ship = {};
+  const note = $('#note').value || '';
+
+  // 依不同付款整理資料
+  if(activeTab==='COD'){
+    const name=$('#cod_name').value, phone=$('#cod_phone').value,
+          id=$('#cod_store_id').value, sname=$('#cod_store_name').value, addr=$('#cod_store_addr').value;
+    if(![name,phone,id,sname,addr].every(required)) return alert('請填完 COD 必填欄位');
+    payment_method='cod_711';
+    ship={type:'711', name, phone, store:{id,name:sname,addr}};
+  }
+
+  if(activeTab==='PAID'){
+    const channel=$('#paid_channel').value;
+    const shipMethod=$('#paid_ship_method').value;
+    payment_method=`paid_${channel}`;
+    if(channel==='card_inst'){ payment_method+=`_${$('#inst_months').value}`; }
+    if(shipMethod==='711'){
+      const name=$('#ship_name_paid').value, phone=$('#ship_phone_paid').value,
+            id=$('#ship_store_id_paid').value, sname=$('#ship_store_name_paid').value, addr=$('#ship_store_addr_paid').value;
+      if(![name,phone,id,sname,addr].every(required)) return alert('請填完收件資料');
+      ship={type:'711', name, phone, store:{id,name:sname,addr}};
+    }else{
+      const name=$('#paid_post_name').value, phone=$('#paid_post_phone').value,
+            zip=$('#paid_post_zip').value, addr=$('#paid_post_addr').value;
+      if(![name,phone,zip,addr].every(required)) return alert('請填完郵寄資料');
+      ship={type:'post', name, phone, post:{zip,addr}};
+    }
+  }
+
+  if(activeTab==='DEPOSIT'){
+    if(customer==='new'){
+      const last5=$('#dep_last5_new').value;
+      if(!required(last5)) return alert('請填寫匯款後五碼');
+      if($('#dep_new_mode').value==='partial'){
+        const name=$('#dep_new_partial_name').value, phone=$('#dep_new_partial_phone').value,
+              id=$('#dep_new_partial_store_id').value, sname=$('#dep_new_partial_store_name').value, addr=$('#dep_new_partial_store_addr').value;
+        if(![name,phone,id,sname,addr].every(required)) return alert('請填完收件資料');
+        payment_method='deposit_partial';
+        ship={type:'711', name, phone, store:{id,name:sname,addr}, deposit:{type:'new_partial', last5, amount:NEW_DEPOSIT_AMOUNT}};
+      }else{
+        const fullShip=$('#dep_new_full_ship').value;
+        payment_method='deposit_full';
+        if(fullShip==='711'){
+          const name=$('#dep_new_full_name').value, phone=$('#dep_new_full_phone').value,
+                id=$('#dep_new_full_store_id').value, sname=$('#dep_new_full_store_name').value, addr=$('#dep_new_full_store_addr').value;
+          if(![name,phone,id,sname,addr].every(required)) return alert('請填完收件資料');
+          ship={type:'711', name, phone, store:{id,name:sname,addr}, deposit:{type:'new_full', last5}};
+        }else{
+          const name=$('#dep_new_full_post_name').value, phone=$('#dep_new_full_post_phone').value,
+                zip=$('#dep_new_full_post_zip').value, addr=$('#dep_new_full_post_addr').value;
+          if(![name,phone,zip,addr].every(required)) return alert('請填完郵寄資料');
+          ship={type:'post', name, phone, post:{zip,addr}, deposit:{type:'new_full', last5}};
+        }
+      }
+    }else{ // old
+      const last5=$('#dep_last5_old').value;
+      if(!required(last5)) return alert('請填寫匯款後五碼');
+      payment_method='deposit_old';
+      if($('#dep_old_ship').value==='711'){
+        const name=$('#dep_old_name').value, phone=$('#dep_old_phone').value,
+              id=$('#dep_old_store_id').value, sname=$('#dep_old_store_name').value, addr=$('#dep_old_store_addr').value;
+        if(![name,phone,id,sname,addr].every(required)) return alert('請填完 7-11 收件資料');
+        ship={type:'711', name, phone, store:{id,name:sname,addr}, deposit:{type:'old', last5}};
+      }else{
+        const name=$('#dep_old_post_name').value, phone=$('#dep_old_post_phone').value,
+              zip=$('#dep_old_post_zip').value, addr=$('#dep_old_post_addr').value;
+        if(![name,phone,zip,addr].every(required)) return alert('請填完郵寄資料');
+        ship={type:'post', name, phone, post:{zip,addr}, deposit:{type:'old', last5}};
+      }
+    }
+  }
+
+  if(activeTab==='ZEROCARD'){
+    const months=$('#zc_months').value;
+    payment_method=`zero_card_${months}`;
+    if($('#zc_ship_method').value==='711'){
+      const name=$('#ship_name_zc').value, phone=$('#ship_phone_zc').value,
+            id=$('#ship_store_id_zc').value, sname=$('#ship_store_name_zc').value, addr=$('#ship_store_addr_zc').value;
+      if(![name,phone,id,sname,addr].every(required)) return alert('請填完 7-11 收件資料');
+      ship={type:'711', name, phone, store:{id,name:sname,addr}};
+    }else{
+      const name=$('#zc_post_name').value, phone=$('#zc_post_phone').value,
+            zip=$('#zc_post_zip').value, addr=$('#zc_post_addr').value;
+      if(![name,phone,zip,addr].every(required)) return alert('請填完郵寄資料');
+      ship={type:'post', name, phone, post:{zip,addr}};
+    }
+  }
+
+  // 組 shipping_info
+  const shipping_info={ customer, note, ship, subtotal:Number($('#subtotal').value||0) };
+
+  // 呼叫 /checkout
+  try{
+    $('#submitBtn').disabled=true;
+    const r=await fetch(`${API}/checkout`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ cart_token:cartToken, payment_method, shipping_info })
+    });
+    const j=await r.json();
+    if(!r.ok || j.error){ throw new Error(j.error||'checkout error'); }
+    // 成功 → 導向結果頁（若沒有結果頁，就 alert）
+    const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total=${encodeURIComponent(j.total_amount)}`;
+    try{ location.href=url; } catch(e){ alert(`下單成功！訂單編號：${j.order_id}`); }
+  }catch(e){
+    console.error(e); alert('送出失敗，請再試一次');
+  }finally{
+    $('#submitBtn').disabled=false;
+  }
+});
+
+/* ===== init ===== */
+(async()=>{
+  // 預設 tab
+  if(initialMode){ document.querySelector(`.tab[data-pay="${initialMode}"]`)?.click(); }
+  else { document.querySelector('.tab[data-pay="COD"]').click(); }
+  // 預設寄送顯示
+  updatePaidShip(); updateOldShip(); updateNewFullShip(); updateZcShip(); calcZC();
+  // 載入購物車
+  await loadCart();
 })();
-
-/* ===== 線上支付（直接導到你給的 PayUNI URL） ===== */
-$('#onlineBtn').addEventListener('click', ()=>{
-  window.open(PAYUNI_LINK, '_blank');
-});
-
-/* ===== 送出訂單 ===== */
-$('#submitBtn').addEventListener('click', async ()=>{
-  if (!cartToken){ alert('找不到購物車'); return; }
-
-  const name  = $('#name').value.trim();
-  const phone = $('#phone').value.trim();
-  const email = $('#email').value.trim();
-  const note  = $('#note').value.trim();
-  const pay   = $('#pay').value;
-
-  if (!name || !phone){ alert('請填寫姓名與電話'); return; }
-
-  // 7-11 取貨必須有門市
-  const store_id = $('#cvs_id').value.trim();
-  const store_name = $('#cvs_name').value.trim();
-  const store_addr = $('#cvs_addr').value.trim();
-  if (!store_id){ alert('請先選擇 7-11 門市'); return; }
-
-  // 線上支付只做導轉，不建單（如果要建單可改在這裡先 POST /checkout 再導頁）
-  if (pay === 'online_pay'){
-    window.open(PAYUNI_LINK, '_blank');
-    return;
-  }
-
-  const shipping_info = {
-    type: '711',
-    store_id, store_name, store_address: store_addr,
-    receiver_name: name, phone, email, note
-  };
-
-  toast('送出中…');
-  const { ok, status, data } = await post(`${API}/checkout`, {
-    cart_token: cartToken,
-    payment_method: pay,         // bank_transfer / cod_711
-    shipping_info
-  });
-
-  if (!ok){
-    console.log(data);
-    alert('送出失敗（' + status + '）');
-    toast('送出失敗，請稍後再試');
-    return;
-  }
-  // 成功 → 轉結果頁或提示
-  const orderId = (data && data.order_id) ? data.order_id : '';
-  toast('已收到訂單 ' + orderId);
-  // 若你有 order-result.html 可用以下跳轉
-  if (orderId) location.href = `./order-result.html?order_id=${encodeURIComponent(orderId)}`;
-});
 </script>
 </body>
 </html>
