@@ -1,113 +1,80 @@
-
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>MURAIN — 結帳</title>
   <style>
-    body { margin:0; font-family: system-ui, 'Noto Sans TC', Arial; background:#f7f7fb; }
-    .wrap { max-width: 960px; margin: 24px auto; padding:0 16px; }
-    .card { background:#fff; border-radius:14px; box-shadow:0 6px 24px rgba(0,0,0,.06); padding:18px; margin-bottom:14px; }
-    h2 { margin:0 0 12px; }
-    .row { display:grid; grid-template-columns: repeat(12,1fr); gap:10px; }
-    .col-3{grid-column:span 3} .col-4{grid-column:span 4} .col-6{grid-column:span 6} .col-12{grid-column:span 12}
-    input, select, button, textarea { width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:10px; }
-    button.btn { background:#111; color:#fff; border:none; cursor:pointer; }
-    table { width:100%; border-collapse: collapse; }
-    th,td { padding:10px; border-bottom:1px solid #eee; }
-    td.right { text-align:right; }
-    .mut { color:#777; font-size:.9rem; }
+    body{font-family:system-ui,'Segoe UI',PingFang TC,Microsoft JhengHei,sans-serif;background:#f6f7fb;margin:0}
+    .wrap{max-width:720px;margin:24px auto;padding:0 16px}
+    .card{background:#fff;border-radius:14px;box-shadow:0 6px 18px rgba(0,0,0,.07);padding:18px;margin:16px 0}
+    input,select,button{font-size:16px;padding:10px;border:1px solid #ddd;border-radius:10px}
+    .btn{background:#111;color:#fff;border:none;padding:10px 16px;border-radius:10px;cursor:pointer}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    .mono{font-family:ui-monospace,Consolas,monospace}
+    .muted{color:#666}
   </style>
   <script>window.API_BASE="https://api.murain.tw";</script>
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h2>購物車</h2>
-      <table>
-        <thead><tr><th>SKU</th><th>品名</th><th class="right">單價</th><th class="right">數量</th><th class="right">小計</th></tr></thead>
-        <tbody id="lines"></tbody>
-        <tfoot><tr><td colspan="5" class="right"><b>合計 NT$ <span id="total">0</span></b></td></tr></tfoot>
-      </table>
+<div class="wrap">
+  <div class="card">
+    <h2>結帳資訊</h2>
+    <div class="row">
+      <select id="pm">
+        <option value="bank_transfer">匯款（新客）</option>
+        <option value="cod_711">7-11 貨到付款（老客 / 示範）</option>
+      </select>
     </div>
-
-    <div class="card">
-      <h2>付款方式</h2>
-      <div class="row">
-        <div class="col-6">
-          <select id="pay">
-            <option value="bank_transfer">ATM/匯款（新客）</option>
-            <option value="cod_711">7-11 貨到付款（老客）</option>
-          </select>
-        </div>
-      </div>
-      <div class="mut">若為「匯款」，完成後請在下方填寫「後五碼」。</div>
+    <div class="row" style="margin-top:8px">
+      <input id="name" placeholder="收件人姓名" style="flex:1">
+      <input id="phone" placeholder="手機" style="flex:1">
     </div>
-
-    <div class="card">
-      <h2>收件資料</h2>
-      <div class="row">
-        <div class="col-4"><input id="name" placeholder="姓名" /></div>
-        <div class="col-4"><input id="phone" placeholder="電話" /></div>
-        <div class="col-4"><input id="email" placeholder="Email（可留空）" /></div>
-        <div class="col-6"><input id="store" placeholder="7-11 門市（或留空改填地址）" /></div>
-        <div class="col-6"><input id="addr" placeholder="寄送地址（選一種即可）" /></div>
-        <div class="col-6"><input id="remit" placeholder="匯款帳號後五碼（匯款才需填）" /></div>
-        <div class="col-12"><textarea id="note" placeholder="備註"></textarea></div>
-        <div class="col-3"><button id="btnSubmit" class="btn">送出訂單</button></div>
-      </div>
+    <div class="row" style="margin-top:8px">
+      <input id="email" placeholder="Email (可留空)" style="flex:1">
     </div>
-
-    <div id="msg" class="wrap"></div>
+    <div class="row" style="margin-top:8px">
+      <input id="store" placeholder="7-11 門市名（若選 COD） / 郵寄地址（若匯款）" style="flex:1">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn" id="btn_submit">送出訂單</button>
+    </div>
+    <p class="muted">CartToken：<span id="ct" class="mono"></span></p>
   </div>
+
+  <div class="card" id="done" style="display:none">
+    <h2>感謝下單！</h2>
+    <p>訂單編號：<span id="oid" class="mono"></span></p>
+    <p>金額：<span id="amt" class="mono"></span></p>
+  </div>
+</div>
 
 <script>
 const API = window.API_BASE;
-const params = new URLSearchParams(location.search);
-const CART = params.get('cart_token') || '';
-const PM   = params.get('pm') || '';
+const q = new URLSearchParams(location.search);
+const CART = q.get('cart_token')||'';
+const PM0 = q.get('pm')||'bank_transfer';
+document.getElementById('pm').value = PM0;
+document.getElementById('ct').textContent = CART || '(缺少 cart_token)';
 
-function $(q){return document.querySelector(q);}
-const fmt = n => (n||0).toLocaleString();
-
-window.addEventListener('load', () => {
-  if(PM) document.getElementById('pay').value = PM;
-  render();
-});
-
-async function render(){
-  if(!CART) return;
-  const r = await fetch(API + '/cart/' + CART);
-  const d = await r.json();
-  const tb = document.getElementById('lines'); tb.innerHTML='';
-  (d.items||[]).forEach(i=>{
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${i.sku||''}</td><td>${i.name||''}</td><td class="right">NT$ ${(i.price||0).toLocaleString()}</td><td class="right">${i.qty||0}</td><td class="right">NT$ ${((i.price||0)*(i.qty||0)).toLocaleString()}</td>`;
-    tb.appendChild(tr);
-  });
-  document.getElementById('total').textContent = (d.total||0).toLocaleString();
-}
-
-document.getElementById('btnSubmit').onclick = async () => {
-  if(!CART) return alert('找不到購物車');
-  const shipping = {
-    name: document.getElementById('name').value.trim(),
-    phone: document.getElementById('phone').value.trim(),
-    email: document.getElementById('email').value.trim(),
-    store: document.getElementById('store').value.trim(),
-    address: document.getElementById('addr').value.trim(),
-    remit_last5: document.getElementById('remit').value.trim(),
-    note: document.getElementById('note').value.trim(),
+document.getElementById('btn_submit').onclick = async () => {
+  if(!CART) return alert('缺少 cart token');
+  const body = {
+    cart_token: CART,
+    payment_method: document.getElementById('pm').value,
+    shipping_info: {
+      name:  document.getElementById('name').value,
+      phone: document.getElementById('phone').value,
+      email: document.getElementById('email').value,
+      store: document.getElementById('store').value
+    }
   };
-  if(!shipping.name || !shipping.phone) return alert('請填姓名與電話');
-  const body = { cart_token: CART, payment_method: document.getElementById('pay').value, shipping };
-  const r = await fetch(API + '/checkout', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const r = await fetch(API+'/checkout',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok){ const t=await r.text(); return alert(t||'送出失敗'); }
   const d = await r.json();
-  if(!d.ok) return alert(d.error||'送出失敗');
-  if(d.redirect_url) location.href = d.redirect_url; else { 
-    document.getElementById('msg').textContent = '訂單建立完成：' + (d.order_id||'');
-  }
+  document.getElementById('oid').textContent = d.order_id||'';
+  document.getElementById('amt').textContent = 'NT$ ' + (d.total_amount||0);
+  document.getElementById('done').style.display='';
 };
 </script>
 </body>
