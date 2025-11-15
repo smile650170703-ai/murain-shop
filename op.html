@@ -7,8 +7,8 @@
   <script>window.API_BASE="https://api.murain.tw";</script>
   <style>
     :root { --brand:#111; --bg:#f5f6f8; --card:#fff; }
-    *{box-sizing:border-box}
-    body{font-family:system-ui,-apple-system,"Noto Sans TC",Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:#222}
+    *{box-sizing:border-box} body{font-family:system-ui,-apple-system,"Noto Sans TC",Segoe UI,Roboto,Arial;
+    margin:0;background:var(--bg);color:#222}
     .wrap{max-width:980px;margin:32px auto;padding:0 16px}
     .card{background:var(--card);border-radius:14px;box-shadow:0 6px 16px rgba(0,0,0,.06);padding:20px;margin-bottom:14px}
     h1{font-size:20px;margin:0 0 12px}
@@ -18,9 +18,12 @@
     button{background:#111;color:#fff;border:none;cursor:pointer}
     button.ghost{background:#fff;color:#111;border:1px solid #111}
     .muted{color:#666;font-size:13px}
+    .right{float:right}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
     .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
     .hide{display:none}
     .pill{padding:6px 10px;border-radius:99px;border:1px solid #ddd;background:#fff;cursor:pointer}
+    .flex{display:flex;gap:8px;align-items:center}
     .btns button{margin-right:6px}
     .hr{height:1px;background:#eee;margin:12px 0}
   </style>
@@ -81,7 +84,7 @@
         <h1>產生結帳連結</h1>
         <div class="row">
           <button id="btnLinkBank">新客匯款</button>
-          <button id="btnLinkCOD" class="ghost">老客 7-11 COD / 其他金流</button>
+          <button id="btnLinkCOD" class="ghost">老客 7-11 COD / 其他金流示範</button>
         </div>
         <div style="margin-top:10px">
           <input id="checkoutURL" class="mono" style="width:100%" readonly />
@@ -97,9 +100,9 @@
 
 <script>
 const API=(window.API_BASE||'').replace(/\/$/,'')||'';
-const $  =(s,sc=document)=>sc.querySelector(s);
-const $$ =(s,sc=document)=>Array.from(sc.querySelectorAll(s));
-const toast=t=>alert(t);
+function $ (s,sc=document){return sc.querySelector(s)}
+function $$ (s,sc=document){return Array.from(sc.querySelectorAll(s))}
+function toast(t){alert(t)}
 
 const store={
   get op(){return localStorage.getItem('OP_KEY')||''},
@@ -111,27 +114,31 @@ const store={
 function show(id){ $('#login').classList.add('hide'); $('#app').classList.add('hide'); document.getElementById(id).classList.remove('hide'); }
 
 async function authOP(key){
-  const r=await fetch(API+'/op/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})});
-  if(!r.ok) return false; try{ return (await r.json()).ok }catch{ return false }
+  const r= await fetch(API+'/op/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})});
+  if(!r.ok) return false;
+  const t= await r.text(); try{ return JSON.parse(t).ok }catch{ return false }
 }
 
 $('#btnLogin').onclick = async () => {
   const k = $('#opkey').value.trim();
   if(!k) return toast('請輸入 OP Key');
   const ok = await authOP(k);
-  if(!ok) return toast('OP Key 錯誤');
+  if(!ok){ toast('OP Key 錯誤'); return; }
   store.op = k; show('app');
 };
 
-(async ()=>{ if(store.op && await authOP(store.op)) show('app'); })();
+(async ()=>{
+  if(store.op){ if(await authOP(store.op)) show('app'); }
+})();
 
 $('#btnCreate').onclick = async () => {
   if(!store.op) return toast('請先登入');
-  const streamer = $('#streamer').value.trim(); if(!streamer) return toast('請輸入主播名稱');
+  const streamer = $('#streamer').value.trim();
+  if(!streamer) return toast('請輸入主播名稱');
   const customer_type = $('#custType').value;
   const r = await fetch(API+'/cart/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({streamer_name:streamer, customer_type})});
   const data = await r.json();
-  if(!r.ok) return toast(data.error||'建立失敗');
+  if(!r.ok){ toast(data.error||'建立失敗'); return; }
   store.token = data.cart_token || data.token || '';
   $('#token').textContent = store.token || '建立失敗';
   if(store.token) refreshItems();
@@ -141,63 +148,66 @@ async function refreshItems(){
   if(!store.token) return;
   const r = await fetch(API+'/cart/'+store.token);
   const data = await r.json();
-  const items = data.items||[];
+  const items = (data.items||[]);
   if(!items.length){ $('#items').textContent='尚無商品'; return; }
-  const html=['<table class="mono" style="width:100%"><tr><th align="left">SKU</th><th align="right">Qty</th><th align="right">Price</th><th align="right">小計</th></tr>'];
+  const html = ['<table class="mono" style="width:100%"><tr><th align="left">SKU</th><th align="right">Qty</th><th align="right">Price</th><th align="right">小計</th></tr>']
   let sum=0;
   for(const it of items){
     const qty=it.qty||1, price=it.price||0, sub=qty*price; sum+=sub;
-    html.push(`<tr><td>${it.sku}</td><td align="right">${qty}</td><td align="right">${price}</td><td align="right">${sub}</td></tr>`);
+    html.push(`<tr><td>${it.sku}</td><td align="right">${qty}</td><td align="right">${price}</td><td align="right">${sub}</td></tr>`)
   }
   html.push(`<tr><td colspan="3" align="right">總計</td><td align="right"><b>${sum}</b></td></tr></table>`);
-  $('#items').innerHTML=html.join('');
+  $('#items').innerHTML = html.join("");
 }
 
 $('#btnAdd').onclick = async () => {
   if(!store.token) return toast('請先建立購物車');
-  const sku=$('#sku').value.trim(); const qty=parseInt($('#qty').value||'1',10)||1;
-  const price_override=parseInt($('#price_override').value||'',10);
+  const sku = $('#sku').value.trim();
+  const qty = parseInt($('#qty').value||'1',10)||1;
+  const price_override = parseInt($('#price_override').value||'',10);
   if(!sku) return toast('請輸入 SKU');
   const body={cart_token:store.token, sku, qty, op_key:store.op};
   if(Number.isFinite(price_override)) body.price_override=price_override;
-  const r=await fetch(API+'/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const t=await r.text();
-  if(!r.ok) return toast(t||'加入失敗');
+  const r = await fetch(API+'/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const t = await r.text();
+  if(!r.ok){ toast(t||'加入失敗'); return; }
   $('#sku').value=''; $('#qty').value=1; $('#price_override').value='';
   refreshItems();
 };
 
 $$('.pill').forEach(b=>{
   b.addEventListener('click',()=>{
-    const adj=b.dataset.adj?parseInt(b.dataset.adj,10):null;
-    const abs=b.dataset.abs?parseInt(b.dataset.abs,10):null;
+    const adj = b.dataset.adj? parseInt(b.dataset.adj,10):null;
+    const abs = b.dataset.abs? parseInt(b.dataset.abs,10):null;
     if(abs!=null){ $('#price_override').value=abs; return; }
-    const cur=parseInt($('#price_override').value||'0',10)||0;
-    $('#price_override').value=cur+(adj||0);
+    const cur = parseInt($('#price_override').value||'0',10)||0;
+    $('#price_override').value = cur + (adj||0);
   });
 });
 
-$('#gift').onchange=()=>{
-  const g=$('#gift').value; if(!g) return;
-  const cur=$('#note').value.trim();
-  $('#note').value = cur? (cur+'；贈品：'+g) : ('贈品：'+g);
+$('#gift').onchange = () => {
+  const g = $('#gift').value;
+  if(!g) return;
+  const cur = $('#note').value.trim();
+  $('#note').value = cur? (cur + '；贈品：'+g) : ('贈品：'+g);
 };
 
-$('#btnSaveNote').onclick = async ()=>{
+$('#btnSaveNote').onclick = async () => {
   if(!store.token) return toast('請先建立購物車');
-  const note=$('#note').value.trim();
-  const r=await fetch(API+'/cart/set_note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cart_token:store.token,note,op_key:store.op})});
-  const t=await r.text();
-  if(!r.ok) return toast(t||'儲存失敗');
+  const note = $('#note').value.trim();
+  const r = await fetch(API+'/cart/set_note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cart_token:store.token,note,op_key:store.op})});
+  const t = await r.text();
+  if(!r.ok){ toast(t||'儲存失敗'); return; }
   toast('已儲存');
 };
 
 function setLink(pm){
   if(!store.token) return toast('請先建立購物車');
-  $('#checkoutURL').value = `${location.origin}/checkout.html?cart_token=${encodeURIComponent(store.token)}&pm=${encodeURIComponent(pm)}`;
+  const url = `${location.origin}/checkout.html?cart_token=${encodeURIComponent(store.token)}&pm=${encodeURIComponent(pm)}`;
+  $('#checkoutURL').value = url;
 }
 $('#btnLinkBank').onclick = ()=>setLink('bank_transfer');
-$('#btnLinkCOD').onclick  = ()=>setLink('cod_711');
+$('#btnLinkCOD').onclick = ()=>setLink('cod_711');
 </script>
 </body>
 </html>
