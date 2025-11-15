@@ -387,17 +387,13 @@ function updateZcShip(){
 
 /* ===== 地圖/複製（改為 7-11 官方 e-map via API） ===== */
 function open711(src){
-  // 開小視窗去選門市
   window.open(`${API}/cvs/map?src=${encodeURIComponent(src)}`, '_blank',
     'width=480,height=640,noopener,noreferrer');
 }
-
-// 接收 API /cvs/callback 回傳的 postMessage
 window.addEventListener('message', (ev)=>{
   const msg = ev && ev.data;
   if (!msg || msg.type !== '711_store' || !msg.data || !msg.data.ok) return;
   const { src, id, name, addr } = msg.data;
-
   const fill = (ids) => {
     const [idSel, nameSel, addrSel] = ids;
     const i1 = document.querySelector(idSel);
@@ -407,7 +403,6 @@ window.addEventListener('message', (ev)=>{
     if (i2) i2.value = name || '';
     if (i3) i3.value = addr || '';
   };
-
   switch (src) {
     case 'cod':          fill(['#cod_store_id','#cod_store_name','#cod_store_addr']); break;
     case 'paid':         fill(['#ship_store_id_paid','#ship_store_name_paid','#ship_store_addr_paid']); break;
@@ -417,18 +412,13 @@ window.addEventListener('message', (ev)=>{
     case 'zc':           fill(['#ship_store_id_zc','#ship_store_name_zc','#ship_store_addr_zc']); break;
   }
 });
-
-// 綁定每個按鈕
 $('#mapCOD').addEventListener('click',   ()=>open711('cod'));
 $('#mapPAID').addEventListener('click',  ()=>open711('paid'));
 $('#mapDEPOld711').addEventListener('click', ()=>open711('dep_old'));
 $('#mapDEPnewP').addEventListener('click',  ()=>open711('dep_new_p'));
 $('#mapDEPnewF').addEventListener('click',  ()=>open711('dep_new_f'));
 $('#mapZC').addEventListener('click',    ()=>open711('zc'));
-
-// 其它：複製帳號維持原本功能
 $('#copyBank').addEventListener('click', async()=>{ try{ await navigator.clipboard.writeText('822 222540458194'); }catch(e){} });
-
 
 /* ===== 載入購物車 ===== */
 async function loadCart(){
@@ -438,7 +428,6 @@ async function loadCart(){
     const j = await r.json();
     if(!r.ok){ throw new Error(j.error||'cart error'); }
     setTotal(j.total_amount||0);
-    // 展示清單
     const lines=(j.items||[]).map(it=>`• ${it.name||it.sku} × ${it.qty}　NT$ ${Number(it.subtotal||0).toLocaleString()}`);
     $('#itemsBox').textContent = lines.join('\n');
   }catch(e){
@@ -456,7 +445,6 @@ $('#submitBtn').addEventListener('click', async()=>{
   let ship = {};
   const note = $('#note').value || '';
 
-  // 依不同付款整理資料
   if(activeTab==='COD'){
     const name=$('#cod_name').value, phone=$('#cod_phone').value,
           id=$('#cod_store_id').value, sname=$('#cod_store_name').value, addr=$('#cod_store_addr').value;
@@ -508,7 +496,7 @@ $('#submitBtn').addEventListener('click', async()=>{
           ship={type:'post', name, phone, post:{zip,addr}, deposit:{type:'new_full', last5}};
         }
       }
-    }else{ // old
+    }else{
       const last5=$('#dep_last5_old').value;
       if(!required(last5)) return alert('請填寫匯款後五碼');
       payment_method='deposit_old';
@@ -542,10 +530,8 @@ $('#submitBtn').addEventListener('click', async()=>{
     }
   }
 
-  // 組 shipping_info
   const shipping_info={ customer, note, ship, subtotal:Number($('#subtotal').value||0) };
 
-  // 呼叫 /checkout
   try{
     $('#submitBtn').disabled=true;
     const r=await fetch(`${API}/checkout`,{
@@ -555,7 +541,6 @@ $('#submitBtn').addEventListener('click', async()=>{
     });
     const j=await r.json();
     if(!r.ok || j.error){ throw new Error(j.error||'checkout error'); }
-    // 成功 → 導向結果頁（若沒有結果頁，就 alert）
     const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total=${encodeURIComponent(j.total_amount)}`;
     try{ location.href=url; } catch(e){ alert(`下單成功！訂單編號：${j.order_id}`); }
   }catch(e){
@@ -565,14 +550,10 @@ $('#submitBtn').addEventListener('click', async()=>{
   }
 });
 
-/* ===== init ===== */
 (async()=>{
-  // 預設 tab
   if(initialMode){ document.querySelector(`.tab[data-pay="${initialMode}"]`)?.click(); }
   else { document.querySelector('.tab[data-pay="COD"]').click(); }
-  // 預設寄送顯示
   updatePaidShip(); updateOldShip(); updateNewFullShip(); updateZcShip(); calcZC();
-  // 載入購物車
   await loadCart();
 })();
 </script>
