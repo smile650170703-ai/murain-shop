@@ -1,198 +1,251 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>MURAIN — 主播開單 (LIVE)</title>
-  <style>
-    :root{--bg:#f6f7fb;--card:#fff;--text:#222;--muted:#666;--pri:#111;--btn:#111;--btnfg:#fff;border-radius:12px}
-    body{font-family:system-ui,'Segoe UI',PingFang TC,Microsoft JhengHei,sans-serif;background:var(--bg);margin:0}
-    .wrap{max-width:960px;margin:32px auto;padding:0 16px}
-    .card{background:var(--card);border-radius:16px;box-shadow:0 6px 18px rgba(0,0,0,.07);padding:20px 20px;margin:16px 0}
-    h2{margin:0 0 12px 0}
-    .row{display:flex;gap:8px;flex-wrap:wrap}
-    input,select,button{font-size:16px;padding:10px;border:1px solid #ddd;border-radius:10px}
-    input:focus,select:focus{outline:none;border-color:#999}
-    .mono{font-family:ui-monospace,Consolas,monospace}
-    .btn{background:var(--btn);color:var(--btnfg);border:none;padding:10px 18px;border-radius:10px;cursor:pointer}
-    .btn.ghost{background:#eee;color:#222}
-    .muted{color:var(--muted);font-size:14px}
-    .pill{padding:6px 10px;background:#f0f0f0;border-radius:999px;cursor:pointer}
-    .bar{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
-    .grid{border-top:1px dashed #ddd;margin-top:8px}
-    .grid .item{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed #eee}
-  </style>
-  <script>window.API_BASE="https://api.murain.tw";</script>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MURAIN — 直播主開單</title>
+<style>
+  :root { --bg:#f7f7f8; --card:#fff; --txt:#222; --muted:#6b7280; --pri:#111; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Noto Sans TC, sans-serif; background:var(--bg); color:var(--txt); }
+  .wrap { max-width: 980px; margin: 24px auto; padding: 0 16px; }
+  .card { background:var(--card); border-radius: 12px; box-shadow: 0 10px 20px rgba(0,0,0,.05);
+          padding: 20px; margin-bottom: 18px; }
+  h2 { margin: 0 0 12px; font-size: 20px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > * { flex: 1 1 220px; }
+  input, select, button, textarea {
+    width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; border:1px solid #e5e7eb; font-size: 15px;
+  }
+  button { background:#111; color:#fff; cursor:pointer; border:none; }
+  button.ghost { background:#fff; color:#111; border:1px solid #e5e7eb; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .hidden { display:none !important; }
+  .list { margin: 8px 0 0; padding:0; list-style:none; }
+  .list li { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed #eee; }
+  .right { text-align:right; }
+  .grid2 { display:grid; grid-template-columns: 1fr auto; gap:10px; align-items: center; }
+</style>
+<script>window.API_BASE = "https://api.murain.tw";</script>
 </head>
 <body>
 <div class="wrap">
-  <div class="card" id="loginCard">
+
+  <!-- 登入 -->
+  <div class="card" id="card-login">
     <h2>主播開單登入</h2>
     <div class="row">
-      <input id="op_key" placeholder="OP 密碼 (預設 88)" class="mono" style="flex:1">
-      <button class="btn" id="btn_login">登入</button>
-    </div>
-    <p class="muted">登入後會保存在本機（localStorage），重開網頁若要換人再按登出或清瀏覽資料。</p>
-  </div>
-
-  <div class="card" id="opCard" style="display:none">
-    <div class="bar">
-      <h2>建立購物車</h2>
-      <button class="btn ghost" id="btn_logout">登出</button>
-    </div>
-    <div class="row">
-      <input id="streamer" placeholder="主播名稱" style="flex:1">
-      <select id="ctype">
-        <option value="live">直播單（需 OP 才能清空/移除）</option>
-      </select>
-      <button class="btn" id="btn_create">建立</button>
-    </div>
-    <div class="muted">CartToken：<span id="cartToken" class="mono">尚未建立</span></div>
-  </div>
-
-  <div class="card" id="addCard" style="display:none">
-    <h2>加入商品</h2>
-    <div class="row">
-      <input id="sku" placeholder="SKU" style="flex:1">
-      <input id="qty" type="number" min="1" value="1" style="width:90px">
-      <input id="price_override" placeholder="改價（需 OP）" style="flex:1">
-      <button class="btn" id="btn_add">加入</button>
-    </div>
-    <div class="row" style="margin-top:8px">
-      <span class="pill" data-dv="-50">-50</span>
-      <span class="pill" data-dv="-100">-100</span>
-      <span class="pill" data-sp="999">特價 999</span>
-    </div>
-    <div class="row" style="margin-top:8px">
-      <select id="gift">
-        <option value="">— 常用贈品 —</option>
-        <option>小樣旅行包</option>
-        <option>髮膜試用包</option>
-        <option>下次購物金 100</option>
-      </select>
-      <input id="note" placeholder="備註 / 贈品說明" style="flex:1">
-      <button class="btn ghost" id="btn_note">儲存備註</button>
-    </div>
-  </div>
-
-  <div class="card" id="linkCard" style="display:none">
-    <h2>產生結帳連結</h2>
-    <div class="row">
-      <button class="btn" id="btn_link_bank">新客匯款</button>
-      <button class="btn ghost" id="btn_link_cod">老客 7-11 COD / 其他金流示範</button>
-    </div>
-    <input id="checkout_link" class="mono" style="width:100%;margin-top:8px" readonly>
-  </div>
-
-  <div class="card" id="cartCard" style="display:none">
-    <h2>購物車清單</h2>
-    <div class="grid" id="cartGrid"></div>
-    <div class="bar">
-      <div class="muted">合計：<span id="total" class="mono">NT$ 0</span></div>
-      <div>
-        <button class="btn ghost" id="btn_clear">清空（需 OP）</button>
+      <div style="flex:2">
+        <label class="muted">OP 密碼（預設 88）</label>
+        <input id="op_key" class="mono" placeholder="輸入 OP Key" />
+      </div>
+      <div style="align-self:end; flex:1">
+        <button id="btn-login">登入</button>
       </div>
     </div>
+    <div class="muted" style="margin-top:6px">成功後會緩存於此裝置，關閉視窗後需重新登入。</div>
   </div>
+
+  <!-- 開單 -->
+  <div class="card hidden" id="card-app">
+    <h2>建立購物車</h2>
+    <div class="row">
+      <div style="flex:2">
+        <label class="muted">主播名稱</label>
+        <input id="streamer" placeholder="例如：小沐" />
+      </div>
+      <div style="flex:1">
+        <label class="muted">客群</label>
+        <select id="customer_type">
+          <option value="live">直播客</option>
+          <option value="regular">一般</option>
+        </select>
+      </div>
+      <div style="flex:1; align-self:end">
+        <button id="btn-create">建立</button>
+      </div>
+    </div>
+    <div class="grid2" style="margin-top:10px">
+      <div class="muted">CartToken：<span id="cart_token" class="mono muted">尚未建立</span></div>
+      <button class="ghost" id="btn-refresh">重整清單</button>
+    </div>
+  </div>
+
+  <!-- 加商品 -->
+  <div class="card hidden" id="card-add">
+    <h2>加入商品</h2>
+    <div class="row">
+      <div><label class="muted">SKU</label><input id="sku" class="mono" placeholder="AA001..." /></div>
+      <div style="max-width:130px"><label class="muted">數量</label><input id="qty" value="1" /></div>
+      <div><label class="muted">改價（需 OP）</label><input id="override_price" placeholder="可留空" /></div>
+      <div style="align-self:end"><button id="btn-add">加入</button></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="ghost" id="btn-50" style="max-width:120px">-50</button>
+      <button class="ghost" id="btn-100" style="max-width:120px">-100</button>
+      <button class="ghost" id="btn-999" style="max-width:120px">特價 999</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div style="flex:3"><input id="note" placeholder="備註 / 贈品說明" /></div>
+      <div style="flex:1"><button class="ghost" id="btn-note">儲存備註</button></div>
+    </div>
+  </div>
+
+  <!-- 結帳 & 清單 -->
+  <div class="card hidden" id="card-list">
+    <h2>產生結帳連結</h2>
+    <div class="row">
+      <button id="btn-link-new" class="ghost">新客匯款</button>
+      <button id="btn-link-old" class="ghost">老客 7-11 COD / 其他金流示範</button>
+    </div>
+    <input id="link_out" class="mono" readonly style="margin-top:10px" />
+
+    <ul id="items" class="list"></ul>
+    <div class="grid2" style="margin-top:8px">
+      <div class="muted">合計</div>
+      <div class="right mono" id="total">NT$ 0</div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="ghost" id="btn-clear">清空購物車（需 OP）</button>
+    </div>
+  </div>
+
 </div>
 
 <script>
-const API = window.API_BASE;
-const $ = s => document.querySelector(s);
-const LS = {
-  get k(){ return localStorage.getItem('M_OP_KEY')||''; },
-  set k(v){ localStorage.setItem('M_OP_KEY', v||''); },
-};
-let CART = '';
+(function () {
+  const API = window.API_BASE;
+  const $  = (s)=>document.querySelector(s);
 
-function headers(){ const h={'content-type':'application/json'}; if(LS.k) h.authorization='Bearer '+LS.k; return h; }
-function alertErr(e){ alert(e?.message||e||'Error'); }
+  let OP = '';
+  let CART = '';
 
-async function opLogin(){
-  const r = await fetch(API+'/op/auth',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({op_key:LS.k})});
-  if(!r.ok){ throw new Error('OP Key 錯誤'); }
-  return true;
-}
-function ui(){
-  const logged = !!LS.k;
-  $('#loginCard').style.display = logged ? 'none' : '';
-  $('#opCard').style.display = logged ? '' : 'none';
-  $('#addCard').style.display = CART ? '' : 'none';
-  $('#linkCard').style.display = CART ? '' : 'none';
-  $('#cartCard').style.display = CART ? '' : 'none';
-}
+  // ---------- helpers ----------
+  async function jfetch(url, opt) {
+    const r = await fetch(url, Object.assign({headers:{'content-type':'application/json'}}, opt||{}));
+    const txt = await r.text();
+    try { return JSON.parse(txt); } catch { return {raw:txt}; }
+  }
+  function money(n){ n = +n||0; return 'NT$ ' + n.toLocaleString(); }
+  function guardCart(){ if(!CART){ alert('請先建立購物車'); return false; } return true; }
+  function setLoginUI(on){
+    $('#card-login').classList.toggle('hidden', !!on);
+    $('#card-app').classList.toggle('hidden', !on);
+    $('#card-add').classList.toggle('hidden', !on);
+    $('#card-list').classList.toggle('hidden', !on);
+  }
+  function setCartToken(t) {
+    CART = t||'';
+    $('#cart_token').textContent = t||'尚未建立';
+    $('#btn-clear').disabled = !OP;
+  }
 
-async function refreshCart(){
-  if(!CART) return;
-  const r = await fetch(API+'/cart/'+CART);
-  if(!r.ok){ $('#cartGrid').innerHTML=''; $('#total').textContent='NT$ 0'; return; }
-  const d = await r.json();
-  const g = d.items||[];
-  $('#cartGrid').innerHTML = g.map(i=>`<div class="item"><div>${i.sku} — ${i.name} x ${i.qty}</div><div class="mono">NT$ ${i.subtotal}</div></div>`).join('') || '<div class="muted">尚無商品</div>';
-  $('#total').textContent = 'NT$ ' + (d.total_amount||0);
-}
+  // ---------- actions ----------
+  async function doLogin() {
+    const v = ($('#op_key').value||'').trim();
+    if(!v) return alert('請輸入 OP Key');
+    const res = await jfetch(API+'/op/auth', { method:'POST', body: JSON.stringify({ op_key: v }) });
+    if(!res || res.ok!==true) return alert('OP Key 錯誤');
+    OP = v; localStorage.setItem('OP_KEY', v);
+    setLoginUI(true);
+  }
 
-$('#btn_login').onclick = async () => {
-  LS.k = $('#op_key').value.trim();
-  try{ await opLogin(); ui(); }catch(e){ LS.k=''; alert(e.message||e); }
-};
+  async function createCart() {
+    const streamer = ($('#streamer').value||'').trim();
+    const customer_type = $('#customer_type').value || 'live';
+    const res = await jfetch(API+'/cart/create', { method:'POST', body: JSON.stringify({ streamer_name: streamer||'未命名', customer_type }) });
+    if(!res.ok) return alert('建立失敗：'+(res.error||''));
+    setCartToken(res.cart_token);
+    await refreshList();
+  }
 
-$('#btn_logout').onclick = ()=>{ LS.k=''; CART=''; $('#cartToken').textContent='尚未建立'; ui(); };
+  async function addItem() {
+    if(!guardCart()) return;
+    const sku = ($('#sku').value||'').trim();
+    const qty = parseInt($('#qty').value||'1',10)||1;
+    const price = ($('#override_price').value||'').trim();
+    const body = { cart_token: CART, sku, qty };
+    if(price) { body.price = parseInt(price,10)||0; body.op_key = OP; }
+    const res = await jfetch(API+'/cart/add', { method:'POST', body: JSON.stringify(body) });
+    if(!res.ok) return alert('加入失敗：'+(res.error||''));
+    $('#sku').value='';
+    await refreshList();
+  }
 
-$('#btn_create').onclick = async () => {
-  try{
-    const r = await fetch(API+'/cart/create',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({streamer_name:$('#streamer').value||'',customer_type:'live'})});
-    if(!r.ok) throw new Error('Failed to fetch');
-    const d = await r.json();
-    CART = d.cart_token; $('#cartToken').textContent = CART; ui(); refreshCart();
-  }catch(e){ alert('Failed to fetch'); }
-};
+  async function saveNote() {
+    if(!guardCart()) return;
+    const note = $('#note').value||'';
+    const res = await jfetch(API+'/cart/note', { method:'POST', body: JSON.stringify({ cart_token: CART, note, op_key: OP })});
+    if(!res.ok) return alert('備註失敗：'+(res.error||''));
+    alert('已儲存備註');
+  }
 
-$('#btn_add').onclick = async () => {
-  if(!CART) return alert('請先建立購物車');
-  const sku = $('#sku').value.trim(); if(!sku) return alert('請輸入 SKU');
-  const qty = parseInt($('#qty').value||'1',10)||1;
-  const price = $('#price_override').value.trim();
-  const body = { cart_token:CART, sku, qty };
-  if(price) body.price = parseInt(price,10)||0;
-  body.op_key = LS.k;
-  const r = await fetch(API+'/cart/add',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-  if(!r.ok){ const t=await r.text(); return alert(t||'加入失敗'); }
-  $('#sku').value=''; $('#qty').value='1'; $('#price_override').value='';
-  refreshCart();
-};
+  async function refreshList() {
+    if(!guardCart()) return;
+    const res = await jfetch(API+'/cart/'+encodeURIComponent(CART));
+    const list = res.items||[];
+    const ul = $('#items'); ul.innerHTML='';
+    let sum = 0;
+    list.forEach(it=>{
+      sum += (+it.price||0) * (+it.qty||0);
+      const li = document.createElement('li');
+      li.innerHTML = `<span class="mono">${it.sku}</span><span class="mono right">${it.qty} × ${money(it.price||0)}</span>`;
+      ul.appendChild(li);
+    });
+    $('#total').textContent = money(sum);
+  }
 
-$('#btn_note').onclick = async () => {
-  if(!CART) return;
-  const txt = [$('#gift').value,$('#note').value].filter(Boolean).join(' / ');
-  await fetch(API+'/cart/note',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cart_token:CART,note:txt})});
-  alert('已儲存');
-};
+  async function clearCart() {
+    if(!guardCart()) return;
+    if(!OP) return alert('需要 OP 才能清空');
+    if(!confirm('確定清空整個購物車？')) return;
+    const res = await jfetch(API+'/cart/clear', { method:'POST', body: JSON.stringify({cart_token:CART, op_key:OP}) });
+    if(!res.ok) return alert('清空失敗：'+(res.error||''));
+    await refreshList();
+  }
 
-$('#btn_clear').onclick = async () => {
-  if(!CART) return;
-  if(!confirm('確定清空？')) return;
-  const r = await fetch(API+'/cart/clear',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({cart_token:CART,op_key:LS.k})});
-  if(!r.ok) return alert('需要 OP');
-  refreshCart();
-};
+  function linkNew() {
+    if(!guardCart()) return;
+    $('#link_out').value = `${location.origin}/checkout.html?cart_token=${encodeURIComponent(CART)}&pm=bank_new`;
+    $('#link_out').select(); document.execCommand('copy');
+    alert('已複製新客匯款連結');
+  }
+  function linkOld() {
+    if(!guardCart()) return;
+    $('#link_out').value = `${location.origin}/checkout.html?cart_token=${encodeURIComponent(CART)}&pm=cod_demo`;
+    $('#link_out').select(); document.execCommand('copy');
+    alert('已複製老客 COD/金流示範連結');
+  }
 
-// 快捷改價按鈕
-document.querySelectorAll('[data-dv]').forEach(el=>el.onclick=()=>{
-  const v = parseInt($('#price_override').value||'0',10)||0;
-  $('#price_override').value = String(v + parseInt(el.dataset.dv,10));
-});
-document.querySelectorAll('[data-sp]').forEach(el=>el.onclick=()=>{
-  $('#price_override').value = el.dataset.sp;
-});
+  // ---------- quick-price ----------
+  const quick = { '#btn-50': -50, '#btn-100': -100, '#btn-999': 999 };
+  function applyQuick(v){
+    const cur = parseInt($('#override_price').value||'0',10)||0;
+    if(v===999) { $('#override_price').value = '999'; return; }
+    $('#override_price').value = String(Math.max(0, cur + v));
+  }
 
-function buildLink(pm){ return location.origin + '/checkout.html?cart_token=' + encodeURIComponent(CART) + '&pm=' + encodeURIComponent(pm); }
-$('#btn_link_bank').onclick = ()=>{ if(!CART) return alert('請先建立'); $('#checkout_link').value = buildLink('bank_transfer'); $('#checkout_link').select(); document.execCommand('copy'); };
-$('#btn_link_cod').onclick  = ()=>{ if(!CART) return alert('請先建立'); $('#checkout_link').value = buildLink('cod_711'); $('#checkout_link').select(); document.execCommand('copy'); };
+  // ---------- init ----------
+  window.addEventListener('DOMContentLoaded', async ()=>{
+    // 綁定事件（確保「登入鍵有反應」）
+    $('#btn-login').addEventListener('click', doLogin);
+    $('#btn-create').addEventListener('click', createCart);
+    $('#btn-add').addEventListener('click', addItem);
+    $('#btn-note').addEventListener('click', saveNote);
+    $('#btn-refresh').addEventListener('click', refreshList);
+    $('#btn-clear').addEventListener('click', clearCart);
+    $('#btn-link-new').addEventListener('click', linkNew);
+    $('#btn-link-old').addEventListener('click', linkOld);
+    Object.keys(quick).forEach(sel=>{
+      const v = quick[sel];
+      document.querySelector(sel).addEventListener('click', ()=>applyQuick(v));
+    });
 
-// 自動帶入已登入
-if(localStorage.getItem('M_OP_KEY')){ $('#op_key').value = LS.k; try{ await opLogin(); }catch(e){} }
-ui();
+    // 自動帶回 OP（若有存）
+    const saved = localStorage.getItem('OP_KEY');
+    if(saved) { $('#op_key').value = saved; OP = saved; setLoginUI(true); }
+  });
+})();
 </script>
 </body>
 </html>
