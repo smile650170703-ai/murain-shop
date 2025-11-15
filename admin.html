@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>MURAIN — 後台管理</title>
+  <title>MURAIN — 後台管理（鎖定版）</title>
   <script>window.API_BASE="https://api.murain.tw";</script>
   <style>
     :root{--bg:#f5f6f8;--card:#fff;--brand:#111}
@@ -21,10 +21,26 @@
     table{width:100%;border-collapse:collapse}
     th,td{padding:8px;border-bottom:1px solid #eee;font-size:14px}
     .muted{color:#666;font-size:13px}
+    /* Gate overlay */
+    .gate{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:9999}
+    .gate .box{width:min(520px,92vw);background:#fff;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.08);padding:22px}
   </style>
 </head>
 <body>
-<div class="wrap">
+
+<!-- Gate -->
+<div id="gate" class="gate" style="display:grid">
+  <div class="box">
+    <h1>後台登入</h1>
+    <div class="row">
+      <input id="gateKey" class="mono" placeholder="Admin Key（例如 88）" style="flex:1"/>
+      <button id="gateGo">登入</button>
+    </div>
+    <div id="gateMsg" class="muted" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<div class="wrap" id="app" style="visibility:hidden">
   <div class="card">
     <h1>後台管理</h1>
     <div class="row">
@@ -95,16 +111,52 @@
 
 <script>
 const API=(window.API_BASE||'').replace(/\/$/,'')||'';
-const $= (s,sc=document)=>sc.querySelector(s);
+const $=(s,sc=document)=>sc.querySelector(s);
 const toast=t=>alert(t);
 const key =()=>localStorage.getItem('ADMIN_KEY')||'';
 const setKey=v=>localStorage.setItem('ADMIN_KEY',v||'');
 
-$('#key').value = key();
-$('#saveKey').onclick = ()=>{ setKey($('#key').value.trim()); toast('已儲存'); location.reload(); };
+// ---- Gate logic (verify against backend) ----
+async function verifyAdmin(k){
+  try{
+    const r=await fetch(API+'/admin/orders?q=__ping__',{headers:{'Authorization':'Bearer '+k}});
+    return r.ok;
+  }catch(e){ return false; }
+}
+async function openGateIfNeeded(){
+  const k = key();
+  if(!k || !(await verifyAdmin(k))){
+    $('#gate').style.display='grid';
+    $('#app').style.visibility='hidden';
+  }else{
+    $('#gate').style.display='none';
+    $('#app').style.visibility='visible';
+    $('#key').value=k;
+    updateExportLinks();
+  }
+}
+document.getElementById('gateGo').onclick = async ()=>{
+  const k=$('#gateKey').value.trim();
+  if(!k) return;
+  $('#gateMsg').textContent='驗證中…';
+  if(await verifyAdmin(k)){
+    setKey(k);
+    $('#gateMsg').textContent='OK';
+    $('#gate').style.display='none';
+    $('#app').style.visibility='visible';
+    $('#key').value=k;
+    updateExportLinks();
+  }else{
+    $('#gateMsg').textContent='Key 錯誤，請再試一次';
+  }
+};
+openGateIfNeeded();
+
+// ---- Toolbar key actions ----
+$('#saveKey').onclick = async ()=>{ const v=$('#key').value.trim(); if(!v) return; if(await verifyAdmin(v)){ setKey(v); toast('已儲存'); } else { toast('Key 無效'); } };
 $('#clearKey').onclick = ()=>{ localStorage.removeItem('ADMIN_KEY'); location.reload(); };
 
-// CSV 範本下載
+// CSV template
 $('#dl-template').addEventListener('click',e=>{
   e.preventDefault();
   const csv='sku,name,price,stock_qty\nAA001,示範商品A,299,100\nBB002,示範商品B,499,50\n';
@@ -114,7 +166,7 @@ $('#dl-template').addEventListener('click',e=>{
 
 // 上傳商品
 $('#upload').onclick = async ()=>{
-  const admin = key(); if(!admin) return toast('請先輸入 Admin Key 並儲存');
+  const admin = key(); if(!admin) return toast('請先登入');
   const f=$('#file').files[0]; if(!f) return toast('請選擇檔案');
   const txt=await f.text();
   let rows=[];
@@ -135,7 +187,7 @@ $('#upload').onclick = async ()=>{
 
 // 訂單查詢
 $('#search').onclick = async ()=>{
-  const admin = key(); if(!admin) return toast('請先輸入 Admin Key 並儲存');
+  const admin = key(); if(!admin) return toast('請先登入');
   const r=await fetch(API+'/admin/orders?q='+encodeURIComponent($('#q').value||''),{headers:{'Authorization':'Bearer '+admin}});
   const data=await r.json();
   const tb=$('#orders tbody'); tb.innerHTML='';
@@ -153,11 +205,11 @@ $('#search').onclick = async ()=>{
 };
 
 // 匯出連結
-(function updateExportLinks(){
-  const admin=key();
+function updateExportLinks(){
+  const admin = key();
   $('#exportOrders').href = API+'/admin/export/orders.csv?key='+encodeURIComponent(admin);
   $('#exportItems').href  = API+'/admin/export/order_items.csv?key='+encodeURIComponent(admin);
-})();
+}
 
 // 快速查庫存 / 調整庫存
 async function checkStock(){
@@ -167,7 +219,7 @@ async function checkStock(){
   $('#adj_result').textContent=`【${data.product.sku}】${data.product.name} 目前庫存：${data.product.stock_qty}`;
 }
 async function adjustStock(delta){
-  const admin=key(); if(!admin) return toast('請先儲存 Admin Key');
+  const admin=key(); if(!admin) return toast('請先登入');
   const sku=$('#adj_sku').value.trim(); if(!sku) return toast('請輸入 SKU');
   const r=await fetch(API+'/admin/products/adjust_stock',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+admin},body:JSON.stringify({sku,delta})});
   const t=await r.text(); $('#adj_result').textContent='回應：'+t; if(r.ok) await checkStock();
@@ -179,10 +231,10 @@ $('#btn_stock').onclick  = checkStock;
 
 // 出貨與通知
 $('#btn-ship').onclick = async ()=>{
-  const admin=key(); if(!admin) return toast('請先儲存 Admin Key');
+  const admin=key(); if(!admin) return toast('請先登入');
   const body={
     order_id: $('#ship_order').value.trim(),
-    carrier:   $('#ship_carrier').value,
+    carrier: $('#ship_carrier').value,
     tracking_no: $('#ship_no').value.trim(),
     shipping_fee: parseInt($('#ship_fee').value||'0',10)||0
   };
@@ -190,7 +242,7 @@ $('#btn-ship').onclick = async ()=>{
   $('#shipResult').textContent=await r.text();
 };
 $('#btn-notify').onclick = async ()=>{
-  const admin=key(); if(!admin) return toast('請先儲存 Admin Key');
+  const admin=key(); if(!admin) return toast('請先登入');
   const id=$('#ship_order').value.trim(); if(!id) return toast('請先輸入 Order ID');
   const r=await fetch(API+'/admin/notify/shipped',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+admin},body:JSON.stringify({order_id:id})});
   alert(await r.text());
