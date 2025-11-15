@@ -3,194 +3,282 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>MURAIN — 主播開單</title>
-  <script>window.API_BASE="https://api.murain.tw";</script>
+  <title>MURAIN — 主播開單 (安全版)</title>
   <style>
-    :root { --bg:#f5f6f8; --card:#fff; --ink:#111; }
-    *{box-sizing:border-box} body{font-family:system-ui,"Noto Sans TC",Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:#222}
-    .wrap{max-width:980px;margin:32px auto;padding:0 16px}
-    .card{background:var(--card);border-radius:14px;box-shadow:0 6px 16px rgba(0,0,0,.06);padding:18px;margin-bottom:14px}
-    h1{font-size:20px;margin:0 0 12px}
-    .row{display:flex;gap:8px;flex-wrap:wrap}
-    input,select,button,textarea{padding:10px 12px;border:1px solid #ddd;border-radius:10px;font-size:14px}
-    input[type="number"]{width:110px}
-    button{background:var(--ink);color:#fff;border:none;border-radius:10px;cursor:pointer}
-    button.ghost{background:#fff;color:#111;border:1px solid #111}
-    .muted{color:#666;font-size:13px}
-    .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
-    .hide{display:none}
-    .pill{padding:6px 10px;border-radius:999px;border:1px solid #ddd;background:#fff;color:#111;cursor:pointer}
-    .hr{height:1px;background:#eee;margin:12px 0}
+    :root { --fg:#222; --bg:#f6f7fb; --card:#fff; --pri:#111; --mut:#777; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, 'Noto Sans TC', Arial, sans-serif; color:var(--fg); background:var(--bg);}
+    .wrap { max-width: 980px; margin: 24px auto; padding: 0 16px; }
+    .card { background:var(--card); border-radius:16px; box-shadow:0 6px 26px rgba(0,0,0,.06); padding:20px; margin-bottom:16px; }
+    h2 { margin:0 0 12px; }
+    label { font-size:.9rem; color:var(--mut); display:block; margin-bottom:6px; }
+    input, select, button, textarea { width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:10px; outline:none; }
+    textarea { min-height:80px; resize:vertical; }
+    .row { display:grid; grid-template-columns: repeat(12, 1fr); gap:10px; }
+    .col-3 { grid-column: span 3; } .col-4 { grid-column: span 4; } .col-5 { grid-column: span 5; } .col-6 { grid-column: span 6; }
+    .col-7 { grid-column: span 7; } .col-8 { grid-column: span 8; } .col-9 { grid-column: span 9; } .col-12{grid-column: span 12;}
+    .btn { cursor:pointer; background:#111; color:#fff; border:none; padding:10px 14px; border-radius:10px; }
+    .btn.subtle { background:#444; }
+    .my-8 { margin-top:8px; margin-bottom:8px; }
+    .mut { color:var(--mut); font-size:.9rem; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .pill { background:#eee; padding:6px 10px; border-radius:999px; cursor:pointer; display:inline-block; margin-right:6px; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { padding:10px; border-bottom:1px solid #eee; text-align:left; }
+    td.right { text-align:right; }
+    .danger { background:#b91c1c; }
+    .hide { display:none; }
   </style>
+  <script>window.API_BASE="https://api.murain.tw";</script>
 </head>
 <body>
   <div class="wrap">
-    <!-- 登入 -->
-    <div id="login" class="card">
-      <h1>主播開單登入</h1>
+    <div id="gate" class="card">
+      <h2>主播開單登入</h2>
       <div class="row">
-        <input id="opkey" placeholder="輸入 OP Key" class="mono" style="flex:1" />
-        <button id="btnLogin">登入</button>
+        <div class="col-6">
+          <label>OP 密碼</label>
+          <input id="op_key" type="password" placeholder="請輸入 OP Key (預設 88)" />
+        </div>
+        <div class="col-3">
+          <label>&nbsp;</label>
+          <button id="btnLogin" class="btn">登入</button>
+        </div>
+        <div class="col-12 mut">通過後會儲存在本機，關閉視窗後需重新登入。</div>
       </div>
-      <div class="muted">* 改價/備註等動作需要 OP Key 驗證。</div>
     </div>
 
-    <!-- App -->
     <div id="app" class="hide">
       <div class="card">
-        <h1>建立購物車</h1>
+        <h2>建立購物車</h2>
         <div class="row">
-          <input id="streamer" placeholder="主播名稱（必填）" style="flex:1" />
-          <button id="btnCreate">建立</button>
-        </div>
-        <div class="muted">CartToken：<span id="token" class="mono">尚未建立</span></div>
-      </div>
-
-      <div class="card">
-        <h1>加入商品</h1>
-        <div class="row">
-          <input id="sku" class="mono" placeholder="SKU / 條碼" style="min-width:160px" />
-          <input id="qty" type="number" min="1" value="1" />
-          <input id="price_override" type="number" placeholder="改價（需 OP Key）" />
-          <button id="btnAdd">加入</button>
-        </div>
-        <div style="margin-top:6px">
-          <span class="muted">改價快捷：</span>
-          <button class="pill" data-adj="-50">-50</button>
-          <button class="pill" data-adj="-100">-100</button>
-          <button class="pill" data-abs="999">特價 999</button>
-        </div>
-        <div class="hr"></div>
-        <div class="row">
-          <select id="gift">
-            <option value="">-- 常用贈品 --</option>
-            <option>透明旅行組</option>
-            <option>髮油小樣</option>
-            <option>棉布束口袋</option>
-          </select>
-          <input id="note" placeholder="備註 / 贈品說明" style="flex:1" />
-          <button id="btnSaveNote">儲存備註</button>
+          <div class="col-6">
+            <label>主播名稱</label>
+            <input id="streamer" placeholder="例如：小沐" />
+          </div>
+          <div class="col-3">
+            <label>客戶類型</label>
+            <select id="ctype">
+              <option value="live" selected>直播單（需 OP 才能清空/移除）</option>
+              <option value="web">官網自助單（可自行清空/移除）</option>
+            </select>
+          </div>
+          <div class="col-3">
+            <label>&nbsp;</label>
+            <button id="btnCreate" class="btn">建立</button>
+          </div>
+          <div class="col-12 mut">CartToken：<span id="cartToken" class="mono">尚未建立</span></div>
         </div>
       </div>
 
       <div class="card">
-        <h1>產生結帳連結</h1>
+        <h2>加入商品</h2>
         <div class="row">
-          <button id="btnLinkBank">新客匯款</button>
-          <button id="btnLinkCOD" class="ghost">老客 7-11 COD / 其他金流示範</button>
+          <div class="col-4">
+            <label>SKU</label>
+            <input id="sku" class="mono" placeholder="AA001…" />
+          </div>
+          <div class="col-2">
+            <label>數量</label>
+            <input id="qty" type="number" value="1" />
+          </div>
+          <div class="col-3">
+            <label>改價（帶 OP）</label>
+            <input id="price" type="number" placeholder="可留空" />
+          </div>
+          <div class="col-3">
+            <label>&nbsp;</label>
+            <button id="btnAdd" class="btn">加入</button>
+          </div>
+
+          <div class="col-12 my-8">
+            <span class="pill" data-d="-50">-50</span>
+            <span class="pill" data-d="-100">-100</span>
+            <span class="pill" data-p="999">特價 999</span>
+          </div>
+
+          <div class="col-4">
+            <label>常用贈品</label>
+            <select id="gift">
+              <option value="">— 選擇 —</option>
+              <option>送髮夾</option>
+              <option>送旅行組</option>
+              <option>送小香水</option>
+            </select>
+          </div>
+          <div class="col-6">
+            <label>備註 / 贈品說明</label>
+            <input id="note" placeholder="例如：多送一次護髮" />
+          </div>
+          <div class="col-2">
+            <label>&nbsp;</label>
+            <button id="btnNote" class="btn subtle">儲存備註</button>
+          </div>
         </div>
-        <input id="checkoutURL" class="mono" style="width:100%;margin-top:10px" readonly />
       </div>
 
       <div class="card">
-        <h1>購物車清單</h1>
-        <div id="items" class="muted">尚無商品</div>
+        <h2>產生結帳連結</h2>
+        <div class="row">
+          <div class="col-3">
+            <button id="linkBank" class="btn">新客匯款</button>
+          </div>
+          <div class="col-5">
+            <button id="linkCod" class="btn subtle">老客 7-11 COD / 其他金流示範</button>
+          </div>
+          <div class="col-12 my-8">
+            <input id="share" readonly class="mono" placeholder="結帳連結會顯示在這裡…" />
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>購物車清單</h2>
+        <div class="row">
+          <div class="col-12">
+            <table>
+              <thead>
+                <tr><th>SKU</th><th>品名</th><th class="right">單價</th><th class="right">數量</th><th class="right">小計</th><th></th></tr>
+              </thead>
+              <tbody id="lines"></tbody>
+              <tfoot>
+                <tr><td colspan="6" class="right"><b>合計 NT$ <span id="total">0</span></b></td></tr>
+              </tfoot>
+            </table>
+          </div>
+          <div class="col-6">
+            <button id="btnClear" class="btn danger">清空購物車</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
 <script>
-const API=(window.API_BASE||'').replace(/\\/$/,'')||'';
-const $=(s,sc=document)=>sc.querySelector(s);
-const $$=(s,sc=document)=>Array.from(sc.querySelectorAll(s));
-const toast=t=>alert(t);
+const API = window.API_BASE;
+let CART = null;
+let OP = "";
 
-// ====== 使用 sessionStorage（關掉分頁即登出） ======
-const store={
-  get op(){ return sessionStorage.getItem('OP_KEY') || ''},
-  set op(v){ sessionStorage.setItem('OP_KEY', v||'')},
-  get token(){ return sessionStorage.getItem('CART_TOKEN') || ''},
-  set token(v){ sessionStorage.setItem('CART_TOKEN', v||'')},
-};
+function $(q) {{ return document.querySelector(q); }}
+function el(tag, attrs, ...kids) {{
+  const n = document.createElement(tag);
+  (attrs||[]).forEach(([k,v]) => n.setAttribute(k,v));
+  kids.forEach(k => typeof k==='string' ? n.appendChild(document.createTextNode(k)) : n.appendChild(k));
+  return n;
+}}
+const fmt = n => (n||0).toLocaleString();
 
-function show(id){ $('#login').classList.add('hide'); $('#app').classList.add('hide'); document.getElementById(id).classList.remove('hide'); }
+async function authAndShow() {{
+  const r = await fetch(API + '/op/auth', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{key:OP}})}});
+  if(!r.ok) throw new Error('OP 驗證失敗');
+  $('#gate').classList.add('hide');
+  $('#app').classList.remove('hide');
+}}
 
-async function authOP(key){
-  try{
-    const r= await fetch(API+'/op/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key})});
-    if(!r.ok) return false;
-    const j=await r.json().catch(()=>({}));
-    return !!j.ok;
-  }catch(e){ return false; }
-}
+$('#btnLogin').onclick = async () => {{
+  try {{
+    OP = ($('#op_key').value||'').trim();
+    if(!OP) OP='88';
+    await authAndShow();
+    localStorage.setItem('OP_KEY', OP);
+  }} catch(e) {{ alert(e.message||e); }}
+}};
 
-$('#btnLogin').onclick = async ()=>{
-  const k=$('#opkey').value.trim();
-  if(!k) return toast('請輸入 OP Key');
-  const ok=await authOP(k);
-  if(!ok) return toast('OP Key 錯誤');
-  store.op=k; show('app');
-};
+window.addEventListener('load', async () => {{
+  const cached = localStorage.getItem('OP_KEY');
+  if(cached) {{ OP = cached; try {{ await authAndShow(); }} catch {{ /* ignore */ }} }}
+  // pills
+  document.querySelectorAll('.pill').forEach(p => p.addEventListener('click', () => {{
+    const d = p.getAttribute('data-d'); const sp = p.getAttribute('data-p');
+    if(d) {{ // -50 / -100 → 直接在價格欄位加上負數調整
+      const cur = parseInt($('#price').value||'0',10)||0;
+      $('#price').value = String(cur + parseInt(d,10));
+    }} else if (sp) {{
+      $('#price').value = sp;
+    }}
+  }}));
+}});
 
-(async ()=>{ if(store.op){ if(await authOP(store.op)) show('app'); } })();
+$('#btnCreate').onclick = async () => {{
+  try {{
+    const body = {{ streamer_name: $('#streamer').value.trim()||'主播', customer_type: $('#ctype').value }};
+    const r = await fetch(API + '/cart/create', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify(body)}});
+    const data = await r.json();
+    if(!data.ok) throw new Error(data.error||'create failed');
+    CART = data.cart_token;
+    $('#cartToken').textContent = CART;
+    render();
+  }} catch(e) {{ alert(e.message||e); }}
+}};
 
-$('#btnCreate').onclick = async ()=>{
-  if(!store.op) return toast('請先登入 OP');
-  const streamer=$('#streamer').value.trim(); if(!streamer) return toast('請輸入主播名稱');
-  const r=await fetch(API+'/cart/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({streamer_name:streamer, customer_type:'live'})});
-  const data=await r.json().catch(()=>({}));
-  if(!r.ok || !data.cart_token){ return toast(data.error||'建立失敗'); }
-  store.token=data.cart_token; $('#token').textContent=store.token; refreshItems();
-};
+$('#btnAdd').onclick = async () => {{
+  if(!CART) return alert('請先建立購物車');
+  const sku = $('#sku').value.trim();
+  const qty = parseInt($('#qty').value||'1',10)||1;
+  const price = parseInt($('#price').value||'0',10);
+  if(!sku) return alert('請輸入 SKU');
+  const body = {{ cart_token:CART, sku, qty }};
+  if(!isNaN(price) && $('#price').value) body.price = price;
+  body.op_key = OP;
+  const r = await fetch(API + '/cart/add', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify(body)}});
+  const data = await r.json();
+  if(!data.ok) return alert(data.error||'加入失敗');
+  $('#sku').value=''; $('#qty').value='1'; $('#price').value='';
+  render();
+}};
 
-async function refreshItems(){
-  if(!store.token) return;
-  const r=await fetch(API+'/cart/'+store.token);
-  const data=await r.json().catch(()=>({}));
-  const items=data.items||[];
-  if(!items.length){ $('#items').textContent='尚無商品'; return; }
-  let sum=0; const rows=['<table class="mono" style="width:100%"><tr><th align="left">SKU</th><th align="right">Qty</th><th align="right">Price</th><th align="right">小計</th></tr>'];
-  for(const it of items){
-    const qty=it.qty||1, price=it.price||0, sub=qty*price; sum+=sub;
-    rows.push(`<tr><td>${it.sku}</td><td align="right">${qty}</td><td align="right">${price}</td><td align="right">${sub}</td></tr>`);
-  }
-  rows.push(`<tr><td colspan="3" align="right">總計</td><td align="right"><b>${sum}</b></td></tr></table>`);
-  $('#items').innerHTML=rows.join('');
-}
+$('#btnNote').onclick = async () => {{
+  if(!CART) return alert('請先建立購物車');
+  const g = $('#gift').value || '';
+  const note = (g?'[贈品]'+g+' ':'') + ($('#note').value||'');
+  const r = await fetch(API + '/cart/note', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{cart_token:CART,note}})}});
+  const t = await r.text(); alert(/ok/.test(t)?'已儲存':'失敗');
+}};
 
-$('#btnAdd').onclick = async ()=>{
-  if(!store.token) return toast('請先建立購物車');
-  const sku=$('#sku').value.trim(); if(!sku) return toast('請輸入 SKU');
-  const qty=parseInt($('#qty').value||'1',10)||1;
-  const price_override=parseInt($('#price_override').value||'',10);
-  const body={cart_token:store.token, sku, qty, op_key:store.op};
-  if(Number.isFinite(price_override)) body.price_override=price_override;
-  const r=await fetch(API+'/cart/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const t=await r.text();
-  if(!r.ok){ return toast(t||'加入失敗'); }
-  $('#sku').value=''; $('#qty').value=1; $('#price_override').value=''; refreshItems();
-};
+$('#btnClear').onclick = async () => {{
+  if(!CART) return;
+  if(!confirm('確定要清空購物車？')) return;
+  const r = await fetch(API + '/cart/clear', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{cart_token:CART, op_key:OP}})}});
+  if(!r.ok) return alert('清空失敗（權限或其他原因）');
+  render();
+}};
 
-$$('.pill').forEach(b=>b.addEventListener('click',()=>{
-  const adj=b.dataset.adj?parseInt(b.dataset.adj,10):null;
-  const abs=b.dataset.abs?parseInt(b.dataset.abs,10):null;
-  if(abs!=null){ $('#price_override').value=abs; return; }
-  const cur=parseInt($('#price_override').value||'0',10)||0;
-  $('#price_override').value=cur+(adj||0);
-}));
+function toLink(pm) {{
+  if(!CART) return alert('請先建立購物車');
+  const u = new URL(location.origin + '/checkout.html');
+  u.searchParams.set('cart_token', CART);
+  u.searchParams.set('pm', pm);
+  $('#share').value = u.toString();
+}}
+$('#linkBank').onclick = () => toLink('bank_transfer');
+$('#linkCod').onclick  = () => toLink('cod_711');
 
-$('#gift').onchange=()=>{
-  const g=$('#gift').value; if(!g) return;
-  const cur=$('#note').value.trim();
-  $('#note').value = cur ? (cur+'；贈品：'+g) : ('贈品：'+g);
-};
-
-$('#btnSaveNote').onclick=async ()=>{
-  if(!store.token) return toast('請先建立購物車');
-  const note=$('#note').value.trim();
-  const r=await fetch(API+'/cart/set_note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cart_token:store.token,note,op_key:store.op})});
-  const t=await r.text();
-  if(!r.ok) return toast(t||'儲存失敗');
-  toast('已儲存');
-};
-
-function setLink(pm){
-  if(!store.token) return toast('請先建立購物車');
-  const url = `${location.origin}/checkout.html?cart_token=${encodeURIComponent(store.token)}&pm=${encodeURIComponent(pm)}`;
-  $('#checkoutURL').value=url;
-}
-$('#btnLinkBank').onclick = ()=>setLink('bank_transfer');
-$('#btnLinkCOD').onclick  = ()=>setLink('cod_711');
+async function render() {{
+  if(!CART) return;
+  const r = await fetch(API + '/cart/' + CART);
+  const data = await r.json();
+  const tb = $('#lines'); tb.innerHTML='';
+  (data.items||[]).forEach(it => {{
+    const tr = el('tr',[],
+      el('td',[], it.sku || ''),
+      el('td',[], it.name || ''),
+      el('td',[['class','right']], 'NT$ ' + fmt(it.price)),
+      el('td',[['class','right']], String(it.qty||0)),
+      el('td',[['class','right']], 'NT$ ' + fmt((it.price||0)*(it.qty||0))),
+      el('td',[], (function() {{
+        const b = el('button',[['class','btn subtle']], '移除');
+        b.onclick = async () => {{
+          const r = await fetch(API + '/cart/remove', {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{cart_token:CART, sku: it.sku, op_key:OP}})}});
+          if(!r.ok) return alert('移除失敗（權限或其他原因）');
+          render();
+        }};
+        return b;
+      }})())
+    );
+    tb.appendChild(tr);
+  }});
+  $('#total').textContent = fmt(data.total||0);
+}}
 </script>
 </body>
 </html>
