@@ -1,47 +1,59 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>列印小白單</title>
-  <script>window.API_BASE="https://your-worker-domain";</script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MURAIN — 出貨列印</title>
+  <script>window.API_BASE="https://api.murain.tw";</script>
   <style>
-    @page { size: 80mm auto; margin: 5mm; }
-    body{font-family:ui-monospace,Consolas,monospace}
-    h2{margin:0 0 8px 0}
+    body{font-family:system-ui,"Noto Sans TC",Segoe UI,Roboto,Arial;margin:0;padding:20px;background:#fff}
+    .sheet{width:320px;margin:0 auto;border:1px dashed #999;padding:12px}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+    h1{font-size:16px;margin:0 0 8px}
     table{width:100%;border-collapse:collapse}
-    td{padding:2px 0}
-    .right{text-align:right}
+    td{font-size:13px;padding:4px 0}
+    .sum td{border-top:1px dashed #aaa;margin-top:6px}
     .muted{color:#666}
+    @media print{ body{padding:0} .sheet{border:none} }
   </style>
 </head>
 <body>
-<div id="root">Loading...</div>
-<script>
-const API=(window.API_BASE||'').replace(/\/+$/,'');
-const params=new URLSearchParams(location.search);
-const order_id=params.get('order_id'); const key=params.get('key');
+<div class="sheet">
+  <h1>出貨明細</h1>
+  <div id="meta" class="mono muted"></div>
+  <table id="lines"></table>
+  <div id="ship" class="mono" style="margin-top:6px"></div>
+</div>
 
-(async ()=>{
-  if(!order_id){ document.getElementById('root').textContent='缺少 order_id'; return; }
-  const r = await fetch(API + '/admin/order/' + encodeURIComponent(order_id), { headers:{'Authorization':'Bearer '+key} });
-  const d = await r.json();
-  if(!r.ok){ document.getElementById('root').textContent = JSON.stringify(d); return; }
-  const info = d.shipping_info || {};
-  const rows = (d.items||[]).map(i=>`<tr><td>${i.sku}</td><td>${i.name}</td><td class="right">${i.qty} x ${i.price}</td></tr>`).join('');
-  document.getElementById('root').innerHTML = `
-    <h2>訂單 ${d.order_id}</h2>
-    <div>姓名：${info.name||''}</div>
-    <div>電話：${info.phone||''}</div>
-    <div>地址/門市：${info.store||info.address||''}</div>
-    <div class="muted">${(info.note||'').replace(/\\n/g,'<br>')}</div>
-    <hr>
-    <table>${rows}</table>
-    <hr>
-    <div class="right">總額：NT$ ${d.total_amount||0}</div>
-  `;
-  setTimeout(()=>{ window.print(); }, 300);
-})();
+<script>
+const API=(window.API_BASE||'').replace(/\/$/,'')||'';
+const q = name => new URL(location.href).searchParams.get(name)||'';
+
+async function main(){
+  const order_id=q('order_id'); const key=q('key');
+  if(!order_id||!key){ document.getElementById('meta').textContent='缺少 order_id 或 key'; return; }
+  const r=await fetch(API+'/admin/order?order_id='+encodeURIComponent(order_id),{headers:{'Authorization':'Bearer '+key}});
+  if(!r.ok){ document.getElementById('meta').textContent='讀取失敗：'+(await r.text()); return; }
+  const data=await r.json();
+  const o=data.order||{}; const items=data.items||[]; const info=o.shipping_info||{};
+
+  document.getElementById('meta').textContent = `Order ${o.order_id||''} / ${new Date(o.created_at||Date.now()).toLocaleString()} / ${o.payment_method||''}`;
+
+  const tb=document.getElementById('lines'); tb.innerHTML='';
+  let sum=0;
+  items.forEach(it=>{
+    const sub=(it.qty||1)*(it.price||0); sum+=sub;
+    const tr=document.createElement('tr');
+    tr.innerHTML = `<td>${it.sku||''}</td><td align="right">${it.qty||1}×</td><td align="right">${it.price||0}</td><td align="right">${sub}</td>`;
+    tb.appendChild(tr);
+  });
+  const tr=document.createElement('tr'); tr.className='sum'; tr.innerHTML=`<td colspan="3" align="right">合計</td><td align="right"><b>${sum}</b></td>`; tb.appendChild(tr);
+
+  document.getElementById('ship').textContent = `收件：${info.name||''} / ${info.phone||''} / ${(info.store||info.address||'')}`;
+
+  setTimeout(()=>window.print(), 400);
+}
+main();
 </script>
 </body>
 </html>
