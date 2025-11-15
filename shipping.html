@@ -2,72 +2,16 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>選擇 7-11 門市</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>7-11 門市地圖（ECPay）</title>
   <style>
-    html,body{height:100%;margin:0}
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Noto Sans TC","PingFang TC",sans-serif;background:#111}
-    header{position:fixed;left:0;right:0;top:0;height:44px;display:flex;align-items:center;gap:8px;background:#000;color:#fff;padding:0 12px;z-index:2}
-    header .muted{opacity:.7;font-size:12px}
-    iframe#map{position:absolute;inset:44px 0 0 0;border:0;width:100%;height:calc(100% - 44px);background:#000}
+    html,body{height:100%;margin:0;background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
+    .tip{position:fixed;left:12px;top:8px;font-weight:700}
+    iframe{width:100%;height:100%;border:0}
   </style>
 </head>
 <body>
-  <header>
-    <strong>7-11 門市地圖（ECPay）</strong>
-    <span class="muted">選完門市視窗會自動關閉</span>
-  </header>
-  <iframe id="map" title="ECPay 7-11 Map" allow="clipboard-write"></iframe>
-
-  <script>
-  // ---- ECPay 官方地圖（不建物流，只取回門市） ----
-  const ECPAY_MAP_URL = 'https://logistics.ecpay.com.tw/Express/map';
-  const params = new URLSearchParams({
-    MerchantID: '2000132',          // 測試商店代號（僅開地圖）
-    LogisticsType: 'CVS',
-    LogisticsSubType: 'UNIMARTC2C', // 7-11 C2C
-    IsCollection: 'N',
-    Device: '0'
-  });
-  const map = document.getElementById('map');
-  map.src = ECPAY_MAP_URL + '?' + params.toString();
-
-  function parsePayload(payload){
-    try {
-      if (typeof payload === 'string') {
-        try { payload = JSON.parse(payload); }
-        catch {
-          const qs = new URLSearchParams(payload);
-          payload = Object.fromEntries(qs.entries());
-        }
-      }
-    } catch(e){}
-    const id   = payload.CVSStoreID   || payload.StoreID   || payload.cvs_id   || payload.cvsid;
-    const name = payload.CVSStoreName || payload.StoreName || payload.cvs_name || payload.cvsname;
-    const addr = payload.CVSAddress   || payload.CVSStoreAddress || payload.Address || payload.cvs_addr || payload.cvsaddress || '';
-    return (id && name) ? { id, name, addr } : null;
-  }
-
-  // ECPay 會用 postMessage 把門市資訊丟回來
-  window.addEventListener('message', (ev)=>{
-    try{
-      const host = new URL(ev.origin).hostname;
-      if (!/ecpay\.com\.tw$/.test(host)) return;
-    }catch(e){ return; }
-
-    const data = parsePayload(ev.data);
-    if (!data) return;
-
-    // 轉傳給 opener（結帳頁）
-    const msg = { type:'cvs_selected', store_id:data.id, store_name:data.name, store_address:data.addr };
-    try {
-      const target = (window.opener && window.opener.origin) ? window.opener.origin : '*';
-      window.opener && window.opener.postMessage(msg, target);
-    } catch(e) {
-      window.opener && window.opener.postMessage(msg, '*');
-    }
-    setTimeout(()=>window.close(), 200);
-  });
-  </script>
+  <div class="tip">7-11 門市地圖（ECPay）｜選完門市視窗會自動關閉</div>
+  <iframe id="f" src="https://api.murain.tw/ecpay/map" title="ECPay Map"></iframe>
 </body>
 </html>
