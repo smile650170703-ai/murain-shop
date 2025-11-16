@@ -384,90 +384,41 @@ function updateZcShip(){
   $('#zc711').hidden=(v!=='711');
   $('#zcPOST').hidden=(v!=='post');
 }
-/* ===== 地圖/複製（7-11 官方 e-map via API） ===== */
+
+/* ===== 地圖/複製（改為 7-11 官方 e-map via API） ===== */
 function open711(src){
-  // 注意：不要加 noopener/noreferrer，否則 window.opener 會是 null
-  window.open(`${API}/cvs/map?src=${encodeURIComponent(src)}`,
-    'cvsmap', 'width=960,height=720');
+  window.open(`${API}/cvs/map?src=${encodeURIComponent(src)}`, '_blank',
+    'width=480,height=640,noopener,noreferrer');
 }
-
-// 小工具：寫值並觸發事件
-function setFieldValue(sel, val){
-  const el = document.querySelector(sel);
-  if (!el) return false;
-  el.value = val || '';
-  try {
-    el.dispatchEvent(new Event('input', {bubbles:true}));
-    el.dispatchEvent(new Event('change', {bubbles:true}));
-  } catch(e){}
-  return true;
-}
-
-// 將不同回傳格式正規化
-function normalizeStorePayload(ev){
-  const d = ev && ev.data;
-  if (!d) return null;
-
-  // 格式一：{ type:'711_store', data:{ ok:true, src, id, name, addr, ... } }
-  if (d.type === '711_store' && d.data) {
-    const p = d.data;
-    return {
-      ok: !!p.ok,
-      src: p.src || '',
-      id:   p.id   || p.cvs_code || p.store_id || p.CVSStoreID || p.STOREID || '',
-      name: p.name || p.cvs_name || p.store_name || p.CVSStoreName || p.STORENAME || '',
-      addr: p.addr || p.cvs_addr || p.store_address || p.CVSAddress || p.STOREADDRESS || ''
-    };
-  }
-
-  // 格式二：{ type:'cvs_selected', cvs_code/cvs_name/cvs_addr, src?... }
-  if (d.type === 'cvs_selected') {
-    return {
-      ok: true,
-      src: d.src || '',
-      id:   d.cvs_code || d.id || d.store_id || d.CVSStoreID || d.STOREID || '',
-      name: d.cvs_name || d.name || d.store_name || d.CVSStoreName || d.STORENAME || '',
-      addr: d.cvs_addr || d.addr || d.store_address || d.CVSAddress || d.STOREADDRESS || ''
-    };
-  }
-
-  return null;
-}
-
 window.addEventListener('message', (ev)=>{
-  // 可加上來源白名單（若要更嚴謹）：if (ev.origin !== API) return;
-  const p = normalizeStorePayload(ev);
-  if (!p || !p.ok) return;
-
-  const src = (p.src || '').toLowerCase();
-  const fill = (a,b,c)=>{ setFieldValue(a, p.id); setFieldValue(b, p.name); setFieldValue(c, p.addr); };
-
+  const msg = ev && ev.data;
+  if (!msg || msg.type !== '711_store' || !msg.data || !msg.data.ok) return;
+  const { src, id, name, addr } = msg.data;
+  const fill = (ids) => {
+    const [idSel, nameSel, addrSel] = ids;
+    const i1 = document.querySelector(idSel);
+    const i2 = document.querySelector(nameSel);
+    const i3 = document.querySelector(addrSel);
+    if (i1) i1.value = id   || '';
+    if (i2) i2.value = name || '';
+    if (i3) i3.value = addr || '';
+  };
   switch (src) {
-    case 'cod':        fill('#cod_store_id', '#cod_store_name', '#cod_store_addr'); break;
-    case 'paid':       fill('#ship_store_id_paid', '#ship_store_name_paid', '#ship_store_addr_paid'); break;
-    case 'dep_old':    fill('#dep_old_store_id', '#dep_old_store_name', '#dep_old_store_addr'); break;
-    case 'dep_new_p':  fill('#dep_new_partial_store_id', '#dep_new_partial_store_name', '#dep_new_partial_store_addr'); break;
-    case 'dep_new_f':  fill('#dep_new_full_store_id', '#dep_new_full_store_name', '#dep_new_full_store_addr'); break;
-    case 'zc':         fill('#ship_store_id_zc', '#ship_store_name_zc', '#ship_store_addr_zc'); break;
-
-    // 若沒有 src（某些舊版地圖可能沒帶），就不分面板，預設回填到 COD
-    default:           fill('#cod_store_id', '#cod_store_name', '#cod_store_addr');
+    case 'cod':          fill(['#cod_store_id','#cod_store_name','#cod_store_addr']); break;
+    case 'paid':         fill(['#ship_store_id_paid','#ship_store_name_paid','#ship_store_addr_paid']); break;
+    case 'dep_old':      fill(['#dep_old_store_id','#dep_old_store_name','#dep_old_store_addr']); break;
+    case 'dep_new_p':    fill(['#dep_new_partial_store_id','#dep_new_partial_store_name','#dep_new_partial_store_addr']); break;
+    case 'dep_new_f':    fill(['#dep_new_full_store_id','#dep_new_full_store_name','#dep_new_full_store_addr']); break;
+    case 'zc':           fill(['#ship_store_id_zc','#ship_store_name_zc','#ship_store_addr_zc']); break;
   }
 });
-
-// 綁定所有地圖按鈕
-$('#mapCOD').addEventListener('click',      ()=>open711('cod'));
-$('#mapPAID').addEventListener('click',     ()=>open711('paid'));
-$('#mapDEPOld711').addEventListener('click',()=>open711('dep_old'));
+$('#mapCOD').addEventListener('click',   ()=>open711('cod'));
+$('#mapPAID').addEventListener('click',  ()=>open711('paid'));
+$('#mapDEPOld711').addEventListener('click', ()=>open711('dep_old'));
 $('#mapDEPnewP').addEventListener('click',  ()=>open711('dep_new_p'));
 $('#mapDEPnewF').addEventListener('click',  ()=>open711('dep_new_f'));
-$('#mapZC').addEventListener('click',       ()=>open711('zc'));
-
-// 複製帳號
-$('#copyBank').addEventListener('click', async()=>{
-  try{ await navigator.clipboard.writeText('822 222540458194'); }catch(e){}
-});
-
+$('#mapZC').addEventListener('click',    ()=>open711('zc'));
+$('#copyBank').addEventListener('click', async()=>{ try{ await navigator.clipboard.writeText('822 222540458194'); }catch(e){} });
 
 /* ===== 載入購物車 ===== */
 async function loadCart(){
@@ -590,8 +541,9 @@ $('#submitBtn').addEventListener('click', async()=>{
     });
     const j=await r.json();
     if(!r.ok || j.error){ throw new Error(j.error||'checkout error'); }
-    const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total=${encodeURIComponent(j.total_amount)}`;
-    try{ location.href=url; } catch(e){ alert(`下單成功！訂單編號：${j.order_id}`); }
+    // 變更：下單成功後，導到路由頁依付款方式處理
+    const router = `/pay-router.html?pm=${encodeURIComponent(payment_method)}&order_id=${encodeURIComponent(j.order_id)}&total=${encodeURIComponent(j.total_amount)}`;
+    location.href = router;
   }catch(e){
     console.error(e); alert('送出失敗，請再試一次');
   }finally{
