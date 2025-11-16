@@ -542,6 +542,26 @@ async function loadCart(){
 /* ===== 送出 ===== */
 function required(v){ return v && String(v).trim().length>0; }
 
+<script>
+/* ===== 設定 ===== */
+const API=(window.API_BASE||'https://api.murain.tw').replace(/\/$/,'');
+const RATE_TABLE={3:0,6:4.0,9:5.5,12:6.5,18:9.0,24:11.5};
+const NEW_DEPOSIT_AMOUNT=1000;
+
+/* ===== 工具 ===== */
+const $=(s,r=document)=>r.querySelector(s); const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const money=n=>'NT$ '+Number(n||0).toLocaleString();
+const qs=new URLSearchParams(location.search);
+const cartToken=qs.get('cart_token')||'';
+const customer=(qs.get('customer')||'old').toLowerCase();   // new | old
+const initialMode=(qs.get('mode')||'').toUpperCase();       // COD/PAID/DEPOSIT/ZEROCARD
+
+function setTotal(v){ $('#subtotal').value=Number(v||0); $('#total').value=money(v||0); }
+function required(v){ return v && String(v).trim().length>0; }
+
+/* ...（中間原本的程式：tab 切換、載入購物車、711 地圖等都保留，不要動）... */
+
+/* ===== 送出訂單 ===== */
 $('#submitBtn').addEventListener('click', async()=>{
   if (!cartToken) {
     return alert('缺少 cart_token');
@@ -552,7 +572,7 @@ $('#submitBtn').addEventListener('click', async()=>{
   let ship = {};
   const note = $('#note').value || '';
 
-  /* === COD：7-11 貨到付款，要 Email === */
+  /* --- 7-11 貨到付款：COD，Email 必填 --- */
   if (activeTab === 'COD') {
     const name  = $('#cod_name').value;
     const phone = $('#cod_phone').value;
@@ -569,12 +589,11 @@ $('#submitBtn').addEventListener('click', async()=>{
     ship = { type:'711', name, phone, email, store:{ id, name:sname, addr } };
   }
 
-  /* === 線上付款：PAID（信用卡/LinePay/AF），要 Email === */
+  /* --- 線上付款：PAID，Email 必填 --- */
   if (activeTab === 'PAID') {
-    const channel    = $('#paid_channel').value;
-    const shipMethod = $('#paid_ship_method').value;
-
-    payment_method = `paid_${channel}`;
+    const channel    = $('#paid_channel').value;        // card_once / card_inst / linepay / af
+    const shipMethod = $('#paid_ship_method').value;    // 711 / post
+    payment_method   = `paid_${channel}`;
     if (channel === 'card_inst') {
       payment_method += `_${$('#inst_months').value}`;
     }
@@ -607,22 +626,20 @@ $('#submitBtn').addEventListener('click', async()=>{
     }
   }
 
-  /* === ATM 匯款：DEPOSIT，新/舊客都要 Email === */
+  /* --- ATM 匯款：DEPOSIT，新 / 舊客，都要 Email --- */
   if (activeTab === 'DEPOSIT') {
     if (customer === 'new') {
       const last5 = $('#dep_last5_new').value;
-      if (!required(last5)) {
-        return alert('請填寫匯款後五碼');
-      }
+      if (!required(last5)) return alert('請填寫匯款後五碼');
 
       if ($('#dep_new_mode').value === 'partial') {
-        // 新客，支付 1000，尾款貨到
-        const name   = $('#dep_new_partial_name').value;
-        const phone  = $('#dep_new_partial_phone').value;
-        const email  = $('#dep_new_partial_email').value;
-        const id     = $('#dep_new_partial_store_id').value;
-        const sname  = $('#dep_new_partial_store_name').value;
-        const addr   = $('#dep_new_partial_store_addr').value;
+        // 新客，匯 1000 訂金，尾款貨到
+        const name  = $('#dep_new_partial_name').value;
+        const phone = $('#dep_new_partial_phone').value;
+        const email = $('#dep_new_partial_email').value;
+        const id    = $('#dep_new_partial_store_id').value;
+        const sname = $('#dep_new_partial_store_name').value;
+        const addr  = $('#dep_new_partial_store_addr').value;
 
         if (![name, phone, email, id, sname, addr].every(required)) {
           return alert('請填完收件資料（含 Email）');
@@ -643,12 +660,12 @@ $('#submitBtn').addEventListener('click', async()=>{
         payment_method = 'deposit_full';
 
         if (fullShip === '711') {
-          const name   = $('#dep_new_full_name').value;
-          const phone  = $('#dep_new_full_phone').value;
-          const email  = $('#dep_new_full_email').value;
-          const id     = $('#dep_new_full_store_id').value;
-          const sname  = $('#dep_new_full_store_name').value;
-          const addr   = $('#dep_new_full_store_addr').value;
+          const name  = $('#dep_new_full_name').value;
+          const phone = $('#dep_new_full_phone').value;
+          const email = $('#dep_new_full_email').value;
+          const id    = $('#dep_new_full_store_id').value;
+          const sname = $('#dep_new_full_store_name').value;
+          const addr  = $('#dep_new_full_store_addr').value;
 
           if (![name, phone, email, id, sname, addr].every(required)) {
             return alert('請填完收件資料（含 Email）');
@@ -663,11 +680,11 @@ $('#submitBtn').addEventListener('click', async()=>{
             deposit:{ type:'new_full', last5 }
           };
         } else {
-          const name   = $('#dep_new_full_post_name').value;
-          const phone  = $('#dep_new_full_post_phone').value;
-          const email  = $('#dep_new_full_post_email').value;
-          const zip    = $('#dep_new_full_post_zip').value;
-          const addr   = $('#dep_new_full_post_addr').value;
+          const name  = $('#dep_new_full_post_name').value;
+          const phone = $('#dep_new_full_post_phone').value;
+          const email = $('#dep_new_full_post_email').value;
+          const zip   = $('#dep_new_full_post_zip').value;
+          const addr  = $('#dep_new_full_post_addr').value;
 
           if (![name, phone, email, zip, addr].every(required)) {
             return alert('請填完郵寄資料（含 Email）');
@@ -686,23 +703,21 @@ $('#submitBtn').addEventListener('click', async()=>{
     } else {
       // 舊客 ATM
       const last5 = $('#dep_last5_old').value;
-      if (!required(last5)) {
-        return alert('請填寫匯款後五碼');
-      }
+      if (!required(last5)) return alert('請填寫匯款後五碼');
+      payment_method = 'deposit_old';
 
       if ($('#dep_old_ship').value === '711') {
-        const name   = $('#dep_old_name').value;
-        const phone  = $('#dep_old_phone').value;
-        const email  = $('#dep_old_email').value;
-        const id     = $('#dep_old_store_id').value;
-        const sname  = $('#dep_old_store_name').value;
-        const addr   = $('#dep_old_store_addr').value;
+        const name  = $('#dep_old_name').value;
+        const phone = $('#dep_old_phone').value;
+        const email = $('#dep_old_email').value;
+        const id    = $('#dep_old_store_id').value;
+        const sname = $('#dep_old_store_name').value;
+        const addr  = $('#dep_old_store_addr').value;
 
         if (![name, phone, email, id, sname, addr].every(required)) {
           return alert('請填完 7-11 收件資料（含 Email）');
         }
 
-        payment_method = 'deposit_old';
         ship = {
           type:'711',
           name,
@@ -712,17 +727,16 @@ $('#submitBtn').addEventListener('click', async()=>{
           deposit:{ type:'old', last5 }
         };
       } else {
-        const name   = $('#dep_old_post_name').value;
-        const phone  = $('#dep_old_post_phone').value;
-        const email  = $('#dep_old_post_email').value;
-        const zip    = $('#dep_old_post_zip').value;
-        const addr   = $('#dep_old_post_addr').value;
+        const name  = $('#dep_old_post_name').value;
+        const phone = $('#dep_old_post_phone').value;
+        const email = $('#dep_old_post_email').value;
+        const zip   = $('#dep_old_post_zip').value;
+        const addr  = $('#dep_old_post_addr').value;
 
         if (![name, phone, email, zip, addr].every(required)) {
           return alert('請填完郵寄資料（含 Email）');
         }
 
-        payment_method = 'deposit_old';
         ship = {
           type:'post',
           name,
@@ -735,18 +749,18 @@ $('#submitBtn').addEventListener('click', async()=>{
     }
   }
 
-  /* === 無卡零角：ZEROCARD，統一要 Email === */
+  /* --- 無卡零角：ZEROCARD，Email 必填，之後要導到中租頁 --- */
   if (activeTab === 'ZEROCARD') {
     const months = $('#zc_months').value;
     payment_method = `zero_card_${months}`;
 
     if ($('#zc_ship_method').value === '711') {
-      const name   = $('#ship_name_zc').value;
-      const phone  = $('#ship_phone_zc').value;
-      const email  = $('#ship_email_zc').value;
-      const id     = $('#ship_store_id_zc').value;
-      const sname  = $('#ship_store_name_zc').value;
-      const addr   = $('#ship_store_addr_zc').value;
+      const name  = $('#ship_name_zc').value;
+      const phone = $('#ship_phone_zc').value;
+      const email = $('#ship_email_zc').value;
+      const id    = $('#ship_store_id_zc').value;
+      const sname = $('#ship_store_name_zc').value;
+      const addr  = $('#ship_store_addr_zc').value;
 
       if (![name, phone, email, id, sname, addr].every(required)) {
         return alert('請填完 7-11 收件資料（含 Email）');
@@ -754,11 +768,11 @@ $('#submitBtn').addEventListener('click', async()=>{
 
       ship = { type:'711', name, phone, email, store:{ id, name:sname, addr } };
     } else {
-      const name   = $('#zc_post_name').value;
-      const phone  = $('#zc_post_phone').value;
-      const email  = $('#zc_post_email').value;
-      const zip    = $('#zc_post_zip').value;
-      const addr   = $('#zc_post_addr').value;
+      const name  = $('#zc_post_name').value;
+      const phone = $('#zc_post_phone').value;
+      const email = $('#zc_post_email').value;
+      const zip   = $('#zc_post_zip').value;
+      const addr  = $('#zc_post_addr').value;
 
       if (![name, phone, email, zip, addr].every(required)) {
         return alert('請填完郵寄資料（含 Email）');
@@ -779,8 +793,10 @@ $('#submitBtn').addEventListener('click', async()=>{
     subtotal: Number($('#subtotal').value || 0)
   };
 
-  try{
+  try {
     $('#submitBtn').disabled = true;
+
+    // 1. 先呼叫 /checkout 建立訂單
     const r = await fetch(`${API}/checkout`, {
       method: 'POST',
       headers: { 'Content-Type':'application/json' },
@@ -791,6 +807,29 @@ $('#submitBtn').addEventListener('click', async()=>{
       throw new Error(j.error || `checkout error (${r.status})`);
     }
 
+    // 2. 如果是無卡零角，再呼叫 /zero-card/start 拿中租連結
+    if (payment_method.startsWith('zero_card_')) {
+      try {
+        const zr = await fetch(`${API}/zero-card/start`, {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body:JSON.stringify({ order_id: j.order_id })
+        });
+        const zj = await zr.json();
+        if (zr.ok && zj && zj.payment_url) {
+          location.href = zj.payment_url;   // 丟去中租付款頁
+          return;
+        } else {
+          console.error('ZeroCard start error', zj);
+          alert('無卡零角啟動失敗，先回訂單完成頁。');
+        }
+      } catch (e) {
+        console.error('ZeroCard start error', e);
+        alert('無卡零角連線失敗，先回訂單完成頁。');
+      }
+    }
+
+    // 3. 其他付款方式，或 ZeroCard 失敗時，一律回你的完成頁
     const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total=${encodeURIComponent(j.total_amount)}`;
     try {
       location.href = url;
@@ -804,6 +843,16 @@ $('#submitBtn').addEventListener('click', async()=>{
     $('#submitBtn').disabled = false;
   }
 });
+
+/* 最後初始化 */
+(async()=>{
+  if(initialMode){ document.querySelector(`.tab[data-pay="${initialMode}"]`)?.click(); }
+  else { document.querySelector('.tab[data-pay="COD"]').click(); }
+  updatePaidShip(); updateOldShip(); updateNewFullShip(); updateZcShip(); calcZC();
+  await loadCart();
+})();
+</script>
+
 
 
 (async()=>{
