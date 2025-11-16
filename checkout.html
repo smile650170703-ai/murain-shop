@@ -384,58 +384,49 @@ function updateZcShip(){
   $('#zc711').hidden=(v!=='711');
   $('#zcPOST').hidden=(v!=='post');
 }
-/* ===== 地圖/複製（7-11 官方 e-map via API） ===== */
-function open711(src){
-  // 注意：不要加 noopener/noreferrer，否則 window.opener 會是 null
-  window.open(`${API}/cvs/map?src=${encodeURIComponent(src)}`,
-    'cvsmap', 'width=960,height=720');
-}
 
-// 小工具：寫值並觸發事件
+// 將欄位安全地寫值
 function setFieldValue(sel, val){
   const el = document.querySelector(sel);
-  if (!el) return false;
-  el.value = val || '';
-  try {
-    el.dispatchEvent(new Event('input', {bubbles:true}));
-    el.dispatchEvent(new Event('change', {bubbles:true}));
-  } catch(e){}
-  return true;
+  if (el) el.value = val || '';
 }
 
-// 將不同回傳格式正規化
+// 把各種來源的回傳格式統一成 { ok, src, id, name, addr }
 function normalizeStorePayload(ev){
-  const d = ev && ev.data;
-  if (!d) return null;
+  const m = (ev && ev.data) || {};
+  let src='', id='', name='', addr='';
 
-  // 格式一：{ type:'711_store', data:{ ok:true, src, id, name, addr, ... } }
-  if (d.type === '711_store' && d.data) {
-    const p = d.data;
-    return {
-      ok: !!p.ok,
-      src: p.src || '',
-      id:   p.id   || p.cvs_code || p.store_id || p.CVSStoreID || p.STOREID || '',
-      name: p.name || p.cvs_name || p.store_name || p.CVSStoreName || p.STORENAME || '',
-      addr: p.addr || p.cvs_addr || p.store_address || p.CVSAddress || p.STOREADDRESS || ''
-    };
+  // 我們自訂：{ type:'711_store', data:{ ok, src, id/name/addr } }
+  if (m.type === '711_store' && m.data){
+    const d = m.data || {};
+    src  = d.src || '';
+    id   = d.id   || d.store_id;
+    name = d.name || d.store_name;
+    addr = d.addr || d.store_address;
+
+  // 另一版：{ type:'cvs_selected', ... }
+  } else if (m.type === 'cvs_selected') {
+    const d = m.data || m;
+    src  = d.src || '';
+    id   = d.id   || d.cvs_code || d.store_id || d.CVSStoreID || d.StoreID || d.storeid || d.stno;
+    name = d.name || d.cvs_name || d.store_name || d.CVSStoreName || d.StoreName || d.stname || d.storename;
+    addr = d.addr || d.cvs_addr || d.store_address || d.CVSAddress || d.StoreAddress || d.storeaddress || d.staddr;
+
+  // 最保險：直接從最外層撈 ECPay / 7-11 常見鍵名
+  } else {
+    src  = m.src || '';
+    id   = m.CVSStoreID || m.StoreID || m.storeid || m.stno || m.id;
+    name = m.CVSStoreName || m.StoreName || m.stname || m.storename || m.name;
+    addr = m.CVSAddress || m.StoreAddress || m.storeaddress || m.staddr || m.addr;
   }
 
-  // 格式二：{ type:'cvs_selected', cvs_code/cvs_name/cvs_addr, src?... }
-  if (d.type === 'cvs_selected') {
-    return {
-      ok: true,
-      src: d.src || '',
-      id:   d.cvs_code || d.id || d.store_id || d.CVSStoreID || d.STOREID || '',
-      name: d.cvs_name || d.name || d.store_name || d.CVSStoreName || d.STORENAME || '',
-      addr: d.cvs_addr || d.addr || d.store_address || d.CVSAddress || d.STOREADDRESS || ''
-    };
-  }
-
-  return null;
+  if (!id || !name || !addr) return { ok:false };
+  return { ok:true, src, id, name, addr };
 }
 
+// 這是新的唯一監聽器（取代舊的那一段）
 window.addEventListener('message', (ev)=>{
-  // 可加上來源白名單（若要更嚴謹）：if (ev.origin !== API) return;
+  // 如要更嚴謹可打開來源白名單：if (ev.origin !== (window.API_BASE||API)) return;
   const p = normalizeStorePayload(ev);
   if (!p || !p.ok) return;
 
@@ -449,11 +440,11 @@ window.addEventListener('message', (ev)=>{
     case 'dep_new_p':  fill('#dep_new_partial_store_id', '#dep_new_partial_store_name', '#dep_new_partial_store_addr'); break;
     case 'dep_new_f':  fill('#dep_new_full_store_id', '#dep_new_full_store_name', '#dep_new_full_store_addr'); break;
     case 'zc':         fill('#ship_store_id_zc', '#ship_store_name_zc', '#ship_store_addr_zc'); break;
-
-    // 若沒有 src（某些舊版地圖可能沒帶），就不分面板，預設回填到 COD
-    default:           fill('#cod_store_id', '#cod_store_name', '#cod_store_addr');
+    default:           // 沒帶 src 時，預設灌到 COD 那組
+                       fill('#cod_store_id', '#cod_store_name', '#cod_store_addr');
   }
 });
+
 
 // 綁定所有地圖按鈕
 $('#mapCOD').addEventListener('click',      ()=>open711('cod'));
