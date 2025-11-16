@@ -33,21 +33,32 @@
   <h1>結帳</h1>
 
   <div class="card">
-    <div class="row">
-      <div>
-        <label>商品小計（NT$）</label>
-        <input id="subtotal" type="number" min="0" step="1" readonly />
-        <div id="itemsBox" class="list muted"></div>
-      </div>
-      <div>
-        <label>應付金額</label>
-        <input id="total" type="text" readonly />
-      </div>
+  <div class="row">
+    <div>
+      <label>商品小計（NT$）</label>
+      <input id="subtotal" type="number" min="0" step="1" readonly />
+      <div id="itemsBox" class="list muted"></div>
     </div>
-    <label>備註（選填）</label>
-    <textarea id="note" placeholder="…"></textarea>
-    <div class="muted">此頁一定要用結帳連結進入（帶 <code>cart_token</code>）。</div>
+    <div>
+      <label>應付金額</label>
+      <input id="total" type="text" readonly />
+    </div>
   </div>
+
+  <!-- ⭐ 新增：Email 欄位（共用） -->
+  <div class="row">
+    <div>
+      <label>Email（選填）</label>
+      <input id="email" type="email" required placeholder="example@gmail.com" />
+    </div>
+    <div></div>
+  </div>
+
+  <label>備註（選填）</label>
+  <textarea id="note" placeholder="…"></textarea>
+  <div class="muted">此頁一定要用結帳連結進入（帶 <code>cart_token</code>）。</div>
+</div>
+
 
   <div class="card">
     <div class="tabs" id="payTabs">
@@ -493,6 +504,7 @@ $('#submitBtn').addEventListener('click', async()=>{
   let payment_method = '';
   let ship = {};
   const note = $('#note').value || '';
+  const email = $('#email')?.value || '';
 
   if(activeTab==='COD'){
     const name=$('#cod_name').value, phone=$('#cod_phone').value,
@@ -579,23 +591,28 @@ $('#submitBtn').addEventListener('click', async()=>{
     }
   }
 
-  const shipping_info={ customer, note, ship, subtotal:Number($('#subtotal').value||0) };
+  const shipping_info = {
+    customer,
+    note,
+    email,
+    ship,
+    subtotal: Number($('#subtotal').value || 0)
+  };
 
   try{
     $('#submitBtn').disabled=true;
-    const r=await fetch(`${API}/checkout`,{
+    const r = await fetch(`${API}/checkout`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ cart_token:cartToken, payment_method, shipping_info })
+      body: JSON.stringify({ cart_token:cartToken, payment_method, shipping_info })
     });
-    const j=await r.json();
+    const j = await r.json();
     if(!r.ok || j.error){ throw new Error(j.error||'checkout error'); }
     const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total=${encodeURIComponent(j.total_amount)}`;
     try{ location.href=url; } catch(e){ alert(`下單成功！訂單編號：${j.order_id}`); }
   }catch(e){
-  console.error(e);
-  alert('送出失敗：' + (e && e.message ? e.message : '請稍後再試一次'));
-}finally{
+    console.error(e); alert('送出失敗，請再試一次');
+  }finally{
     $('#submitBtn').disabled=false;
   }
 });
