@@ -315,7 +315,6 @@ const qs=new URLSearchParams(location.search);
 const cartToken=qs.get('cart_token')||'';
 const customer=(qs.get('customer')||'old').toLowerCase();   // new | old
 const initialMode=(qs.get('mode')||'').toUpperCase();       // COD/PAID/DEPOSIT/ZEROCARD
-
 function setTotal(v){ $('#subtotal').value=Number(v||0); $('#total').value=money(v||0); }
 
 /* ===== Tabs ===== */
@@ -385,80 +384,66 @@ function updateZcShip(){
   $('#zcPOST').hidden=(v!=='post');
 }
 
-// 將欄位安全地寫值
-function setFieldValue(sel, val){
-  const el = document.querySelector(sel);
-  if (el) el.value = val || '';
-}
-
-// 把各種來源的回傳格式統一成 { ok, src, id, name, addr }
-function normalizeStorePayload(ev){
-  const m = (ev && ev.data) || {};
-  let src='', id='', name='', addr='';
-
-  // 我們自訂：{ type:'711_store', data:{ ok, src, id/name/addr } }
-  if (m.type === '711_store' && m.data){
-    const d = m.data || {};
-    src  = d.src || '';
-    id   = d.id   || d.store_id;
-    name = d.name || d.store_name;
-    addr = d.addr || d.store_address;
-
-  // 另一版：{ type:'cvs_selected', ... }
-  } else if (m.type === 'cvs_selected') {
-    const d = m.data || m;
-    src  = d.src || '';
-    id   = d.id   || d.cvs_code || d.store_id || d.CVSStoreID || d.StoreID || d.storeid || d.stno;
-    name = d.name || d.cvs_name || d.store_name || d.CVSStoreName || d.StoreName || d.stname || d.storename;
-    addr = d.addr || d.cvs_addr || d.store_address || d.CVSAddress || d.StoreAddress || d.storeaddress || d.staddr;
-
-  // 最保險：直接從最外層撈 ECPay / 7-11 常見鍵名
+/* ===== 7-11 地圖（穩定版 open + 綁定） ===== */
+function open711(src){
+  const url = `${API}/cvs/map?src=${encodeURIComponent(src)}`;
+  // 同步先開一個空視窗，避免被瀏覽器當成非使用者觸發而擋
+  const w = window.open('', '_blank', 'width=480,height=640,noopener');
+  if (w) {
+    try { w.opener = window; } catch(e) {}
+    w.location.href = url;
   } else {
-    src  = m.src || '';
-    id   = m.CVSStoreID || m.StoreID || m.storeid || m.stno || m.id;
-    name = m.CVSStoreName || m.StoreName || m.stname || m.storename || m.name;
-    addr = m.CVSAddress || m.StoreAddress || m.storeaddress || m.staddr || m.addr;
+    // 萬一被擋，退而求其次：同頁跳轉
+    location.href = url;
   }
+}
+function bindClick(id, fn){ const el=document.getElementById(id); if(el){ el.addEventListener('click',e=>{e.preventDefault(); fn();}); } }
+bindClick('mapCOD',      ()=>open711('cod'));
+bindClick('mapPAID',     ()=>open711('paid'));
+bindClick('mapDEPOld711',()=>open711('dep_old'));
+bindClick('mapDEPnewP',  ()=>open711('dep_new_p'));
+bindClick('mapDEPnewF',  ()=>open711('dep_new_f'));
+bindClick('mapZC',       ()=>open711('zc'));
 
-  if (!id || !name || !addr) return { ok:false };
-  return { ok:true, src, id, name, addr };
+// 回填小工具
+function setFieldValue(sel, v){ const el=document.querySelector(sel); if(el){ el.value = v || ''; } }
+function normalizeStorePayload(ev){
+  const d = (ev && ev.data) || {};
+  // 我們自家 /cvs/callback 會用 type='711_store' 並包 data
+  if (d && d.type === '711_store' && d.data){
+    const x=d.data;
+    return { ok: !!x.ok, src:x.src||'', id:x.id||'', name:x.name||'', addr:x.addr||'' };
+  }
+  // 其他可能格式（保險）
+  if (d && d.type === 'cvs_selected'){
+    return { ok:true, src:(d.src||''), id:d.id||d.cvs_code||'', name:d.name||d.cvs_name||'', addr:d.addr||d.cvs_addr||'' };
+  }
+  return null;
 }
 
-// 這是新的唯一監聽器（取代舊的那一段）
+// 監聽回傳，寫回各區欄位
 window.addEventListener('message', (ev)=>{
-  // 如要更嚴謹可打開來源白名單：if (ev.origin !== (window.API_BASE||API)) return;
+  // 如需嚴謹可限制來源：const allow = new URL(API).origin; if (ev.origin !== allow) return;
   const p = normalizeStorePayload(ev);
   if (!p || !p.ok) return;
 
-  const src = (p.src || '').toLowerCase();
-  const fill = (a,b,c)=>{ setFieldValue(a, p.id); setFieldValue(b, p.name); setFieldValue(c, p.addr); };
+  const src = (p.src||'').toLowerCase();
+  const fill = (a,b,c)=>{ setFieldValue(a,p.id); setFieldValue(b,p.name); setFieldValue(c,p.addr); };
 
   switch (src) {
-    case 'cod':        fill('#cod_store_id', '#cod_store_name', '#cod_store_addr'); break;
-    case 'paid':       fill('#ship_store_id_paid', '#ship_store_name_paid', '#ship_store_addr_paid'); break;
-    case 'dep_old':    fill('#dep_old_store_id', '#dep_old_store_name', '#dep_old_store_addr'); break;
-    case 'dep_new_p':  fill('#dep_new_partial_store_id', '#dep_new_partial_store_name', '#dep_new_partial_store_addr'); break;
-    case 'dep_new_f':  fill('#dep_new_full_store_id', '#dep_new_full_store_name', '#dep_new_full_store_addr'); break;
-    case 'zc':         fill('#ship_store_id_zc', '#ship_store_name_zc', '#ship_store_addr_zc'); break;
-    default:           // 沒帶 src 時，預設灌到 COD 那組
-                       fill('#cod_store_id', '#cod_store_name', '#cod_store_addr');
+    case 'cod':       fill('#cod_store_id','#cod_store_name','#cod_store_addr'); break;
+    case 'paid':      fill('#ship_store_id_paid','#ship_store_name_paid','#ship_store_addr_paid'); break;
+    case 'dep_old':   fill('#dep_old_store_id','#dep_old_store_name','#dep_old_store_addr'); break;
+    case 'dep_new_p': fill('#dep_new_partial_store_id','#dep_new_partial_store_name','#dep_new_partial_store_addr'); break;
+    case 'dep_new_f': fill('#dep_new_full_store_id','#dep_new_full_store_name','#dep_new_full_store_addr'); break;
+    case 'zc':        fill('#ship_store_id_zc','#ship_store_name_zc','#ship_store_addr_zc'); break;
+    default:          fill('#cod_store_id','#cod_store_name','#cod_store_addr'); break; // 保底塞 COD 區
   }
 });
 
-
-// 綁定所有地圖按鈕
-$('#mapCOD').addEventListener('click',      ()=>open711('cod'));
-$('#mapPAID').addEventListener('click',     ()=>open711('paid'));
-$('#mapDEPOld711').addEventListener('click',()=>open711('dep_old'));
-$('#mapDEPnewP').addEventListener('click',  ()=>open711('dep_new_p'));
-$('#mapDEPnewF').addEventListener('click',  ()=>open711('dep_new_f'));
-$('#mapZC').addEventListener('click',       ()=>open711('zc'));
-
 // 複製帳號
-$('#copyBank').addEventListener('click', async()=>{
-  try{ await navigator.clipboard.writeText('822 222540458194'); }catch(e){}
-});
-
+const copyBtn = document.getElementById('copyBank');
+if (copyBtn){ copyBtn.addEventListener('click', async()=>{ try{ await navigator.clipboard.writeText('822 222540458194'); }catch(e){} }); }
 
 /* ===== 載入購物車 ===== */
 async function loadCart(){
