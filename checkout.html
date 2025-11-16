@@ -364,181 +364,37 @@ const RATE_TABLE={3:0,6:4.0,9:5.5,12:6.5,18:9.0,24:11.5};
 const NEW_DEPOSIT_AMOUNT=1000;
 
 /* ===== 工具 ===== */
-const $=(s,r=document)=>r.querySelector(s); 
+const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const money=n=>'NT$ '+Number(n||0).toLocaleString();
 const qs=new URLSearchParams(location.search);
 const cartToken=qs.get('cart_token')||'';
 const customer=(qs.get('customer')||'old').toLowerCase();   // new | old
 const initialMode=(qs.get('mode')||'').toUpperCase();       // COD/PAID/DEPOSIT/ZEROCARD
-
-// 從網址讀回 7-11 門市資料
-const storeSrc=(qs.get('store_src')||'').toLowerCase();
-const storeId=qs.get('store_id')||'';
+ const storeSrc =(qs.get('store_src')||'').toLowerCase();    // cod / paid / dep_old / dep_new_p / dep_new_f / zc
+const storeId  =qs.get('store_id')  ||'';
 const storeName=qs.get('store_name')||'';
 const storeAddr=qs.get('store_addr')||'';
-
-function setTotal(v){ 
-  $('#subtotal').value=Number(v||0); 
-  $('#total').value=money(v||0); 
-}
+function setTotal(v){ $('#subtotal').value=Number(v||0); $('#total').value=money(v||0); }
 function required(v){ return v && String(v).trim().length>0; }
 
 /* ===== Tabs ===== */
-const tabs=$$('#payTabs .tab'); 
+const tabs=$$('#payTabs .tab');
 tabs.forEach(t=>t.addEventListener('click',()=>{
-  tabs.forEach(x=>x.classList.remove('active')); 
+  tabs.forEach(x=>x.classList.remove('active'));
   t.classList.add('active');
   const k=t.dataset.pay;
   ['COD','PAID','DEPOSIT','ZEROCARD'].forEach(x=>$('#pane'+x).hidden=(x!==k));
-  if(k==='DEPOSIT') $('#paneZC').hidden=true;
-  if(k==='ZEROCARD') $('#paneDEPOSIT').hidden=true;
+  if(k==='DEPOSIT'){ initDepositPane(); }
+  if(k==='PAID'){ $('#paid_ship_method').value='711'; updatePaidShip(); }
+  if(k==='ZEROCARD'){ $('#zc_ship_method').value='711'; updateZcShip(); calcZC(); }
 }));
 
-/* ===== 7-11 地圖：改為整頁跳轉（作法 B） ===== */
-
-// 會帶上 cart_token / customer / mode，讓 callback 能跳回來同一個頁面
-function open711(src, modeOverride){
-  const params = new URLSearchParams();
-  params.set('src', src);
-  if (cartToken) params.set('cart_token', cartToken);
-  if (customer) params.set('customer', customer);
-  const m = (modeOverride || initialMode || '').toUpperCase();
-  if (m) params.set('mode', m);
-  location.href = `${API}/cvs/map?${params.toString()}`;
-}
-
-// 小工具：寫值並觸發事件
-function setFieldValue(sel, val){
-  const el = document.querySelector(sel);
-  if (!el) return false;
-  el.value = val || '';
-  try {
-    el.dispatchEvent(new Event('input', {bubbles:true}));
-    el.dispatchEvent(new Event('change', {bubbles:true}));
-  } catch(e){}
-  return true;
-}
-
-// 將不同回傳格式正規化（給 postMessage 用，保留相容性）
-function normalizeStorePayload(ev){
-  const d = ev && ev.data;
-  if (!d) return null;
-
-  // 格式一：{ type:'711_store', data:{ ok:true, src, id, name, addr, ... } }
-  if (d.type === '711_store' && d.data) {
-    const p = d.data;
-    return {
-      ok: !!p.ok,
-      src: p.src || '',
-      id:   p.id   || p.cvs_code || p.store_id || p.CVSStoreID || p.STOREID || '',
-      name: p.name || p.cvs_name || p.store_name || p.CVSStoreName || p.STORENAME || '',
-      addr: p.addr || p.cvs_addr || p.store_address || p.CVSAddress || p.STOREADDRESS || ''
-    };
-  }
-
-  // 格式二：{ type:'cvs_selected', cvs_code/cvs_name/cvs_addr, src?... }
-  if (d.type === 'cvs_selected') {
-    return {
-      ok: true,
-      src: d.src || '',
-      id:   d.cvs_code || d.id || d.store_id || d.CVSStoreID || d.STOREID || '',
-      name: d.cvs_name || d.name || d.store_name || d.CVSStoreName || d.STORENAME || '',
-      addr: d.cvs_addr || d.addr || d.store_address || d.CVSAddress || d.STOREADDRESS || ''
-    };
-  }
-
-  return null;
-}
-
-/* 回來時，從網址上的 store_* 把門市自動填回去 */
-function applyStoreFromQuery(){
-  if (!storeId && !storeName && !storeAddr) return;
-
-  const src = (storeSrc || initialMode || 'COD').toLowerCase();
-  const fill = (a,b,c)=>{ 
-    setFieldValue(a, storeId); 
-    setFieldValue(b, storeName); 
-    setFieldValue(c, storeAddr); 
-  };
-
-  switch (src) {
-    case 'cod':
-      document.querySelector('.tab[data-pay="COD"]')?.click();
-      fill('#cod_store_id', '#cod_store_name', '#cod_store_addr');
-      break;
-
-    case 'paid':
-      document.querySelector('.tab[data-pay="PAID"]')?.click();
-      const paidShip = document.querySelector('#paid_ship_method');
-      if (paidShip) {
-        paidShip.value = '711';
-        if (typeof updatePaidShip === 'function') updatePaidShip();
-      }
-      fill('#ship_store_id_paid', '#ship_store_name_paid', '#ship_store_addr_paid');
-      break;
-
-    case 'zc':
-      document.querySelector('.tab[data-pay="ZEROCARD"]')?.click();
-      const zcShip = document.querySelector('#zc_ship_method');
-      if (zcShip) {
-        zcShip.value = '711';
-        if (typeof updateZcShip === 'function') updateZcShip();
-      }
-      fill('#ship_store_id_zc', '#ship_store_name_zc', '#ship_store_addr_zc');
-      break;
-
-    case 'dep_old':
-      document.querySelector('.tab[data-pay="DEPOSIT"]')?.click();
-      document.querySelector('#dep_tabs .tab[data-dep="old"]')?.click();
-      fill('#dep_old_store_id', '#dep_old_store_name', '#dep_old_store_addr');
-      break;
-
-    case 'dep_new_p':
-      document.querySelector('.tab[data-pay="DEPOSIT"]')?.click();
-      document.querySelector('#dep_tabs .tab[data-dep="new_partial"]')?.click();
-      fill('#dep_new_partial_store_id', '#dep_new_partial_store_name', '#dep_new_partial_store_addr');
-      break;
-
-    case 'dep_new_f':
-      document.querySelector('.tab[data-pay="DEPOSIT"]')?.click();
-      document.querySelector('#dep_tabs .tab[data-dep="new_full"]')?.click();
-      const fullShip = document.querySelector('#dep_new_full_ship_method');
-      if (fullShip) {
-        fullShip.value = '711';
-        if (typeof updateNewFullShip === 'function') updateNewFullShip();
-      }
-      fill('#dep_new_full_store_id', '#dep_new_full_store_name', '#dep_new_full_store_addr');
-      break;
-
-    default:
-      fill('#cod_store_id', '#cod_store_name', '#cod_store_addr');
-  }
-}
-
-// 還是保留 postMessage 版本，桌機彈窗也可以用
-window.addEventListener('message', (ev)=>{
-  const p = normalizeStorePayload(ev);
-  if (!p || !p.ok) return;
-
-  const src = (p.src || '').toLowerCase();
-  const fill = (a,b,c)=>{ setFieldValue(a, p.id); setFieldValue(b, p.name); setFieldValue(c, p.addr); };
-
-  switch (src) {
-    case 'cod':        fill('#cod_store_id', '#cod_store_name', '#cod_store_addr'); break;
-    case 'paid':       fill('#ship_store_id_paid', '#ship_store_name_paid', '#ship_store_addr_paid'); break;
-    case 'dep_old':    fill('#dep_old_store_id', '#dep_old_store_name', '#dep_old_store_addr'); break;
-    case 'dep_new_p':  fill('#dep_new_partial_store_id', '#dep_new_partial_store_name', '#dep_new_partial_store_addr'); break;
-    case 'dep_new_f':  fill('#dep_new_full_store_id', '#dep_new_full_store_name', '#dep_new_full_store_addr'); break;
-    case 'zc':         fill('#ship_store_id_zc', '#ship_store_name_zc', '#ship_store_addr_zc'); break;
-    default:           fill('#cod_store_id', '#cod_store_name', '#cod_store_addr');
-  }
+/* ===== PAID ===== */
+$('#paid_channel').addEventListener('change',()=>{
+  $('#cardInstBox').hidden = ($('#paid_channel').value!=='card_inst');
 });
-
-/* ===== 其他原本的功能（利率、DEPOSIT、ZeroCard…）===== */
-/* ↓↓↓ 以下是你原本就有的程式，我沒有動邏輯，只是接在上面後面 ↓↓↓ */
-
-/* ===== PAID 運送方式切換 ===== */
+$('#paid_ship_method').addEventListener('change',updatePaidShip);
 function updatePaidShip(){
   const v=$('#paid_ship_method').value;
   $('#paid711').hidden=(v!=='711');
@@ -547,196 +403,430 @@ function updatePaidShip(){
 
 /* ===== DEPOSIT ===== */
 function initDepositPane(){
-  const depTabs=$$('#dep_tabs .tab');
-  depTabs.forEach(t=>t.addEventListener('click',()=>{
-    depTabs.forEach(x=>x.classList.remove('active')); 
-    t.classList.add('active');
-    const k=t.dataset.dep;
-    ['old','new_partial','new_full'].forEach(x=>$('#dep_'+x).hidden=(x!==k));
-  }));
+  if(customer==='new'){
+    $('#newDeposit').hidden=false;
+    $('#oldDeposit').hidden=true;
+    $('#dep_new_mode').value='partial';
+    updateNewDepositMode();
+  }else{
+    $('#newDeposit').hidden=true;
+    $('#oldDeposit').hidden=false;
+    $('#dep_old_ship').value='711';
+    updateOldShip();
+  }
 }
-initDepositPane();
-
+$('#dep_new_mode').addEventListener('change', updateNewDepositMode);
+function updateNewDepositMode(){
+  const v=$('#dep_new_mode').value;
+  $('#dep_new_partial').hidden=(v!=='partial');
+  $('#dep_new_full').hidden=(v!=='full');
+  if(v==='full'){
+    $('#dep_new_full_ship').value='711';
+    updateNewFullShip();
+  }
+}
+$('#dep_new_full_ship').addEventListener('change', updateNewFullShip);
+function updateNewFullShip(){
+  const v=$('#dep_new_full_ship').value;
+  $('#dep_new_full_711').hidden=(v!=='711');
+  $('#dep_new_full_post').hidden=(v!=='post');
+}
+$('#dep_old_ship').addEventListener('change', updateOldShip);
 function updateOldShip(){
-  const v=$('#dep_old_ship_method').value;
+  const v=$('#dep_old_ship').value;
   $('#dep_old_711').hidden=(v!=='711');
   $('#dep_old_post').hidden=(v!=='post');
 }
 
-function updateNewFullShip(){
-  const v=$('#dep_new_full_ship_method').value;
-  $('#dep_new_full_711').hidden=(v!=='711');
-  $('#dep_new_full_post').hidden=(v!=='post');
-}
-
-function updateZcShip(){
-  const v=$('#zc_ship_method').value;
-  $('#zc_711').hidden=(v!=='711');
-  $('#zc_post').hidden=(v!=='post');
-}
-
-/* ===== ZeroCard 每期金額試算 ===== */
+/* ===== ZEROCARD ===== */
+$('#zc_months').addEventListener('change',calcZC);
+$('#zc_ship_method').addEventListener('change',updateZcShip);
 function calcZC(){
   const total=Number($('#subtotal').value||0);
-  const m=Number($('#zc_inst').value||3);
-  const rate=RATE_TABLE[m]||0;
-  const fee=Math.round(total*(rate/100));
-  const grand=total+fee;
-  const per=Math.round(grand/m);
-  $('#zc_summary').textContent=
-    `約 NT$ ${per.toLocaleString()} × ${m} 期（含手續費 NT$ ${fee.toLocaleString()}）`;
+  const m=Number($('#zc_months').value||3);
+  const rate=(m===3)?0:(RATE_TABLE[m]||0);
+  const gross=Math.round(total*(1+rate/100));
+  const per=Math.ceil(gross/m);
+  $('#zc_calc').value=`約 NT$ ${per.toLocaleString()} × ${m}（總計 NT$ ${gross.toLocaleString()}）`;
 }
+function updateZcShip(){
+  const v=$('#zc_ship_method').value;
+  $('#zc711').hidden=(v!=='711');
+  $('#zcPOST').hidden=(v!=='post');
+}
+
+// 整頁跳轉版 7-11 地圖
+function open711(src, mode){
+  const params = new URLSearchParams();
+  params.set('src', src);
+  if (cartToken) params.set('cart_token', cartToken);
+  if (customer)  params.set('customer', customer);
+  if (mode)      params.set('mode', mode);
+  else if (initialMode) params.set('mode', initialMode);
+
+  location.href = `${API}/cvs/map?${params.toString()}`;
+}
+
+// （原本就有的 setFieldValue / normalizeStorePayload / window.addEventListener 可以保留，不用刪）
+// 我們多一個：從網址帶回的門市 → 寫進對應欄位
+function applyStoreFromQuery(){
+  if (!storeSrc || !storeId) return;
+  const id = storeId, name = storeName, addr = storeAddr;
+
+  switch (storeSrc) {
+    case 'cod':
+      setFieldValue('#cod_store_id',   id);
+      setFieldValue('#cod_store_name', name);
+      setFieldValue('#cod_store_addr', addr);
+      break;
+
+    case 'paid':
+      $('#paid_ship_method').value='711';
+      updatePaidShip();
+      setFieldValue('#ship_store_id_paid',   id);
+      setFieldValue('#ship_store_name_paid', name);
+      setFieldValue('#ship_store_addr_paid', addr);
+      break;
+
+    case 'dep_old':
+      $('#dep_old_ship').value='711';
+      updateOldShip();
+      setFieldValue('#dep_old_store_id',   id);
+      setFieldValue('#dep_old_store_name', name);
+      setFieldValue('#dep_old_store_addr', addr);
+      break;
+
+    case 'dep_new_p': // 新客分期訂金（partial，7-11）
+      $('#dep_new_mode').value='partial';
+      updateNewDepositMode();
+      setFieldValue('#dep_new_partial_store_id',   id);
+      setFieldValue('#dep_new_partial_store_name', name);
+      setFieldValue('#dep_new_partial_store_addr', addr);
+      break;
+
+    case 'dep_new_f': // 新客全額匯款（full，7-11）
+      $('#dep_new_mode').value='full';
+      updateNewDepositMode();
+      $('#dep_new_full_ship').value='711';
+      updateNewFullShip();
+      setFieldValue('#dep_new_full_store_id',   id);
+      setFieldValue('#dep_new_full_store_name', name);
+      setFieldValue('#dep_new_full_store_addr', addr);
+      break;
+
+    case 'zc': // 無卡零角 7-11
+      $('#zc_ship_method').value='711';
+      updateZcShip();
+      setFieldValue('#ship_store_id_zc',   id);
+      setFieldValue('#ship_store_name_zc', name);
+      setFieldValue('#ship_store_addr_zc', addr);
+      break;
+
+    default:
+      // 沒有 src 就不動，或你也可以預設回填到 COD
+      break;
+  }
+}
+
+// 綁定所有地圖按鈕（現在多帶一個 mode，讓回來時自動切對的 tab）
+$('#mapCOD').addEventListener('click',      ()=>open711('cod','COD'));
+$('#mapPAID').addEventListener('click',     ()=>open711('paid','PAID'));
+$('#mapDEPOld711').addEventListener('click',()=>open711('dep_old','DEPOSIT'));
+$('#mapDEPnewP').addEventListener('click',  ()=>open711('dep_new_p','DEPOSIT'));
+$('#mapDEPnewF').addEventListener('click',  ()=>open711('dep_new_f','DEPOSIT'));
+$('#mapZC').addEventListener('click',       ()=>open711('zc','ZEROCARD'));
+
+$('#copyBank').addEventListener('click', async()=>{
+  try{ await navigator.clipboard.writeText('822 222540458194'); }catch(e){}
+});
 
 /* ===== 載入購物車 ===== */
 async function loadCart(){
-  if(!cartToken){ alert('缺少 cart_token，請由正確結帳連結進入'); return; }
+  if(!cartToken){
+    alert('缺少 cart_token，請由正確結帳連結進入');
+    return;
+  }
   try{
-    const r = await fetch(`${API}/cart/${cartToken}`);
-    const j = await r.json();
-    if(!r.ok){ throw new Error(j.error||'load cart failed'); }
+    const r=await fetch(`${API}/cart/${cartToken}`);
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error||'cart error');
     setTotal(j.total_amount||0);
+    const lines=(j.items||[]).map(it=>`• ${it.name||it.sku} × ${it.qty}　NT$ ${Number(it.subtotal||0).toLocaleString()}`);
+    $('#itemsBox').textContent=lines.join('\n');
   }catch(e){
-    console.error(e); alert('載入購物車失敗');
+    console.error(e);
+    alert('讀取購物車失敗，請重試');
   }
 }
 
-/* ===== 送出訂單 ===== */
-$('#checkoutForm').addEventListener('submit', async (ev)=>{
-  ev.preventDefault();
-  if(!cartToken){ return alert('缺少 cart_token'); }
+/* ===== 送出訂單（含無卡零角 → 中租） ===== */
+$('#submitBtn').addEventListener('click', async()=>{
+  if(!cartToken) return alert('缺少 cart_token');
 
-  const activeTab = $('#payTabs .tab.active')?.dataset.pay || 'COD';
-  let payment_method='', ship={};
+  const activeTab=document.querySelector('.tab.active')?.dataset.pay || 'COD';
+  let payment_method='';
+  let ship={};
+  const note=$('#note').value || '';
 
-  /* --- COD：711 貨到付款，Email 必填 --- */
-  if (activeTab === 'COD') {
-    const name = $('#cod_name').value;
-    const phone = $('#cod_phone').value;
-    const email = $('#cod_email').value;
-    const id   = $('#cod_store_id').value;
-    const sname= $('#cod_store_name').value;
-    const addr = $('#cod_store_addr').value;
-    if (![name, phone, email, id, sname, addr].every(required)) {
+  // COD
+  if(activeTab==='COD'){
+    const name=$('#cod_name').value;
+    const phone=$('#cod_phone').value;
+    const email=$('#cod_email').value;
+    const id=$('#cod_store_id').value;
+    const sname=$('#cod_store_name').value;
+    const addr=$('#cod_store_addr').value;
+    if(![name,phone,email,id,sname,addr].every(required)){
       return alert('請填完 COD 必填欄位（含 Email）');
     }
     payment_method='cod_711';
-    ship={ type:'711', name, phone, email, store:{ id, name:sname, addr } };
+    ship={ type:'711', name, phone, email, store:{id,name:sname,addr} };
   }
 
-  /* --- 線上付款：PAID，Email 必填 --- */
-  if (activeTab === 'PAID') {
-    const channel    = $('#paid_channel').value;        // card_once / card_inst / linepay / af
-    const shipMethod = $('#paid_ship_method').value;    // 711 / post
-    const name = $('#paid_name').value;
-    const phone = $('#paid_phone').value;
-    const email = $('#paid_email').value;
-
-    if (!required(name) || !required(phone) || !required(email)) {
-      return alert('請填完線上付款的姓名 / 電話 / Email');
+  // 線上付款
+  if(activeTab==='PAID'){
+    const channel=$('#paid_channel').value;
+    const shipMethod=$('#paid_ship_method').value;
+    payment_method=`paid_${channel}`;
+    if(channel==='card_inst'){
+      payment_method += `_${$('#inst_months').value}`;
     }
-
-    payment_method = `paid_${channel}`;
-
-    if (shipMethod === '711') {
-      const id   = $('#ship_store_id_paid').value;
-      const sname= $('#ship_store_name_paid').value;
-      const addr = $('#ship_store_addr_paid').value;
-      if (![id,sname,addr].every(required)) {
-        return alert('請先選擇 7-11 門市');
+    if(shipMethod==='711'){
+      const name=$('#ship_name_paid').value;
+      const phone=$('#ship_phone_paid').value;
+      const email=$('#ship_email_paid').value;
+      const id=$('#ship_store_id_paid').value;
+      const sname=$('#ship_store_name_paid').value;
+      const addr=$('#ship_store_addr_paid').value;
+      if(![name,phone,email,id,sname,addr].every(required)){
+        return alert('請填完收件資料（含 Email）');
       }
-      ship={ type:'711', name, phone, email, store:{ id, name:sname, addr } };
-    } else {
-      const zip  = $('#paid_post_zip').value;
-      const addr = $('#paid_post_addr').value;
-      if (![zip,addr].every(required)) {
-        return alert('請填寫郵寄地址');
+      ship={ type:'711', name, phone, email, store:{id,name:sname,addr} };
+    }else{
+      const name=$('#paid_post_name').value;
+      const phone=$('#paid_post_phone').value;
+      const email=$('#paid_post_email').value;
+      const zip=$('#paid_post_zip').value;
+      const addr=$('#paid_post_addr').value;
+      if(![name,phone,email,zip,addr].every(required)){
+        return alert('請填完郵寄資料（含 Email）');
       }
-      ship={ type:'post', name, phone, email, post:{ zip, addr } };
-    }
-  }
-
-  /* --- DEPOSIT 舊客、新客...（略，邏輯沿用你原本的） --- */
-  // 這裡我沒有改任何既有邏輯，只是保留你原本的分支處理
-
-  // ...（這裡是你原本的 DEPOSIT / NEW DEPOSIT 相關程式碼，省略顯示）...
-
-  /* --- ZeroCard 無卡零角 --- */
-  if (activeTab === 'ZEROCARD') {
-    const name = $('#zc_name').value;
-    const phone= $('#zc_phone').value;
-    const email= $('#zc_email').value;
-    if (![name,phone,email].every(required)) {
-      return alert('請填寫 ZeroCard 姓名 / 電話 / Email');
-    }
-
-    const inst = Number($('#zc_inst').value||3);
-    payment_method = `zero_card_${inst}`;
-
-    const shipMethod = $('#zc_ship_method').value;
-    if (shipMethod === '711') {
-      const id   = $('#ship_store_id_zc').value;
-      const sname= $('#ship_store_name_zc').value;
-      const addr = $('#ship_store_addr_zc').value;
-      if (![id,sname,addr].every(required)) {
-        return alert('請先選擇 7-11 門市');
-      }
-      ship={ type:'711', name, phone, email, store:{ id, name:sname, addr } };
-    } else {
-      const zip  = $('#zc_post_zip').value;
-      const addr = $('#zc_post_addr').value;
-      if (![zip,addr].every(required)) {
-        return alert('請填寫郵寄地址');
-      }
-      ship={ type:'post', name, phone, email, post:{ zip, addr } };
+      ship={ type:'post', name, phone, email, post:{zip,addr} };
     }
   }
 
-  // ===== 送到後端建立訂單 =====
-  $('#submitBtn').disabled = true;
+  // ATM 匯款
+  if(activeTab==='DEPOSIT'){
+    if(customer==='new'){
+      const last5=$('#dep_last5_new').value;
+      if(!required(last5)) return alert('請填寫匯款後五碼');
+      if($('#dep_new_mode').value==='partial'){
+        const name=$('#dep_new_partial_name').value;
+        const phone=$('#dep_new_partial_phone').value;
+        const email=$('#dep_new_partial_email').value;
+        const id=$('#dep_new_partial_store_id').value;
+        const sname=$('#dep_new_partial_store_name').value;
+        const addr=$('#dep_new_partial_store_addr').value;
+        if(![name,phone,email,id,sname,addr].every(required)){
+          return alert('請填完收件資料（含 Email）');
+        }
+        payment_method='deposit_partial';
+        ship={
+          type:'711',
+          name,phone,email,
+          store:{id,name:sname,addr},
+          deposit:{type:'new_partial',last5,amount:NEW_DEPOSIT_AMOUNT}
+        };
+      }else{
+        const fullShip=$('#dep_new_full_ship').value;
+        payment_method='deposit_full';
+        if(fullShip==='711'){
+          const name=$('#dep_new_full_name').value;
+          const phone=$('#dep_new_full_phone').value;
+          const email=$('#dep_new_full_email').value;
+          const id=$('#dep_new_full_store_id').value;
+          const sname=$('#dep_new_full_store_name').value;
+          const addr=$('#dep_new_full_store_addr').value;
+          if(![name,phone,email,id,sname,addr].every(required)){
+            return alert('請填完收件資料（含 Email）');
+          }
+          ship={
+            type:'711',
+            name,phone,email,
+            store:{id,name:sname,addr},
+            deposit:{type:'new_full',last5}
+          };
+        }else{
+          const name=$('#dep_new_full_post_name').value;
+          const phone=$('#dep_new_full_post_phone').value;
+          const email=$('#dep_new_full_post_email').value;
+          const zip=$('#dep_new_full_post_zip').value;
+          const addr=$('#dep_new_full_post_addr').value;
+          if(![name,phone,email,zip,addr].every(required)){
+            return alert('請填完郵寄資料（含 Email）');
+          }
+          ship={
+            type:'post',
+            name,phone,email,
+            post:{zip,addr},
+            deposit:{type:'new_full',last5}
+          };
+        }
+      }
+    }else{
+      const last5=$('#dep_last5_old').value;
+      if(!required(last5)) return alert('請填寫匯款後五碼');
+      payment_method='deposit_old';
+      if($('#dep_old_ship').value==='711'){
+        const name=$('#dep_old_name').value;
+        const phone=$('#dep_old_phone').value;
+        const email=$('#dep_old_email').value;
+        const id=$('#dep_old_store_id').value;
+        const sname=$('#dep_old_store_name').value;
+        const addr=$('#dep_old_store_addr').value;
+        if(![name,phone,email,id,sname,addr].every(required)){
+          return alert('請填完 7-11 收件資料（含 Email）');
+        }
+        ship={
+          type:'711',
+          name,phone,email,
+          store:{id,name:sname,addr},
+          deposit:{type:'old',last5}
+        };
+      }else{
+        const name=$('#dep_old_post_name').value;
+        const phone=$('#dep_old_post_phone').value;
+        const email=$('#dep_old_post_email').value;
+        const zip=$('#dep_old_post_zip').value;
+        const addr=$('#dep_old_post_addr').value;
+        if(![name,phone,email,zip,addr].every(required)){
+          return alert('請填完郵寄資料（含 Email）');
+        }
+        ship={
+          type:'post',
+          name,phone,email,
+          post:{zip,addr},
+          deposit:{type:'old',last5}
+        };
+      }
+    }
+  }
+
+  // 無卡零角
+  if(activeTab==='ZEROCARD'){
+    const months=$('#zc_months').value;
+    payment_method=`zero_card_${months}`;
+    if($('#zc_ship_method').value==='711'){
+      const name=$('#ship_name_zc').value;
+      const phone=$('#ship_phone_zc').value;
+      const email=$('#ship_email_zc').value;
+      const id=$('#ship_store_id_zc').value;
+      const sname=$('#ship_store_name_zc').value;
+      const addr=$('#ship_store_addr_zc').value;
+      if(![name,phone,email,id,sname,addr].every(required)){
+        return alert('請填完 7-11 收件資料（含 Email）');
+      }
+      ship={ type:'711', name,phone,email, store:{id,name:sname,addr} };
+    }else{
+      const name=$('#zc_post_name').value;
+      const phone=$('#zc_post_phone').value;
+      const email=$('#zc_post_email').value;
+      const zip=$('#zc_post_zip').value;
+      const addr=$('#zc_post_addr').value;
+      if(![name,phone,email,zip,addr].every(required)){
+        return alert('請填完郵寄資料（含 Email）');
+      }
+      ship={ type:'post', name,phone,email, post:{zip,addr} };
+    }
+  }
+
+  if(!payment_method){
+    return alert('請先選擇付款方式');
+  }
+
+  const shipping_info={
+    customer,
+    note,
+    ship,
+    subtotal:Number($('#subtotal').value||0)
+  };
+
   try{
-    const r = await fetch(`${API}/checkout`,{
+    $('#submitBtn').disabled=true;
+    // 1) 先建立訂單
+    const r=await fetch(`${API}/checkout`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ cart_token:cartToken, payment_method, shipping_info: ship })
+      body:JSON.stringify({ cart_token:cartToken, payment_method, shipping_info })
     });
     const j=await r.json();
-    if(!r.ok || !j.ok){ throw new Error(j.error||'checkout failed'); }
-
-    // 如果是 ZeroCard，要先打 /zero-card/start 取得付款網址
-    if (String(payment_method).startsWith('zero_card_')) {
-      const zr = await fetch(`${API}/zero-card/start`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ order_id:j.order_id })
-      });
-      const zj = await zr.json();
-      if(!zr.ok || !zj.ok || !zj.payment_url){
-        throw new Error(zj.message || zj.error || 'zero card start failed');
-      }
-      // 直接跳去中租付款網址
-      location.href = zj.payment_url;
-      return;
+    if(!r.ok || j.error){
+      throw new Error(j.error || `checkout error (${r.status})`);
     }
 
-    // 其他付款方式 → 跳轉到結單完成頁
-    const front=(window.FRONT_ORIGIN||'https://murain.tw').replace(/\/$/,'');
-    const url = `${front}/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total=${encodeURIComponent(j.total_amount||0)}`;
-    try{ location.href=url; } catch(e){ alert(`下單成功！訂單編號：${j.order_id}`); }
+    // 2) 無卡零角 → 再叫 /zero-card/start 拿中租連結
+    if(payment_method.startsWith('zero_card_')){
+      try{
+        const zr=await fetch(`${API}/zero-card/start`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({ order_id:j.order_id })
+        });
+        const zj=await zr.json();
+        if(zr.ok && zj && zj.payment_url){
+          location.href=zj.payment_url;
+          return;
+        }else{
+          console.error('ZeroCard start error',zj);
+          alert('無卡零角啟動失敗，先回訂單完成頁。');
+        }
+      }catch(e){
+        console.error('ZeroCard start error',e);
+        alert('無卡零角連線失敗，先回訂單完成頁。');
+      }
+    }
+
+    // 3) 其他付款方式 → 直接回完成頁
+    const url=`/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total=${encodeURIComponent(j.total_amount)}`;
+    try{
+      location.href=url;
+    }catch(e){
+      alert(`下單成功！訂單編號：${j.order_id}`);
+    }
   }catch(e){
-    console.error(e); alert('送出失敗，請再試一次');
+    console.error(e);
+    alert('送出失敗：'+(e && e.message ? e.message : '請稍後再試一次'));
   }finally{
-    $('#submitBtn').disabled = false;
+    $('#submitBtn').disabled=false;
   }
 });
 
-/* 最後初始化 */
 (async()=>{
-  if(initialMode){ document.querySelector(`.tab[data-pay="${initialMode}"]`)?.click(); }
-  else { document.querySelector('.tab[data-pay="COD"]').click(); }
-  updatePaidShip(); updateOldShip(); updateNewFullShip(); updateZcShip(); calcZC();
+  let m = initialMode;
+  if (!m) {
+    switch (storeSrc) {
+      case 'paid':                 m = 'PAID'; break;
+      case 'zc':                   m = 'ZEROCARD'; break;
+      case 'dep_old':
+      case 'dep_new_p':
+      case 'dep_new_f':            m = 'DEPOSIT'; break;
+      default:                     m = 'COD';
+    }
+  }
+
+  document.querySelector(`.tab[data-pay="${m}"]`)?.click()
+    || document.querySelector('.tab[data-pay="COD"]').click();
+
+  updatePaidShip();
+  updateOldShip();
+  updateNewFullShip();
+  updateZcShip();
+  calcZC();
+
   await loadCart();
-  applyStoreFromQuery();   // ★ 回來時，把 7-11 門市填回欄位
+  applyStoreFromQuery();
 })();
+
 </script>
 </body>
 </html>
