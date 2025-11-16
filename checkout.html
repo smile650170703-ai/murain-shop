@@ -371,6 +371,10 @@ const qs=new URLSearchParams(location.search);
 const cartToken=qs.get('cart_token')||'';
 const customer=(qs.get('customer')||'old').toLowerCase();   // new | old
 const initialMode=(qs.get('mode')||'').toUpperCase();       // COD/PAID/DEPOSIT/ZEROCARD
+ const storeSrc =(qs.get('store_src')||'').toLowerCase();    // cod / paid / dep_old / dep_new_p / dep_new_f / zc
+const storeId  =qs.get('store_id')  ||'';
+const storeName=qs.get('store_name')||'';
+const storeAddr=qs.get('store_addr')||'';
 function setTotal(v){ $('#subtotal').value=Number(v||0); $('#total').value=money(v||0); }
 function required(v){ return v && String(v).trim().length>0; }
 
@@ -451,67 +455,87 @@ function updateZcShip(){
   $('#zcPOST').hidden=(v!=='post');
 }
 
-/* ===== 7-11 官方地圖（e-map） ===== */
-function open711(src){
-  window.open(`${API}/cvs/map?src=${encodeURIComponent(src)}`,
-    'cvsmap','width=960,height=720');
-}
-function setFieldValue(sel, val){
-  const el=document.querySelector(sel);
-  if(!el) return false;
-  el.value = val || '';
-  try{
-    el.dispatchEvent(new Event('input',{bubbles:true}));
-    el.dispatchEvent(new Event('change',{bubbles:true}));
-  }catch(e){}
-  return true;
-}
-function normalizeStorePayload(ev){
-  const d=ev && ev.data;
-  if(!d) return null;
+// 整頁跳轉版 7-11 地圖
+function open711(src, mode){
+  const params = new URLSearchParams();
+  params.set('src', src);
+  if (cartToken) params.set('cart_token', cartToken);
+  if (customer)  params.set('customer', customer);
+  if (mode)      params.set('mode', mode);
+  else if (initialMode) params.set('mode', initialMode);
 
-  if(d.type==='711_store' && d.data){
-    const p=d.data;
-    return {
-      ok: !!p.ok,
-      src: p.src || '',
-      id:   p.id   || p.cvs_code || p.store_id || p.CVSStoreID || p.STOREID || '',
-      name: p.name || p.cvs_name || p.store_name || p.CVSStoreName || p.STORENAME || '',
-      addr: p.addr || p.cvs_addr || p.store_address || p.CVSAddress || p.STOREADDRESS || ''
-    };
-  }
-  if(d.type==='cvs_selected'){
-    return {
-      ok: true,
-      src: d.src || '',
-      id:   d.cvs_code || d.id || d.store_id || d.CVSStoreID || d.STOREID || '',
-      name: d.cvs_name || d.name || d.store_name || d.CVSStoreName || d.STORENAME || '',
-      addr: d.cvs_addr || d.addr || d.store_address || d.CVSAddress || d.STOREADDRESS || ''
-    };
-  }
-  return null;
+  location.href = `${API}/cvs/map?${params.toString()}`;
 }
-window.addEventListener('message',(ev)=>{
-  const p=normalizeStorePayload(ev);
-  if(!p || !p.ok) return;
-  const src=(p.src||'').toLowerCase();
-  const fill=(a,b,c)=>{ setFieldValue(a,p.id); setFieldValue(b,p.name); setFieldValue(c,p.addr); };
-  switch(src){
-    case 'cod':       fill('#cod_store_id','#cod_store_name','#cod_store_addr'); break;
-    case 'paid':      fill('#ship_store_id_paid','#ship_store_name_paid','#ship_store_addr_paid'); break;
-    case 'dep_old':   fill('#dep_old_store_id','#dep_old_store_name','#dep_old_store_addr'); break;
-    case 'dep_new_p': fill('#dep_new_partial_store_id','#dep_new_partial_store_name','#dep_new_partial_store_addr'); break;
-    case 'dep_new_f': fill('#dep_new_full_store_id','#dep_new_full_store_name','#dep_new_full_store_addr'); break;
-    case 'zc':        fill('#ship_store_id_zc','#ship_store_name_zc','#ship_store_addr_zc'); break;
-    default:          fill('#cod_store_id','#cod_store_name','#cod_store_addr');
+
+// （原本就有的 setFieldValue / normalizeStorePayload / window.addEventListener 可以保留，不用刪）
+// 我們多一個：從網址帶回的門市 → 寫進對應欄位
+function applyStoreFromQuery(){
+  if (!storeSrc || !storeId) return;
+  const id = storeId, name = storeName, addr = storeAddr;
+
+  switch (storeSrc) {
+    case 'cod':
+      setFieldValue('#cod_store_id',   id);
+      setFieldValue('#cod_store_name', name);
+      setFieldValue('#cod_store_addr', addr);
+      break;
+
+    case 'paid':
+      $('#paid_ship_method').value='711';
+      updatePaidShip();
+      setFieldValue('#ship_store_id_paid',   id);
+      setFieldValue('#ship_store_name_paid', name);
+      setFieldValue('#ship_store_addr_paid', addr);
+      break;
+
+    case 'dep_old':
+      $('#dep_old_ship').value='711';
+      updateOldShip();
+      setFieldValue('#dep_old_store_id',   id);
+      setFieldValue('#dep_old_store_name', name);
+      setFieldValue('#dep_old_store_addr', addr);
+      break;
+
+    case 'dep_new_p': // 新客分期訂金（partial，7-11）
+      $('#dep_new_mode').value='partial';
+      updateNewDepositMode();
+      setFieldValue('#dep_new_partial_store_id',   id);
+      setFieldValue('#dep_new_partial_store_name', name);
+      setFieldValue('#dep_new_partial_store_addr', addr);
+      break;
+
+    case 'dep_new_f': // 新客全額匯款（full，7-11）
+      $('#dep_new_mode').value='full';
+      updateNewDepositMode();
+      $('#dep_new_full_ship').value='711';
+      updateNewFullShip();
+      setFieldValue('#dep_new_full_store_id',   id);
+      setFieldValue('#dep_new_full_store_name', name);
+      setFieldValue('#dep_new_full_store_addr', addr);
+      break;
+
+    case 'zc': // 無卡零角 7-11
+      $('#zc_ship_method').value='711';
+      updateZcShip();
+      setFieldValue('#ship_store_id_zc',   id);
+      setFieldValue('#ship_store_name_zc', name);
+      setFieldValue('#ship_store_addr_zc', addr);
+      break;
+
+    default:
+      // 沒有 src 就不動，或你也可以預設回填到 COD
+      break;
   }
-});
-$('#mapCOD').addEventListener('click',      ()=>open711('cod'));
-$('#mapPAID').addEventListener('click',     ()=>open711('paid'));
-$('#mapDEPOld711').addEventListener('click',()=>open711('dep_old'));
-$('#mapDEPnewP').addEventListener('click',  ()=>open711('dep_new_p'));
-$('#mapDEPnewF').addEventListener('click',  ()=>open711('dep_new_f'));
-$('#mapZC').addEventListener('click',       ()=>open711('zc'));
+}
+
+// 綁定所有地圖按鈕（現在多帶一個 mode，讓回來時自動切對的 tab）
+$('#mapCOD').addEventListener('click',      ()=>open711('cod','COD'));
+$('#mapPAID').addEventListener('click',     ()=>open711('paid','PAID'));
+$('#mapDEPOld711').addEventListener('click',()=>open711('dep_old','DEPOSIT'));
+$('#mapDEPnewP').addEventListener('click',  ()=>open711('dep_new_p','DEPOSIT'));
+$('#mapDEPnewF').addEventListener('click',  ()=>open711('dep_new_f','DEPOSIT'));
+$('#mapZC').addEventListener('click',       ()=>open711('zc','ZEROCARD'));
+
 $('#copyBank').addEventListener('click', async()=>{
   try{ await navigator.clipboard.writeText('822 222540458194'); }catch(e){}
 });
@@ -777,20 +801,32 @@ $('#submitBtn').addEventListener('click', async()=>{
   }
 });
 
-/* ===== 初始化 ===== */
 (async()=>{
-  if(initialMode){
-    document.querySelector(`.tab[data-pay="${initialMode}"]`)?.click();
-  }else{
-    document.querySelector('.tab[data-pay="COD"]').click();
+  let m = initialMode;
+  if (!m) {
+    switch (storeSrc) {
+      case 'paid':                 m = 'PAID'; break;
+      case 'zc':                   m = 'ZEROCARD'; break;
+      case 'dep_old':
+      case 'dep_new_p':
+      case 'dep_new_f':            m = 'DEPOSIT'; break;
+      default:                     m = 'COD';
+    }
   }
+
+  document.querySelector(`.tab[data-pay="${m}"]`)?.click()
+    || document.querySelector('.tab[data-pay="COD"]').click();
+
   updatePaidShip();
   updateOldShip();
   updateNewFullShip();
   updateZcShip();
   calcZC();
+
   await loadCart();
+  applyStoreFromQuery();
 })();
+
 </script>
 </body>
 </html>
