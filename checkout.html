@@ -384,19 +384,37 @@ function updateZcShip(){
 
 /* ===== 購物車載入 ===== */
 async function loadCart(){
-  if(!cartToken){
-    alert('缺少 cart_token，請由正確結帳連結進入');
+  if (!cartToken) {
+    console.warn('missing cart_token');
     return;
   }
-  try{
-    const r=await fetch(`${API}/cart/${cartToken}`);
-    if(!r.ok) throw new Error('cart_error');
-    const j=await r.json();
-    setTotal(j.total_amount||0);
-    const lines=(j.items||[]).map(it=>`${it.name} × ${it.qty} = NT$ ${Number(it.subtotal||0).toLocaleString()}`);
-    $('#itemsText').value=lines.join('\n');
-  }catch(e){
-    console.error(e); alert('載入購物車失敗，請稍後再試');
+  try {
+    const r = await fetch(`${API}/cart/${cartToken}`);
+    const j = await r.json();
+
+    if (!r.ok || !j.items) {
+      throw new Error('cart_api_error');
+    }
+
+    const items = j.items || [];
+    const total = Number(j.total_amount || 0);
+
+    // 組購物車明細文字
+    const detail = items.map(it =>
+      `${it.name || it.sku} x ${it.qty}（NT$${Number(it.price || it.subtotal/items.length || 0)}）`
+    ).join('\n');
+
+    // 顯示在你原本的文字框（#itemsText）
+    const detailBox = document.querySelector('#itemsText');
+    if (detailBox) detailBox.value = detail;
+
+    // 若你原本有 setTotal，就照舊帶總金額進去
+    if (typeof setTotal === 'function') {
+      setTotal(total);
+    }
+  } catch (e) {
+    console.error('loadCart error', e);
+    alert('讀取購物車失敗，請再試一次。');
   }
 }
 
