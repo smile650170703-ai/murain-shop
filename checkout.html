@@ -370,24 +370,20 @@ $('#dep_new_full_method').addEventListener('change',()=>{
   $('#depNewFull711').hidden=(m!=='711');
   $('#depNewFullPost').hidden=(m!=='post');
 });
+function parseMoneyInput(v){
+  return Number(String(v).replace(/[^\d.-]/g,'')) || 0;
+}
 
 /* ===== ZEROCARD ===== */
 function calcZC(){
-  const months=Number($('#zc_months').value||3);
-  const base=CART_TOTAL_RAW || 0;
-  const rate=(RATE_TABLE[months]||0)/100;
-  const total=Math.round(base*(1+rate));
-  const each=Math.round(total/months);
-  $('#zc_each').value=money(each)+' × '+months+' 期';
+  const months = Number($('#zc_months').value || 3);
+  const base   = parseMoneyInput($('#subtotal').value);  // 解析 NT$ 5,000 → 5000
+  const rate   = (RATE_TABLE[months] || 0) / 100;
+  const total  = Math.round(base * (1 + rate));
+  const each   = Math.round(total / months);
+  $('#zc_each').value = money(each) + ' × ' + months + ' 期 (約)';
 }
-$('#zc_months').addEventListener('change',calcZC);
-$('#zc_ship_method').addEventListener('change',updateZcShip);
 
-function updateZcShip(){
-  const m=$('#zc_ship_method').value;
-  $('#zcShip711').hidden=(m!=='711');
-  $('#zcShipPost').hidden=(m!=='post');
-}
 
 /* ===== 購物車載入 ===== */
 async function loadCart(){
@@ -652,14 +648,20 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
 });
 
 (async()=>{
-  if(initialMode){ document.querySelector(`.tab[data-pay="${initialMode}"]`)?.click(); }
-  else { document.querySelector('.tab[data-pay="COD"]').click(); }
+  if(initialMode){
+    document.querySelector(`.tab[data-pay="${initialMode}"]`)?.click();
+  } else {
+    document.querySelector('.tab[data-pay="COD"]').click();
+  }
+
   updatePaidShip();
   updateDepositPane();
   updateZcShip();
-  applyStoreFromURL();
-  await loadCart();
+
+  await loadCart();   // 先把金額載進來（subtotal 會變成 NT$ x,xxx）
+  calcZC();           // 再用正確金額試算每期金額
 })();
+
 </script>
 </body>
 </html>
