@@ -322,6 +322,7 @@
 const API=(window.API_BASE||'https://api.murain.tw').replace(/\/$/,'');
 const RATE_TABLE={3:0,6:4.0,9:5.5,12:6.5,18:9.0,24:11.5};
 const NEW_DEPOSIT_AMOUNT=1000;
+let CART_TOTAL_RAW = 0;   // 真實金額（數字）
 
 /* ===== 工具 ===== */
 const $=(s,r=document)=>r.querySelector(s); const $$=(s,r=document)=>[...r.querySelectorAll(s)];
@@ -334,8 +335,7 @@ const initialMode=(qs.get('mode')||'').toUpperCase();       // COD/PAID/DEPOSIT/
 function setTotal(v){
   const sub = document.querySelector('#subtotal');
   const tot = document.querySelector('#total');
-  const txt = money(v || 0);  // 會變成 "NT$ 5,000" 這種格式
-
+  const txt = money(v || 0);
   if (sub) sub.value = txt;
   if (tot) tot.value = txt;
 }
@@ -374,7 +374,7 @@ $('#dep_new_full_method').addEventListener('change',()=>{
 /* ===== ZEROCARD ===== */
 function calcZC(){
   const months=Number($('#zc_months').value||3);
-  const base=Number($('#subtotal').value||0);
+  const base=CART_TOTAL_RAW || 0;
   const rate=(RATE_TABLE[months]||0)/100;
   const total=Math.round(base*(1+rate));
   const each=Math.round(total/months);
@@ -405,19 +405,17 @@ async function loadCart(){
 
     const items = j.items || [];
     const total = Number(j.total_amount || 0);
+    CART_TOTAL_RAW = total;
 
-    // 組購物車明細文字
     const detail = items.map(it =>
       `${it.name || it.sku} x ${it.qty}（NT$${Number(it.price || 0)}）`
     ).join('\n');
 
-    // 顯示在「商品明細」的 textarea
     const detailBox = document.querySelector('#itemsText');
     if (detailBox) detailBox.value = detail;
 
-    // 帶金額到「商品小計 / 應付金額」
     setTotal(total);
-
+    calcZC();
   } catch (e) {
     console.error('loadCart error', e);
     alert('讀取購物車失敗，請再試一次。');
@@ -426,16 +424,32 @@ async function loadCart(){
 
 /* ===== 7-11 地圖（B 方案：整頁跳轉，靠 URL 帶資料） ===== */
 function open711(src) {
-  // 先把現在 checkout.html 上的所有 query 取出（含 cart_token / customer / mode）
-  const qs = new URLSearchParams(location.search);
-  // 再加上一個 src 給後端辨識是 COD / PAID / DEPOSIT / ZEROCARD
-  qs.set('src', src);
-  // 組出 /cvs/map 的網址
-  const url = `${API}/cvs/map?${qs.toString()}`;
-  // 整頁跳轉過去 7-11 地圖
+  const qs2 = new URLSearchParams(location.search);
+  qs2.set('src', src);
+  const url = `${API}/cvs/map?${qs2.toString()}`;
   window.location.href = url;
 }
 
+// 從 URL 把 7-11 門市資料帶回欄位
+function applyStoreFromURL(){
+  const qs2 = new URLSearchParams(location.search);
+  const src = (qs2.get('store_src') || '').toLowerCase();
+  const id   = qs2.get('store_id')   || '';
+  const name = qs2.get('store_name') || '';
+  const addr = qs2.get('store_addr') || '';
+  if (!src || !id) return;
+
+  const fill = (a,b,c)=>{ setFieldValue(a,id); setFieldValue(b,name); setFieldValue(c,addr); };
+
+  switch (src) {
+    case 'cod':       fill('#cod_store_id', '#cod_store_name', '#cod_store_addr'); break;
+    case 'paid':      fill('#ship_store_id_paid', '#ship_store_name_paid', '#ship_store_addr_paid'); break;
+    case 'dep_old':   fill('#dep_old_store_id', '#dep_old_store_name', '#dep_old_store_addr'); break;
+    case 'dep_new_p': fill('#dep_new_partial_store_id', '#dep_new_partial_store_name', '#dep_new_partial_store_addr'); break;
+    case 'dep_new_f': fill('#dep_new_full_store_id', '#dep_new_full_store_name', '#dep_new_full_store_addr'); break;
+    case 'zc':        fill('#ship_store_id_zc', '#ship_store_name_zc', '#ship_store_addr_zc'); break;
+  }
+}
 
 // 小工具：寫值並觸發事件
 function setFieldValue(sel, val){
@@ -449,12 +463,11 @@ function setFieldValue(sel, val){
   return true;
 }
 
-// 將不同回傳格式正規化
+// 保留 message 版（之後如果要回到 popup 也能用）
 function normalizeStorePayload(ev){
   const d = ev && ev.data;
   if (!d) return null;
 
-  // 格式一：{ type:'711_store', data:{ ok:true, src, id, name, addr, ... } }
   if (d.type === '711_store' && d.data) {
     const p = d.data;
     return {
@@ -466,7 +479,6 @@ function normalizeStorePayload(ev){
     };
   }
 
-  // 格式二：{ type:'cvs_selected', cvs_code/cvs_name/cvs_addr, src?... }
   if (d.type === 'cvs_selected') {
     return {
       ok: true,
@@ -481,13 +493,10 @@ function normalizeStorePayload(ev){
 }
 
 window.addEventListener('message', (ev)=>{
-  // 可加上來源白名單（若要更嚴謹）：if (ev.origin !== API) return;
   const p = normalizeStorePayload(ev);
   if (!p || !p.ok) return;
-
   const src = (p.src || '').toLowerCase();
   const fill = (a,b,c)=>{ setFieldValue(a, p.id); setFieldValue(b, p.name); setFieldValue(c, p.addr); };
-
   switch (src) {
     case 'cod':        fill('#cod_store_id', '#cod_store_name', '#cod_store_addr'); break;
     case 'paid':       fill('#ship_store_id_paid', '#ship_store_name_paid', '#ship_store_addr_paid'); break;
@@ -513,17 +522,15 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
   e.preventDefault();
   if(!cartToken){ alert('缺少 cart_token，請由正確結帳連結進入'); return; }
 
-  const subtotal=Number($('#subtotal').value||0);
+  const subtotal=CART_TOTAL_RAW;
   if(!subtotal){ alert('金額為 0，請確認購物車內容'); return; }
 
   const note=$('#note').value||'';
-  const email=($('#email').value||'').trim();
-  const shipping_info={ customer_type:customer, note, email };
+  const shipping_info={ customer_type:customer, note };
 
   let payment_method='';
   let ship=null;
 
-  // 依目前選到的分頁判斷
   const activeTab=[...tabs].find(t=>t.classList.contains('active'))?.dataset.pay || 'COD';
 
   if(activeTab==='COD'){
@@ -647,7 +654,10 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
 (async()=>{
   if(initialMode){ document.querySelector(`.tab[data-pay="${initialMode}"]`)?.click(); }
   else { document.querySelector('.tab[data-pay="COD"]').click(); }
-  updatePaidShip(); updateOldShip(); updateNewFullShip(); updateZcShip(); calcZC();
+  updatePaidShip();
+  updateDepositPane();
+  updateZcShip();
+  applyStoreFromURL();
   await loadCart();
 })();
 </script>
