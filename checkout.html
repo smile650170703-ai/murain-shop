@@ -518,107 +518,246 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
   e.preventDefault();
   if(!cartToken){ alert('缺少 cart_token，請由正確結帳連結進入'); return; }
 
-  const subtotal=CART_TOTAL_RAW;
+  const subtotal = CART_TOTAL_RAW;  // 用後端回來的真實金額
   if(!subtotal){ alert('金額為 0，請確認購物車內容'); return; }
 
-  const note=$('#note').value||'';
-  const shipping_info={ customer_type:customer, note };
+  const note = $('#note').value || '';
+  const shipping_info = { customer_type: customer, note };
 
-  let payment_method='';
-  let ship=null;
+  let payment_method = '';
+  let ship = null;
 
-  const activeTab=[...tabs].find(t=>t.classList.contains('active'))?.dataset.pay || 'COD';
+  // 目前選到哪個分頁（COD / PAID / DEPOSIT / ZEROCARD）
+  const activeTab = [...tabs].find(t=>t.classList.contains('active'))?.dataset.pay || 'COD';
 
-  if(activeTab==='COD'){
-    const name=$('#cod_name').value, phone=$('#cod_phone').value,
-          id=$('#cod_store_id').value, sname=$('#cod_store_name').value, addr=$('#cod_store_addr').value,
-          emailCod=($('#cod_email').value||'').trim();
-    if(![name,phone,id,sname,addr,emailCod].every(required)) return alert('請填完 COD 必填欄位（含 Email）');
-    payment_method='cod_711';
-    ship={type:'711', name, phone, email:emailCod, store:{id,name:sname,addr}};
+  // ===== COD =====
+  if(activeTab === 'COD'){
+    const name  = $('#cod_name').value;
+    const phone = $('#cod_phone').value;
+    const id    = $('#cod_store_id').value;
+    const sname = $('#cod_store_name').value;
+    const addr  = $('#cod_store_addr').value;
+    const emailCod = ($('#cod_email').value || '').trim();
+
+    if(![name,phone,id,sname,addr,emailCod].every(required)) {
+      alert('請填完 COD 必填欄位（含 Email）');
+      return;
+    }
+
+    payment_method = 'cod_711';
+    ship = {
+      type:'711',
+      name,
+      phone,
+      email: emailCod,
+      store:{ id, name:sname, addr }
+    };
   }
 
-  if(activeTab==='PAID'){
-    const channel=$('#paid_channel').value;
-    const shipMethod=$('#paid_ship_method').value;
-    payment_method=`paid_${channel}`;
-    if(channel==='card_inst'){ payment_method+=`_${$('#inst_months').value}`; }
+  // ===== PAID =====
+  if(activeTab === 'PAID'){
+    const channel    = $('#paid_channel').value;            // card_once / card_inst / linepay / af
+    const shipMethod = $('#paid_ship_method').value;        // 711 / post
 
-    if(shipMethod==='711'){
-      const name=$('#ship_name_paid').value, phone=$('#ship_phone_paid').value,
-            id=$('#ship_store_id_paid').value, sname=$('#ship_store_name_paid').value, addr=$('#ship_store_addr_paid').value,
-            emailPaid=($('#paid_email').value||'').trim();
-      if(![name,phone,id,sname,addr,emailPaid].every(required)) return alert('請填完 7-11 收件資料（含 Email）');
-      ship={type:'711', name, phone, email:emailPaid, store:{id,name:sname,addr}};
-    }else{
-      const name=$('#paid_post_name').value, phone=$('#paid_post_phone').value,
-            zip=$('#paid_post_zip').value, addr=$('#paid_post_addr').value,
-            emailPost=($('#paid_post_email').value||'').trim();
-      if(![name,phone,zip,addr,emailPost].every(required)) return alert('請填完郵寄資料（含 Email）');
-      ship={type:'post', name, phone, email:emailPost, post:{zip,addr}};
+    payment_method = `paid_${channel}`;
+    if(channel === 'card_inst'){
+      payment_method += `_${$('#inst_months').value}`;      // paid_card_inst_3 / _6 / _9
+    }
+
+    if(shipMethod === '711'){
+      const name  = $('#ship_name_paid').value;
+      const phone = $('#ship_phone_paid').value;
+      const id    = $('#ship_store_id_paid').value;
+      const sname = $('#ship_store_name_paid').value;
+      const addr  = $('#ship_store_addr_paid').value;
+      const emailPaid = ($('#paid_email').value || '').trim();
+
+      if(![name,phone,id,sname,addr,emailPaid].every(required)){
+        alert('請填完 7-11 收件資料（含 Email）');
+        return;
+      }
+
+      ship = {
+        type:'711',
+        name,
+        phone,
+        email: emailPaid,
+        store:{ id, name:sname, addr }
+      };
+    } else {
+      const name  = $('#paid_post_name').value;
+      const phone = $('#paid_post_phone').value;
+      const zip   = $('#paid_post_zip').value;
+      const addr  = $('#paid_post_addr').value;
+      const emailPost = ($('#paid_post_email').value || '').trim();
+
+      if(![name,phone,zip,addr,emailPost].every(required)){
+        alert('請填完郵寄資料（含 Email）');
+        return;
+      }
+
+      ship = {
+        type:'post',
+        name,
+        phone,
+        email: emailPost,
+        post:{ zip, addr }
+      };
     }
   }
 
-  if(activeTab==='DEPOSIT'){
-    const depType=$('input[name="depType"]:checked').value;
+  // ===== DEPOSIT =====
+  if(activeTab === 'DEPOSIT'){
+    const depType = $('input[name="depType"]:checked').value;
 
-    if(depType==='old'){
-      const name=$('#dep_old_name').value, phone=$('#dep_old_phone').value,
-            id=$('#dep_old_store_id').value, sname=$('#dep_old_store_name').value, addr=$('#dep_old_store_addr').value,
-            last5=$('#dep_old_last5').value,
-            emailOld=($('#dep_old_email').value||'').trim();
-      if(![name,phone,id,sname,addr,last5,emailOld].every(required)) return alert('請填完老客訂金欄位（含 Email）');
-      payment_method='deposit_old';
-      ship={type:'711', name, phone, email:emailOld, store:{id,name:sname,addr}, deposit:{type:'old', last5}};
+    if(depType === 'old'){
+      const name  = $('#dep_old_name').value;
+      const phone = $('#dep_old_phone').value;
+      const id    = $('#dep_old_store_id').value;
+      const sname = $('#dep_old_store_name').value;
+      const addr  = $('#dep_old_store_addr').value;
+      const last5 = $('#dep_old_last5').value;
+      const emailOld = ($('#dep_old_email').value || '').trim();
+
+      if(![name,phone,id,sname,addr,last5,emailOld].every(required)){
+        alert('請填完老客訂金欄位（含 Email）');
+        return;
+      }
+
+      payment_method = 'deposit_old';
+      ship = {
+        type:'711',
+        name,
+        phone,
+        email: emailOld,
+        store:{ id, name:sname, addr },
+        deposit:{ type:'old', last5 }
+      };
     }
 
-    if(depType==='new_partial'){
-      const name=$('#dep_new_partial_name').value, phone=$('#dep_new_partial_phone').value,
-            id=$('#dep_new_partial_store_id').value, sname=$('#dep_new_partial_store_name').value, addr=$('#dep_new_partial_store_addr').value,
-            amount=$('#dep_new_partial_amount').value, last5=$('#dep_new_partial_last5').value,
-            emailNewP=($('#dep_new_partial_email').value||'').trim();
-      if(![name,phone,id,sname,addr,amount,last5,emailNewP].every(required)) return alert('請填完新客訂金（部分）欄位（含 Email）');
-      payment_method='deposit_new_partial';
-      ship={type:'711', name, phone, email:emailNewP, store:{id,name:sname,addr}, deposit:{type:'new_partial', amount,last5}};
+    if(depType === 'new_partial'){
+      const name   = $('#dep_new_partial_name').value;
+      const phone  = $('#dep_new_partial_phone').value;
+      const id     = $('#dep_new_partial_store_id').value;
+      const sname  = $('#dep_new_partial_store_name').value;
+      const addr   = $('#dep_new_partial_store_addr').value;
+      const amount = $('#dep_new_partial_amount').value;
+      const last5  = $('#dep_new_partial_last5').value;
+      const emailNewP = ($('#dep_new_partial_email').value || '').trim();
+
+      if(![name,phone,id,sname,addr,amount,last5,emailNewP].every(required)){
+        alert('請填完新客訂金（部分）欄位（含 Email）');
+        return;
+      }
+
+      payment_method = 'deposit_new_partial';
+      ship = {
+        type:'711',
+        name,
+        phone,
+        email: emailNewP,
+        store:{ id, name:sname, addr },
+        deposit:{ type:'new_partial', amount, last5 }
+      };
     }
 
-    if(depType==='new_full'){
-      const method=$('#dep_new_full_method').value;
-      let emailNewF=($('#dep_new_full_email').value||'').trim();
+    if(depType === 'new_full'){
+      const method   = $('#dep_new_full_method').value;   // 711 / post
+      const emailNewF = ($('#dep_new_full_email').value || '').trim();
 
-      if(method==='711'){
-        const name=$('#dep_new_full_name').value, phone=$('#dep_new_full_phone').value,
-              id=$('#dep_new_full_store_id').value, sname=$('#dep_new_full_store_name').value, addr=$('#dep_new_full_store_addr').value,
-              amount=$('#dep_new_full_amount').value, last5=$('#dep_new_full_last5').value;
-        if(![name,phone,id,sname,addr,amount,last5,emailNewF].every(required)) return alert('請填完新客全額匯款（7-11）欄位（含 Email）');
-        payment_method='deposit_new_full_711';
-        ship={type:'711', name, phone, email:emailNewF, store:{id,name:sname,addr}, deposit:{type:'new_full',method:'711',amount,last5}};
-      }else{
-        const name=$('#dep_new_full_name').value, phone=$('#dep_new_full_phone').value,
-              zip=$('#dep_new_full_post_zip').value, addr=$('#dep_new_full_post_addr').value,
-              amount=$('#dep_new_full_amount').value, last5=$('#dep_new_full_last5').value;
-        if(![name,phone,zip,addr,amount,last5,emailNewF].every(required)) return alert('請填完新客全額匯款（郵寄）欄位（含 Email）');
-        payment_method='deposit_new_full_post';
-        ship={type:'post', name, phone, email:emailNewF, post:{zip,addr}, deposit:{type:'new_full',method:'post',amount,last5}};
+      if(method === '711'){
+        const name   = $('#dep_new_full_name').value;
+        const phone  = $('#dep_new_full_phone').value;
+        const id     = $('#dep_new_full_store_id').value;
+        const sname  = $('#dep_new_full_store_name').value;
+        const addr   = $('#dep_new_full_store_addr').value;
+        const amount = $('#dep_new_full_amount').value;
+        const last5  = $('#dep_new_full_last5').value;
+
+        if(![name,phone,id,sname,addr,amount,last5,emailNewF].every(required)){
+          alert('請填完新客全額匯款（7-11）欄位（含 Email）');
+          return;
+        }
+
+        payment_method = 'deposit_new_full_711';
+        ship = {
+          type:'711',
+          name,
+          phone,
+          email: emailNewF,
+          store:{ id, name:sname, addr },
+          deposit:{ type:'new_full', method:'711', amount, last5 }
+        };
+      } else {
+        const name   = $('#dep_new_full_name').value;
+        const phone  = $('#dep_new_full_phone').value;
+        const zip    = $('#dep_new_full_post_zip').value;
+        const addr   = $('#dep_new_full_post_addr').value;
+        const amount = $('#dep_new_full_amount').value;
+        const last5  = $('#dep_new_full_last5').value;
+
+        if(![name,phone,zip,addr,amount,last5,emailNewF].every(required)){
+          alert('請填完新客全額匯款（郵寄）欄位（含 Email）');
+          return;
+        }
+
+        payment_method = 'deposit_new_full_post';
+        ship = {
+          type:'post',
+          name,
+          phone,
+          email: emailNewF,
+          post:{ zip, addr },
+          deposit:{ type:'new_full', method:'post', amount, last5 }
+        };
       }
     }
   }
 
-  if(activeTab==='ZEROCARD'){
-    const months=$('#zc_months').value;
-    payment_method=`zero_card_${months}`;
-    if($('#zc_ship_method').value==='711'){
-      const name=$('#ship_name_zc').value, phone=$('#ship_phone_zc').value,
-            id=$('#ship_store_id_zc').value, sname=$('#ship_store_name_zc').value, addr=$('#ship_store_addr_zc').value,
-            emailZc=($('#zc_email').value||'').trim();
-      if(![name,phone,id,sname,addr,emailZc].every(required)) return alert('請填完 7-11 收件資料（含 Email）');
-      ship={type:'711', name, phone, email:emailZc, store:{id,name:sname,addr}};
-    }else{
-      const name=$('#zc_post_name').value, phone=$('#zc_post_phone').value,
-            zip=$('#zc_post_zip').value, addr=$('#zc_post_addr').value,
-            emailZcPost=($('#zc_post_email').value||'').trim();
-      if(![name,phone,zip,addr,emailZcPost].every(required)) return alert('請填完郵寄資料（含 Email）');
-      ship={type:'post', name, phone, email:emailZcPost, post:{zip,addr}};
+  // ===== ZEROCARD（中租無卡零角） =====
+  if(activeTab === 'ZEROCARD'){
+    const months = $('#zc_months').value;       // 3 / 6 / 9 / 12 / 18 / 24
+    payment_method = `zero_card_${months}`;
+
+    if($('#zc_ship_method').value === '711'){
+      const name  = $('#ship_name_zc').value;
+      const phone = $('#ship_phone_zc').value;
+      const id    = $('#ship_store_id_zc').value;
+      const sname = $('#ship_store_name_zc').value;
+      const addr  = $('#ship_store_addr_zc').value;
+      const emailZc = ($('#zc_email').value || '').trim();
+
+      if(![name,phone,id,sname,addr,emailZc].every(required)){
+        alert('請填完 7-11 收件資料（含 Email）');
+        return;
+      }
+
+      ship = {
+        type:'711',
+        name,
+        phone,
+        email: emailZc,
+        store:{ id, name:sname, addr }
+      };
+    } else {
+      const name  = $('#zc_post_name').value;
+      const phone = $('#zc_post_phone').value;
+      const zip   = $('#zc_post_zip').value;
+      const addr  = $('#zc_post_addr').value;
+      const emailZcPost = ($('#zc_post_email').value || '').trim();
+
+      if(![name,phone,zip,addr,emailZcPost].every(required)){
+        alert('請填完郵寄資料（含 Email）');
+        return;
+      }
+
+      ship = {
+        type:'post',
+        name,
+        phone,
+        email: emailZcPost,
+        post:{ zip, addr }
+      };
     }
   }
 
@@ -627,40 +766,52 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
     return;
   }
 
-  shipping_info.ship=ship;
+  shipping_info.ship = ship;
+  const isZeroCard = payment_method.startsWith('zero_card_');
 
   try{
-    $('#submitBtn').disabled=true;
-    const r=await fetch(`${API}/checkout`,{
+    $('#submitBtn').disabled = true;
+
+    // 1) 先建立訂單
+    const r = await fetch(`${API}/checkout`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ cart_token:cartToken, payment_method, shipping_info })
+      body: JSON.stringify({ cart_token: cartToken, payment_method, shipping_info })
     });
-    const j=await r.json();
-    if(!r.ok || !j.ok) throw new Error(j.error||'checkout error');
+    const j = await r.json();
+    if(!r.ok || !j.ok) throw new Error(j.error || 'checkout error');
+
+    // 2) 如果是中租無卡，呼叫 /zero-card/start 取得付款網址，直接跳轉
+    if (isZeroCard) {
+      const zr = await fetch(`${API}/zero-card/start`, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ order_id: j.order_id })
+      });
+      const zj = await zr.json();
+      if (!zr.ok || !zj.ok || !zj.payment_url) {
+        console.error('zero-card/start error:', zj);
+        throw new Error(zj.error || 'zero-card start error');
+      }
+      // 跳轉到中租的付款頁
+      location.href = zj.payment_url;
+      return;
+    }
+
+    // 3) 其他付款方式 → 一樣跳到訂單完成頁
     const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total=${encodeURIComponent(j.total_amount)}`;
-    try{ location.href=url; }catch(e){ alert(`下單成功！訂單編號：${j.order_id}`); }
+    try{
+      location.href = url;
+    }catch(e){
+      alert(`下單成功！訂單編號：${j.order_id}`);
+    }
   }catch(e){
-    console.error(e); alert('送出失敗，請再試一次');
+    console.error(e);
+    alert('送出失敗，請再試一次');
   }finally{
-    $('#submitBtn').disabled=false;
+    $('#submitBtn').disabled = false;
   }
 });
-
-(async()=>{
-  if(initialMode){
-    document.querySelector(`.tab[data-pay="${initialMode}"]`)?.click();
-  } else {
-    document.querySelector('.tab[data-pay="COD"]').click();
-  }
-
-  updatePaidShip();
-  updateDepositPane();
-  updateZcShip();
-
-  await loadCart();   // 先把金額載進來（subtotal 會變成 NT$ x,xxx）
-  calcZC();           // 再用正確金額試算每期金額
-})();
 
 </script>
 </body>
