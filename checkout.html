@@ -803,12 +803,44 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
     }
 
        // 如果是 PayUni（信用卡一次 / 分期 / LINE Pay / AFTEE）
-    if (payment_method && payment_method.startsWith('paid_')) {
-      // 這裡用 GET 方式丟 order_id 給後端，後端會回一個自動送出的 form
-      const payUrl = `${API}/payuni/start?order_id=${encodeURIComponent(j.order_id)}`;
-      location.href = payUrl;
+if (payment_method && payment_method.startsWith('paid_')) {
+  try {
+    const r = await fetch(`${API}/payuni/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_id: j.order_id })
+    });
+    const up = await r.json();
+    console.log('payuni start resp', up);
+
+    if (!up.ok) {
+      alert('線上刷卡啟動失敗：' + (up.error || up.message || ''));
       return;
     }
+
+    // 後端回來的資料：{ ok:true, url, MerID, Version, EncryptInfo, HashInfo }
+    const f = document.createElement('form');
+    f.method = 'POST';
+    f.action = up.url;   // https://api.payuni.com.tw/api/upp
+
+    ['MerID', 'Version', 'EncryptInfo', 'HashInfo'].forEach(k => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = k;
+      input.value = up[k];
+      f.appendChild(input);
+    });
+
+    document.body.appendChild(f);
+    f.submit();          // 送到 PAYUNI 付款頁
+    return;
+  } catch (e) {
+    console.error('payuni error', e);
+    alert('線上刷卡啟動失敗（網路或程式錯誤）');
+    return;
+  }
+}
+
 
 
     // 3) 其他付款方式 → 一樣跳到訂單完成頁
