@@ -506,6 +506,68 @@ window.addEventListener('message', (ev)=>{
     case 'zc':         fill('#ship_store_id_zc', '#ship_store_name_zc', '#ship_store_addr_zc'); break;
   }
 });
+// ====== checkout 狀態暫存（避免選完 7-11 回來資料不見） ======
+const CHECKOUT_STATE_KEY = 'murain_checkout_state_v1';
+
+function saveCheckoutState() {
+  const state = {};
+  document.querySelectorAll('input, select, textarea').forEach(el => {
+    const key = el.id || el.name;
+    if (!key) return;
+
+    if (el.type === 'radio' || el.type === 'checkbox') {
+      if (!state[key]) state[key] = {};
+      state[key][el.value] = el.checked;
+    } else {
+      state[key] = el.value;
+    }
+  });
+  try {
+    localStorage.setItem(CHECKOUT_STATE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.warn('saveCheckoutState failed', e);
+  }
+}
+
+function restoreCheckoutState() {
+  let raw = null;
+  try {
+    raw = localStorage.getItem(CHECKOUT_STATE_KEY);
+  } catch (e) {
+    console.warn('restoreCheckoutState getItem failed', e);
+  }
+  if (!raw) return;
+
+  let state;
+  try {
+    state = JSON.parse(raw);
+  } catch {
+    return;
+  }
+
+  document.querySelectorAll('input, select, textarea').forEach(el => {
+    const key = el.id || el.name;
+    if (!key || !(key in state)) return;
+
+    if (el.type === 'radio' || el.type === 'checkbox') {
+      const map = state[key];
+      if (map && typeof map === 'object') {
+        el.checked = !!map[el.value];
+      }
+    } else {
+      el.value = state[key];
+    }
+  });
+}
+
+function clearCheckoutState() {
+  try {
+    localStorage.removeItem(CHECKOUT_STATE_KEY);
+  } catch (e) {}
+}
+
+// 頁面載入時先試著還原
+window.addEventListener('DOMContentLoaded', restoreCheckoutState);
 
 /* 綁定所有 7-11 地圖按鈕 */
 $('#mapCOD').addEventListener('click',e=>{e.preventDefault();open711('cod');});
