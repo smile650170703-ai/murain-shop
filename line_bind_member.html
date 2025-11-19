@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>MURAIN — 會員綁定 LINE 通知</title>
+  <style>
+    *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
+    body{
+      margin:0;
+      background:#0b1222;
+      color:#e2e8f0;
+    }
+    .wrap{
+      max-width:720px;
+      margin:0 auto;
+      padding:20px 16px calc(env(safe-area-inset-bottom,0) + 40px);
+    }
+    h1{
+      margin:0 0 4px;
+      font-size:22px;
+    }
+    .subtitle{
+      font-size:13px;
+      color:#9ca3af;
+      margin-bottom:12px;
+    }
+    .card{
+      background:rgba(15,23,42,.9);
+      border-radius:16px;
+      border:1px solid rgba(148,163,184,.4);
+      padding:16px;
+      box-shadow:0 12px 40px rgba(0,0,0,.5);
+      margin-top:12px;
+    }
+    label{
+      display:block;
+      font-size:14px;
+      margin:10px 2px 4px;
+    }
+    input{
+      width:100%;
+      padding:10px 12px;
+      border-radius:10px;
+      border:1px solid rgba(148,163,184,.6);
+      background:rgba(15,23,42,.9);
+      color:#e5e7eb;
+      font-size:14px;
+    }
+    input[readonly]{
+      opacity:.7;
+      background:rgba(15,23,42,.6);
+    }
+    .row{
+      display:grid;
+      grid-template-columns:1.2fr 1fr;
+      gap:10px;
+    }
+    @media(max-width:520px){
+      .row{grid-template-columns:1fr}
+    }
+    .btn{
+      margin-top:20px;
+      width:100%;
+      padding:14px 14px;
+      border-radius:999px;
+      border:none;
+      background:#22d3ee;
+      color:#0f172a;
+      font-size:16px;
+      font-weight:600;
+      cursor:pointer;
+      box-shadow:0 16px 45px rgba(34,211,238,.4);
+    }
+    .btn:disabled{
+      opacity:.5;
+      cursor:not-allowed;
+      box-shadow:none;
+    }
+    .hint{font-size:12px;color:#9ca3af;margin-top:4px;line-height:1.4}
+    .status{
+      font-size:13px;
+      margin-top:8px;
+      color:#cbd5f5;
+    }
+    .status.error{color:#fca5a5}
+    .avatarRow{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      margin:8px 0 4px;
+    }
+    .avatar{
+      width:40px;
+      height:40px;
+      border-radius:999px;
+      background:#1f2937;
+      overflow:hidden;
+      flex-shrink:0;
+    }
+    .avatar img{
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      display:block;
+    }
+    .pill{
+      display:inline-block;
+      padding:4px 9px;
+      border-radius:999px;
+      background:rgba(34,197,94,.16);
+      color:#bbf7d0;
+      font-size:11px;
+      margin-top:4px;
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>綁定 LINE 出貨通知</h1>
+  <div class="subtitle">
+    一次綁定後，以後用同一支手機 / Email 下單，<br>
+    出貨就會自動用官方 LINE 通知你。
+  </div>
+
+  <div class="card">
+    <div class="section-title">1. 確認你的 LINE 帳號</div>
+    <div class="avatarRow">
+      <div class="avatar" id="avatarBox"></div>
+      <div>
+        <div id="lineName" style="font-weight:600;">讀取中...</div>
+        <div id="lineIdShort" style="font-size:12px;color:#9ca3af;"></div>
+        <div class="pill">已從 LINE 取得登入身分</div>
+      </div>
+    </div>
+    <div class="hint">
+      請務必在「官方 LINE 對話內」點開這個頁面，系統才抓得到你的 LINE 帳號。
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <div class="section-title">2. 填寫聯絡資訊（對應訂單）</div>
+
+    <label>姓名（收件人）</label>
+    <input id="name" placeholder="例：王小雨" />
+
+    <label style="margin-top:10px;">手機（收貨 / 訂單電話） *</label>
+    <input id="phone" placeholder="例：0912-345-678" />
+
+    <label style="margin-top:10px;">Email（選填，之後下單時也可以對應）</label>
+    <input id="email" placeholder="例：example@gmail.com" type="email" />
+
+    <div class="hint">
+      手機 / Email 建議填跟你下單時一樣的，<br>
+      之後我們會用這些資訊，幫你自動對應訂單。
+    </div>
+  </div>
+
+  <button class="btn" id="bindBtn" disabled>綁定這個 LINE 帳號</button>
+  <div class="status" id="statusText"></div>
+</div>
+
+<!-- LINE LIFF SDK -->
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+  // ===== 設定 =====
+  // 這裡換成你在 LINE Official 後台建立的 LIFF ID
+  const LIFF_ID = '請改成你的_LIFF_ID';
+  const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/, '');
+
+  const $ = (s,r=document)=>r.querySelector(s);
+
+  let LINE_PROFILE = null;
+
+  const statusEl = $('#statusText');
+  const bindBtn = $('#bindBtn');
+  const nameInput = $('#name');
+  const phoneInput = $('#phone');
+  const emailInput = $('#email');
+  const avatarBox = $('#avatarBox');
+  const lineNameEl = $('#lineName');
+  const lineIdShortEl = $('#lineIdShort');
+
+  function setStatus(msg, isError){
+    statusEl.textContent = msg || '';
+    statusEl.className = 'status' + (isError ? ' error' : '');
+  }
+
+  async function initLiff(){
+    try{
+      setStatus('正在從 LINE 取得登入資訊...', false);
+      await liff.init({ liffId: LIFF_ID });
+
+      if (!liff.isLoggedIn()) {
+        // 未登入就先要求登入
+        liff.login();
+        return;
+      }
+
+      const profile = await liff.getProfile();
+      LINE_PROFILE = profile;
+
+      lineNameEl.textContent = profile.displayName || '（未取得暱稱）';
+
+      if (profile.userId) {
+        const uid = profile.userId;
+        lineIdShortEl.textContent = 'userId：' + uid.slice(0,6) + '****' + uid.slice(-4);
+      } else {
+        lineIdShortEl.textContent = '';
+      }
+
+      if (profile.pictureUrl) {
+        const img = document.createElement('img');
+        img.src = profile.pictureUrl;
+        avatarBox.innerHTML = '';
+        avatarBox.appendChild(img);
+      } else {
+        avatarBox.innerHTML = '';
+      }
+
+      setStatus('已從 LINE 取得帳號，請再填寫手機 / Email 後按下「綁定」。', false);
+      bindBtn.disabled = false;
+    }catch(e){
+      console.error('LIFF init error', e);
+      setStatus('無法從 LINE 取得登入資訊，請確認是從官方 LINE 對話中開啟此頁面。', true);
+    }
+  }
+
+  bindBtn.addEventListener('click', async ()=>{
+    if (!LINE_PROFILE || !LINE_PROFILE.userId) {
+      alert('尚未取得 LINE 帳號，請重新整理頁面後再試一次。');
+      return;
+    }
+
+    const name = (nameInput.value || '').trim();
+    const phone = (phoneInput.value || '').trim();
+    const email = (emailInput.value || '').trim();
+
+    if (!phone) {
+      alert('請先填寫手機號碼（之後會用來對應訂單）。');
+      return;
+    }
+
+    bindBtn.disabled = true;
+    setStatus('送出中，請稍候...', false);
+
+    try{
+      const body = {
+        line_user_id: LINE_PROFILE.userId,
+        display_name: LINE_PROFILE.displayName || '',
+        picture_url: LINE_PROFILE.pictureUrl || '',
+        status_message: LINE_PROFILE.statusMessage || '',
+        phone,
+        email,
+        name
+      };
+
+      const r = await fetch(API + '/line/bind-member', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+
+      const j = await r.json().catch(()=>({}));
+
+      if (!r.ok || !j.ok) {
+        console.error('bind-member error', j);
+        throw new Error(j.error || 'bind_member_failed');
+      }
+
+      setStatus('綁定成功！之後使用同一支手機 / Email 下單，出貨就會自動用 LINE 通知你 😊', false);
+
+      // 如果是在 LINE 內開啟，可以順便關閉視窗
+      setTimeout(()=>{
+        try{ liff.closeWindow(); }catch(e){}
+      }, 1500);
+    }catch(e){
+      console.error(e);
+      setStatus('綁定失敗，請稍後再試一次，或截圖給小幫手查看。', true);
+      bindBtn.disabled = false;
+    }
+  });
+
+  // 初始化
+  document.addEventListener('DOMContentLoaded', initLiff);
+</script>
+</body>
+</html>
