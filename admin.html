@@ -3,24 +3,41 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>MURAIN — 訂單後台</title>
+<title>MURAIN — 訂單後台（整合版）</title>
 <style>
   *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
   body{margin:0;background:#020617;color:#e2e8f0}
   .wrap{max-width:1200px;margin:0 auto;padding:16px}
-  h1{margin:0 0 12px;font-size:24px}
-  .toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+  h1{margin:0 0 6px;font-size:24px}
+
+  /* 新版上方工具列（含快速 filter + 日期/狀態 + 匯出） */
+  .toolbar-main{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+  .toolbar-left{flex:1;display:flex;flex-direction:column;gap:6px}
   .filter-group{display:flex;flex-wrap:wrap;gap:6px}
   .filter-btn{padding:7px 12px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:rgba(15,23,42,.9);color:#e5e7eb;font-size:13px;cursor:pointer}
   .filter-btn.active{background:#22d3ee;color:#0f172a;border-color:#22d3ee;box-shadow:0 8px 20px rgba(34,211,238,.35)}
   .small-btn{padding:6px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:transparent;color:#e5e7eb;font-size:12px;cursor:pointer}
+
+  .filter-row{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;align-items:flex-end;margin-top:2px}
+  .filter-row .field{min-width:140px;flex:0 0 auto}
+  .filter-row label{display:block;font-size:11px;margin:0 0 2px;color:#94a3b8}
+  .filter-row input,
+  .filter-row select{width:100%;padding:5px 8px;border-radius:999px;border:1px solid rgba(148,163,184,.6);background:#020617;color:#e2e8f0;font-size:12px}
+
+  .summary-row{font-size:12px;color:#cbd5f5;display:flex;flex-wrap:wrap;gap:10px;margin-top:2px}
+  .summary-row span{white-space:nowrap}
+  #msg{font-size:12px;color:#94a3b8;margin-top:2px}
+
   .layout{display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr);gap:12px}
   @media (max-width:900px){.layout{grid-template-columns:1fr;}}
+
   .card{background:rgba(15,23,42,.95);border-radius:16px;border:1px solid rgba(148,163,184,.3);padding:10px;min-height:120px}
-  #orderList{max-height:calc(100vh - 170px);overflow:auto}
+  #orderList{max-height:calc(100vh - 190px);overflow:auto}
+
   .order-row{padding:8px 10px;border-radius:12px;cursor:pointer;border:1px solid transparent;margin-bottom:6px;background:rgba(15,23,42,.95)}
   .order-row:hover{border-color:rgba(148,163,184,.8);background:rgba(15,23,42,1)}
   .order-row.active{border-color:#22d3ee;background:rgba(15,23,42,1);box-shadow:0 8px 20px rgba(34,211,238,.25)}
+
   .ord-top{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:13px}
   .ord-id{font-weight:600}
   .ord-amount{font-weight:600}
@@ -32,8 +49,10 @@
   .badge.red{border-color:#f97373;color:#fecaca;background:rgba(220,38,38,.2)}
   .badge.blue{border-color:#38bdf8;color:#bae6fd;background:rgba(56,189,248,.2)}
   .muted{font-size:13px;color:#94a3b8}
+
   .detail-grid{display:grid;grid-template-columns:1.1fr 0.9fr;gap:10px}
   @media (max-width:900px){.detail-grid{grid-template-columns:1fr}}
+
   label{display:block;font-size:12px;margin:6px 0 3px;color:#cbd5f5}
   input,select,textarea{width:100%;padding:8px 9px;border-radius:10px;border:1px solid rgba(148,163,184,.6);background:#020617;color:#e2e8f0;font-size:13px}
   textarea{min-height:70px;resize:vertical}
@@ -55,13 +74,56 @@
 <body>
 <div class="wrap">
   <h1>訂單後台</h1>
-  <div class="toolbar">
-    <div class="filter-group">
-      <button class="filter-btn active" data-filter="all">全部訂單</button>
-      <button class="filter-btn" data-filter="pending_online">線上付款待確認</button>
-      <button class="filter-btn" data-filter="ready_to_ship">待出貨列印</button>
-      <button class="filter-btn" data-filter="deposit">ATM / 訂金</button>
+  <div class="muted" style="margin-bottom:4px;">
+    上方 4 顆是快速分類；下方可以依「日期＋狀態」載入並匯出 Excel。
+  </div>
+
+  <div class="toolbar-main">
+    <div class="toolbar-left">
+      <div class="filter-group">
+        <button class="filter-btn active" data-filter="all">全部訂單</button>
+        <button class="filter-btn" data-filter="pending_online">線上付款待確認</button>
+        <button class="filter-btn" data-filter="ready_to_ship">待出貨列印</button>
+        <button class="filter-btn" data-filter="deposit">ATM / 訂金</button>
+      </div>
+
+      <div class="filter-row">
+        <div class="field">
+          <label>起始日期（date_from，含）</label>
+          <input id="date_from" type="date" />
+        </div>
+        <div class="field">
+          <label>結束日期（date_to，含）</label>
+          <input id="date_to" type="date" />
+        </div>
+        <div class="field">
+          <label>狀態（status）</label>
+          <select id="status">
+            <option value="">全部</option>
+            <option value="submitted">submitted（已送出）</option>
+            <option value="paid">paid（已付款）</option>
+            <option value="shipped">shipped（已出貨）</option>
+            <option value="cancelled">cancelled（取消）</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="small-btn" id="btnLoadByDate" type="button">依日期載入</button>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="small-btn" id="btnQuickPaid" type="button">只看待出貨（paid）</button>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="small-btn" id="exportBtn" type="button" disabled>匯出 Excel（CSV）</button>
+        </div>
+      </div>
+
+      <div id="summary" class="summary-row"></div>
+      <div id="msg"></div>
     </div>
+
     <div>
       <span id="opLabel" class="tag-small"></span>
       <button id="btnChangeKey" class="small-btn">更換管理密碼</button>
@@ -113,6 +175,16 @@ function toDatetimeLocal(v){
     pad(d.getMinutes());
 }
 
+// CSV 欄位 escape（沿用原 admin_orders）
+function escapeCSV(v){
+  if (v == null) return '';
+  const s = String(v);
+  if (/[",\n]/.test(s)){
+    return '"' + s.replace(/"/g,'""') + '"';
+  }
+  return s;
+}
+
 /* ===== OP_KEY 驗證 ===== */
 async function ensureOpKey(){
   $('#opLabel').textContent = OP_KEY ? '已登入後台' : '尚未登入';
@@ -141,11 +213,12 @@ async function ensureOpKey(){
   }
 }
 
-/* ===== 載入訂單列表 ===== */
+/* ===== 依「快速分類 filter」載入訂單（原 admin.html） ===== */
 async function loadOrders(filter='all'){
   currentFilter = filter;
   const listEl = $('#orderList');
   listEl.innerHTML = '<div class="muted">載入中…</div>';
+  $('#msg').textContent = '';
 
   try{
     const r = await fetch(
@@ -155,14 +228,133 @@ async function loadOrders(filter='all'){
     if(!r.ok || !j.ok){
       throw new Error(j.error || 'load_failed');
     }
-
-    // 後端回傳 { ok:true, orders:[...]}；若未來變成 records 也能相容
     currentOrders = j.orders || j.records || [];
     renderOrderList();
   }catch(e){
     console.error(e);
     listEl.innerHTML = '<div class="error">載入失敗：' + (e.message || e) + '</div>';
+    currentOrders = [];
+    updateSummary();
   }
+}
+
+/* ===== 依「日期 + status」載入訂單（原 admin_orders.html 縮小版） ===== */
+async function loadOrdersByDate(){
+  const listEl = $('#orderList');
+  const msgEl  = $('#msg');
+  listEl.innerHTML = '<div class="muted">載入中…</div>';
+  msgEl.textContent = '';
+
+  try{
+    const params = new URLSearchParams();
+    params.set('op_key', OP_KEY);
+    const df = $('#date_from').value;
+    const dt = $('#date_to').value;
+    const st = $('#status').value;
+    if (df) params.set('date_from', df);
+    if (dt) params.set('date_to', dt);
+    if (st) params.set('status', st);
+
+    const r = await fetch(`${API}/admin/orders?` + params.toString());
+    const j = await r.json();
+    if (!r.ok || !j.ok){
+      throw new Error(j.error || 'load_failed');
+    }
+    currentOrders = j.orders || j.records || [];
+    renderOrderList();
+    msgEl.textContent = currentOrders.length ? '' : '查無符合條件的訂單。';
+  }catch(e){
+    console.error(e);
+    listEl.innerHTML = '<div class="error">載入失敗：' + (e.message || e) + '</div>';
+    currentOrders = [];
+    updateSummary();
+  }
+}
+
+// 快速：只看待出貨（paid）
+async function quickPaid(){
+  const sel = $('#status');
+  if (sel) sel.value = 'paid';
+  await loadOrdersByDate();
+}
+
+// 更新下方 summary + 匯出按鈕狀態
+function updateSummary(){
+  const sumEl = $('#summary');
+  const btnExport = $('#exportBtn');
+  if (!sumEl || !btnExport) return;
+
+  if (!currentOrders.length){
+    sumEl.textContent = '';
+    btnExport.disabled = true;
+    return;
+  }
+
+  let sum = 0;
+  let countSubmitted = 0, countPaid = 0, countShipped = 0, countCancelled = 0;
+
+  for (const rec of currentOrders){
+    const f = rec.fields || rec || {};
+    sum += Number(f.total_amount || f.total || 0) || 0;
+    const st = f.status || '';
+    if (st === 'submitted') countSubmitted++;
+    else if (st === 'paid') countPaid++;
+    else if (st === 'shipped') countShipped++;
+    else if (st === 'cancelled') countCancelled++;
+  }
+
+  const sumText = 'NT$ ' + (Number(sum)||0).toLocaleString('zh-TW',{minimumFractionDigits:0});
+  sumEl.innerHTML =
+    '<span>筆數：' + currentOrders.length +
+    '（submitted: ' + countSubmitted +
+    ' / paid: ' + countPaid +
+    ' / shipped: ' + countShipped +
+    ' / cancelled: ' + countCancelled + '）</span>' +
+    '<span>合計金額：' + sumText + '</span>';
+
+  btnExport.disabled = false;
+}
+
+// 匯出目前畫面上的訂單為 CSV
+function exportCSV(){
+  if (!currentOrders.length){
+    alert('目前沒有資料可以匯出。');
+    return;
+  }
+  const rows = [];
+  rows.push([
+    'order_id','created_at','status','payment_method','total_amount',
+    'streamer_name','customer_type','tracking_no','shipping_fee','note'
+  ]);
+
+  for (const rec of currentOrders){
+    const f = rec.fields || rec || {};
+    rows.push([
+      f.order_id || '',
+      f.created_at || '',
+      f.status || '',
+      f.payment_method || '',
+      Number(f.total_amount || f.total || 0) || 0,
+      f.streamer_name || '',
+      f.customer_type || '',
+      f.tracking_no || f.ship_tracking || '',
+      Number(f.shipping_fee ?? f.ship_fee ?? 0) || 0,
+      (f.note || f.internal_note || '').replace(/\r?\n/g, ' ')
+    ]);
+  }
+
+  const csv = rows.map(r => r.map(escapeCSV).join(',')).join('\r\n');
+  const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const now = new Date();
+  const ts = now.toISOString().replace(/[:T]/g,'-').slice(0,16);
+  a.href = url;
+  a.download = 'murain_orders_' + ts + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function statusBadgePay(pay){
@@ -193,11 +385,11 @@ function renderOrderList(){
   const listEl = $('#orderList');
   if(!currentOrders.length){
     listEl.innerHTML = '<div class="muted">目前沒有符合條件的訂單</div>';
+    updateSummary();
     return;
   }
 
   const html = currentOrders.map(rec=>{
-    // 支援兩種格式：{fields:{...}} 或 {order_id:..., total_amount:...}
     const f = rec.fields || rec || {};
 
     const shipInfo = parseShippingInfo(f);
@@ -219,7 +411,6 @@ function renderOrderList(){
     const created = f.created_at     || '';
     const total   = money(f.total_amount || f.total || 0);
 
-    // 用 order_id 當 key，若有 rec.id 也一起放進去（方便之後擴充）
     const rowKey = f.order_id || rec.id || '';
 
     return `
@@ -245,7 +436,6 @@ function renderOrderList(){
 
   listEl.innerHTML = html;
 
-  // 綁定點擊選取
   $$('#orderList .order-row').forEach(row=>{
     row.addEventListener('click', ()=>{
       $$('#orderList .order-row').forEach(x=>x.classList.remove('active'));
@@ -255,7 +445,6 @@ function renderOrderList(){
     });
   });
 
-  // 若已經有選中的訂單，重新 render 後維持選取
   if(currentRecord){
     const f = currentRecord.fields || currentRecord || {};
     const key = currentRecord.id || f.order_id || '';
@@ -267,6 +456,8 @@ function renderOrderList(){
       $('#orderDetail').innerHTML = '<div class="muted">請從左邊點選一筆訂單</div>';
     }
   }
+
+  updateSummary();
 }
 
 /* 根據 key 找出訂單（id 或 order_id） */
@@ -281,7 +472,7 @@ function selectOrder(key){
   renderDetail(rec);
 }
 
-/* ===== 出貨通知預設文字 ===== */
+/* ===== 出貨通知預設文字（保留原本） ===== */
 function buildNoticeText(rec){
   const f = rec.fields || rec || {};
   const shipInfo = parseShippingInfo(f);
@@ -401,11 +592,11 @@ function renderDetail(rec){
         <div class="row mt-2">
           <div>
             <label>物流單號 (ship_tracking)</label>
-            <input id="d_ship_tracking" value="${f.ship_tracking || ''}">
+            <input id="d_ship_tracking" value="${f.ship_tracking || f.tracking_no || ''}">
           </div>
           <div>
             <label>運費 TWD (ship_fee)</label>
-            <input id="d_ship_fee" type="number" step="1" value="${f.ship_fee || ''}">
+            <input id="d_ship_fee" type="number" step="1" value="${f.ship_fee || f.shipping_fee || ''}">
           </div>
         </div>
 
@@ -451,6 +642,7 @@ function renderDetail(rec){
         <textarea id="d_notice_text">${buildNoticeText(rec)}</textarea>
 
         <button class="btn-primary" id="btnSaveDetail">儲存出貨 / 付款資訊</button>
+        <button class="btn-secondary" id="btnShipAndLine">一鍵標記已出貨＋發 LINE 通知</button>
         <button class="btn-secondary" id="btnCopyNotice">複製出貨通知文字</button>
         <div id="detailMsg" class="tag-small mt-2"></div>
       </div>
@@ -459,6 +651,7 @@ function renderDetail(rec){
 
   $('#btnSaveDetail').addEventListener('click', saveDetail);
   $('#btnCopyNotice').addEventListener('click', copyNotice);
+  $('#btnShipAndLine').addEventListener('click', shipAndLine);
 }
 
 /* ===== 儲存右側欄位 ===== */
@@ -486,7 +679,6 @@ async function saveDetail(){
   const shipAt = $('#d_ship_at').value;
   fields.ship_at = shipAt || null;
 
-  // 後端可接受 record_id 或 order_id，這裡兩個都給
   const f = currentRecord.fields || currentRecord || {};
   const payload = {
     record_id: currentRecord.id || null,
@@ -506,7 +698,6 @@ async function saveDetail(){
     }
     msgEl.textContent = '已儲存 ✅';
 
-    // 重新載入列表，保留目前這一筆
     const keepF   = currentRecord.fields || currentRecord || {};
     const keepKey = currentRecord.id || keepF.order_id || '';
     await loadOrders(currentFilter);
@@ -523,6 +714,65 @@ async function saveDetail(){
   }catch(e){
     console.error(e);
     msgEl.textContent = '儲存失敗：' + (e.message || e);
+  }
+}
+
+/* ===== 一鍵：標記出貨 ＋ LINE 通知（整合 admin_ship_orderid 版） ===== */
+async function shipAndLine(){
+  if(!currentRecord) return;
+  const msgEl = $('#detailMsg');
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = f.order_id;
+  if (!orderId){
+    alert('這筆訂單沒有 order_id，無法出貨。');
+    return;
+  }
+
+  const tracking = $('#d_ship_tracking').value.trim();
+  const feeTxt   = $('#d_ship_fee').value.trim();
+  let shipping_fee = null;
+  if (feeTxt !== ''){
+    const n = Number(feeTxt);
+    if (isNaN(n) || n < 0){
+      alert('運費請輸入數字或留空');
+      $('#d_ship_fee').focus();
+      return;
+    }
+    shipping_fee = n;
+  }
+
+  const payload = { op_key: OP_KEY, order_id: orderId, tracking_no: tracking };
+  if (shipping_fee !== null) payload.shipping_fee = shipping_fee;
+
+  msgEl.textContent = '出貨處理中（會同時發送 LINE 通知）…';
+
+  try{
+    const res = await fetch(API + '/admin/order/ship', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    const j = await res.json().catch(()=> ({}));
+    if (!res.ok || !j.ok){
+      throw new Error(j.error || ('HTTP ' + res.status));
+    }
+    msgEl.textContent = '✅ 已標記出貨並嘗試發送 LINE 通知';
+
+    // 出貨後重新載入目前 filter
+    const keepKey = orderId;
+    await loadOrders(currentFilter);
+    const found = currentOrders.find(x=>{
+      const fx = x.fields || x || {};
+      return fx.order_id && String(fx.order_id) === String(keepKey);
+    });
+    if(found){
+      renderDetail(found);
+      const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
+      if(row) row.classList.add('active');
+    }
+  }catch(e){
+    console.error(e);
+    msgEl.textContent = '❌ 出貨失敗：' + (e.message || e);
   }
 }
 
@@ -548,7 +798,7 @@ async function copyNotice(){
 
 /* ===== 頁面初始化 ===== */
 document.addEventListener('DOMContentLoaded', async ()=>{
-  // 切換上方 filter
+  // 上方快速分類按鈕
   $$('.filter-btn').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       $$('.filter-btn').forEach(b=>b.classList.remove('active'));
@@ -558,16 +808,47 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     });
   });
 
+  // OP_KEY 重設
   $('#btnChangeKey').addEventListener('click', ()=>{
     localStorage.removeItem(STORAGE_KEY);
     OP_KEY = '';
     ensureOpKey().then(()=>loadOrders(currentFilter));
   });
 
+  // 預設把日期帶成「本月 1 號 ~ 今天」
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth()+1).padStart(2,'0');
+  const dd = String(today.getDate()).padStart(2,'0');
+  const first = yyyy + '-' + mm + '-01';
+  const todayStr = yyyy + '-' + mm + '-' + dd;
+  if ($('#date_from') && !$('#date_from').value) $('#date_from').value = first;
+  if ($('#date_to') && !$('#date_to').value) $('#date_to').value = todayStr;
+
+  // 日期載入 / 只看 paid / 匯出
+  const btnLoadByDate = $('#btnLoadByDate');
+  if (btnLoadByDate){
+    btnLoadByDate.addEventListener('click', async ()=>{
+      await ensureOpKey();
+      await loadOrdersByDate();
+    });
+  }
+  const btnQuickPaid = $('#btnQuickPaid');
+  if (btnQuickPaid){
+    btnQuickPaid.addEventListener('click', async ()=>{
+      $('#status').value = 'paid';
+      await ensureOpKey();
+      await loadOrdersByDate();
+    });
+  }
+  const btnExport = $('#exportBtn');
+  if (btnExport){
+    btnExport.addEventListener('click', exportCSV);
+  }
+
   await ensureOpKey();
   await loadOrders('all');
 });
 </script>
-
 </body>
 </html>
