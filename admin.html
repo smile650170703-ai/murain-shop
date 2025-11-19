@@ -38,7 +38,7 @@
   .tag{display:inline-block;padding:2px 6px;border-radius:999px;background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.5);font-size:11px;margin-left:4px}
   .mono{font-family:Menlo,Consolas,monospace;font-size:12px}
   .right{text-align:right}
-  .no-print{} 
+  .no-print{}
   @media print{
     .no-print{display:none !important}
     body{background:#fff;color:#000}
@@ -77,15 +77,19 @@
         <div style="font-size:14px;font-weight:600">訂單列表</div>
         <span class="tag" id="orderCountTag">0 筆</span>
       </div>
-      <div class="flex" style="gap:6px">
+      <div class="flex" style="gap:6px;flex-wrap:wrap;justify-content:flex-end">
         <label style="font-size:12px">狀態</label>
-        <select id="statusFilter" style="max-width:140px">
+        <select id="statusFilter" style="max-width:160px">
           <option value="all">全部</option>
-          <option value="submitted">submitted（待處理）</option>
+          <option value="submitted" selected>submitted（完成結帳 / 待出貨）</option>
           <option value="ready">ready（待出貨）</option>
           <option value="shipped">shipped（已出貨）</option>
           <option value="cancelled">cancelled（已取消）</option>
         </select>
+        <label style="font-size:12px">起</label>
+        <input type="date" id="startDate" style="max-width:140px" />
+        <label style="font-size:12px">迄</label>
+        <input type="date" id="endDate" style="max-width:140px" />
         <button class="btn btn-secondary" id="refreshBtn">重新整理</button>
       </div>
     </div>
@@ -97,7 +101,7 @@
           <th>付款方式</th>
           <th>收件人</th>
           <th>金額</th>
-          <th>出貨狀態</th>
+          <th>出貨狀態 / 運費</th>
         </tr>
       </thead>
       <tbody id="orderTbody"></tbody>
@@ -150,6 +154,22 @@
       </div>
     </div>
 
+    <!-- 商品明細 -->
+    <div class="mt-3">
+      <label>商品明細</label>
+      <table>
+        <thead>
+          <tr>
+            <th>品名 / SKU</th>
+            <th>單價</th>
+            <th>數量</th>
+            <th>小計</th>
+          </tr>
+        </thead>
+        <tbody id="itemsTbody"></tbody>
+      </table>
+    </div>
+
     <hr class="mt-3" style="border:none;border-top:1px solid rgba(30,41,59,.9)" />
 
     <div class="mt-2 row">
@@ -197,12 +217,13 @@ const fmtMoney = n => 'NT$ ' + Number(n||0).toLocaleString();
 let adminKey = '';
 let orders = [];
 let currentOrder = null;
+let currentItems = [];
 
 // 讀取 / 儲存 OP_KEY
 function loadKey(){
   try{
     const k = localStorage.getItem('murain_admin_op_key') || '';
-    if(k) {
+    if(k){
       adminKey = k;
       $('#opKeyInput').value = k;
     }
@@ -236,65 +257,6 @@ function statusLabel(st){
   return s;
 }
 
-async function loadOrders(){
-  if(!adminKey){
-    $('#loginStatus').textContent = '請先輸入 OP_KEY 登入。';
-    return;
-  }
-  $('#loginStatus').textContent = '讀取訂單中…';
-  $('#ordersCard').style.display = 'block';
-  $('#detailCard').style.display = 'none';
-  $('#orderTbody').innerHTML = '';
-  $('#orderCountTag').textContent = '0 筆';
-
-  const status = $('#statusFilter').value || 'all';
-  const url = new URL(API + '/admin/orders');
-  url.searchParams.set('op_key', adminKey);
-  url.searchParams.set('status', status);
-
-  try{
-    const r = await fetch(url.toString());
-    const j = await r.json();
-    if(!r.ok || !j.ok){
-      $('#loginStatus').textContent = '讀取失敗：' + (j.error || r.status);
-      return;
-    }
-    orders = j.orders || [];
-    $('#orderCountTag').textContent = orders.length + ' 筆';
-
-    const tb = $('#orderTbody');
-    tb.innerHTML = '';
-
-    orders.forEach(o=>{
-      const tr = document.createElement('tr');
-      tr.dataset.orderId = o.order_id || '';
-      const ship = parseShip(o.shipping_info);
-      tr.innerHTML = `
-        <td>
-          <div class="mono">${o.order_id || ''}</div>
-          <div class="muted" style="font-size:11px">${o.created_at || ''}</div>
-        </td>
-        <td class="mono">${o.payment_method || ''}</td>
-        <td>
-          ${ship.name || ''}<br>
-          <span class="muted" style="font-size:11px">${ship.summary || ''}</span>
-        </td>
-        <td class="right mono">${fmtMoney(o.total_amount)}</td>
-        <td>
-          <span class="${statusClass(o.ship_status || o.status)}">${statusLabel(o.ship_status || o.status)}</span>
-        </td>
-      `;
-      tr.addEventListener('click', ()=>selectOrder(o.order_id));
-      tb.appendChild(tr);
-    });
-
-    $('#loginStatus').textContent = '已載入 ' + orders.length + ' 筆訂單。';
-  }catch(e){
-    console.error(e);
-    $('#loginStatus').textContent = '讀取失敗（網路或程式錯誤）';
-  }
-}
-
 // 解析 shipping_info JSON
 function parseShip(raw){
   let info = {};
@@ -323,45 +285,149 @@ function parseShip(raw){
   return res;
 }
 
-function selectOrder(orderId){
-  const o = orders.find(x=>x.order_id === orderId);
-  if(!o) return;
-  currentOrder = o;
+async function loadOrders(){
+  if(!adminKey){
+    $('#loginStatus').textContent = '請先輸入 OP_KEY 登入。';
+    return;
+  }
+  $('#loginStatus').textContent = '讀取訂單中…';
+  $('#ordersCard').style.display = 'block';
+  $('#detailCard').style.display = 'none';
+  $('#orderTbody').innerHTML = '';
+  $('#orderCountTag').textContent = '0 筆';
 
-  const ship = parseShip(o.shipping_info);
+  const status = $('#statusFilter').value || 'all';
+  const start = $('#startDate').value || '';
+  const end   = $('#endDate').value || '';
 
-  $('#detailCard').style.display = 'block';
-  $('#detailTitle').textContent = (ship.name || '') + ' / ' + (ship.summary || '');
+  const url = new URL(API + '/admin/orders');
+  url.searchParams.set('op_key', adminKey);
+  url.searchParams.set('status', status);
+  if(start) url.searchParams.set('start', start);
+  if(end)   url.searchParams.set('end', end);
 
-  $('#dOrderId').textContent = o.order_id || '';
-  $('#dCreatedAt').textContent = o.created_at || '';
-  $('#dPaymentMethod').textContent = o.payment_method || '';
-  $('#dTotal').textContent = fmtMoney(o.total_amount || 0);
-  $('#dNote').textContent = ship.note || '';
+  try{
+    const r = await fetch(url.toString());
+    const j = await r.json();
+    if(!r.ok || !j.ok){
+      $('#loginStatus').textContent = '讀取失敗：' + (j.error || r.status);
+      return;
+    }
+    orders = j.orders || [];
+    $('#orderCountTag').textContent = orders.length + ' 筆';
 
-  $('#dShipName').textContent = ship.name || '';
-  $('#dShipPhone').textContent = ship.phone || '';
-  $('#dShipEmail').textContent = ship.email || '';
-  $('#dShipAddr').textContent = ship.addr || '';
+    const tb = $('#orderTbody');
+    tb.innerHTML = '';
 
-  $('#shipStatus').value = o.ship_status || '';
-  $('#shipNo').value = o.ship_no || '';
-  $('#shipFee').value = o.ship_fee || '';
-  $('#shipNote').value = o.ship_note || '';
+    orders.forEach(o=>{
+      const tr = document.createElement('tr');
+      tr.dataset.orderId = o.order_id || '';
+      const ship = parseShip(o.shipping_info);
+      const fee = Number(o.ship_fee || 0);
+      const feeText = fee ? ('運費已登記：' + fmtMoney(fee)) : '運費未登記';
+      tr.innerHTML = `
+        <td>
+          <div class="mono">${o.order_id || ''}</div>
+          <div class="muted" style="font-size:11px">${o.created_at || ''}</div>
+        </td>
+        <td class="mono">${o.payment_method || ''}</td>
+        <td>
+          ${ship.name || ''}<br>
+          <span class="muted" style="font-size:11px">${ship.summary || ''}</span>
+        </td>
+        <td class="right mono">${fmtMoney(o.total_amount)}</td>
+        <td>
+          <span class="${statusClass(o.ship_status || o.status)}">${statusLabel(o.ship_status || o.status)}</span>
+          <div class="muted" style="font-size:11px;margin-top:2px">${feeText}</div>
+        </td>
+      `;
+      tr.addEventListener('click', ()=>selectOrder(o.order_id));
+      tb.appendChild(tr);
+    });
 
-  updateNotifyPreview();
-  $('#saveStatus').textContent = '';
+    $('#loginStatus').textContent = '已載入 ' + orders.length + ' 筆訂單。';
+  }catch(e){
+    console.error(e);
+    $('#loginStatus').textContent = '讀取失敗（網路或程式錯誤）';
+  }
 }
 
-// 產生出貨通知文字
+// 把 detail API 回來的商品明細畫在表格
+function renderItemsTable(items){
+  const tb = $('#itemsTbody');
+  tb.innerHTML = '';
+  items.forEach(it=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>
+        ${it.name || ''}<br>
+        <span class="mono muted">${it.sku || ''}</span>
+      </td>
+      <td class="mono right">${fmtMoney(it.price || 0)}</td>
+      <td class="mono">${it.qty || 0}</td>
+      <td class="mono right">${fmtMoney(it.subtotal || 0)}</td>
+    `;
+    tb.appendChild(tr);
+  });
+}
+
+// 取得單筆詳細（含商品明細）
+async function selectOrder(orderId){
+  if(!orderId || !adminKey) return;
+  $('#detailCard').style.display = 'block';
+  $('#detailTitle').textContent = '讀取中…';
+
+  const url = new URL(API + '/admin/order/detail');
+  url.searchParams.set('op_key', adminKey);
+  url.searchParams.set('order_id', orderId);
+
+  try{
+    const r = await fetch(url.toString());
+    const j = await r.json();
+    if(!r.ok || !j.ok){
+      $('#detailTitle').textContent = '讀取失敗：' + (j.error || r.status);
+      return;
+    }
+    currentOrder = j.order || {};
+    currentItems = j.items || [];
+    const o = currentOrder;
+    const ship = parseShip(o.shipping_info);
+
+    $('#detailTitle').textContent = (ship.name || '') + ' / ' + (ship.summary || '');
+    $('#dOrderId').textContent = o.order_id || '';
+    $('#dCreatedAt').textContent = o.created_at || '';
+    $('#dPaymentMethod').textContent = o.payment_method || '';
+    $('#dTotal').textContent = fmtMoney(o.total_amount || 0);
+    $('#dNote').textContent = ship.note || '';
+
+    $('#dShipName').textContent = ship.name || '';
+    $('#dShipPhone').textContent = ship.phone || '';
+    $('#dShipEmail').textContent = ship.email || '';
+    $('#dShipAddr').textContent = ship.addr || '';
+
+    $('#shipStatus').value = o.ship_status || '';
+    $('#shipNo').value = o.ship_no || '';
+    $('#shipFee').value = o.ship_fee || '';
+    $('#shipNote').value = o.ship_note || '';
+
+    renderItemsTable(currentItems);
+    updateNotifyPreview();
+    $('#saveStatus').textContent = '';
+  }catch(e){
+    console.error(e);
+    $('#detailTitle').textContent = '讀取失敗（網路或程式錯誤）';
+  }
+}
+
+// 產生出貨通知文字（給客人）
 function buildNotifyText(){
   if(!currentOrder) return '';
   const ship = parseShip(currentOrder.shipping_info);
   const name = ship.name || '親愛的顧客';
-  const pm = currentOrder.payment_method || '';
   const amt = fmtMoney(currentOrder.total_amount || 0);
   const shipNo = $('#shipNo').value || '';
   const shipStatus = $('#shipStatus').value || '';
+  const orderId = currentOrder.order_id || '';
   const shipLine =
     ship.type === '711'
       ? `取貨方式：7-11 ${ship.store?.name || ''}（${ship.store?.id || ''}）\n門市地址：${ship.store?.addr || ''}`
@@ -373,6 +439,13 @@ function buildNotifyText(){
   else statusTxt = '訂單已成立 ✅';
 
   const track = shipNo ? `\n物流單號：${shipNo}` : '';
+
+  // 商品簡短明細（避免太長，只列前 5 筆）
+  const lines = (currentItems || []).slice(0,5).map(it =>
+    `・${it.name || it.sku || ''} x ${it.qty || 0}`
+  );
+  const itemsBlock = lines.length ? `商品明細：\n${lines.join('\n')}\n` : '';
+
   const note = $('#shipNote').value ? `\n\n內部備註：${$('#shipNote').value}` : '';
 
   return [
@@ -380,8 +453,9 @@ function buildNotifyText(){
     ``,
     `${name} 您好～`,
     ``,
-    `您的訂單 ${currentOrder.order_id || ''} ${statusTxt}`,
+    `您的訂單 ${orderId} ${statusTxt}`,
     shipLine,
+    itemsBlock,
     `應付金額：${amt}`,
     track,
     ``,
@@ -417,15 +491,13 @@ async function saveShipping(){
       $('#saveStatus').textContent = '儲存失敗：' + (j.error || r.status);
       return;
     }
-    // 更新本地 orders
     currentOrder.ship_status = body.ship_status;
     currentOrder.ship_no = body.ship_no;
     currentOrder.ship_fee = body.ship_fee;
     currentOrder.ship_note = body.ship_note;
     updateNotifyPreview();
     $('#saveStatus').textContent = '已儲存 ✅';
-    // 重新渲染列表的那一列（簡單起見直接重抓一次）
-    loadOrders();
+    loadOrders(); // 重新刷新列表，讓狀態 / 運費顯示更新
   }catch(e){
     console.error(e);
     $('#saveStatus').textContent = '儲存失敗（網路或程式錯誤）';
@@ -450,6 +522,9 @@ $('#clearKeyBtn').addEventListener('click', ()=>{
 });
 $('#refreshBtn').addEventListener('click', loadOrders);
 $('#statusFilter').addEventListener('change', loadOrders);
+$('#startDate').addEventListener('change', loadOrders);
+$('#endDate').addEventListener('change', loadOrders);
+
 $('#shipStatus').addEventListener('change', updateNotifyPreview);
 $('#shipNo').addEventListener('input', updateNotifyPreview);
 $('#shipFee').addEventListener('input', ()=>{});
