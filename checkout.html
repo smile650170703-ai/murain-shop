@@ -42,6 +42,7 @@
   .radio-pill.active{background:#22d3ee;color:#0f172a;border-color:#22d3ee}
   .label-small{font-size:12px;color:#9ca3af}
 </style>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 </head>
 <body>
 <div class="wrap">
@@ -63,6 +64,17 @@
     <label class="mt-4">備註（選填）</label>
     <textarea id="note" placeholder="例如：希望週末送達、染髮前先幫我評估髮況…"></textarea>
     <div class="hint">．此頁一定要用結帳連結進入（帶 cart_token）。</div>
+
+    <div class="mt-4 section-title">LINE 訊息通知（選填）</div>
+    <div class="hint">
+      ．綁定後，此訂單「已出貨」時會自動發一則 LINE 訊息提醒您。
+    </div>
+    <button type="button" class="btn secondary" id="lineBindBtn" style="margin-top:8px;">
+      綁定這支 LINE 接收出貨通知
+    </button>
+    <div class="hint" id="lineBindInfo"></div>
+    <input type="hidden" id="line_user_id" />
+    <input type="hidden" id="line_display_name" />
   </div>
 
   <div class="card">
@@ -324,6 +336,11 @@ const RATE_TABLE={3:0,6:4.0,9:5.5,12:6.5,18:9.0,24:11.5};
 const NEW_DEPOSIT_AMOUNT=1000;
 let CART_TOTAL_RAW = 0;   // 真實金額（數字）
 
+// ===== LINE / LIFF 設定 =====
+const LIFF_ID = "2008430261-kOeNLR9x";  // 栩願國際 Login 的 LIFF ID
+let LINE_PROFILE = null;                // 之後存使用者的 LINE 資訊
+
+
 /* ===== 工具 ===== */
 const $=(s,r=document)=>r.querySelector(s); const $$=(s,r=document)=>[...r.querySelectorAll(s)];
 const money=n=>'NT$ '+Number(n||0).toLocaleString();
@@ -389,6 +406,73 @@ function updateZcShip(){
   $('#zcShipPost').hidden=(m!=='post');
 }
 
+
+/* ===== LINE / LIFF 綁定 ===== */
+async function initLiffAndProfile() {
+  if (!window.liff || !LIFF_ID) return;
+
+  try {
+    await liff.init({ liffId: LIFF_ID });
+
+    // 如果還沒登入，先讓綁定按鈕啟用，按下去再觸發 login
+    const btn = document.getElementById('lineBindBtn');
+    if (btn) {
+      btn.disabled = false;
+    }
+
+    if (!liff.isLoggedIn()) {
+      return;
+    }
+
+    const profile = await liff.getProfile();
+    LINE_PROFILE = {
+      userId: profile.userId,
+      displayName: profile.displayName || "",
+      pictureUrl: profile.pictureUrl || ""
+    };
+
+    const uidInput = document.getElementById('line_user_id');
+    const nameInput = document.getElementById('line_display_name');
+    const info = document.getElementById('lineBindInfo');
+    if (uidInput) uidInput.value = LINE_PROFILE.userId;
+    if (nameInput) nameInput.value = LINE_PROFILE.displayName;
+    if (info) info.textContent = "已綁定 LINE：" + LINE_PROFILE.displayName;
+  } catch (e) {
+    console.log("initLiff error", e);
+  }
+}
+
+async function onClickLineBind() {
+  if (!window.liff || !LIFF_ID) {
+    alert("目前無法使用 LINE 綁定，請稍後再試。");
+    return;
+  }
+
+  try {
+    if (!liff.isLoggedIn()) {
+      // 登入後會自動回到這一頁
+      liff.login({ redirectUri: window.location.href });
+      return;
+    }
+
+    const profile = await liff.getProfile();
+    LINE_PROFILE = {
+      userId: profile.userId,
+      displayName: profile.displayName || "",
+      pictureUrl: profile.pictureUrl || ""
+    };
+
+    const uidInput = document.getElementById('line_user_id');
+    const nameInput = document.getElementById('line_display_name');
+    const info = document.getElementById('lineBindInfo');
+    if (uidInput) uidInput.value = LINE_PROFILE.userId;
+    if (nameInput) nameInput.value = LINE_PROFILE.displayName;
+    if (info) info.textContent = "已綁定 LINE：" + LINE_PROFILE.displayName;
+  } catch (e) {
+    console.error(e);
+    alert("LINE 綁定失敗，請稍後再試。");
+  }
+}
 /* ===== 購物車載入 ===== */
 async function loadCart(){
   if (!cartToken) {
@@ -580,6 +664,21 @@ $('#mapZC').addEventListener('click',e=>{e.preventDefault();open711('zc');});
 /* ===== 送出 ===== */
 function required(v){ return v && String(v).trim().length>0; }
 
+// ===== 綁 LINE 按鈕 =====
+const lineBtn = document.getElementById('lineBindBtn');
+if (lineBtn) {
+  lineBtn.disabled = false;
+  lineBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    onClickLineBind();
+  });
+}
+
+// 初始化 LIFF（如果載入到這一頁就先嘗試初始化）
+if (typeof initLiffAndProfile === 'function') {
+  initLiffAndProfile();
+}
+
 document.getElementById('submitBtn').addEventListener('click',async(e)=>{
   e.preventDefault();
   if(!cartToken){ alert('缺少 cart_token，請由正確結帳連結進入'); return; }
@@ -589,6 +688,25 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
 
   const note = $('#note').value || '';
   const shipping_info = { customer_type: customer, note };
+
+  // 如果有綁定 LINE，把 profile 帶到 shipping_info
+  if (LINE_PROFILE && LINE_PROFILE.userId) {
+    shipping_info.line = {
+      user_id: LINE_PROFILE.userId,
+      display_name: LINE_PROFILE.displayName || ''
+    };
+  } else {
+    const uidInput = document.getElementById('line_user_id');
+    const nameInput = document.getElementById('line_display_name');
+    const uid = uidInput ? uidInput.value : '';
+    const name = nameInput ? nameInput.value : '';
+    if (uid) {
+      shipping_info.line = {
+        user_id: uid,
+        display_name: name
+      };
+    }
+  }
 
   let payment_method = '';
   let ship = null;
