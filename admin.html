@@ -1,248 +1,478 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>MURAIN — 後台管理（Session 登入）</title>
-  <script>window.API_BASE="https://api.murain.tw";</script>
-  <style>
-    :root{--bg:#f5f6f8;--card:#fff;--ink:#111}
-    *{box-sizing:border-box}
-    body{font-family:system-ui,"Noto Sans TC",Segoe UI,Roboto,Arial;background:var(--bg);margin:0}
-    .wrap{max-width:1100px;margin:24px auto;padding:0 16px}
-    .card{background:var(--card);border-radius:14px;box-shadow:0 6px 16px rgba(0,0,0,.06);padding:18px;margin-bottom:14px}
-    h1{font-size:20px;margin:0 0 12px}
-    input,select,button,textarea{padding:10px 12px;border:1px solid #ddd;border-radius:10px;font-size:14px}
-    input[type="number"]{width:120px}
-    button{background:var(--ink);color:#fff;border:none;border-radius:10px;cursor:pointer}
-    button.ghost{background:#fff;color:#111;border:1px solid #111}
-    table{width:100%;border-collapse:collapse}
-    th,td{padding:8px;border-bottom:1px solid #eee;font-size:14px}
-    .muted{color:#666;font-size:13px}
-    /* Gate overlay */
-    .gate{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);z-index:9999}
-    .gate .box{width:min(520px,92vw);background:#fff;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.08);padding:22px}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MURAIN — 訂單後台</title>
+<style>
+  *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
+  body{margin:0;background:#020617;color:#e2e8f0}
+  .wrap{max-width:960px;margin:0 auto;padding:16px}
+  h1{margin:0 0 12px;font-size:22px}
+  .card{background:rgba(15,23,42,.95);border-radius:16px;border:1px solid rgba(148,163,184,.3);padding:16px;margin-top:12px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+  label{display:block;font-size:13px;margin:6px 0 4px}
+  input,select,textarea{width:100%;padding:9px 10px;border-radius:10px;border:1px solid rgba(148,163,184,.6);background:rgba(15,23,42,.9);color:#e2e8f0;font-size:14px}
+  textarea{min-height:70px;resize:vertical}
+  input:focus,select:focus,textarea:focus{outline:2px solid #38bdf8;outline-offset:1px;border-color:#38bdf8}
+  .row{display:grid;grid-template-columns:1.3fr 1.7fr;gap:12px}
+  @media (max-width:800px){.row{grid-template-columns:1fr}}
+  .btn{border:none;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:500;cursor:pointer}
+  .btn-primary{background:#22d3ee;color:#0f172a;box-shadow:0 8px 24px rgba(34,211,238,.4)}
+  .btn-secondary{background:transparent;color:#e5e7eb;border:1px solid rgba(148,163,184,.7)}
+  .btn:disabled{opacity:.6;cursor:not-allowed;box-shadow:none}
+  .flex{display:flex;align-items:center;gap:8px}
+  .flex-between{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .mt-2{margin-top:8px}
+  .mt-3{margin-top:12px}
+  .mt-4{margin-top:16px}
+  .muted{font-size:12px;color:#94a3b8}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{padding:6px 8px;border-bottom:1px solid rgba(30,41,59,.9);text-align:left;vertical-align:top}
+  th{font-size:12px;color:#9ca3af}
+  tr:hover{background:rgba(15,23,42,.8);cursor:pointer}
+  .status-pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px}
+  .st-submitted{background:rgba(34,197,94,.1);color:#bbf7d0}
+  .st-shipped{background:rgba(34,211,238,.1);color:#67e8f9}
+  .st-cancelled{background:rgba(248,113,113,.12);color:#fecaca}
+  .st-draft,.st-pending{background:rgba(148,163,184,.15);color:#e5e7eb}
+  .tag{display:inline-block;padding:2px 6px;border-radius:999px;background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.5);font-size:11px;margin-left:4px}
+  .mono{font-family:Menlo,Consolas,monospace;font-size:12px}
+  .right{text-align:right}
+  .no-print{} 
+  @media print{
+    .no-print{display:none !important}
+    body{background:#fff;color:#000}
+    .wrap{max-width:none}
+    .card{box-shadow:none;border:none;padding:0;margin:0}
+  }
+</style>
 </head>
 <body>
+<div class="wrap">
+  <h1>訂單後台（MURAIN）</h1>
 
-<!-- Gate -->
-<div id="gate" class="gate" style="display:grid">
-  <div class="box">
-    <h1>後台登入</h1>
-    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
-      <input id="gateKey" class="mono" placeholder="Admin Key（例如 88）" style="flex:1"/>
-      <button id="gateGo">登入</button>
+  <!-- 登入區（OP_KEY） -->
+  <div class="card no-print" id="loginCard">
+    <div class="flex-between">
+      <div>
+        <div style="font-size:14px;font-weight:600">後台登入</div>
+        <div class="muted">輸入你在 Worker 設定的 OP_KEY（例如 88），僅自己使用。</div>
+      </div>
     </div>
-    <div id="gateMsg" class="muted" style="margin-top:8px"></div>
-  </div>
-</div>
-
-<div class="wrap" id="app" style="visibility:hidden">
-  <div class="card">
-    <h1>後台管理</h1>
-    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
-      <input id="key" class="mono" placeholder="Admin Key" style="flex:1" />
-      <button id="clearKey" class="ghost">登出</button>
+    <div class="mt-3" style="max-width:260px">
+      <label>OP_KEY</label>
+      <input id="opKeyInput" type="password" autocomplete="off" />
+      <div class="mt-2 flex" style="gap:6px">
+        <button class="btn btn-primary" id="loginBtn">登入</button>
+        <button class="btn btn-secondary" id="clearKeyBtn">清除記錄</button>
+      </div>
+      <div class="muted mt-2" id="loginStatus"></div>
     </div>
-    <div class="muted">* 本頁採 <b>session 登入</b>，關掉分頁即登出。</div>
-  </div>
-
-  <div class="card">
-    <h1>一、上傳商品（CSV / JSON）</h1>
-    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
-      <input type="file" id="file" />
-      <button id="upload">上傳</button>
-      <a href="#" id="dl-template" class="ghost" style="text-decoration:none;padding:10px 12px;border-radius:10px;border:1px solid #111;color:#111">下載 CSV 範本</a>
-    </div>
-    <div id="uploadResult" class="muted" style="margin-top:8px"></div>
   </div>
 
-  <div class="card">
-    <h1>二、訂單查詢</h1>
-    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
-      <input id="q" placeholder="關鍵字（order_id / 姓名 / 電話 / 門市）" style="flex:1" />
-      <button id="search">查詢</button>
-      <a id="exportOrders" class="ghost" href="#" target="_blank" style="text-decoration:none;padding:10px 12px;border-radius:10px;border:1px solid #111;color:#111">匯出 Orders.csv</a>
-      <a id="exportItems" class="ghost" href="#" target="_blank" style="text-decoration:none;padding:10px 12px;border-radius:10px;border:1px solid #111;color:#111">匯出 OrderItems.csv</a>
+  <!-- 訂單列表 -->
+  <div class="card" id="ordersCard" style="display:none">
+    <div class="flex-between no-print">
+      <div class="flex">
+        <div style="font-size:14px;font-weight:600">訂單列表</div>
+        <span class="tag" id="orderCountTag">0 筆</span>
+      </div>
+      <div class="flex" style="gap:6px">
+        <label style="font-size:12px">狀態</label>
+        <select id="statusFilter" style="max-width:140px">
+          <option value="all">全部</option>
+          <option value="submitted">submitted（待處理）</option>
+          <option value="ready">ready（待出貨）</option>
+          <option value="shipped">shipped（已出貨）</option>
+          <option value="cancelled">cancelled（已取消）</option>
+        </select>
+        <button class="btn btn-secondary" id="refreshBtn">重新整理</button>
+      </div>
     </div>
-    <table id="orders">
-      <thead><tr><th>Order</th><th align="right">金額</th><th>付款</th><th>狀態</th><th>客資</th><th>操作</th></tr></thead>
-      <tbody></tbody>
+
+    <table id="orderTable">
+      <thead>
+        <tr>
+          <th>訂單編號 / 建立時間</th>
+          <th>付款方式</th>
+          <th>收件人</th>
+          <th>金額</th>
+          <th>出貨狀態</th>
+        </tr>
+      </thead>
+      <tbody id="orderTbody"></tbody>
     </table>
+    <div class="muted no-print">＊點任一列可在下方查看 / 編輯出貨資訊。</div>
   </div>
 
-  <div class="card">
-    <h1>三、快速調整庫存（單筆）</h1>
-    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
-      <input id="adj_sku" class="mono" placeholder="SKU（必填）" />
-      <input id="adj_delta" type="number" value="1" />
-      <button id="btn_minus1">-1</button>
-      <button id="btn_plus1">+1</button>
-      <button id="btn_adj">送出調整</button>
-      <button id="btn_stock" class="ghost">查目前庫存</button>
+  <!-- 詳細 / 出貨資訊 -->
+  <div class="card" id="detailCard" style="display:none">
+    <div class="flex-between">
+      <div>
+        <div style="font-size:14px;font-weight:600">訂單詳細 / 出貨資訊</div>
+        <div class="muted" id="detailTitle"></div>
+      </div>
+      <div class="no-print">
+        <button class="btn btn-secondary" id="printBtn">列印出貨單</button>
+      </div>
     </div>
-    <div id="adj_result" class="muted" style="margin-top:8px"></div>
-  </div>
 
-  <div class="card">
-    <h1>四、出貨與通知</h1>
-    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap">
-      <input id="ship_order" class="mono" placeholder="Order ID" style="min-width:200px" />
-      <select id="ship_carrier">
-        <option value="711">7-11</option>
-        <option value="post">郵局</option>
-        <option value="blackcat">黑貓</option>
-      </select>
-      <input id="ship_no" class="mono" placeholder="貨運單號" />
-      <input id="ship_fee" type="number" placeholder="運費 (整數)" />
+    <div class="mt-3 row">
+      <div>
+        <label>訂單編號</label>
+        <div class="mono" id="dOrderId"></div>
+
+        <label class="mt-2">建立時間</label>
+        <div class="mono" id="dCreatedAt"></div>
+
+        <label class="mt-2">付款方式</label>
+        <div id="dPaymentMethod" class="mono"></div>
+
+        <label class="mt-2">應付金額</label>
+        <div id="dTotal" class="mono"></div>
+
+        <label class="mt-2">備註（前台填寫）</label>
+        <div id="dNote" class="mono"></div>
+      </div>
+
+      <div>
+        <label>收件人</label>
+        <div id="dShipName"></div>
+
+        <label class="mt-2">電話</label>
+        <div id="dShipPhone"></div>
+
+        <label class="mt-2">Email</label>
+        <div id="dShipEmail"></div>
+
+        <label class="mt-2">取貨方式 / 地址</label>
+        <div id="dShipAddr"></div>
+      </div>
     </div>
-    <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
-      <button id="btn-ship">登記出貨</button>
-      <button id="btn-notify" class="ghost">發送寄出通知</button>
-      <a href="#" id="btn-print" class="ghost" style="text-decoration:none;padding:10px 12px;border-radius:10px;border:1px solid #111;color:#111">列印熱感應小白單</a>
+
+    <hr class="mt-3" style="border:none;border-top:1px solid rgba(30,41,59,.9)" />
+
+    <div class="mt-2 row">
+      <div>
+        <label>出貨狀態</label>
+        <select id="shipStatus">
+          <option value="">（未設定）</option>
+          <option value="submitted">submitted（待處理）</option>
+          <option value="ready">ready（待出貨）</option>
+          <option value="shipped">shipped（已出貨）</option>
+          <option value="cancelled">cancelled（已取消）</option>
+        </select>
+
+        <label class="mt-2">物流單號 / 托運單號</label>
+        <input id="shipNo" />
+
+        <label class="mt-2">運費（TWD）</label>
+        <input id="shipFee" type="number" step="1" />
+
+        <label class="mt-2">內部備註（出貨 / 退貨等說明）</label>
+        <textarea id="shipNote"></textarea>
+
+        <div class="mt-2 flex no-print" style="gap:8px">
+          <button class="btn btn-primary" id="saveShipBtn">儲存出貨資訊</button>
+          <button class="btn btn-secondary" id="copyMsgBtn">複製出貨通知文字</button>
+        </div>
+        <div class="muted mt-1" id="saveStatus"></div>
+      </div>
+
+      <div class="no-print">
+        <label>出貨通知文字（預覽）</label>
+        <textarea id="notifyPreview" readonly style="opacity:.9"></textarea>
+        <div class="muted mt-1">＊點「複製出貨通知文字」可直接貼到 官方 LINE / 私訊。</div>
+      </div>
     </div>
-    <div id="shipResult" class="muted" style="margin-top:8px"></div>
   </div>
 </div>
 
 <script>
-const API=(window.API_BASE||'').replace(/\\/$/,'')||'';
-const $=(s,sc=document)=>sc.querySelector(s);
-const toast=t=>alert(t);
+const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
+const $ = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
+const fmtMoney = n => 'NT$ ' + Number(n||0).toLocaleString();
 
-// ====== 使用 sessionStorage（關掉分頁即登出） ======
-const key =()=>sessionStorage.getItem('ADMIN_KEY')||'';
-const setKey=v=>sessionStorage.setItem('ADMIN_KEY',v||'');
+let adminKey = '';
+let orders = [];
+let currentOrder = null;
 
-// 確認授權（用 orders 查詢做 ping）
-async function verifyAdmin(k){
-  try{ const r=await fetch(API+'/admin/orders?q=__ping__',{headers:{'Authorization':'Bearer '+k}}); return r.ok; }
-  catch{ return false; }
-}
-
-async function openGateIfNeeded(){
-  const k=key();
-  if(!k || !(await verifyAdmin(k))){
-    $('#gate').style.display='grid';
-    $('#app').style.visibility='hidden';
-  }else{
-    $('#gate').style.display='none';
-    $('#app').style.visibility='visible';
-    $('#key').value=k;
-    updateExportLinks();
-  }
-}
-document.getElementById('gateGo').onclick = async ()=>{
-  const k=$('#gateKey').value.trim(); if(!k) return;
-  const msg=$('#gateMsg'); msg.textContent='驗證中…';
-  if(await verifyAdmin(k)){
-    setKey(k);
-    msg.textContent='OK';
-    $('#gate').style.display='none';
-    $('#app').style.visibility='visible';
-    $('#key').value=k;
-    updateExportLinks();
-  }else{
-    msg.textContent='Key 錯誤，請再試一次';
-  }
-};
-openGateIfNeeded();
-
-// 登出
-$('#clearKey').onclick = ()=>{ sessionStorage.removeItem('ADMIN_KEY'); location.reload(); };
-
-// CSV 範本
-$('#dl-template').addEventListener('click',e=>{
-  e.preventDefault();
-  const csv='sku,name,price,stock_qty\\nAA001,示範商品A,299,100\\nBB002,示範商品B,499,50\\n';
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='products_template.csv'; a.click();
-});
-
-// 上傳商品
-$('#upload').onclick = async ()=>{
-  const admin=key(); if(!admin) return toast('請先登入');
-  const f=$('#file').files[0]; if(!f) return toast('請選擇檔案');
-  const txt=await f.text();
-  let rows=[];
-  if(f.name.toLowerCase().endsWith('.json')){
-    rows=JSON.parse(txt);
-  }else{
-    const lines=txt.trim().split(/\\r?\\n/); const header=lines[0].split(',').map(s=>s.trim());
-    for(let i=1;i<lines.length;i++){
-      const cols=lines[i].split(',').map(s=>s.trim()); if(!cols[0]) continue;
-      const obj={}; header.forEach((h,ix)=>obj[h]=cols[ix]);
-      obj.price=parseInt(obj.price||'0',10)||0; obj.stock_qty=parseInt(obj.stock_qty||'0',10)||0;
-      rows.push(obj);
+// 讀取 / 儲存 OP_KEY
+function loadKey(){
+  try{
+    const k = localStorage.getItem('murain_admin_op_key') || '';
+    if(k) {
+      adminKey = k;
+      $('#opKeyInput').value = k;
     }
+  }catch(e){}
+}
+function saveKey(k){
+  adminKey = k || '';
+  try{
+    if(k) localStorage.setItem('murain_admin_op_key', k);
+    else localStorage.removeItem('murain_admin_op_key');
+  }catch(e){}
+}
+
+// 狀態顯示 pill class
+function statusClass(st){
+  if(!st) return 'status-pill st-draft';
+  const s = String(st).toLowerCase();
+  if(s==='submitted') return 'status-pill st-submitted';
+  if(s==='ready') return 'status-pill st-submitted';
+  if(s==='shipped') return 'status-pill st-shipped';
+  if(s==='cancelled') return 'status-pill st-cancelled';
+  return 'status-pill st-draft';
+}
+function statusLabel(st){
+  if(!st) return '（未設定）';
+  const s = String(st).toLowerCase();
+  if(s==='submitted') return 'submitted（待處理）';
+  if(s==='ready') return 'ready（待出貨）';
+  if(s==='shipped') return 'shipped（已出貨）';
+  if(s==='cancelled') return 'cancelled（已取消）';
+  return s;
+}
+
+async function loadOrders(){
+  if(!adminKey){
+    $('#loginStatus').textContent = '請先輸入 OP_KEY 登入。';
+    return;
   }
-  const r=await fetch(API+'/admin/products/bulk_upsert',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+admin},body:JSON.stringify({products:rows})});
-  $('#uploadResult').textContent='回應：'+await r.text();
-};
+  $('#loginStatus').textContent = '讀取訂單中…';
+  $('#ordersCard').style.display = 'block';
+  $('#detailCard').style.display = 'none';
+  $('#orderTbody').innerHTML = '';
+  $('#orderCountTag').textContent = '0 筆';
 
-// 訂單查詢
-$('#search').onclick = async ()=>{
-  const admin=key(); if(!admin) return toast('請先登入');
-  const r=await fetch(API+'/admin/orders?q='+encodeURIComponent($('#q').value||''),{headers:{'Authorization':'Bearer '+admin}});
-  const data=await r.json();
-  const tb=document.querySelector('#orders tbody'); tb.innerHTML='';
-  (data.list||[]).forEach(o=>{
-    const info=o.shipping_info||{};
-    const tr=document.createElement('tr');
-    tr.innerHTML=`<td class="mono">${o.order_id}</td>
-      <td align="right">NT$ ${o.total_amount||0}</td>
-      <td>${o.payment_method||''}</td>
-      <td>${o.status||''}</td>
-      <td>${info.name||''} / ${info.phone||''} / ${info.email||''} / ${(info.store||info.address||'')}</td>
-      <td><a target="_blank" href="./admin-print.html?order_id=${encodeURIComponent(o.order_id)}&key=${encodeURIComponent(admin)}">列印</a></td>`;
-    tb.appendChild(tr);
-  });
-};
+  const status = $('#statusFilter').value || 'all';
+  const url = new URL(API + '/admin/orders');
+  url.searchParams.set('op_key', adminKey);
+  url.searchParams.set('status', status);
 
-function updateExportLinks(){
-  const admin=key();
-  document.getElementById('exportOrders').href = API+'/admin/export/orders.csv?key='+encodeURIComponent(admin);
-  document.getElementById('exportItems').href  = API+'/admin/export/order_items.csv?key='+encodeURIComponent(admin);
+  try{
+    const r = await fetch(url.toString());
+    const j = await r.json();
+    if(!r.ok || !j.ok){
+      $('#loginStatus').textContent = '讀取失敗：' + (j.error || r.status);
+      return;
+    }
+    orders = j.orders || [];
+    $('#orderCountTag').textContent = orders.length + ' 筆';
+
+    const tb = $('#orderTbody');
+    tb.innerHTML = '';
+
+    orders.forEach(o=>{
+      const tr = document.createElement('tr');
+      tr.dataset.orderId = o.order_id || '';
+      const ship = parseShip(o.shipping_info);
+      tr.innerHTML = `
+        <td>
+          <div class="mono">${o.order_id || ''}</div>
+          <div class="muted" style="font-size:11px">${o.created_at || ''}</div>
+        </td>
+        <td class="mono">${o.payment_method || ''}</td>
+        <td>
+          ${ship.name || ''}<br>
+          <span class="muted" style="font-size:11px">${ship.summary || ''}</span>
+        </td>
+        <td class="right mono">${fmtMoney(o.total_amount)}</td>
+        <td>
+          <span class="${statusClass(o.ship_status || o.status)}">${statusLabel(o.ship_status || o.status)}</span>
+        </td>
+      `;
+      tr.addEventListener('click', ()=>selectOrder(o.order_id));
+      tb.appendChild(tr);
+    });
+
+    $('#loginStatus').textContent = '已載入 ' + orders.length + ' 筆訂單。';
+  }catch(e){
+    console.error(e);
+    $('#loginStatus').textContent = '讀取失敗（網路或程式錯誤）';
+  }
 }
 
-// 快速查庫存 / 調整庫存
-async function checkStock(){
-  const sku=document.getElementById('adj_sku').value.trim(); if(!sku) return toast('請輸入 SKU');
-  const r=await fetch(API+'/product/'+encodeURIComponent(sku)); const data=await r.json();
-  if(!data.found){ document.getElementById('adj_result').textContent='找不到此 SKU'; return; }
-  document.getElementById('adj_result').textContent=`【${data.product.sku}】${data.product.name} 目前庫存：${data.product.stock_qty}`;
-}
-async function adjustStock(delta){
-  const admin=key(); if(!admin) return toast('請先登入');
-  const sku=document.getElementById('adj_sku').value.trim(); if(!sku) return toast('請輸入 SKU');
-  const r=await fetch(API+'/admin/products/adjust_stock',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+admin},body:JSON.stringify({sku,delta})});
-  const t=await r.text(); document.getElementById('adj_result').textContent='回應：'+t; if(r.ok) await checkStock();
-}
-document.getElementById('btn_minus1').onclick = ()=>{ const v=parseInt(document.getElementById('adj_delta').value||'1',10); adjustStock(-Math.abs(v)); };
-document.getElementById('btn_plus1').onclick  = ()=>{ const v=parseInt(document.getElementById('adj_delta').value||'1',10); adjustStock(+Math.abs(v)); };
-document.getElementById('btn_adj').onclick    = ()=>{ const v=parseInt(document.getElementById('adj_delta').value||'1',10); if(!Number.isFinite(v)) return toast('請輸入整數'); adjustStock(v); };
-document.getElementById('btn_stock').onclick  = checkStock;
-
-// 出貨與通知
-document.getElementById('btn-ship').onclick = async ()=>{
-  const admin=key(); if(!admin) return toast('請先登入');
-  const body={
-    order_id: document.getElementById('ship_order').value.trim(),
-    carrier: document.getElementById('ship_carrier').value,
-    tracking_no: document.getElementById('ship_no').value.trim(),
-    shipping_fee: parseInt(document.getElementById('ship_fee').value||'0',10)||0
+// 解析 shipping_info JSON
+function parseShip(raw){
+  let info = {};
+  try{
+    if(raw) info = JSON.parse(raw);
+  }catch(e){}
+  const ship = info.ship || {};
+  const res = {
+    type: ship.type || '',
+    name: ship.name || '',
+    phone: ship.phone || '',
+    email: ship.email || '',
+    addr: '',
+    store: ship.store || null,
+    post: ship.post || null,
+    note: info.note || '',
+    summary: ''
   };
-  const r=await fetch(API+'/admin/shipment',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+admin},body:JSON.stringify(body)});
-  document.getElementById('shipResult').textContent=await r.text();
-};
-document.getElementById('btn-notify').onclick = async ()=>{
-  const admin=key(); if(!admin) return toast('請先登入');
-  const id=document.getElementById('ship_order').value.trim(); if(!id) return toast('請先輸入 Order ID');
-  const r=await fetch(API+'/admin/notify/shipped',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+admin},body:JSON.stringify({order_id:id})});
-  alert(await r.text());
-};
-document.getElementById('btn-print').onclick = (e)=>{ e.preventDefault(); const id=document.getElementById('ship_order').value.trim(); if(!id) return toast('請先輸入 Order ID'); const admin=key(); window.open(`./admin-print.html?order_id=${encodeURIComponent(id)}&key=${encodeURIComponent(admin)}`,'_blank'); };
+  if(ship.type === '711' && ship.store){
+    res.addr = `7-11 ${ship.store.name || ''}（${ship.store.id || ''}）${ship.store.addr || ''}`;
+    res.summary = res.addr;
+  }else if(ship.type === 'post' && ship.post){
+    res.addr = `${ship.post.zip || ''} ${ship.post.addr || ''}`;
+    res.summary = '郵寄：' + res.addr;
+  }
+  return res;
+}
+
+function selectOrder(orderId){
+  const o = orders.find(x=>x.order_id === orderId);
+  if(!o) return;
+  currentOrder = o;
+
+  const ship = parseShip(o.shipping_info);
+
+  $('#detailCard').style.display = 'block';
+  $('#detailTitle').textContent = (ship.name || '') + ' / ' + (ship.summary || '');
+
+  $('#dOrderId').textContent = o.order_id || '';
+  $('#dCreatedAt').textContent = o.created_at || '';
+  $('#dPaymentMethod').textContent = o.payment_method || '';
+  $('#dTotal').textContent = fmtMoney(o.total_amount || 0);
+  $('#dNote').textContent = ship.note || '';
+
+  $('#dShipName').textContent = ship.name || '';
+  $('#dShipPhone').textContent = ship.phone || '';
+  $('#dShipEmail').textContent = ship.email || '';
+  $('#dShipAddr').textContent = ship.addr || '';
+
+  $('#shipStatus').value = o.ship_status || '';
+  $('#shipNo').value = o.ship_no || '';
+  $('#shipFee').value = o.ship_fee || '';
+  $('#shipNote').value = o.ship_note || '';
+
+  updateNotifyPreview();
+  $('#saveStatus').textContent = '';
+}
+
+// 產生出貨通知文字
+function buildNotifyText(){
+  if(!currentOrder) return '';
+  const ship = parseShip(currentOrder.shipping_info);
+  const name = ship.name || '親愛的顧客';
+  const pm = currentOrder.payment_method || '';
+  const amt = fmtMoney(currentOrder.total_amount || 0);
+  const shipNo = $('#shipNo').value || '';
+  const shipStatus = $('#shipStatus').value || '';
+  const shipLine =
+    ship.type === '711'
+      ? `取貨方式：7-11 ${ship.store?.name || ''}（${ship.store?.id || ''}）\n門市地址：${ship.store?.addr || ''}`
+      : `寄送方式：郵寄（中華郵政）\n收件地址：${ship.addr || ''}`;
+
+  let statusTxt = '';
+  if(shipStatus === 'shipped') statusTxt = '已為您安排出貨 🎁';
+  else if(shipStatus === 'ready') statusTxt = '已為您準備待出貨，將盡快為您寄出 🙌';
+  else statusTxt = '訂單已成立 ✅';
+
+  const track = shipNo ? `\n物流單號：${shipNo}` : '';
+  const note = $('#shipNote').value ? `\n\n內部備註：${$('#shipNote').value}` : '';
+
+  return [
+    `[MURAIN 出貨通知]`,
+    ``,
+    `${name} 您好～`,
+    ``,
+    `您的訂單 ${currentOrder.order_id || ''} ${statusTxt}`,
+    shipLine,
+    `應付金額：${amt}`,
+    track,
+    ``,
+    `有任何問題都可以隨時私訊 MURAIN 官方 LINE 喔🥰`,
+    note
+  ].join('\n');
+}
+
+function updateNotifyPreview(){
+  $('#notifyPreview').value = buildNotifyText();
+}
+
+// 儲存出貨資訊
+async function saveShipping(){
+  if(!currentOrder || !adminKey) return;
+  const body = {
+    op_key: adminKey,
+    order_id: currentOrder.order_id,
+    ship_status: $('#shipStatus').value || '',
+    ship_no: $('#shipNo').value || '',
+    ship_fee: Number($('#shipFee').value || 0),
+    ship_note: $('#shipNote').value || ''
+  };
+  $('#saveStatus').textContent = '儲存中…';
+  try{
+    const r = await fetch(API + '/admin/order/update', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if(!r.ok || !j.ok){
+      $('#saveStatus').textContent = '儲存失敗：' + (j.error || r.status);
+      return;
+    }
+    // 更新本地 orders
+    currentOrder.ship_status = body.ship_status;
+    currentOrder.ship_no = body.ship_no;
+    currentOrder.ship_fee = body.ship_fee;
+    currentOrder.ship_note = body.ship_note;
+    updateNotifyPreview();
+    $('#saveStatus').textContent = '已儲存 ✅';
+    // 重新渲染列表的那一列（簡單起見直接重抓一次）
+    loadOrders();
+  }catch(e){
+    console.error(e);
+    $('#saveStatus').textContent = '儲存失敗（網路或程式錯誤）';
+  }
+}
+
+// 綁定事件
+document.getElementById('loginBtn').addEventListener('click', ()=>{
+  const k = $('#opKeyInput').value.trim();
+  if(!k){ alert('請先輸入 OP_KEY'); return; }
+  saveKey(k);
+  $('#loginStatus').textContent = '已登入，開始讀取訂單…';
+  $('#ordersCard').style.display = 'block';
+  loadOrders();
+});
+$('#clearKeyBtn').addEventListener('click', ()=>{
+  saveKey('');
+  $('#opKeyInput').value = '';
+  $('#ordersCard').style.display = 'none';
+  $('#detailCard').style.display = 'none';
+  $('#loginStatus').textContent = '已清除 OP_KEY。';
+});
+$('#refreshBtn').addEventListener('click', loadOrders);
+$('#statusFilter').addEventListener('change', loadOrders);
+$('#shipStatus').addEventListener('change', updateNotifyPreview);
+$('#shipNo').addEventListener('input', updateNotifyPreview);
+$('#shipFee').addEventListener('input', ()=>{});
+$('#shipNote').addEventListener('input', updateNotifyPreview);
+$('#saveShipBtn').addEventListener('click', saveShipping);
+$('#copyMsgBtn').addEventListener('click', async ()=>{
+  const txt = buildNotifyText();
+  try{
+    await navigator.clipboard.writeText(txt);
+    $('#saveStatus').textContent = '已複製出貨通知文字 ✅';
+  }catch(e){
+    $('#saveStatus').textContent = '複製失敗，請手動選取複製。';
+  }
+});
+$('#printBtn').addEventListener('click', ()=>{ window.print(); });
+
+// 初始化
+loadKey();
+if(adminKey){
+  $('#loginStatus').textContent = '已從瀏覽器讀取 OP_KEY，準備載入訂單…';
+  $('#ordersCard').style.display = 'block';
+  loadOrders();
+}
 </script>
 </body>
 </html>
