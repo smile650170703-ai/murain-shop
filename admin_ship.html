@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MURAIN — 出貨後台（出貨＋LINE通知）</title>
+<style>
+  *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
+  body{margin:0;background:#0b1222;color:#e2e8f0}
+  .wrap{max-width:480px;margin:0 auto;padding:20px}
+  h1{font-size:22px;margin:0 0 12px}
+  label{display:block;font-size:14px;margin:10px 2px 4px}
+  input,button{width:100%;padding:12px;border-radius:10px;border:1px solid #1e293b;
+    background:rgba(15,23,42,.9);color:#e2e8f0;font-size:15px}
+  input:focus{outline:2px solid #38bdf8;outline-offset:1px;border-color:#38bdf8}
+  button{margin-top:16px;background:#38bdf8;border:none;color:#0f172a;font-weight:600;cursor:pointer}
+  button:active{transform:scale(.98)}
+  .card{background:rgba(15,23,42,.9);border-radius:16px;border:1px solid rgba(148,163,184,.4);padding:16px;margin-top:12px;box-shadow:0 10px 30px rgba(0,0,0,.4)}
+  .hint{font-size:12px;color:#94a3b8;margin-top:4px}
+  .ok{color:#4ade80;font-size:13px;margin-top:8px}
+  .err{color:#f97373;font-size:13px;margin-top:8px;white-space:pre-line}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>出貨後台 — 出貨＋發 LINE 通知</h1>
+  <div class="card">
+    <label>後台密碼（OP_KEY）</label>
+    <input id="op_key" type="password" placeholder="請輸入後台管理密碼" />
+
+    <label>訂單編號（order_id）</label>
+    <input id="order_id" placeholder="例如：OD1732000000000" />
+
+    <label>物流單號（tracking_no）</label>
+    <input id="tracking_no" placeholder="例如：7-11 或 宅配 單號" />
+
+    <label>運費（shipping_fee，選填）</label>
+    <input id="shipping_fee" type="number" min="0" step="1" placeholder="例如：60 / 70，不填就留空" />
+
+    <div class="hint">
+      ✅ 按下按鈕後：<br>
+      1) Orders 會被標記為 <code>shipped</code><br>
+      2) 會寫入 <code>tracking_no</code> / <code>shipping_fee</code><br>
+      3) 如果訂單有綁 LINE，就會自動發「已出貨＋單號」通知給客人
+    </div>
+
+    <button onclick="doShip()">送出出貨 ＋ 發 LINE 通知</button>
+    <div id="msg"></div>
+  </div>
+</div>
+
+<script>
+// ✅ 這裡如果你的 API 不是 https://api.murain.tw，改成你的 Worker 網址即可
+const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
+
+function $(id){ return document.getElementById(id); }
+
+async function doShip(){
+  const op_key       = $('op_key').value.trim();
+  const order_id     = $('order_id').value.trim();
+  const tracking_no  = $('tracking_no').value.trim();
+  const shipping_txt = $('shipping_fee').value.trim();
+  const msgBox       = $('msg');
+  msgBox.textContent = '';
+  msgBox.className   = '';
+
+  if (!op_key) { alert('請先輸入後台密碼（OP_KEY）'); $('op_key').focus(); return; }
+  if (!order_id) { alert('請輸入訂單編號'); $('order_id').focus(); return; }
+
+  let shipping_fee = null;
+  if (shipping_txt !== '') {
+    const n = Number(shipping_txt);
+    if (isNaN(n) || n < 0) {
+      alert('運費請輸入數字或留空');
+      $('shipping_fee').focus();
+      return;
+    }
+    shipping_fee = n;
+  }
+
+  const payload = { op_key, order_id, tracking_no };
+  if (shipping_fee !== null) payload.shipping_fee = shipping_fee;
+
+  msgBox.textContent = '處理中...'; 
+
+  try {
+    const res = await fetch(API + '/admin/order/ship', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const j = await res.json().catch(()=> ({}));
+
+    if (!res.ok || !j.ok) {
+      const err = j.error || ('HTTP ' + res.status);
+      msgBox.textContent = '❌ 出貨失敗：' + err;
+      msgBox.className = 'err';
+      return;
+    }
+
+    msgBox.innerHTML = '✅ 已成功標記出貨，並嘗試發送 LINE 通知給客人。';
+    msgBox.className = 'ok';
+
+    // 這邊如果你習慣「印面單」，可以按瀏覽器「列印」直接列印此頁
+    // 或之後再做一個專門的列印版頁面。
+  } catch (e) {
+    msgBox.textContent = '❌ 連線錯誤：' + e;
+    msgBox.className = 'err';
+  }
+}
+</script>
+</body>
+</html>
