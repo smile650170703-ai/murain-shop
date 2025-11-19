@@ -140,23 +140,28 @@ async function ensureOpKey(){
   }
 }
 
-async function loadOrders(filter){
+async function loadOrders(filter) {
   currentFilter = filter;
-  const listEl = $('#orderList');
-  listEl.innerHTML = '<div class="muted">載入中…</div>';
-  try{
-    const r = await fetch(`${API}/admin/orders?filter=${encodeURIComponent(filter)}&op_key=${encodeURIComponent(OP_KEY)}`);
+  listBox.textContent = '載入中...';
+
+  try {
+    const r = await fetch(`${API}/admin/orders?filter=${filter}&op_key=${encodeURIComponent(opKey)}`);
     const j = await r.json();
-    if(!r.ok || !j.ok){
-      throw new Error(j.error || 'admin_orders_error');
+    if (!r.ok || !j.ok) {
+      throw new Error(j.error || 'load_failed');
     }
-    currentOrders = j.records || [];
-    renderOrderList();
-  }catch(e){
+
+    // ✅ 這裡改成去讀 j.orders，如果沒有再退回 j.records
+    const list = j.orders || j.records || [];
+
+    ordersCache = list;          // 如果你有用 cache，就保留這行
+    renderOrderList(list);       // 照你原本的函式名稱
+  } catch (e) {
     console.error(e);
-    listEl.innerHTML = `<div class="error">載入失敗：${e.message || e}</div>`;
+    listBox.textContent = '載入失敗：' + e.message;
   }
 }
+
 
 function statusBadgePay(pay){
   if(!pay) return '';
