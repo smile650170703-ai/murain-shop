@@ -88,7 +88,7 @@ let currentFilter = 'all';
 let currentOrders = [];
 let currentRecord = null;
 
-const $ = (s,r=document)=>r.querySelector(s);
+const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
 
 function money(n){ return 'NT$ ' + Number(n||0).toLocaleString(); }
@@ -113,6 +113,7 @@ function toDatetimeLocal(v){
     pad(d.getMinutes());
 }
 
+/* ===== OP_KEY 驗證 ===== */
 async function ensureOpKey(){
   $('#opLabel').textContent = OP_KEY ? '已登入後台' : '尚未登入';
   while(!OP_KEY){
@@ -140,30 +141,29 @@ async function ensureOpKey(){
   }
 }
 
-async function loadOrders(filter = 'all') {
+/* ===== 載入訂單列表 ===== */
+async function loadOrders(filter='all'){
   currentFilter = filter;
-  const listEl = document.querySelector('#orderList');
+  const listEl = $('#orderList');
   listEl.innerHTML = '<div class="muted">載入中…</div>';
 
-  try {
+  try{
     const r = await fetch(
       `${API}/admin/orders?filter=${encodeURIComponent(filter)}&op_key=${encodeURIComponent(OP_KEY)}`
     );
     const j = await r.json();
-    if (!r.ok || !j.ok) {
+    if(!r.ok || !j.ok){
       throw new Error(j.error || 'load_failed');
     }
 
-    // 後端回傳 { ok:true, orders:[...]}，如果未來改成 records 也能相容
+    // 後端回傳 { ok:true, orders:[...]}；若未來變成 records 也能相容
     currentOrders = j.orders || j.records || [];
-    renderOrderList();   // 用 currentOrders 來畫畫面
-  } catch (e) {
+    renderOrderList();
+  }catch(e){
     console.error(e);
     listEl.innerHTML = '<div class="error">載入失敗：' + (e.message || e) + '</div>';
   }
 }
-
-
 
 function statusBadgePay(pay){
   if(!pay) return '';
@@ -188,6 +188,7 @@ function statusBadgeShip(st){
   return `<span class="${cls}">${text}</span>`;
 }
 
+/* ===== 左側列表渲染 ===== */
 function renderOrderList(){
   const listEl = $('#orderList');
   if(!currentOrders.length){
@@ -196,26 +197,33 @@ function renderOrderList(){
   }
 
   const html = currentOrders.map(rec=>{
+    // 支援兩種格式：{fields:{...}} 或 {order_id:..., total_amount:...}
     const f = rec.fields || rec || {};
+
     const shipInfo = parseShippingInfo(f);
-    const ship = shipInfo.ship || {};
-    const store = ship.store || {};
-    const post = ship.post || {};
+    const ship  = shipInfo.ship  || {};
+    const store = ship.store     || {};
+    const post  = ship.post      || {};
+
     let addr = '';
-    if(ship.type === '711'){
+    if (ship.type === '711') {
       addr = `7-11 ${store.name || ''} (${store.id || ''}) ${store.addr || ''}`;
-    }else if(ship.type === 'post'){
+    } else if (ship.type === 'post') {
       addr = `郵寄 ${post.zip || ''} ${post.addr || ''}`;
     }
-    const line2 = [ship.name, ship.phone, addr].filter(Boolean).join(' / ');
-    const pay_b = statusBadgePay(f.pay_status);
-    const ship_b = statusBadgeShip(f.ship_status);
-    const method = f.payment_method || '';
-    const created = f.created_at || '';
-    const total = money(f.total_amount || f.total || 0);
+
+    const line2   = [ship.name, ship.phone, addr].filter(Boolean).join(' / ');
+    const pay_b   = statusBadgePay(f.pay_status);
+    const ship_b  = statusBadgeShip(f.ship_status);
+    const method  = f.payment_method || '';
+    const created = f.created_at     || '';
+    const total   = money(f.total_amount || f.total || 0);
+
+    // 用 order_id 當 key，若有 rec.id 也一起放進去（方便之後擴充）
+    const rowKey = f.order_id || rec.id || '';
 
     return `
-      <div class="order-row" data-id="${rec.id}">
+      <div class="order-row" data-id="${rowKey}">
         <div class="ord-top">
           <div>
             <div class="ord-id">${f.order_id || '(無編號)'}</div>
@@ -242,14 +250,16 @@ function renderOrderList(){
     row.addEventListener('click', ()=>{
       $$('#orderList .order-row').forEach(x=>x.classList.remove('active'));
       row.classList.add('active');
-      const id = row.getAttribute('data-id');
-      selectOrder(id);
+      const key = row.getAttribute('data-id');
+      selectOrder(key);
     });
   });
 
-  // 保留目前選取的那筆
+  // 若已經有選中的訂單，重新 render 後維持選取
   if(currentRecord){
-    const row = $(`#orderList .order-row[data-id="${currentRecord.id}"]`);
+    const f = currentRecord.fields || currentRecord || {};
+    const key = currentRecord.id || f.order_id || '';
+    const row = $(`#orderList .order-row[data-id="${key}"]`);
     if(row){
       row.classList.add('active');
     }else{
@@ -258,21 +268,29 @@ function renderOrderList(){
     }
   }
 }
-function selectOrder(recordId) {
-  const rec = currentOrders.find(x => x.id === recordId);
-  if (!rec) return;
+
+/* 根據 key 找出訂單（id 或 order_id） */
+function selectOrder(key){
+  if(!key) return;
+  const rec = currentOrders.find(x=>{
+    if (x.id && String(x.id) === String(key)) return true;
+    const f = x.fields || x || {};
+    return f.order_id && String(f.order_id) === String(key);
+  });
+  if(!rec) return;
   renderDetail(rec);
 }
 
+/* ===== 出貨通知預設文字 ===== */
 function buildNoticeText(rec){
   const f = rec.fields || rec || {};
   const shipInfo = parseShippingInfo(f);
-  const ship = shipInfo.ship || {};
-  const store = ship.store || {};
-  const post = ship.post || {};
+  const ship  = shipInfo.ship  || {};
+  const store = ship.store     || {};
+  const post  = ship.post      || {};
   const orderId = f.order_id || '';
-  const total = money(f.total_amount || f.total || 0);
-  const name = ship.name || '親愛的客人';
+  const total   = money(f.total_amount || f.total || 0);
+  const name    = ship.name || '親愛的客人';
 
   let methodText = '';
   if(ship.type === '711'){
@@ -295,15 +313,17 @@ ${name} 您好～
 包裹寄出後，實際到店/送達時間仍以物流為主，如有任何問題都可以直接回覆此訊息，謝謝您💖`;
 }
 
+/* ===== 右側詳細資料 ===== */
 function renderDetail(rec){
   currentRecord = rec;
-  const f = rec.fields || rec || {};
+  const f   = rec.fields || rec || {};
   const dEl = $('#orderDetail');
+
   const shipInfo = parseShippingInfo(f);
-  const ship = shipInfo.ship || {};
-  const store = ship.store || {};
-  const post = ship.post || {};
-  const note = shipInfo.note || '';
+  const ship  = shipInfo.ship  || {};
+  const store = ship.store     || {};
+  const post  = ship.post      || {};
+  const note  = shipInfo.note  || '';
 
   const addrText = (()=>{
     if(ship.type === '711'){
@@ -316,7 +336,7 @@ function renderDetail(rec){
   })();
 
   const itemsText = f.items_text || '';
-  const total = money(f.total_amount || f.total || 0);
+  const total     = money(f.total_amount || f.total || 0);
 
   dEl.innerHTML = `
     <div class="detail-grid">
@@ -441,38 +461,40 @@ function renderDetail(rec){
   $('#btnCopyNotice').addEventListener('click', copyNotice);
 }
 
+/* ===== 儲存右側欄位 ===== */
 async function saveDetail(){
   if(!currentRecord) return;
-  const f = currentRecord.fields || {};
   const msgEl = $('#detailMsg');
   msgEl.textContent = '儲存中…';
 
   const fields = {};
-
-  fields.pay_status   = $('#d_pay_status').value || null;
-  fields.ship_status  = $('#d_ship_status').value || null;
-  fields.ship_tracking= $('#d_ship_tracking').value || '';
+  fields.pay_status      = $('#d_pay_status').value || null;
+  fields.ship_status     = $('#d_ship_status').value || null;
+  fields.ship_tracking   = $('#d_ship_tracking').value || '';
   const fee = $('#d_ship_fee').value.trim();
-  fields.ship_fee     = fee ? Number(fee) : null;
+  fields.ship_fee        = fee ? Number(fee) : null;
 
-  const depAmt = $('#d_deposit_amount').value.trim();
-  fields.deposit_amount = depAmt ? Number(depAmt) : null;
-  fields.deposit_last5  = $('#d_deposit_last5').value.trim() || '';
+  const depAmt           = $('#d_deposit_amount').value.trim();
+  fields.deposit_amount  = depAmt ? Number(depAmt) : null;
+  fields.deposit_last5   = $('#d_deposit_last5').value.trim() || '';
   fields.deposit_expire_at = $('#d_deposit_expire_at').value || null;
   fields.hold_until        = $('#d_hold_until').value || null;
   fields.deposit_received  = $('#d_deposit_received').checked;
   fields.pay_notice_sent   = $('#d_pay_notice_sent').checked;
-
-  fields.internal_note = $('#d_internal_note').value || '';
+  fields.internal_note     = $('#d_internal_note').value || '';
 
   const shipAt = $('#d_ship_at').value;
   fields.ship_at = shipAt || null;
 
+  // 後端可接受 record_id 或 order_id，這裡兩個都給
+  const f = currentRecord.fields || currentRecord || {};
+  const payload = {
+    record_id: currentRecord.id || null,
+    order_id : f.order_id || null,
+    fields
+  };
+
   try{
-    const payload = {
-      record_id: currentRecord.id,
-      fields
-    };
     const r = await fetch(`${API}/admin/order/update?op_key=${encodeURIComponent(OP_KEY)}`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -485,12 +507,17 @@ async function saveDetail(){
     msgEl.textContent = '已儲存 ✅';
 
     // 重新載入列表，保留目前這一筆
-    const keepId = currentRecord.id;
+    const keepF   = currentRecord.fields || currentRecord || {};
+    const keepKey = currentRecord.id || keepF.order_id || '';
     await loadOrders(currentFilter);
-    const found = currentOrders.find(x=>x.id === keepId);
+    const found = currentOrders.find(x=>{
+      if (x.id && x.id === keepKey) return true;
+      const fx = x.fields || x || {};
+      return fx.order_id && fx.order_id === keepKey;
+    });
     if(found){
       renderDetail(found);
-      const row = $(`#orderList .order-row[data-id="${keepId}"]`);
+      const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
       if(row) row.classList.add('active');
     }
   }catch(e){
@@ -499,6 +526,7 @@ async function saveDetail(){
   }
 }
 
+/* ===== 複製出貨通知 ===== */
 async function copyNotice(){
   const ta = $('#d_notice_text');
   if(!ta) return;
@@ -518,8 +546,9 @@ async function copyNotice(){
   }
 }
 
+/* ===== 頁面初始化 ===== */
 document.addEventListener('DOMContentLoaded', async ()=>{
-  // 切換 filter
+  // 切換上方 filter
   $$('.filter-btn').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       $$('.filter-btn').forEach(b=>b.classList.remove('active'));
@@ -539,5 +568,6 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   await loadOrders('all');
 });
 </script>
+
 </body>
 </html>
