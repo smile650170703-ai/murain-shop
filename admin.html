@@ -638,21 +638,31 @@ function renderDetail(rec){
         <label class="mt-3">內部備註 (internal_note)</label>
         <textarea id="d_internal_note">${f.internal_note || ''}</textarea>
 
-        <div class="mt-3 section-title">出貨通知文字（預覽，可自行修改）</div>
+                <div class="mt-3 section-title">出貨通知文字（預覽，可自行修改）</div>
         <textarea id="d_notice_text">${buildNoticeText(rec)}</textarea>
 
         <button class="btn-primary" id="btnSaveDetail">儲存出貨 / 付款資訊</button>
         <button class="btn-secondary" id="btnShipAndLine">一鍵標記已出貨＋發 LINE 通知</button>
+        <button class="btn-secondary" id="btnConfirmPayOk">✅ 確認已收款／審核通過 ＋ 發 LINE</button>
+        <button class="btn-secondary" id="btnMarkZcFail">❌ 中租審核未通過 ＋ 發 LINE</button>
         <button class="btn-secondary" id="btnCopyNotice">複製出貨通知文字</button>
         <div id="detailMsg" class="tag-small mt-2"></div>
       </div>
     </div>
   `;
 
-  $('#btnSaveDetail').addEventListener('click', saveDetail);
+
+    $('#btnSaveDetail').addEventListener('click', saveDetail);
   $('#btnCopyNotice').addEventListener('click', copyNotice);
   $('#btnShipAndLine').addEventListener('click', shipAndLine);
+
+  const btnPayOk = $('#btnConfirmPayOk');
+  if (btnPayOk) btnPayOk.addEventListener('click', ()=>confirmPay('ok'));
+
+  const btnZcFail = $('#btnMarkZcFail');
+  if (btnZcFail) btnZcFail.addEventListener('click', ()=>confirmPay('zc_fail'));
 }
+
 
 /* ===== 儲存右側欄位 ===== */
 async function saveDetail(){
@@ -773,6 +783,61 @@ async function shipAndLine(){
   }catch(e){
     console.error(e);
     msgEl.textContent = '❌ 出貨失敗：' + (e.message || e);
+  }
+}
+
+ /* ===== 確認收款 / 中租審核 ＋ 發 LINE ===== */
+async function confirmPay(mode){
+  if (!currentRecord) return;
+  const msgEl = $('#detailMsg');
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = f.order_id;
+  if (!orderId){
+    alert('這筆訂單沒有 order_id，無法更新付款狀態。');
+    return;
+  }
+
+  const depAmtTxt  = $('#d_deposit_amount').value.trim();
+  const depLast5   = $('#d_deposit_last5').value.trim();
+  const depAmt     = depAmtTxt ? Number(depAmtTxt) : null;
+
+  const payload = {
+    op_key: OP_KEY,
+    order_id: orderId,
+    mode: mode || 'ok',          // ok / zc_fail
+    deposit_amount: depAmt,
+    deposit_last5 : depLast5
+  };
+
+  msgEl.textContent = '更新付款狀態中…';
+
+  try{
+    const res = await fetch(API + '/admin/order/confirm-pay', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const j = await res.json().catch(()=> ({}));
+    if (!res.ok || !j.ok){
+      throw new Error(j.error || ('HTTP ' + res.status));
+    }
+
+    msgEl.textContent = '✅ 已更新付款狀態並嘗試發送 LINE 通知';
+
+    const keepKey = orderId;
+    await loadOrders(currentFilter);
+    const found = currentOrders.find(x=>{
+      const fx = x.fields || x || {};
+      return fx.order_id && String(fx.order_id) === String(keepKey);
+    });
+    if (found){
+      renderDetail(found);
+      const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
+      if (row) row.classList.add('active');
+    }
+  }catch(e){
+    console.error(e);
+    msgEl.textContent = '❌ 付款狀態更新失敗：' + (e.message || e);
   }
 }
 
