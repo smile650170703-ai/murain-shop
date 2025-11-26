@@ -464,29 +464,39 @@ async function loadCart(){
     const r = await fetch(`${API}/cart/${cartToken}`);
     const j = await r.json();
 
-    if (!j.ok || !Array.isArray(j.items) || !j.items.length) {
+    // ✅ 不要再用 j.ok，改成只檢查 items
+    if (!Array.isArray(j.items) || !j.items.length) {
       alert('購物車是空的，請先將商品加入購物車');
       return;
     }
 
-    CART_TOTAL_RAW = j.summary?.total || 0;
-    setTotal(CART_TOTAL_RAW);
-    $('#footerTotal').textContent = 'NT$ ' + Number(CART_TOTAL_RAW||0).toLocaleString() + '（以上方為準）';
+    const items = j.items;
+    // 同時支援 total_amount / summary.total 兩種格式
+    const total = Number(j.total_amount ?? j.summary?.total ?? 0);
 
-    const lines = j.items.map(it=>{
-      const name = it.name || it.sku || '';
-      const qty  = it.qty  || 1;
+    CART_TOTAL_RAW = total;
+    setTotal(total);
+
+    const footer = document.querySelector('#footerTotal');
+    if (footer) {
+      footer.textContent = 'NT$ ' + Number(total || 0).toLocaleString() + '（以上方為準）';
+    }
+
+    const lines = items.map(it => {
+      const name  = it.name || it.sku || '';
+      const qty   = it.qty  || 1;
       const price = it.price || 0;
       return `・${name} x ${qty}（NT$ ${price.toLocaleString()}）`;
     });
-    $('#itemsText').value = lines.join('\n');
+    const box = document.querySelector('#itemsText');
+    if (box) box.value = lines.join('\n');
+
     calcZC();
   } catch(e){
-    console.error(e);
+    console.error('loadCart error', e);
     alert('讀取購物車失敗，請再試一次');
   }
 }
-
 /* ===== 7-11 e-map ===== */
 function openCvsMap(src){
   const qs2 = new URLSearchParams(location.search);
