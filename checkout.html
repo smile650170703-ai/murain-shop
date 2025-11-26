@@ -71,24 +71,15 @@
   <div class="card">
     <div class="section-title">選擇付款 / 取貨方式</div>
 
-    <div class="mt-2">
-      <div class="label-small">客人身份</div>
-      <div class="tabs" id="custTabs">
-        <button type="button" class="tab" data-cust="new">新客人</button>
-        <button type="button" class="tab" data-cust="old">老客人</button>
-      </div>
-      <div class="muted">新客 / 老客會影響可選的付款方式。</div>
-    </div>
-
     <div class="tabs" id="payTabs">
       <button class="tab active" data-pay="COD">7-11 貨到付款</button>
       <button class="tab" data-pay="PAID">線上付款</button>
       <button class="tab" data-pay="DEPOSIT">ATM 匯款</button>
       <button class="tab" data-pay="ZEROCARD">無卡零角</button>
     </div>
-    <div class="muted">可依不同客人 / 不同活動，幫他選擇最適合的方式。</div>
+    <div class="muted">可以依客人狀況，在四種方式之間幫他選擇最適合的組合。</div>
 
-    <!-- COD: 7-11 貨到付款（老客/信任客人） -->
+    <!-- COD: 7-11 貨到付款 -->
     <div id="paneCOD">
       <div class="section-title mt-4">7-11 收件資料</div>
       <div class="row">
@@ -106,7 +97,7 @@
       <button class="btn secondary" id="mapCOD">開啟 7-11 門市地圖</button>
     </div>
 
-    <!-- PAID: 可 7-11 或 郵寄 -->
+    <!-- PAID: 線上付款 -->
     <div id="panePAID" hidden>
       <label style="margin-top:8px">選擇管道</label>
       <select id="paid_channel">
@@ -159,7 +150,7 @@
         <label>郵遞區號 *</label>
         <input id="ship_zip_post" required placeholder="例如：106" />
         <label>詳細地址 *</label>
-        <input id="ship_addr_post" required placeholder="例：台北市大安區…"/>
+        <input id="ship_addr_post" required placeholder="例：台北市大安區…" />
       </div>
     </div>
 
@@ -175,12 +166,12 @@
 
       <div class="mt-4 section-title">選擇訂金類型</div>
       <div class="radio-row">
-        <label class="radio-pill"><input type="radio" name="depType" value="old" checked /> 匯款定金保留一個月（老客）</label>
-        <label class="radio-pill"><input type="radio" name="depType" value="new_partial" /> 匯款 1000（尾款 7-11 貨到付款）</label>
+        <label class="radio-pill"><input type="radio" name="depType" value="old" checked /> 匯款定金保留一個月</label>
+        <label class="radio-pill"><input type="radio" name="depType" value="new_partial" /> 匯款 1000（尾款 7-11 貨到）</label>
         <label class="radio-pill"><input type="radio" name="depType" value="new_full" /> 全額匯款</label>
       </div>
 
-      <!-- 老客訂金 -->
+      <!-- 訂金保留一個月 -->
       <div id="depOldPane" class="mt-3">
         <div class="section-title">7-11 收件資料（保留一個月）</div>
         <div class="row">
@@ -202,7 +193,7 @@
         <div class="hint mt-1">．COACH 每顆訂金 1000 元，Tory Burch 每顆 2000 元，依商品數量自行計算匯款金額，尾款再另外結帳。</div>
       </div>
 
-      <!-- 新客訂金（部分付款） -->
+      <!-- 匯款 1000 尾款 7-11 -->
       <div id="depNewPartialPane" class="mt-3" hidden>
         <div class="section-title">7-11 收件資料（尾款貨到付款）</div>
         <div class="row">
@@ -225,7 +216,7 @@
         <input id="dep_new_partial_last5" required />
       </div>
 
-      <!-- 新客全額匯款 -->
+      <!-- 全額匯款 -->
       <div id="depNewFullPane" class="mt-3" hidden>
         <div class="section-title">取貨方式</div>
         <select id="dep_new_full_method">
@@ -233,7 +224,7 @@
           <option value="post">郵寄（中華郵政）</option>
         </select>
 
-        <!-- 新客全額 + 711 -->
+        <!-- 全額 + 711 -->
         <div id="depNewFull711" class="mt-2">
           <div class="row">
             <div><label>姓名 *</label><input id="dep_new_full_name" required /></div>
@@ -255,7 +246,7 @@
           <input id="dep_new_full_last5_711" required />
         </div>
 
-        <!-- 新客全額 + 郵寄 -->
+        <!-- 全額 + 郵寄 -->
         <div id="depNewFullPost" class="mt-2" hidden>
           <div class="row">
             <div><label>姓名 *</label><input id="dep_new_full_name_post" required /></div>
@@ -357,29 +348,37 @@
 const API=(window.API_BASE||'https://api.murain.tw').replace(/\/$/,'');
 const RATE_TABLE={3:0,6:4.0,9:5.5,12:6.5,18:9.0,24:11.5};
 const NEW_DEPOSIT_AMOUNT=1000;
-let CART_TOTAL_RAW = 0;   // 真實金額（數字）
+let CART_TOTAL_RAW = 0;   // 真實金額
 
-// ===== LINE / LIFF 設定 =====
-const LIFF_ID = "2008430261-kOeNLR9x";  // 栩願國際 Login 的 LIFF ID
-let LINE_PROFILE = null;                // 之後存使用者的 LINE 資訊
+// LINE / LIFF 設定（目前沒有畫面上的綁定按鈕，只保留程式功能）
+const LIFF_ID = "2008430261-kOeNLR9x";
+let LINE_PROFILE = null;
 
-/* ===== 工具 ===== */
 const $=(s,r=document)=>r.querySelector(s); const $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const money=n=>'NT$ '+Number(n||0).toLocaleString();
 const qs=new URLSearchParams(location.search);
 const cartToken=qs.get('cart_token')||'';
-let customerType=(qs.get('customer')||'old').toLowerCase();   // new | old
-const initialMode=(qs.get('mode')||'').toUpperCase();       // COD/PAID/DEPOSIT/ZEROCARD
+
+// customer_type 還是寫進 shipping_info，但畫面不再顯示按鈕
+let customerType=(qs.get('customer')||'old').toLowerCase();
+
+// 讀 pm= 來決定預設分頁
+const pmParam=(qs.get('pm')||'').toLowerCase();
+let initialMode='';
+if(pmParam.startsWith('cod_'))       initialMode='COD';
+else if(pmParam.startsWith('paid_')) initialMode='PAID';
+else if(pmParam.startsWith('deposit')) initialMode='DEPOSIT';
+else if(pmParam.startsWith('zero_card')) initialMode='ZEROCARD';
+else initialMode=(qs.get('mode')||'').toUpperCase();
 
 function setTotal(v){
   const sub = document.querySelector('#subtotal');
   const tot = document.querySelector('#total');
-  const txt = money(v || 0);
+  const txt = 'NT$ ' + Number(v||0).toLocaleString();
   if (sub) sub.value = txt;
   if (tot) tot.value = txt;
 }
 
-/* ===== Tabs ===== */
+/* ===== 付款 tabs ===== */
 const tabs=$$('#payTabs .tab');
 tabs.forEach(t=>t.addEventListener('click',()=>{
   if (t.dataset.disabled === '1') return;
@@ -391,100 +390,6 @@ tabs.forEach(t=>t.addEventListener('click',()=>{
     if (pane) pane.hidden = (x!==kt);
   });
 }));
-
-/* ===== 客人身份切換（新客 / 老客） ===== */
-const custTabs = $$('#custTabs .tab');
-
-function updateCustomerUI(){
-  const isNew = (customerType === 'new');
-
-  // 控制 COD 分頁（新客不能選 COD）
-  const codTab  = $('#payTabs .tab[data-pay="COD"]');
-  const codPane = $('#paneCOD');
-  const paidTab = $('#payTabs .tab[data-pay="PAID"]');
-
-  if (codTab) {
-    if (isNew) {
-      codTab.dataset.disabled = '1';
-      codTab.classList.add('disabled');
-      if (codTab.classList.contains('active')) {
-        codTab.classList.remove('active');
-        if (paidTab) {
-          paidTab.classList.add('active');
-          ['COD','PAID','DEPOSIT','ZEROCARD'].forEach(x=>{
-            const pane = $('#pane'+x);
-            if (pane) pane.hidden = (x!=='PAID');
-          });
-        }
-      }
-      if (codPane) codPane.hidden = true;
-    } else {
-      delete codTab.dataset.disabled;
-      codTab.classList.remove('disabled');
-    }
-  }
-
-  // 控制 ATM 匯款選項顯示
-  const depOldLabel        = document.querySelector('.radio-row label:nth-child(1)');
-  const depNewPartialLabel = document.querySelector('.radio-row label:nth-child(2)');
-  const depNewFullLabel    = document.querySelector('.radio-row label:nth-child(3)');
-
-  if (depOldLabel && depNewPartialLabel && depNewFullLabel) {
-    if (isNew) {
-      // 新客：只能用「匯款 1000」＋「全額匯款」
-      depOldLabel.style.display        = 'none';
-      depNewPartialLabel.style.display = '';
-      depNewFullLabel.style.display    = '';
-
-      const cur = document.querySelector('input[name="depType"]:checked');
-      if (!cur || cur.value === 'old') {
-        const np = document.querySelector('input[name="depType"][value="new_partial"]');
-        if (np) {
-          np.checked = true;
-          if (typeof updateDepositPane === 'function') updateDepositPane();
-        }
-      }
-    } else {
-      // 老客：可以用「定金保留」＋「全額匯款」，不顯示新客 1000 那顆
-      depOldLabel.style.display        = '';
-      depNewPartialLabel.style.display = 'none';
-      depNewFullLabel.style.display    = '';
-
-      const cur = document.querySelector('input[name="depType"]:checked');
-      if (!cur || cur.value === 'new_partial') {
-        const od = document.querySelector('input[name="depType"][value="old"]');
-        if (od) {
-          od.checked = true;
-          if (typeof updateDepositPane === 'function') updateDepositPane();
-        }
-      }
-    }
-  }
-
-  // 更新「客人身份」按鈕樣式
-  if (custTabs && custTabs.length) {
-    custTabs.forEach(btn=>{
-      const t = (btn.dataset.cust || 'old');
-      btn.classList.toggle('active', t === customerType);
-    });
-  }
-}
-
-if (custTabs && custTabs.length) {
-  custTabs.forEach(btn=>{
-    btn.addEventListener('click',()=>{
-      customerType = (btn.dataset.cust || 'old');
-      if (customerType !== 'new' && customerType !== 'old') {
-        customerType = 'old';
-      }
-      updateCustomerUI();
-    });
-  });
-  if (customerType !== 'new' && customerType !== 'old') {
-    customerType = 'old';
-  }
-  updateCustomerUI();
-}
 
 /* ===== PAID ===== */
 $('#paid_channel').addEventListener('change',()=>{ $('#cardInstBox').hidden=($('#paid_channel').value!=='card_inst'); });
@@ -520,8 +425,8 @@ function calcZC(){
   const rate   = (RATE_TABLE[months] || 0) / 100;
   const total  = Math.round(base * (1 + rate));
   const each   = Math.round(total / months);
-  $('#zc_each').value  = money(each);
-  $('#zc_total').value = money(total);
+  $('#zc_each').value  = 'NT$ ' + each.toLocaleString();
+  $('#zc_total').value = 'NT$ ' + total.toLocaleString();
 }
 $('#zc_months').addEventListener('change',calcZC);
 $('#zc_ship_method').addEventListener('change',updateZcShip);
@@ -532,17 +437,12 @@ function updateZcShip(){
   $('#zcShipPost').hidden=(m!=='post');
 }
 
-/* ===== LINE / LIFF 綁定（保留後端支援，但目前畫面不顯示按鈕） ===== */
+/* ===== LIFF 初始化（必要時才使用） ===== */
 async function initLiffAndProfile() {
   if (!window.liff || !LIFF_ID) return;
-
   try {
     await liff.init({ liffId: LIFF_ID });
-
-    if (!liff.isLoggedIn()) {
-      return;
-    }
-
+    if (!liff.isLoggedIn()) return;
     const profile = await liff.getProfile();
     LINE_PROFILE = {
       userId: profile.userId,
@@ -554,31 +454,7 @@ async function initLiffAndProfile() {
   }
 }
 
-async function onClickLineBind() {
-  if (!window.liff || !LIFF_ID) {
-    alert("目前無法使用 LINE 綁定，請稍後再試。");
-    return;
-  }
-
-  try {
-    if (!liff.isLoggedIn()) {
-      liff.login({ redirectUri: window.location.href });
-      return;
-    }
-
-    const profile = await liff.getProfile();
-    LINE_PROFILE = {
-      userId: profile.userId,
-      displayName: profile.displayName || "",
-      pictureUrl: profile.pictureUrl || ""
-    };
-  } catch (e) {
-    console.error(e);
-    alert("LINE 綁定失敗，請稍後再試。");
-  }
-}
-
-/* ===== 購物車載入 ===== */
+/* ===== 載入購物車 ===== */
 async function loadCart(){
   if (!cartToken) {
     console.warn('missing cart_token');
@@ -595,7 +471,7 @@ async function loadCart(){
 
     CART_TOTAL_RAW = j.summary?.total || 0;
     setTotal(CART_TOTAL_RAW);
-    $('#footerTotal').textContent = money(CART_TOTAL_RAW) + '（以上方為準）';
+    $('#footerTotal').textContent = 'NT$ ' + Number(CART_TOTAL_RAW||0).toLocaleString() + '（以上方為準）';
 
     const lines = j.items.map(it=>{
       const name = it.name || it.sku || '';
@@ -611,7 +487,7 @@ async function loadCart(){
   }
 }
 
-/* ===== 7-11 門市地圖相關 ===== */
+/* ===== 7-11 e-map ===== */
 function openCvsMap(src){
   const qs2 = new URLSearchParams(location.search);
   qs2.set('src', src);
@@ -630,7 +506,6 @@ function setFieldValue(sel,val){
   if(el){ el.value=val||''; }
 }
 
-// 從 URL 把 7-11 門市資料帶回欄位
 function applyStoreFromURL(){
   const qs2 = new URLSearchParams(location.search);
   const src = (qs2.get('store_src') || '').toLowerCase();
@@ -656,13 +531,12 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
   e.preventDefault();
   if(!cartToken){ alert('缺少 cart_token，請由正確結帳連結進入'); return; }
 
-  const subtotal = CART_TOTAL_RAW;  // 用後端回來的真實金額
+  const subtotal = CART_TOTAL_RAW;
   if(!subtotal){ alert('金額為 0，請確認購物車內容'); return; }
 
   const note = $('#note').value || '';
   const shipping_info = { customer_type: customerType, note };
 
-  // 如果有綁定 LINE，把 profile 帶到 shipping_info
   if (LINE_PROFILE && LINE_PROFILE.userId) {
     shipping_info.line = {
       user_id: LINE_PROFILE.userId,
@@ -768,7 +642,7 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
       const emailOld = ($('#dep_old_email').value || '').trim();
 
       if(![name,phone,id,sname,addr,last5,emailOld].every(required)){
-        alert('請填完老客訂金欄位（含 Email）');
+        alert('請填完「定金保留一個月」欄位（含 Email）');
         return;
       }
 
@@ -794,7 +668,7 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
       const emailNewP = ($('#dep_new_partial_email').value || '').trim();
 
       if(![name,phone,id,sname,addr,amount,last5,emailNewP].every(required)){
-        alert('請填完新客訂金（部分）欄位（含 Email）');
+        alert('請填完「匯款 1000（尾款 7-11）」欄位（含 Email）');
         return;
       }
 
@@ -810,7 +684,7 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
     }
 
     if(depType === 'new_full'){
-      const method   = $('#dep_new_full_method').value;   // 711 / post
+      const method   = $('#dep_new_full_method').value;
       const emailNewF = ($('#dep_new_full_email').value || '').trim();
 
       if(method === '711'){
@@ -823,7 +697,7 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
         const last5  = $('#dep_new_full_last5_711').value;
 
         if(![name,phone,id,sname,addr,amount,last5,emailNewF].every(required)){
-          alert('請填完新客全額匯款（7-11）欄位（含 Email）');
+          alert('請填完「全額匯款 + 7-11」欄位（含 Email）');
           return;
         }
 
@@ -845,7 +719,7 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
         const last5  = $('#dep_new_full_last5_post').value;
 
         if(![name,phone,zip,addr,amount,last5,emailNewF].every(required)){
-          alert('請填完新客全額匯款（郵寄）欄位（含 Email）');
+          alert('請填完「全額匯款 + 郵寄」欄位（含 Email）');
           return;
         }
 
@@ -984,7 +858,7 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
   }
 });
 
-// ===== 頁面初始化：切分頁、載入購物車、回填 7-11 門市 =====
+// ===== 初始化 =====
 (async () => {
   if (typeof initLiffAndProfile === 'function') {
     initLiffAndProfile();
