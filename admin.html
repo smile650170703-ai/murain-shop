@@ -646,7 +646,8 @@ function renderDetail(rec){
         <button class="btn-secondary" id="btnConfirmPayOk">✅ 確認已收款／審核通過 ＋ 發 LINE</button>
         <button class="btn-secondary" id="btnMarkZcFail">❌ 中租審核未通過 ＋ 發 LINE</button>
         <button class="btn-secondary" id="btnCopyNotice">複製出貨通知文字</button>
-        <div id="detailMsg" class="tag-small mt-2"></div>
+        <button class="btn-secondary" id="btnPrintOrder">列印訂購單</button>
+<div id="detailMsg" class="tag-small mt-2"></div>
       </div>
     </div>
   `;
@@ -661,6 +662,10 @@ function renderDetail(rec){
 
   const btnZcFail = $('#btnMarkZcFail');
   if (btnZcFail) btnZcFail.addEventListener('click', ()=>confirmPay('zc_fail'));
+
+ const btnPrint = $('#btnPrintOrder');
+  if (btnPrint) btnPrint.addEventListener('click', printCurrentOrder);
+ 
 }
 
 
@@ -859,6 +864,73 @@ async function copyNotice(){
     console.error(e);
     alert('複製失敗，請手動選取文字複製。');
   }
+}
+/* ===== 列印目前這筆訂單 ===== */
+function printCurrentOrder(){
+  if (!currentRecord){
+    alert('請先選一筆訂單');
+    return;
+  }
+  const f = currentRecord.fields || currentRecord || {};
+  const shipInfo = parseShippingInfo(f) || {};
+  const ship  = shipInfo.ship  || {};
+  const store = ship.store     || {};
+  const post  = ship.post      || {};
+
+  let shipType = '';
+  let shipAddr = '';
+  if (ship.type === '711'){
+    shipType = '7-11 超商取貨';
+    shipAddr = `7-11 ${store.name || ''}（${store.id || ''}）\n${store.addr || ''}`;
+  }else if (ship.type === 'post'){
+    shipType = '郵寄';
+    shipAddr = `${post.zip || ''} ${post.addr || ''}`;
+  }
+
+  const itemsText = f.items_text || '';
+  const total     = money(f.total_amount || f.total || 0);
+  const orderId   = f.order_id || '';
+
+  const html = `
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<title>訂單 ${orderId}</title>
+<style>
+  body{font-family:-apple-system,"Noto Sans TC";margin:20px;font-size:12px}
+  h1{font-size:18px;margin-bottom:10px}
+  table{border-collapse:collapse;width:100%;margin-top:10px}
+  td,th{border:1px solid #000;padding:4px 6px;vertical-align:top}
+  pre{white-space:pre-wrap;margin:0}
+</style>
+</head>
+<body>
+  <h1>MURAIN 訂單明細</h1>
+  <table>
+    <tr><th>訂單編號</th><td>${orderId}</td></tr>
+    <tr><th>建立時間</th><td>${f.created_at || ''}</td></tr>
+    <tr><th>付款方式</th><td>${f.payment_method || ''}</td></tr>
+    <tr><th>應付金額</th><td>${total}</td></tr>
+    <tr><th>收件人</th><td>${ship.name || ''}</td></tr>
+    <tr><th>電話</th><td>${ship.phone || ''}</td></tr>
+    <tr><th>出貨方式</th><td>${shipType}</td></tr>
+    <tr><th>取貨門市 / 地址</th><td><pre>${shipAddr}</pre></td></tr>
+    <tr><th>物流單號</th><td>${f.ship_tracking || f.tracking_no || ''}</td></tr>
+    <tr><th>運費</th><td>${f.ship_fee ?? f.shipping_fee ?? ''}</td></tr>
+    <tr><th>客戶備註</th><td><pre>${(shipInfo.note || '').trim()}</pre></td></tr>
+    <tr><th>商品明細</th><td><pre>${itemsText}</pre></td></tr>
+  </table>
+</body>
+</html>
+  `;
+
+  const w = window.open('', '_blank');
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  w.print();
 }
 
 /* ===== 頁面初始化 ===== */
