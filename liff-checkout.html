@@ -377,7 +377,8 @@ const qs=new URLSearchParams(location.search);
 const cartToken=qs.get('cart_token')||'';
 const customer=(qs.get('customer')||'old').toLowerCase();   // new | old
 const initialMode=(qs.get('mode')||'').toUpperCase();       // COD/PAID/DEPOSIT/ZEROCARD
-
+const tailOf = qs.get('tail_of') || '';  // 尾款對應的母訂單 order_id
+ 
 function setTotal(v){
   const sub = document.querySelector('#subtotal');
   const tot = document.querySelector('#total');
@@ -939,11 +940,19 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
        // 如果是 PayUni（信用卡一次 / 分期 / LINE Pay / AFTEE）
 if (payment_method && payment_method.startsWith('paid_')) {
   try {
-    const r = await fetch(`${API}/payuni/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ order_id: j.order_id })
-    });
+   const isTail = !!tailOf;  // 有帶 tail_of 就當成尾款
+   
+   const r = await fetch(`${API}/checkout`,{
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body: JSON.stringify({
+    cart_token: cartToken,
+    payment_method,
+    shipping_info,
+    tail_of_order: tailOf,
+    is_tail: isTail
+  })
+});
     const up = await r.json();
     console.log('payuni start resp', up);
 
