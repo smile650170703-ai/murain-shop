@@ -323,17 +323,42 @@ function exportCSV(){
   }
   const rows = [];
   rows.push([
-    'order_id','created_at','status','payment_method','total_amount',
-    'streamer_name','customer_type','tracking_no','shipping_fee','note'
+    'order_id','created_at','status','payment_method',
+    'ship_type','ship_store','ship_addr',
+    'total_amount',
+    'streamer_name','customer_type',
+    'tracking_no','shipping_fee','note'
   ]);
 
   for (const rec of currentOrders){
     const f = rec.fields || rec || {};
+    const shipInfo = parseShippingInfo(f) || {};
+    const ship  = shipInfo.ship  || {};
+    const store = ship.store     || {};
+    const post  = ship.post      || {};
+
+    let shipType  = '';
+    let shipStore = '';
+    let shipAddr  = '';
+
+    if (ship.type === '711'){
+      shipType  = '711';
+      shipStore = `${store.name || ''}（${store.id || ''}）`;
+      shipAddr  = store.addr || '';
+    }else if (ship.type === 'post'){
+      shipType  = 'post';
+      shipStore = '';
+      shipAddr  = `${post.zip || ''} ${post.addr || ''}`;
+    }
+
     rows.push([
       f.order_id || '',
       f.created_at || '',
       f.status || '',
       f.payment_method || '',
+      shipType,
+      shipStore,
+      shipAddr,
       Number(f.total_amount || f.total || 0) || 0,
       f.streamer_name || '',
       f.customer_type || '',
@@ -356,6 +381,7 @@ function exportCSV(){
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
 
 function statusBadgePay(pay){
   if(!pay) return '';
