@@ -697,7 +697,48 @@ function renderDetail(rec){
  
 }
 
+async function cancelCurrentOrder() {
+  if (!currentRecord) {
+    alert('請先在左邊選一張訂單');
+    return;
+  }
 
+  const oid = currentRecord.fields.order_id;
+  if (!oid) {
+    alert('這筆資料沒有 order_id，無法取消');
+    return;
+  }
+
+  if (!confirm(`確定要取消訂單 ${oid} 並補回庫存嗎？`)) {
+    return;
+  }
+
+  try {
+    const r = await fetch(API + "/admin/order/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        order_id: oid
+      })
+    });
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      alert("取消失敗：" + (j.message || j.error || ('HTTP ' + r.status)));
+      return;
+    }
+
+    alert("已取消訂單並補回庫存。");
+    // 最簡單：整頁重載，列表 / 明細一起更新
+    location.reload();
+  } catch (e) {
+    console.error(e);
+    alert("取消訂單時發生錯誤，請稍後再試。");
+  }
+}
+
+ 
 /* ===== 儲存右側欄位 ===== */
 async function saveDetail(){
   if(!currentRecord) return;
