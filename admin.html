@@ -315,65 +315,61 @@ function updateSummary(){
   btnExport.disabled = false;
 }
 
-// 匯出目前畫面上的訂單為 CSV
 function exportCSV(){
-  if (!currentOrders.length){
+  if (!ORDERS_CACHE.length){
     alert('目前沒有資料可以匯出。');
     return;
   }
+
   const rows = [];
+
+  // 標題列：全部改成中文
   rows.push([
-    'order_id','created_at','status','payment_method',
-    'ship_type','ship_store','ship_addr',
-    'total_amount',
-    'streamer_name','customer_type',
-    'tracking_no','shipping_fee','note'
+    '訂單時間',
+    '訂單編號',
+    '狀態',
+    '付款方式',
+    '金額',
+    '直播主',
+    '客戶類型',
+    '物流單號',
+    '運費',
+    '備註'
   ]);
 
-  for (const rec of currentOrders){
-    const f = rec.fields || rec || {};
-    const shipInfo = parseShippingInfo(f) || {};
-    const ship  = shipInfo.ship  || {};
-    const store = ship.store     || {};
-    const post  = ship.post      || {};
-
-    let shipType  = '';
-    let shipStore = '';
-    let shipAddr  = '';
-
-    if (ship.type === '711'){
-      shipType  = '711';
-      shipStore = `${store.name || ''}（${store.id || ''}）`;
-      shipAddr  = store.addr || '';
-    }else if (ship.type === 'post'){
-      shipType  = 'post';
-      shipStore = '';
-      shipAddr  = `${post.zip || ''} ${post.addr || ''}`;
-    }
+  for (const o of ORDERS_CACHE){
+    const created = (o.created_at || '')
+      .replace('T',' ')
+      .replace(/\.\d+Z?$/,'');
 
     rows.push([
-      f.order_id || '',
-      f.created_at || '',
-      f.status || '',
-      f.payment_method || '',
-      shipType,
-      shipStore,
-      shipAddr,
-      Number(f.total_amount || f.total || 0) || 0,
-      f.streamer_name || '',
-      f.customer_type || '',
-      f.tracking_no || f.ship_tracking || '',
-      Number(f.shipping_fee ?? f.ship_fee ?? 0) || 0,
-      (f.note || f.internal_note || '').replace(/\r?\n/g, ' ')
+      created,
+      o.order_id || '',
+      o.status || '',
+      displayPaymentMethod(o.payment_method || ''),  // 顯示成中文名稱
+      Number(o.total_amount || 0),
+      o.streamer_name || '',
+      o.customer_type || '',
+      o.tracking_no || '',
+      Number(o.shipping_fee || 0),
+      (o.note || '').replace(/\r?\n/g, ' ')
     ]);
   }
 
-  const csv = rows.map(r => r.map(escapeCSV).join(',')).join('\r\n');
-  const blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+  const csv = rows
+    .map(r => r.map(escapeCSV).join(','))
+    .join('\r\n');
+
+  // ★ 重點：前面加上 \ufeff，讓 Excel 不會變亂碼
+  const blob = new Blob(["\ufeff" + csv], {
+    type: 'text/csv;charset=utf-8;'
+  });
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const now = new Date();
   const ts = now.toISOString().replace(/[:T]/g,'-').slice(0,16);
+
   a.href = url;
   a.download = 'murain_orders_' + ts + '.csv';
   document.body.appendChild(a);
