@@ -330,25 +330,26 @@ let CART_TOTAL_RAW = 0;   // 真實金額（數字）
   let MEMBER_INFO  = null;
 
   async function initLiffAndMember() {
-    if (!window.liff) return;
+  if (!window.liff) return;
 
-    await liff.init({ liffId: LIFF_ID });
+  await liff.init({ liffId: LIFF_ID });
 
-    if (!liff.isLoggedIn()) {
-    // ★ 先把整個畫面欄位存到 localStorage，避免綁定 LINE 回來變空白
+  // 只有在「一般瀏覽器(web)」才主動叫出 LINE Login
+  if (!liff.isLoggedIn() && liff.getOS() === 'web') {
     try {
-      saveCheckoutState();
+      saveCheckoutState();  // 先存表單，避免登入後欄位變空白
     } catch (e) {
       console.warn('saveCheckoutState before liff.login failed', e);
     }
 
-    // 帶著現在這個網址（含 cart_token）回來
-    liff.login({ redirectUri: window.location.href });
+    // 不指定 redirectUri，讓 LIFF 用後台的 Callback URL
+    liff.login();
     return;
   }
 
-    const profile = await liff.getProfile();
-    LINE_PROFILE = profile;
+  // 走到這裡代表：已經登入了（包含在 LINE app 裡開 LIFF 的狀況）
+  const profile = await liff.getProfile();
+  LINE_PROFILE = profile;
 
     // 向後端拿會員資料（LineMembers 裡那筆）
     try {
