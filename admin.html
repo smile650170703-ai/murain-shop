@@ -685,7 +685,6 @@ function renderDetail(rec){
     $('#btnSaveDetail').addEventListener('click', saveDetail);
   $('#btnCopyNotice').addEventListener('click', copyNotice);
   $('#btnShipAndLine').addEventListener('click', shipAndLine);
- $('#btnCancelOrder').addEventListener('click', cancelCurrentOrder);
 
   const btnPayOk = $('#btnConfirmPayOk');
   if (btnPayOk) btnPayOk.addEventListener('click', ()=>confirmPay('ok'));
@@ -702,57 +701,6 @@ if (btnCancel) btnCancel.addEventListener('click', cancelCurrentOrder);
 }
 
 /* ===== 取消訂單（補回庫存） ===== */
-async function cancelCurrentOrder() {
-  if (!currentRecord) return;
-
-  const oidInput = $('#d_order_id');
-  const orderId  = (oidInput && oidInput.value) ||
-                   (currentRecord.fields && currentRecord.fields.order_id) ||
-                   '';
-
-  if (!orderId) {
-    alert('找不到這筆訂單的 order_id，無法取消。');
-    return;
-  }
-
-  if (!confirm('確定要【取消這張訂單】並補回庫存嗎？\n此操作無法復原，請再確認一次。')) {
-    return;
-  }
-
-  const msgEl = $('#detailMsg');
-  if (msgEl) msgEl.textContent = '取消訂單中…';
-
-  try {
-    const r = await fetch(API + '/admin/order/cancel', {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json' },
-      body: JSON.stringify({
-        op_key: OP_KEY,
-        order_id: orderId
-      })
-    });
-
-    const j = await r.json().catch(() => ({}));
-
-    if (!r.ok || !j.ok) {
-      const msg = j.message || j.error || ('HTTP ' + r.status);
-      alert('取消失敗：' + msg);
-      if (msgEl) msgEl.textContent = '取消失敗';
-      return;
-    }
-
-    alert('已取消訂單並補回庫存。');
-    if (msgEl) msgEl.textContent = '已取消訂單（庫存已補回）';
-
-    // 這邊先讓你手動重新查詢，不強制重載列表，避免踩到你其他邏輯
-  } catch (e) {
-    console.error(e);
-    alert('取消失敗（網路或程式錯誤）');
-    if (msgEl) msgEl.textContent = '取消失敗';
-  }
-}
-
- 
 async function cancelCurrentOrder() {
   if (!currentRecord) {
     alert('請先在左邊選一張訂單');
