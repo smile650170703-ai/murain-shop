@@ -947,43 +947,22 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
     // ★★★ 下單成功 → 清掉 localStorage 暫存資料
     clearCheckoutState();
 
-    // 2) 如果是中租無卡，呼叫 /zero-card/start 取得付款網址，直接跳轉
-    if (isZeroCard) {
-      const zr = await fetch(`${API}/zero-card/start`, {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json' },
-        body: JSON.stringify({ order_id: j.order_id })
-      });
-      const zj = await zr.json();
-      if (!zr.ok || !zj.ok || !zj.payment_url) {
-        console.error('zero-card/start error:', zj);
-        throw new Error(zj.error || 'zero-card start error');
-      }
-      // 跳轉到中租的付款頁
-      location.href = zj.payment_url;
-      return;
-    }
-
-       // 如果是 PayUni（信用卡一次 / 分期 / LINE Pay / AFTEE）
+   // 如果是 PayUni（信用卡一次 / 分期 / LINE Pay / AFTEE）
 if (payment_method && payment_method.startsWith('paid_')) {
   try {
-   const isTail = !!tailOf;  // 有帶 tail_of 就當成尾款
-   
-   const r = await fetch(`${API}/checkout`,{
-  method:'POST',
-  headers:{'Content-Type':'application/json'},
-  body: JSON.stringify({
-    cart_token: cartToken,
-    payment_method,
-    shipping_info,
-    tail_of_order: tailOf,
-    is_tail: isTail
-  })
-});
-    const up = await r.json();
+    // ★ 已經在前面 /checkout 建立好訂單，這裡只要用 order_id 去叫 /payuni/start
+    const pr = await fetch(`${API}/payuni/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_id: j.order_id
+      })
+    });
+
+    const up = await pr.json();
     console.log('payuni start resp', up);
 
-    if (!up.ok) {
+    if (!pr.ok || !up.ok) {
       alert('線上刷卡啟動失敗：' + (up.error || up.message || ''));
       return;
     }
@@ -995,8 +974,8 @@ if (payment_method && payment_method.startsWith('paid_')) {
 
     ['MerID', 'Version', 'EncryptInfo', 'HashInfo'].forEach(k => {
       const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = k;
+      input.type  = 'hidden';
+      input.name  = k;
       input.value = up[k];
       f.appendChild(input);
     });
@@ -1010,6 +989,7 @@ if (payment_method && payment_method.startsWith('paid_')) {
     return;
   }
 }
+
 
 
 
