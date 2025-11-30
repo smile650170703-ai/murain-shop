@@ -475,6 +475,22 @@ $('#dep_new_full_method').addEventListener('change',()=>{
   $('#depNewFull711').hidden=(m!=='711');
   $('#depNewFullPost').hidden=(m!=='post');
 });
+ // 老客訂金：7-11 / 郵寄切換
+const depOldMethod  = $('#dep_old_method');
+const depOldBox711  = $('#dep_old_box_711');
+const depOldBoxPost = $('#dep_old_box_post');
+
+function updateDepOldShip(){
+  if (!depOldMethod) return;
+  const m = depOldMethod.value;       // '711' or 'post'
+  if (depOldBox711)  depOldBox711.hidden  = (m !== '711');
+  if (depOldBoxPost) depOldBoxPost.hidden = (m !== 'post');
+}
+
+if (depOldMethod) {
+  depOldMethod.addEventListener('change', updateDepOldShip);
+  updateDepOldShip(); // 進頁面先跑一次
+}
 
 /* ===== ZEROCARD ===== */
 function calcZC(){
@@ -802,48 +818,85 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
   if(activeTab === 'DEPOSIT'){
     const depType = $('input[name="depType"]:checked').value;
 
-     if(depType === 'old'){
-    const name   = $('#dep_old_name').value;
-    const phone  = $('#dep_old_phone').value;
-    const id     = $('#dep_old_store_id').value;
-    const sname  = $('#dep_old_store_name').value;
-    const addr   = $('#dep_old_store_addr').value;
-    const amount = $('#dep_old_amount').value;
-    const last5  = $('#dep_old_last5').value;
-    const hold   = $('#dep_old_hold_until').value;
-    const emailOld = ($('#dep_old_email').value || '').trim();
+              if (depType === 'old') {
+      const method   = $('#dep_old_method').value;   // 711 / post
+      const name     = $('#dep_old_name').value;
+      const phone    = $('#dep_old_phone').value;
+      const amount   = $('#dep_old_amount').value;
+      const last5    = $('#dep_old_last5').value;
+      const hold     = $('#dep_old_hold_until').value;
+      const emailOld = ($('#dep_old_email').value || '').trim();
 
-    if(![name,phone,id,sname,addr,amount,last5,hold,emailOld].every(required)){
-      alert('請填完「匯款訂金（保留 1 個月）」欄位（含 Email、匯款金額、帳號後五碼、保留到期日）');
-      return;
-    }
-
-    // 檢查保留日期：今天起 1 個月內
-    const today    = new Date(); today.setHours(0,0,0,0);
-    const maxDate  = new Date(); maxDate.setDate(maxDate.getDate() + 31); maxDate.setHours(0,0,0,0);
-    const holdDate = hold ? new Date(hold) : null;
-
-    if (!holdDate || holdDate < today || holdDate > maxDate) {
-      alert('保留到期日請選擇「今天起 1 個月內」的日期');
-      return;
-    }
-
-    // payment_method 先沿用原本的 'deposit_old'，後端不用動
-    payment_method = 'deposit_old';
-    ship = {
-      type:'711',
-      name,
-      phone,
-      email: emailOld,
-      store:{ id, name:sname, addr },
-      deposit:{
-        type: 'old',        // 保留舊值，以後要分辨也可以再加一個 flag
-        amount,
-        last5,
-        hold_until: hold
+      // 共用必填（不管 7-11 還是郵寄）
+      if (![name, phone, amount, last5, hold, emailOld].every(required)) {
+        alert('請填完「匯款訂金（保留 1 個月）」欄位（含 Email、匯款金額、帳號後五碼、保留到期日）');
+        return;
       }
-    };
-  }
+
+      // 檢查保留日期：今天起 1 個月內
+      const today   = new Date(); today.setHours(0,0,0,0);
+      const maxDate = new Date(); maxDate.setDate(maxDate.getDate() + 31); maxDate.setHours(0,0,0,0);
+      const holdDate = hold ? new Date(hold) : null;
+
+      if (!holdDate || holdDate < today || holdDate > maxDate) {
+        alert('保留到期日請選擇「今天起 1 個月內」的日期');
+        return;
+      }
+
+      // 依取貨方式組 ship
+      if (method === '711') {
+        const id    = $('#dep_old_store_id').value;
+        const sname = $('#dep_old_store_name').value;
+        const addr  = $('#dep_old_store_addr').value;
+
+        if (![id, sname, addr].every(required)) {
+          alert('請填完 7-11 收件資料');
+          return;
+        }
+
+        ship = {
+          type: '711',
+          name,
+          phone,
+          email: emailOld,
+          store: { id, name: sname, addr },
+          deposit: {
+            type: 'old',
+            amount,
+            last5,
+            hold_until: hold
+          }
+        };
+      } else if (method === 'post') {
+        const zip  = $('#dep_old_post_zip').value;
+        const addr = $('#dep_old_post_addr').value;
+
+        if (![zip, addr].every(required)) {
+          alert('請填完郵寄收件資料');
+          return;
+        }
+
+        ship = {
+          type: 'post',
+          name,
+          phone,
+          email: emailOld,
+          post: { zip, addr },
+          deposit: {
+            type: 'old',
+            amount,
+            last5,
+            hold_until: hold
+          }
+        };
+      } else {
+        alert('請先選擇取貨方式');
+        return;
+      }
+
+      // 保持原本 payment_method，不用動後端
+      payment_method = 'deposit_old';
+    }
 
     
 
