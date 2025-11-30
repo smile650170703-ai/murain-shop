@@ -213,226 +213,222 @@
     </div>
   </div>
 
-  <script>
-    const API_BASE   = "https://api.murain.tw";
-    const MEMBER_API = API_BASE + "/member/orders";
-    const LIFF_ID    = "2008430261-EGZPg3Qp";
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+  const API_BASE   = "https://api.murain.tw";
+  const MEMBER_API = API_BASE + "/member/orders";
 
-    let currentUserId = null;
-    let orders = [];
-    let currentTab = "all";
+  let currentUserId = null;
+  let orders = [];
+  let currentTab = "all";
 
-    const statusText = document.getElementById("statusText");
-    const infoMsg    = document.getElementById("infoMsg");
-    const orderList  = document.getElementById("orderList");
-    const emptyText  = document.getElementById("emptyText");
+  const statusText = document.getElementById("statusText");
+  const infoMsg    = document.getElementById("infoMsg");
+  const orderList  = document.getElementById("orderList");
+  const emptyText  = document.getElementById("emptyText");
 
-    document.getElementById("reloadBtn").addEventListener("click", () => {
-      if (currentUserId) {
-        loadOrders();
-      } else {
-        initLiff();
-      }
+  document.getElementById("reloadBtn").addEventListener("click", () => {
+    if (currentUserId) {
+      loadOrders();
+    } else {
+      initLiff();
+    }
+  });
+
+  document.querySelectorAll(".tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      currentTab = btn.dataset.tab;
+      renderOrders();
     });
+  });
 
-    document.querySelectorAll(".tab").forEach(btn => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
-        btn.classList.add("active");
-        currentTab = btn.dataset.tab;
-        renderOrders();
-      });
-    });
+  function formatDate(s) {
+    if (!s) return "";
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return s;
+    const y  = d.getFullYear();
+    const m  = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mm = String(d.getMinutes()).padStart(2, "0");
+    return `${y}/${m}/${dd} ${hh}:${mm}`;
+  }
 
-    function formatDate(s) {
-      if (!s) return "";
-      const d = new Date(s);
-      if (isNaN(d.getTime())) return s;
-      const y = d.getFullYear();
-      const m = String(d.getMonth()+1).padStart(2,"0");
-      const day = String(d.getDate()).padStart(2,"0");
-      const hh = String(d.getHours()).padStart(2,"0");
-      const mm = String(d.getMinutes()).padStart(2,"0");
-      return `${y}/${m}/${day} ${hh}:${mm}`;
+  function displayStatus(st) {
+    switch (st) {
+      case "submitted": return "已送出（未付款）";
+      case "paid":      return "已付款（待出貨）";
+      case "shipped":   return "已出貨";
+      case "cancelled": return "已取消";
+      default:          return st || "";
+    }
+  }
+
+  function displayPayStatus(ps) {
+    switch (ps) {
+      case "unpaid":     return "未收款";
+      case "pending":    return "待確認";
+      case "paid_ok":    return "已收款";
+      case "deposit_ok": return "已收到訂金";
+      case "failed":     return "失敗 / 作廢";
+      default:           return ps || "";
+    }
+  }
+
+  function displayShipMethod(m) {
+    if (!m) return "";
+    const t = String(m).toLowerCase();
+    if (t.includes("711") || t.includes("7-11")) return "7-11 超商";
+    if (t.includes("post") || t.includes("宅配")) return "郵寄 / 宅配";
+    return m;
+  }
+
+  function renderOrders() {
+    orderList.innerHTML = "";
+    emptyText.style.display = "none";
+
+    let list = orders.slice();
+    if (currentTab === "live") {
+      list = list.filter(o => (o.customer_type || "").toLowerCase() === "live");
+    } else if (currentTab === "web") {
+      list = list.filter(o => (o.customer_type || "").toLowerCase() === "web");
     }
 
-    function displayStatus(st) {
-      switch (st) {
-        case "submitted": return "已送出（未付款）";
-        case "paid":      return "已付款（待出貨）";
-        case "shipped":   return "已出貨";
-        case "cancelled": return "已取消";
-        default:          return st || "";
+    if (!list.length) {
+      emptyText.style.display = "block";
+      return;
+    }
+
+    for (const o of list) {
+      const ct   = (o.customer_type || "").toLowerCase();
+      const paid = o.pay_status === "paid_ok";
+
+      const wrap = document.createElement("div");
+      wrap.className = "order-card";
+
+      const head = document.createElement("div");
+      head.className = "order-head";
+
+      const left = document.createElement("div");
+      const badge = document.createElement("span");
+      badge.className = "order-badge " + (ct === "live" ? "badge-live" : "badge-web");
+      badge.textContent = ct === "live" ? "直播訂單" : "官網訂單";
+
+      const badge2 = document.createElement("span");
+      badge2.className = "order-badge badge-status " + (paid ? "paid" : "unpaid");
+      badge2.textContent = displayPayStatus(o.pay_status);
+
+      left.appendChild(badge);
+      left.appendChild(badge2);
+
+      const right = document.createElement("div");
+      right.style.fontSize = "12px";
+      right.textContent = o.order_id || "";
+
+      head.appendChild(left);
+      head.appendChild(right);
+      wrap.appendChild(head);
+
+      const line1 = document.createElement("div");
+      line1.className = "order-line";
+      const l1Left = document.createElement("span");
+      l1Left.textContent = displayStatus(o.status);
+      const l1Right = document.createElement("span");
+      l1Right.className = "right order-amount";
+      l1Right.textContent = "NT$ " + (o.total_amount || 0);
+      line1.appendChild(l1Left);
+      line1.appendChild(l1Right);
+      wrap.appendChild(line1);
+
+      const line2 = document.createElement("div");
+      line2.className = "order-line";
+      const shipMethod = displayShipMethod(o.ship && (o.ship.method || ""));
+      const l2Left = document.createElement("span");
+      l2Left.textContent = shipMethod ? ("寄送方式：" + shipMethod) : "";
+      const l2Right = document.createElement("span");
+      l2Right.className = "right";
+      l2Right.textContent = formatDate(o.created_at);
+      line2.appendChild(l2Left);
+      line2.appendChild(l2Right);
+      wrap.appendChild(line2);
+
+      const meta = document.createElement("div");
+      meta.className = "order-meta";
+      const m1 = document.createElement("div");
+      m1.textContent = o.ship && o.ship.name ? ("收件人：" + o.ship.name) : "";
+      const m2 = document.createElement("div");
+      if (o.streamer_name) {
+        m2.textContent = "直播主：" + o.streamer_name;
       }
-    }
+      meta.appendChild(m1);
+      meta.appendChild(m2);
+      wrap.appendChild(meta);
 
-    function displayPayStatus(ps) {
-      switch (ps) {
-        case "unpaid":     return "未收款";
-        case "pending":    return "待確認";
-        case "paid_ok":    return "已收款";
-        case "deposit_ok": return "已收到訂金";
-        case "failed":     return "失敗 / 作廢";
-        default:           return ps || "";
+      orderList.appendChild(wrap);
+    }
+  }
+
+  async function loadOrders() {
+    if (!currentUserId) return;
+    infoMsg.classList.remove("error");
+    infoMsg.textContent = "載入中…";
+
+    try {
+      const url = MEMBER_API + "?line_user_id=" + encodeURIComponent(currentUserId);
+      const res = await fetch(url, { credentials: "omit" });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        throw new Error(json && json.error || "load_failed");
       }
-    }
-
-    function displayShipMethod(m) {
-      if (!m) return "";
-      const t = String(m).toLowerCase();
-      if (t.includes("711") || t.includes("7-11")) return "7-11 超商";
-      if (t.includes("post") || t.includes("宅配")) return "郵寄 / 宅配";
-      return m;
-    }
-
-    function displayCustomerType(t) {
-      t = (t || "").toLowerCase();
-      if (t === "live") return "直播訂單";
-      if (t === "web")  return "官網訂單";
-      return t || "";
-    }
-
-    function renderOrders() {
+      orders = json.orders || [];
+      infoMsg.textContent = "";
+      renderOrders();
+    } catch (e) {
+      console.error(e);
+      infoMsg.classList.add("error");
+      infoMsg.textContent = "載入失敗，請稍後再試。";
       orderList.innerHTML = "";
       emptyText.style.display = "none";
-
-      let list = orders.slice();
-      if (currentTab === "live") {
-        list = list.filter(o => (o.customer_type || "").toLowerCase() === "live");
-      } else if (currentTab === "web") {
-        list = list.filter(o => (o.customer_type || "").toLowerCase() === "web");
-      }
-
-      if (!list.length) {
-        emptyText.style.display = "block";
-        return;
-      }
-
-      for (const o of list) {
-        const ct   = (o.customer_type || "").toLowerCase();
-        const paid = o.pay_status === "paid_ok";
-
-        const wrap = document.createElement("div");
-        wrap.className = "order-card";
-
-        const head = document.createElement("div");
-        head.className = "order-head";
-
-        const left = document.createElement("div");
-        const badge = document.createElement("span");
-        badge.className = "order-badge " + (ct === "live" ? "badge-live" : "badge-web");
-        badge.textContent = ct === "live" ? "直播訂單" : "官網訂單";
-
-        const badge2 = document.createElement("span");
-        badge2.className = "order-badge badge-status " + (paid ? "paid" : "unpaid");
-        badge2.textContent = displayPayStatus(o.pay_status);
-
-        left.appendChild(badge);
-        left.appendChild(badge2);
-
-        const right = document.createElement("div");
-        right.style.fontSize = "12px";
-        right.textContent = o.order_id || "";
-
-        head.appendChild(left);
-        head.appendChild(right);
-        wrap.appendChild(head);
-
-        const line1 = document.createElement("div");
-        line1.className = "order-line";
-        const l1Left = document.createElement("span");
-        l1Left.textContent = displayStatus(o.status);
-        const l1Right = document.createElement("span");
-        l1Right.className = "right order-amount";
-        l1Right.textContent = "NT$ " + (o.total_amount || 0);
-        line1.appendChild(l1Left);
-        line1.appendChild(l1Right);
-        wrap.appendChild(line1);
-
-        const line2 = document.createElement("div");
-        line2.className = "order-line";
-        const shipMethod = displayShipMethod(o.ship && (o.ship.method || ""));
-        const l2Left = document.createElement("span");
-        l2Left.textContent = shipMethod ? ("寄送方式：" + shipMethod) : "";
-        const l2Right = document.createElement("span");
-        l2Right.className = "right";
-        l2Right.textContent = formatDate(o.created_at);
-        line2.appendChild(l2Left);
-        line2.appendChild(l2Right);
-        wrap.appendChild(line2);
-
-        const meta = document.createElement("div");
-        meta.className = "order-meta";
-        const m1 = document.createElement("div");
-        m1.textContent = o.ship && o.ship.name ? ("收件人：" + o.ship.name) : "";
-        const m2 = document.createElement("div");
-        if (o.streamer_name) {
-          m2.textContent = "直播主：" + o.streamer_name;
-        }
-        meta.appendChild(m1);
-        meta.appendChild(m2);
-        wrap.appendChild(meta);
-
-        orderList.appendChild(wrap);
-      }
     }
+  }
 
-    async function loadOrders() {
-      if (!currentUserId) return;
-      infoMsg.classList.remove("error");
-      infoMsg.textContent = "載入中…";
-
-      try {
-        const url = MEMBER_API + "?line_user_id=" + encodeURIComponent(currentUserId);
-        const res = await fetch(url, { credentials: "omit" });
-        const json = await res.json();
-        if (!res.ok || !json.ok) {
-          throw new Error(json && json.error || "load_failed");
-        }
-        orders = json.orders || [];
+  async function initLiff() {
+    if (!window.liff) {
+      statusText.textContent = "找不到 LIFF SDK，請稍後再試。";
+      return;
+    }
+    try {
+      // 若不是在 LINE 內開啟，就不要跑 LIFF，避免一直報錯
+      if (!liff.isInClient()) {
+        statusText.textContent = "請從 LINE 官方帳號打開會員中心。";
         infoMsg.textContent = "";
-        renderOrders();
-      } catch (e) {
-        console.error(e);
-        infoMsg.classList.add("error");
-        infoMsg.textContent = "載入失敗，請稍後再試。";
-        orderList.innerHTML = "";
-        emptyText.style.display = "none";
-      }
-    }
-
-    async function initLiff() {
-      if (!window.liff) {
-        statusText.textContent = "找不到 LIFF SDK，請稍後再試。";
         return;
       }
-      try {
-        await liff.init({ liffId: LIFF_ID });
 
-        if (!liff.isLoggedIn()) {
-          // 不是在 LINE 裡開，或尚未登入 → 叫他登入
-          liff.login({ redirectUri: window.location.href });
-          return;
-        }
+      // 在 LIFF 內：自動使用目前這個 LIFF 的 ID
+      await liff.init({});
 
-        const profile = await liff.getProfile();
-        currentUserId = profile.userId;
-        const name    = profile.displayName || "";
-        statusText.textContent = name ? (name + " 您好") : "已登入";
+      const profile = await liff.getProfile();
+      currentUserId = profile.userId;
+      const name    = profile.displayName || "";
+      statusText.textContent = name ? (name + " 您好") : "已登入";
 
-        loadOrders();
-      } catch (e) {
-        console.error(e);
-        statusText.textContent = "登入失敗，請稍後再試。";
-        infoMsg.classList.add("error");
-        infoMsg.textContent = "載入失敗，請稍後再試。";
-      }
+      loadOrders();
+    } catch (e) {
+      console.error(e);
+      const msg = (e && (e.message || e.code || e.toString())) || "";
+      statusText.textContent = "登入失敗，請稍後再試。";
+      infoMsg.classList.add("error");
+      infoMsg.textContent = "載入失敗，請稍後再試。" + (msg ? ("（" + msg + "）") : "");
     }
+  }
 
-    // 若從桌機瀏覽器直接開，也先試著跑 LIFF（方便你在電腦測）
-    document.addEventListener("DOMContentLoaded", () => {
-      initLiff();
-    });
-  </script>
+  document.addEventListener("DOMContentLoaded", () => {
+    initLiff();
+  });
+</script>
+
 </body>
 </html>
