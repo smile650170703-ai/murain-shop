@@ -395,36 +395,51 @@
     }
   }
 
-  async function initLiff() {
+    async function initLiff() {
     if (!window.liff) {
       statusText.textContent = "找不到 LIFF SDK，請稍後再試。";
       return;
     }
+
     try {
-      // 若不是在 LINE 內開啟，就不要跑 LIFF，避免一直報錯
+      // 只允許從 LINE 官方帳號裡面打開
       if (!liff.isInClient()) {
         statusText.textContent = "請從 LINE 官方帳號打開會員中心。";
         infoMsg.textContent = "";
         return;
       }
 
-     // 在 LIFF 內：指定這顆 LIFF 的 ID
-      await liff.init({ liffId: LIFF_ID });
+      // 在 LIFF 內：使用目前這個 LIFF 的 ID 初始化
+      await liff.init({});
 
-      const profile = await liff.getProfile();
-      currentUserId = profile.userId;
-      const name    = profile.displayName || "";
+      // 用 ID Token 拿 userId，不需要 profile 權限
+      const idToken = liff.getDecodedIDToken();
+      if (!idToken || !idToken.sub) {
+        throw new Error("no_user_id");
+      }
+      currentUserId = idToken.sub;
+
+      // 盡量拿一下暱稱，有錯就忽略，不要影響訂單載入
+      let name = "";
+      try {
+        const profile = await liff.getProfile();
+        name = profile.displayName || "";
+      } catch (e2) {
+        console.log("getProfile failed (ignored)", e2);
+      }
+
       statusText.textContent = name ? (name + " 您好") : "已登入";
 
+      // 開始載入訂單
       loadOrders();
     } catch (e) {
       console.error(e);
-      const msg = (e && (e.message || e.code || e.toString())) || "";
       statusText.textContent = "登入失敗，請稍後再試。";
       infoMsg.classList.add("error");
-      infoMsg.textContent = "載入失敗，請稍後再試。" + (msg ? ("（" + msg + "）") : "");
+      infoMsg.textContent = "載入失敗，請稍後再試。";
     }
   }
+
 
   document.addEventListener("DOMContentLoaded", () => {
     initLiff();
