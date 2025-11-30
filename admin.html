@@ -475,17 +475,23 @@ function displayPaymentMethod(pm){
   if (!pm) return '';
   if (pm === 'cod_711')          return '7-11 貨到付款';
   if (pm === 'cod_post')         return '郵寄貨到付款';
+
   if (pm === 'paid_card_once')   return '線上付款－信用卡一次付清';
   if (pm && pm.startsWith('paid_card_inst_'))
     return '線上付款－信用卡分期';
+  if (pm === 'paid_linepay')     return '線上付款－LINE Pay';
+  if (pm === 'paid_af')          return '線上付款－AFTEE 先享後付';
+
   if (pm && pm.startsWith('zero_card_'))
     return '中租無卡分期';
-  if (pm && pm.includes('atm'))
-    return 'ATM 轉帳';
-  if (pm && pm.includes('bank'))
-    return '銀行匯款';
+
+  if (pm === 'atm_full_tail')    return '尾款－ATM 全額匯款';
+  if (pm && pm.includes('atm'))  return 'ATM 轉帳';
+  if (pm && pm.includes('bank')) return '銀行匯款';
+
   return pm;
 }
+
 function statusBadgeShip(st){
   if(!st) return '';
   let cls = 'badge blue';
@@ -781,6 +787,47 @@ function renderDetail(rec){
     $('#btnSaveDetail').addEventListener('click', saveDetail);
   $('#btnCopyNotice').addEventListener('click', copyNotice);
   $('#btnShipAndLine').addEventListener('click', shipAndLine);
+
+ const btnTail = $('#btnSendTailLink');
+if (btnTail) {
+  btnTail.addEventListener('click', async () => {
+    if (!currentRecord) {
+      alert('尚未選擇訂單');
+      return;
+    }
+    const f = currentRecord.fields || currentRecord || {};
+    const oid = f.order_id;
+    if (!oid) {
+      alert('這筆資料沒有 order_id，無法發尾款連結');
+      return;
+    }
+
+    if (!confirm(`要發送「尾款結帳連結 + LINE 通知」給訂單 ${oid} 嗎？`)) {
+      return;
+    }
+
+    try {
+      const r = await fetch(`${API}/admin/deposit/send-tail-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          op_key: OP_KEY,
+          order_id: oid
+        })
+      });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok || !j.ok) {
+        alert('發送失敗：' + (j.message || j.error || ('HTTP ' + r.status)));
+        return;
+      }
+      alert('已發送尾款結帳連結並透過 LINE 通知客人。');
+    } catch (e) {
+      console.error(e);
+      alert('系統錯誤，發送失敗。');
+    }
+  });
+}
+
 
   const btnPayOk = $('#btnConfirmPayOk');
   if (btnPayOk) btnPayOk.addEventListener('click', ()=>confirmPay('ok'));
