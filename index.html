@@ -188,6 +188,9 @@
       </div>
       <div class="badge">ONLINE BOUTIQUE</div>
     </header>
+    <div id="categoryBar" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px;">
+  <!-- 這裡會用 JS 塞分類按鈕 -->
+</div>
 
     <div id="productList" class="product-grid"></div>
     <div id="emptyTip" class="empty-tip" style="display:none;">
@@ -204,101 +207,176 @@
   </div>
 
   <script>
-    const API_BASE = 'https://api.murain.tw';
-    const PRODUCT_API = API_BASE + '/public/products';
+  const API_BASE = 'https://api.murain.tw';
+  const PRODUCT_API = API_BASE + '/public/products';
 
-    let cartCount = 0; // 先顯示數量用，之後接購物車再改
+  let allItems = [];   // 全部商品
+  let cartCount = 0;   // 目前顯示用，之後接購物車再改
 
-    async function fetchProducts(){
-      try {
-        const res = await fetch(PRODUCT_API);
-        const json = await res.json();
-        if (!json.ok) throw new Error(json.error || 'error');
-        renderProducts(json.items || []);
-      } catch (err) {
-        console.error(err);
-        document.getElementById('emptyTip').style.display = 'block';
-        document.getElementById('emptyTip').textContent = '商品載入失敗，請稍後再試。';
+  async function fetchProducts(){
+    try {
+      const res = await fetch(PRODUCT_API);
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'error');
+
+      allItems = json.items || [];
+      renderCategoryBar(allItems);
+      renderProducts(allItems);
+    } catch (err) {
+      console.error(err);
+      const tip = document.getElementById('emptyTip');
+      if (tip) {
+        tip.style.display = 'block';
+        tip.textContent = '商品載入失敗，請稍後再試。';
       }
     }
+  }
 
-    function renderProducts(items){
-      const listEl = document.getElementById('productList');
-      const emptyEl = document.getElementById('emptyTip');
+  // 渲染分類按鈕
+  function renderCategoryBar(items){
+    const bar = document.getElementById('categoryBar');
+    if (!bar) return;
 
-      if (!items.length){
-        listEl.innerHTML = '';
-        emptyEl.style.display = 'block';
-        return;
-      }
+    // 取得所有有填的分類
+    const cats = Array.from(new Set(
+      items
+        .map(it => it.category || '')
+        .filter(c => c && c.trim() !== '')
+    ));
 
-      emptyEl.style.display = 'none';
+    // 如果沒有分類，就把整條隱藏
+    if (!cats.length){
+      bar.style.display = 'none';
+      return;
+    }
 
-      const html = items.map(it => {
-        const img = it.image || '';
-        const title = it.title || it.sku || '';
-        const desc = it.description || '';
-        const price = Number(it.price || 0);
-        const listPrice = Number(it.list_price || 0);
-        const hasDiscount = listPrice > price && price > 0;
+    bar.style.display = 'flex';
 
-        return `
-          <div class="product-card">
-            <div class="product-img-wrap">
-              ${img ? `<img src="${img}" alt="${title}">` : ''}
+    const btnHtml = [
+      `<button class="cat-btn cat-btn-active" data-cat="">全部</button>`,
+      ...cats.map(c =>
+        `<button class="cat-btn" data-cat="${c}">${c}</button>`
+      )
+    ].join('');
+
+    bar.innerHTML = btnHtml;
+
+    // 綁定點擊事件
+    bar.querySelectorAll('.cat-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const cat = btn.dataset.cat || "";
+
+        // 切換 active 樣式
+        bar.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('cat-btn-active'));
+        btn.classList.add('cat-btn-active');
+
+        if (!cat) {
+          renderProducts(allItems);
+        } else {
+          const filtered = allItems.filter(it => (it.category || "") === cat);
+          renderProducts(filtered);
+        }
+      });
+    });
+  }
+
+  function renderProducts(items){
+    const listEl = document.getElementById('productList');
+    const emptyEl = document.getElementById('emptyTip');
+    if (!listEl || !emptyEl) return;
+
+    if (!items.length){
+      listEl.innerHTML = '';
+      emptyEl.style.display = 'block';
+      emptyEl.textContent = '目前沒有符合條件的商品。';
+      return;
+    }
+
+    emptyEl.style.display = 'none';
+
+    const html = items.map(it => {
+      const img = it.image || '';
+      const title = it.title || it.sku || '';
+      const desc = it.description || '';
+      const price = Number(it.price || 0);
+      const listPrice = Number(it.list_price || 0);
+      const hasDiscount = listPrice > price && price > 0;
+
+      return `
+        <div class="product-card">
+          <div class="product-img-wrap">
+            ${img ? `<img src="${img}" alt="${title}">` : ''}
+          </div>
+          <div class="product-body">
+            <div class="product-title">${title}</div>
+            <div class="product-desc">${desc}</div>
+            <div class="price-row">
+              <div class="price-main">NT$ ${price.toLocaleString()}</div>
+              ${hasDiscount ? `<div class="price-old">NT$ ${listPrice.toLocaleString()}</div>` : ''}
             </div>
-            <div class="product-body">
-              <div class="product-title">${title}</div>
-              <div class="product-desc">${desc}</div>
-              <div class="price-row">
-                <div class="price-main">NT$ ${price.toLocaleString()}</div>
-                ${hasDiscount ? `<div class="price-old">NT$ ${listPrice.toLocaleString()}</div>` : ''}
+            <div class="card-footer">
+              <div class="pill">
+                ${it.category ? `${it.category}｜` : ''}SKU：${it.sku || ''}
               </div>
-              <div class="card-footer">
-                <div class="pill">SKU：${it.sku || ''}</div>
-                <button class="btn"
-                  data-sku="${it.sku || ''}"
-                  data-price="${price}">
-                  加入購物車
-                </button>
-              </div>
+              <button class="btn"
+                data-sku="${it.sku || ''}"
+                data-price="${price}">
+                加入購物車
+              </button>
             </div>
           </div>
-        `;
-      }).join('');
+        </div>
+      `;
+    }).join('');
 
-      listEl.innerHTML = html;
+    listEl.innerHTML = html;
 
-      listEl.querySelectorAll('.btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const sku = btn.dataset.sku;
-          const price = Number(btn.dataset.price || 0);
-          handleAddToCart(sku, price);
-        });
+    listEl.querySelectorAll('.btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const sku = btn.dataset.sku;
+        const price = Number(btn.dataset.price || 0);
+        handleAddToCart(sku, price);
       });
-    }
-
-    function handleAddToCart(sku, price){
-      if (!sku) return;
-
-      // 🔥 這裡是之後要接「新增到購物車 API」的地方 🔥
-      // 目前先假裝成功 +1，之後我們會改成：
-      // fetch('/public/cart/add', { method:'POST', body: JSON.stringify({ cart_token, sku, qty:1 }) ... })
-
-      cartCount += 1;
-      document.getElementById('cartCount').textContent = cartCount;
-
-      console.log('TODO 加入購物車：', { sku, price });
-      alert('已加入購物車（目前是測試用，之後會接正式結帳流程）');
-    }
-
-    document.getElementById('checkoutBtn').addEventListener('click', () => {
-      // 🔥 這裡之後會帶著 cart_token 直接導去你現在的 liff-checkout.html
-      // 例如： location.href = '/liff-checkout.html?cart_token=' + cartToken;
-      alert('下一步我們會把這裡改成「帶購物車編號 → liff 結帳頁」');
     });
+  }
 
-    fetchProducts();
-  </script>
+  function handleAddToCart(sku, price){
+    if (!sku) return;
+
+    // TODO: 之後接購物車 API
+    cartCount += 1;
+    const countEl = document.getElementById('cartCount');
+    if (countEl) countEl.textContent = cartCount;
+
+    alert('已加入購物車（目前是測試用，之後會接正式結帳流程）');
+  }
+
+  document.getElementById('checkoutBtn').addEventListener('click', () => {
+    alert('下一步我們會把這裡改成「帶購物車編號 → liff 結帳頁」。');
+  });
+
+  // 分類按鈕的樣式（簡單加在這裡）
+  const style = document.createElement('style');
+  style.textContent = `
+    .cat-btn {
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: transparent;
+      color: #f7f7f7;
+      font-size: 11px;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+    .cat-btn-active {
+      background: linear-gradient(135deg, #f5e2a0, #d4af37);
+      color: #111;
+      border-color: transparent;
+    }
+  `;
+  document.head.appendChild(style);
+
+  fetchProducts();
+</script>
+
 </body>
 </html>
