@@ -199,17 +199,16 @@
       </div>
     </div>
 
+    <!-- 只留一個「全部訂單」按鈕，純裝飾用，實際上不再做分類 -->
     <div class="tabs">
       <button class="tab active" data-tab="all">全部訂單</button>
-      <button class="tab" data-tab="live">直播訂單</button>
-      <button class="tab" data-tab="web">官網訂單</button>
     </div>
 
     <div class="msg" id="infoMsg">載入中…</div>
 
     <div class="order-list" id="orderList"></div>
     <div class="orders-empty" id="emptyText" style="display:none;">
-      這個分類目前沒有訂單。
+      目前沒有任何訂單。
     </div>
   </div>
 
@@ -217,11 +216,9 @@
 <script>
   const API_BASE   = "https://api.murain.tw";
   const MEMBER_API = API_BASE + "/member/orders";
-  const LIFF_ID    = "2008430261-EGZPg3Qp";   // ★ 新增這行
 
   let currentUserId = null;
   let orders = [];
-  let currentTab = "all";
 
   const statusText = document.getElementById("statusText");
   const infoMsg    = document.getElementById("infoMsg");
@@ -234,15 +231,6 @@
     } else {
       initLiff();
     }
-  });
-
-  document.querySelectorAll(".tab").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      currentTab = btn.dataset.tab;
-      renderOrders();
-    });
   });
 
   function formatDate(s) {
@@ -290,12 +278,8 @@
     orderList.innerHTML = "";
     emptyText.style.display = "none";
 
-    let list = orders.slice();
-    if (currentTab === "live") {
-      list = list.filter(o => (o.customer_type || "").toLowerCase() === "live");
-    } else if (currentTab === "web") {
-      list = list.filter(o => (o.customer_type || "").toLowerCase() === "web");
-    }
+    // ✅ 不再做 live / web 分類，永遠顯示全部訂單
+    const list = orders.slice();
 
     if (!list.length) {
       emptyText.style.display = "block";
@@ -395,51 +379,34 @@
     }
   }
 
-    async function initLiff() {
+  async function initLiff() {
     if (!window.liff) {
       statusText.textContent = "找不到 LIFF SDK，請稍後再試。";
       return;
     }
-
     try {
-      // 只允許從 LINE 官方帳號裡面打開
       if (!liff.isInClient()) {
         statusText.textContent = "請從 LINE 官方帳號打開會員中心。";
         infoMsg.textContent = "";
         return;
       }
 
-      // 在 LIFF 內：用會員中心這顆 LIFF ID
-      await liff.init({ liffId: LIFF_ID });
+      await liff.init({});
 
-      // 用 ID Token 拿 userId，不需要 profile 權限
-      const idToken = liff.getDecodedIDToken();
-      if (!idToken || !idToken.sub) {
-        throw new Error("no_user_id");
-      }
-      currentUserId = idToken.sub;
-
-      // 盡量拿一下暱稱，有錯就忽略，不要影響訂單載入
-      let name = "";
-      try {
-        const profile = await liff.getProfile();
-        name = profile.displayName || "";
-      } catch (e2) {
-        console.log("getProfile failed (ignored)", e2);
-      }
-
+      const profile = await liff.getProfile();
+      currentUserId = profile.userId;
+      const name    = profile.displayName || "";
       statusText.textContent = name ? (name + " 您好") : "已登入";
 
-      // 開始載入訂單
       loadOrders();
     } catch (e) {
       console.error(e);
+      const msg = (e && (e.message || e.code || e.toString())) || "";
       statusText.textContent = "登入失敗，請稍後再試。";
       infoMsg.classList.add("error");
-      infoMsg.textContent = "載入失敗，請稍後再試。";
+      infoMsg.textContent = "載入失敗，請稍後再試。" + (msg ? ("（" + msg + "）") : "");
     }
   }
-
 
   document.addEventListener("DOMContentLoaded", () => {
     initLiff();
