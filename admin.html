@@ -872,8 +872,8 @@ function renderDepositRemind(payload){
   }
 
   const rows = list.map(r => `
-    <tr>
-      <td>${r.order_id || ''}</td>
+    <tr data-oid="${r.order_id || ''}">
+      <td style="text-decoration:underline;">${r.order_id || ''}</td>
       <td>${r.name || ''}</td>
       <td>${r.phone || ''}</td>
       <td style="text-align:right;">${r.amount || 0}</td>
@@ -884,8 +884,8 @@ function renderDepositRemind(payload){
   dEl.innerHTML = `
     <div class="section-title">今日尾款提醒（保留到期：${date}）</div>
     <p class="muted">
-      共 ${list.length} 筆「保留到今天」且訂金已收、尾款未結清的訂單。<br>
-      建議逐一聯繫客人結清尾款，或搭配右下角的「發尾款結帳連結 + 發 LINE」按鈕一起使用。
+      共 ${list.length} 筆。<br>
+      👉 直接「點表格裡的訂單編號那一行」，左邊會自動跳到那一筆訂單詳細資料。
     </p>
     <div style="overflow:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:13px;">
@@ -904,7 +904,25 @@ function renderDepositRemind(payload){
       </table>
     </div>
   `;
+
+  // 綁定點擊事件：點一行就切到那筆訂單
+  $$('#orderDetail table tbody tr[data-oid]').forEach(tr => {
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', () => {
+      const oid = tr.getAttribute('data-oid') || '';
+      if (!oid) return;
+
+      // 用現成的 selectOrder 把右邊換成那筆訂單的詳細資料
+      selectOrder(oid);
+
+      // 順便讓左邊那一筆高亮
+      $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
+      const row = document.querySelector(`#orderList .order-row[data-id="${oid}"]`);
+      if (row) row.classList.add('active');
+    });
+  });
 }
+
 
 /* ===== 取消訂單（補回庫存） ===== */
 async function cancelCurrentOrder() {
