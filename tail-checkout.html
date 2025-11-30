@@ -1,359 +1,556 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>MURAIN — 尾款結帳</title>
-<style>
-  :root{
-    --bg:#020617;
-    --card:#0f172a;
-    --txt:#e5e7eb;
-    --muted:#9ca3af;
-    --accent:#22d3ee;
-  }
-  *{box-sizing:border-box;}
-  body{
-    margin:0;
-    font-family: system-ui,-apple-system,Segoe UI,Noto Sans TC,sans-serif;
-    background:radial-gradient(circle at top,#1e293b 0,#020617 55%,#000 100%);
-    color:var(--txt);
-  }
-  .wrap{
-    max-width:640px;
-    margin:0 auto;
-    padding:20px 16px 32px;
-  }
-  h1{
-    margin:0 0 12px;
-    font-size:22px;
-    letter-spacing:0.12em;
-  }
-  .subtitle{
-    font-size:13px;
-    color:var(--muted);
-    margin-bottom:18px;
-  }
-  .card{
-    background:rgba(15,23,42,.96);
-    border-radius:18px;
-    padding:18px 16px;
-    box-shadow:0 20px 40px rgba(0,0,0,.45);
-    margin-bottom:16px;
-    border:1px solid rgba(148,163,184,.25);
-  }
-  .card-header{
-    font-size:15px;
-    font-weight:600;
-    margin-bottom:10px;
-  }
-  label{
-    display:block;
-    font-size:13px;
-    margin-top:8px;
-    margin-bottom:4px;
-    color:var(--muted);
-  }
-  input,textarea,select{
-    width:100%;
-    border-radius:12px;
-    border:1px solid #1f2937;
-    padding:9px 11px;
-    font-size:14px;
-    background:#020617;
-    color:var(--txt);
-  }
-  input[readonly],textarea[readonly]{
-    opacity:.9;
-  }
-  textarea{min-height:80px;resize:vertical;}
-  .row{
-    display:flex;
-    gap:8px;
-    flex-wrap:wrap;
-  }
-  .row>*{flex:1 1 0;}
-  .amount{
-    font-size:20px;
-    font-weight:700;
-    text-align:right;
-  }
-  .muted{color:var(--muted);font-size:12px;}
-  .btn{
-    width:100%;
-    margin-top:16px;
-    padding:11px 16px;
-    border-radius:999px;
-    border:none;
-    font-size:15px;
-    font-weight:600;
-    letter-spacing:.16em;
-    cursor:pointer;
-    background:linear-gradient(120deg,#22d3ee,#0ea5e9);
-    color:#020617;
-  }
-  .btn:disabled{
-    opacity:.4;
-    cursor:not-allowed;
-  }
-  .pill-row{
-    display:flex;
-    gap:8px;
-    flex-wrap:wrap;
-    margin-top:4px;
-  }
-  .pill{
-    padding:6px 10px;
-    border-radius:999px;
-    border:1px solid #1f2937;
-    font-size:12px;
-    cursor:pointer;
-    display:inline-flex;
-    align-items:center;
-    gap:4px;
-  }
-  .pill input{margin:0;width:auto;}
-  .pill.active{
-    border-color:var(--accent);
-    background:rgba(34,211,238,.1);
-    color:var(--accent);
-  }
-  .error{
-    background:#7f1d1d;
-    border-radius:10px;
-    padding:8px 10px;
-    font-size:13px;
-    margin-bottom:10px;
-  }
-  .ok{
-    background:#064e3b;
-    border-radius:10px;
-    padding:8px 10px;
-    font-size:13px;
-    margin-top:10px;
-  }
-</style>
-<script>
-const API = (window.API_BASE || "https://api.murain.tw").replace(/\/$/,"");
-
-let TAIL_INFO = null;   // 從 /tail/info 拿回來的資料
-let submitting = false;
-
-function $(s){return document.querySelector(s);}
-
-/** 將數字變成 "NT$ 1,000" */
-function money(n){
-  n = Number(n)||0;
-  return "NT$ " + n.toLocaleString();
-}
-
-/** 切換付款方式 pill */
-function bindPayPills(){
-  const pills = document.querySelectorAll(".pill");
-  pills.forEach(p=>{
-    p.addEventListener("click",()=>{
-      pills.forEach(x=>x.classList.remove("active"));
-      p.classList.add("active");
-      const r = p.querySelector("input[type=radio]");
-      if (r) r.checked = true;
-    });
-  });
-}
-
-/** 初始化：抓 URL 帶進來的 order_id，呼叫 /tail/info */
-async function initPage(){
-  bindPayPills();
-
-  const qs = new URLSearchParams(location.search);
-  const parentId = qs.get("order_id") || qs.get("parent_order_id") || "";
-  const errEl = $("#errBox");
-
-  if (!parentId){
-    errEl.textContent = "缺少訂單編號（order_id），請確認您點擊的連結是否正確。";
-    errEl.style.display = "block";
-    $("#btnSubmit").disabled = true;
-    return;
-  }
-
-  $("#parentOrderId").value = parentId;
-
-  try{
-    const res = await fetch(API + "/tail/info?order_id=" + encodeURIComponent(parentId));
-    const data = await res.json();
-    if (!data.ok){
-      throw new Error(data.error || "查詢失敗");
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MURAIN — 尾款結帳</title>
+  <style>
+    :root{
+      --bg:#050816;
+      --card:#0f172a;
+      --card-soft:#020617;
+      --accent:#22d3ee;
+      --accent-soft:rgba(34,211,238,.1);
+      --accent-weak:rgba(56,189,248,.6);
+      --txt:#e5e7eb;
+      --muted:#9ca3af;
+      --danger:#f97373;
+      --border:#1f2937;
     }
-    TAIL_INFO = data;
-    renderInfo(data);
-  }catch(e){
-    console.error(e);
-    errEl.textContent = "查詢原訂單資料時發生錯誤，請稍後再試或聯絡客服。";
-    errEl.style.display = "block";
-    $("#btnSubmit").disabled = true;
-  }
-}
-
-/** 把尾款資訊畫到畫面上 */
-function renderInfo(info){
-  $("#totalAmount").value   = money(info.total_amount || 0);
-  $("#depositAmount").value = money(info.deposit_amount || 0);
-  $("#tailAmount").textContent = money(info.tail_amount || 0);
-  $("#itemsText").value = info.items_text || "";
-
-  // 顯示原本的收件人資訊（唯讀）
-  let name="", phone="", email="";
-  try{
-    const shipInfo = info.shipping_info || {};
-    const ship = shipInfo.ship || {};
-    name  = ship.name  || "";
-    phone = ship.phone || "";
-    email = ship.email || "";
-  }catch(e){}
-
-  $("#shipName").value  = name;
-  $("#shipPhone").value = phone;
-  $("#shipEmail").value = email;
-}
-
-/** 送出尾款建立請求 */
-async function submitTail(){
-  if (submitting) return;
-  const errEl = $("#errBox");
-  errEl.style.display = "none";
-  errEl.textContent = "";
-
-  if (!TAIL_INFO){
-    errEl.textContent = "尚未取得尾款資料，請重整頁面。";
-    errEl.style.display = "block";
-    return;
-  }
-
-  // 目前只開 ATM 尾款（匯款到你固定帳號）
-  const payRadio = document.querySelector("input[name=pay_method]:checked");
-  if (!payRadio){
-    errEl.textContent = "請選擇付款方式。";
-    errEl.style.display = "block";
-    return;
-  }
-  const payMethod = payRadio.value; // tail_bank_transfer...
-
-  submitting = true;
-  $("#btnSubmit").disabled = true;
-
-  try{
-    const body = {
-      parent_order_id: TAIL_INFO.parent_order_id,
-      items_json:      TAIL_INFO.items_text || "",
-      tail_amount:     TAIL_INFO.tail_amount || 0,
-      payment_method:  payMethod,
-      // 尾款訂單本身的 shipping_info：先把原本那份直接帶過去
-      shipping_info:   TAIL_INFO.shipping_info || {}
-    };
-
-    const res = await fetch(API + "/tail/checkout", {
-      method:"POST",
-      headers:{"content-type":"application/json"},
-      body:JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (!data.ok){
-      throw new Error(data.error || "tail_checkout_failed");
+    *{box-sizing:border-box;}
+    body{
+      margin:0;
+      font-family: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",sans-serif;
+      background:radial-gradient(circle at top,#111827 0,#020617 45%,#000 100%);
+      color:var(--txt);
     }
-
-    const tlId = data.order_id || "";
-    $("#okBox").textContent =
-      tlId
-        ? `尾款已建立成功（尾款訂單編號：${tlId}），請依畫面提示完成匯款。`
-        : "尾款已建立成功，請依畫面提示完成匯款。";
-    $("#okBox").style.display = "block";
-
-    alert("尾款已建立成功，謝謝！");
-    // 如果在 LIFF 裡，可以嘗試關閉視窗（不會影響一般瀏覽器）
-    if (window.liff && liff.closeWindow) {
-      try{ liff.closeWindow(); }catch(e){}
+    .wrap{
+      max-width:860px;
+      margin:0 auto;
+      padding:20px 16px 40px;
     }
-  }catch(e){
-    console.error(e);
-    errEl.textContent = "建立尾款訂單時發生錯誤，請稍後再試或聯絡客服。";
-    errEl.style.display = "block";
-  }finally{
-    submitting = false;
-    $("#btnSubmit").disabled = false;
-  }
-}
-
-window.addEventListener("DOMContentLoaded",()=>{
-  initPage();
-  $("#btnSubmit").addEventListener("click",submitTail);
-});
-</script>
+    h1{
+      font-size:22px;
+      margin:8px 0 16px;
+      letter-spacing:.1em;
+    }
+    .subtitle{
+      font-size:13px;
+      color:var(--muted);
+      margin-bottom:16px;
+    }
+    .card{
+      background:linear-gradient(145deg,#020617,#020617 40%,#020617 60%,#020617);
+      border-radius:18px;
+      border:1px solid var(--border);
+      box-shadow:0 24px 60px rgba(15,23,42,.9);
+      padding:18px 16px 18px;
+      margin-bottom:16px;
+    }
+    .card-header{
+      font-size:15px;
+      font-weight:600;
+      margin-bottom:10px;
+    }
+    .badge{
+      display:inline-flex;
+      align-items:center;
+      padding:2px 8px;
+      border-radius:999px;
+      font-size:11px;
+      background:var(--accent-soft);
+      color:var(--accent);
+      margin-left:6px;
+    }
+    label{
+      font-size:13px;
+      color:var(--muted);
+      display:block;
+      margin-bottom:4px;
+    }
+    input{
+      width:100%;
+      padding:9px 11px;
+      border-radius:10px;
+      border:1px solid var(--border);
+      background:rgba(15,23,42,.9);
+      color:var(--txt);
+      font-size:14px;
+    }
+    input[readonly]{opacity:.8;}
+    .row{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .row>*{flex:1 1 180px;}
+    .mt-1{margin-top:4px;}
+    .mt-2{margin-top:8px;}
+    .mt-3{margin-top:12px;}
+    .mt-4{margin-top:16px;}
+    .muted{color:var(--muted);font-size:12px;}
+    .danger{
+      background:rgba(248,113,113,.1);
+      border:1px solid rgba(248,113,113,.5);
+      color:#fecaca;
+      padding:8px 10px;
+      border-radius:10px;
+      font-size:13px;
+      margin-bottom:10px;
+    }
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace;}
+    .pill-bar{
+      display:flex;
+      border-radius:999px;
+      background:#020617;
+      border:1px solid var(--border);
+      padding:4px;
+      margin-top:6px;
+      gap:4px;
+    }
+    .pill{
+      flex:1;
+      border-radius:999px;
+      font-size:13px;
+      padding:7px 10px;
+      border:none;
+      background:transparent;
+      color:var(--muted);
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .pill.active{
+      background:var(--accent);
+      color:#020617;
+      font-weight:600;
+    }
+    .pill span.small{
+      font-size:11px;
+      opacity:.8;
+    }
+    .pay-pane{display:none;margin-top:10px;font-size:13px;}
+    .pay-pane.active{display:block;}
+    .hint{
+      font-size:12px;
+      color:var(--muted);
+      line-height:1.5;
+    }
+    .money-big{
+      font-size:20px;
+      font-weight:600;
+    }
+    .btn-primary{
+      width:100%;
+      border-radius:999px;
+      border:none;
+      padding:11px 12px;
+      background:linear-gradient(135deg,#22d3ee,#0ea5e9);
+      color:#020617;
+      font-size:15px;
+      font-weight:600;
+      letter-spacing:.1em;
+      cursor:pointer;
+      margin-top:14px;
+    }
+    .btn-primary:disabled{
+      opacity:.5;
+      cursor:default;
+    }
+    .btn-secondary{
+      border-radius:999px;
+      border:1px solid var(--border);
+      padding:8px 12px;
+      background:rgba(15,23,42,.9);
+      color:var(--muted);
+      font-size:13px;
+      cursor:pointer;
+    }
+    .flex-between{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+    }
+    .right{text-align:right;}
+    .small{font-size:11px;}
+  </style>
+  <script>
+    // 和其他頁一樣
+    window.API_BASE = "https://api.murain.tw";
+  </script>
 </head>
 <body>
 <div class="wrap">
-  <h1>MURAIN — 尾款結帳</h1>
-  <div class="subtitle">此頁專門用來處理「已付訂金」的尾款，不會再扣商品庫存。</div>
+  <div class="mt-2">
+    <div class="small muted">MURAIN</div>
+    <h1>尾款結帳</h1>
+    <div class="subtitle">此頁專門用來結清「已付訂金」的尾款，不會再扣商品庫存。</div>
+  </div>
 
-  <div id="errBox" class="error" style="display:none;"></div>
+  <div id="errorBox" class="danger" style="display:none"></div>
 
+  <!-- 訂單資訊 -->
   <div class="card">
-    <div class="card-header">訂單資訊</div>
-    <label>原訂金訂單編號</label>
-    <input id="parentOrderId" readonly />
+    <div class="card-header">
+      訂單資訊
+      <span class="badge">原訂金訂單</span>
+    </div>
 
     <div class="row">
       <div>
-        <label>原訂單總金額</label>
-        <input id="totalAmount" readonly />
+        <label>原訂單編號</label>
+        <input id="fieldOrderId" class="mono" readonly />
       </div>
       <div>
-        <label>已付訂金</label>
-        <input id="depositAmount" readonly />
+        <label>原訂單總金額</label>
+        <input id="fieldTotal" class="mono" readonly />
       </div>
     </div>
 
-    <label style="margin-top:10px">商品明細</label>
-    <textarea id="itemsText" readonly></textarea>
-  </div>
-
-  <div class="card">
-    <div class="card-header">尾款金額</div>
-    <div class="amount" id="tailAmount">NT$ 0</div>
-    <div class="muted" style="margin-top:4px;">此金額由系統依「總金額 − 訂金」自動計算。</div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">付款方式</div>
-    <div class="muted">目前提供「ATM 尾款匯款」，匯入你原本提供的 MURAIN 專用帳戶。</div>
-
-    <div class="pill-row">
-      <label class="pill active">
-        <input type="radio" name="pay_method" value="tail_bank_transfer" checked />
-        ATM 尾款匯款
-      </label>
-      <!-- 之後如果要加「線上信用卡尾款」，可以再多一顆 pill -->
+    <div class="row mt-2">
+      <div>
+        <label>已付訂金</label>
+        <input id="fieldDeposit" class="mono" readonly />
+      </div>
+      <div>
+        <label>保留到期日</label>
+        <input id="fieldHoldUntil" class="mono" readonly />
+      </div>
     </div>
 
-    <div class="muted" style="margin-top:10px;">
-      匯款帳號：中國信託商業銀行（822）／帳號 <strong>222540458194</strong>／戶名：潘羿如（MURAIN）<br/>
-      匯款完成後，MURAIN 會在後台確認款項，並安排出貨。
+    <div class="mt-3">
+      <label>商品明細（摘要）</label>
+      <textarea id="fieldItems" rows="3" style="width:100%;border-radius:10px;border:1px solid var(--border);background:#020617;color:var(--txt);font-size:13px;padding:8px 10px;" readonly></textarea>
     </div>
   </div>
 
+  <!-- 尾款金額 -->
   <div class="card">
-    <div class="card-header">原收件人資訊（供確認用）</div>
-    <div class="muted">如需更改收件資料或取貨門市，請直接私訊小盒子，由客服協助調整。</div>
-
-    <label>姓名</label>
-    <input id="shipName" readonly />
-    <label>電話</label>
-    <input id="shipPhone" readonly />
-    <label>Email</label>
-    <input id="shipEmail" readonly />
+    <div class="flex-between">
+      <div class="card-header">
+        尾款金額
+      </div>
+      <div class="muted small">此金額會自動依「總金額－訂金」計算。</div>
+    </div>
+    <div class="flex-between mt-2">
+      <div class="muted">需結清尾款</div>
+      <div class="money-big mono" id="tailAmountView">NT$ 0</div>
+    </div>
   </div>
 
-  <button class="btn" id="btnSubmit">送出尾款結帳</button>
+  <!-- 付款方式 -->
+  <div class="card">
+    <div class="card-header">
+      付款方式
+      <span class="badge">與一般結帳相同 4 種</span>
+    </div>
 
-  <div id="okBox" class="ok" style="display:none;"></div>
+    <div class="pill-bar" id="payTabs">
+      <button type="button" class="pill active" data-pay="COD">7-11 貨到付款</button>
+      <button type="button" class="pill" data-pay="PAID">線上付款<span class="small">（信用卡 / 分期 / LINE Pay / AF）</span></button>
+      <button type="button" class="pill" data-pay="ATM">ATM 匯款</button>
+      <button type="button" class="pill" data-pay="ZEROCARD">無卡零角</button>
+    </div>
+
+    <!-- COD -->
+    <div class="pay-pane active" id="paneCOD">
+      <div class="mt-2 hint">
+        尾款將在您到 7-11 取貨時一次收取。<br>
+        <span class="small">※ 此尾款訂單不會再變動收件資料，會沿用原訂單的 7-11 門市。</span>
+      </div>
+    </div>
+
+    <!-- 線上付款 -->
+    <div class="pay-pane" id="panePAID">
+      <div class="mt-2">
+        <label>付款管道</label>
+        <div class="row">
+          <button type="button" class="btn-secondary" data-paid="card_once">信用卡一次付清</button>
+          <button type="button" class="btn-secondary" data-paid="card_inst">信用卡分期</button>
+          <button type="button" class="btn-secondary" data-paid="linepay">LINE Pay</button>
+          <button type="button" class="btn-secondary" data-paid="af">AFTEE 先享後付</button>
+        </div>
+      </div>
+
+      <div class="mt-2" id="instBox" style="display:none">
+        <label>分期期數</label>
+        <select id="instMonths" style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border);background:#020617;color:var(--txt);font-size:14px;">
+          <option value="3">3 期</option>
+          <option value="6">6 期</option>
+          <option value="9">9 期</option>
+          <option value="12">12 期</option>
+        </select>
+        <div class="hint mt-1 small">實際分期利率與每期金額以刷卡頁面為準。</div>
+      </div>
+
+      <div class="hint mt-3">
+        按下「送出尾款」後會先建立尾款訂單，再自動跳轉到 PAYUNI 線上刷卡頁面。
+      </div>
+    </div>
+
+    <!-- ATM 匯款 -->
+    <div class="pay-pane" id="paneATM">
+      <div class="hint mt-2">
+        尾款將以「匯款全額」方式結清，請於顯示的期限內匯款完成。<br>
+        <br>
+        匯款資訊：<br>
+        · 銀行：中國信託商業銀行（822）<br>
+        · 帳號：222540458194<br>
+        · 戶名：潘羿如（MURAIN）<br>
+      </div>
+    </div>
+
+    <!-- 無卡零角 -->
+    <div class="pay-pane" id="paneZEROCARD">
+      <div class="mt-2">
+        <label>分期期數</label>
+        <select id="zcMonths" style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border);background:#020617;color:var(--txt);font-size:14px;">
+          <option value="3">3 期</option>
+          <option value="6">6 期</option>
+          <option value="9">9 期</option>
+          <option value="12">12 期</option>
+          <option value="18">18 期</option>
+          <option value="24">24 期</option>
+        </select>
+      </div>
+      <div class="hint mt-2">
+        按下「送出尾款」後，系統會先建立尾款訂單，再自動導向中租無卡零角的申請頁。<br>
+        審核通過後，後台一樣可以用「確認收款 / 中租審核」按鈕標記為已付款。
+      </div>
+    </div>
+
+    <button id="submitBtn" class="btn-primary">送出尾款</button>
+    <div class="muted small mt-2">
+      按下後若畫面顯示「尾款訂單已建立」，請依指示完成付款；若遇到錯誤，請截圖給管理者協助處理。
+    </div>
+  </div>
+
 </div>
+
+<script>
+(function(){
+  const API = window.API_BASE || "https://api.murain.tw";
+  const $ = s => document.querySelector(s);
+
+  let tailInfo = null;   // 從 /tail/info 拿到的資料
+  let activePay = "COD";
+  let paidChannel = "card_once";
+
+  function setError(msg){
+    const box = $("#errorBox");
+    if(!msg){ box.style.display="none"; box.textContent=""; return; }
+    box.textContent = msg;
+    box.style.display = "block";
+  }
+
+  function money(n){
+    n = Number(n) || 0;
+    return "NT$ " + n.toLocaleString("zh-TW");
+  }
+
+  function initTabs(){
+    const tabs = document.querySelectorAll(".pill");
+    tabs.forEach(tab=>{
+      tab.addEventListener("click", ()=>{
+        tabs.forEach(t=>t.classList.remove("active"));
+        tab.classList.add("active");
+        activePay = tab.dataset.pay;
+
+        document.querySelectorAll(".pay-pane").forEach(p=>p.classList.remove("active"));
+        $("#pane"+activePay).classList.add("active");
+      });
+    });
+
+    // 線上付款管道小按鈕
+    document.querySelectorAll("[data-paid]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        document.querySelectorAll("[data-paid]").forEach(b=>b.classList.remove("active-paid"));
+        btn.classList.add("active-paid");
+        paidChannel = btn.dataset.paid || "card_once";
+        $("#instBox").style.display = (paidChannel==="card_inst") ? "block" : "none";
+      });
+    });
+  }
+
+  async function loadTailInfo(){
+    const sp = new URLSearchParams(location.search);
+    const orderId = sp.get("order_id") || sp.get("parent_order_id") || "";
+    if(!orderId){
+      setError("缺少訂單編號（order_id），請確認連結是否正確。");
+      return;
+    }
+
+    try{
+      const r = await fetch(`${API}/tail/info?order_id=${encodeURIComponent(orderId)}`,{
+        method:"GET",
+        headers:{"Content-Type":"application/json"}
+      });
+      const j = await r.json();
+      if(!r.ok || !j.ok){
+        const msg = j.message || j.error || "取得原訂單資料失敗，請稍後再試。";
+        setError(msg);
+        return;
+      }
+
+      tailInfo = j;
+
+      $("#fieldOrderId").value = j.parent_order_id || orderId;
+      $("#fieldTotal").value   = money(j.total_amount || 0);
+      $("#fieldDeposit").value = money(j.deposit_amount || 0);
+      $("#tailAmountView").textContent = money(j.tail_amount || 0);
+      const hold = (j.shipping_info && j.shipping_info.hold_until) || "";
+      $("#fieldHoldUntil").value = hold || (j.hold_until || "");
+
+      $("#fieldItems").value = j.items_text || "(無商品摘要)";
+    }catch(e){
+      console.error(e);
+      setError("系統錯誤：無法載入尾款資訊。");
+    }
+  }
+
+  async function submitTail(){
+    if(!tailInfo){
+      alert("尚未載入原訂單資料，請稍候再試一次。");
+      return;
+    }
+
+    const tailAmount = Number(tailInfo.tail_amount || 0) || 0;
+    if(tailAmount <= 0){
+      if(!confirm("目前計算尾款為 0 元，仍要建立尾款訂單嗎？")) return;
+    }
+
+    let payment_method = "";
+
+    if(activePay === "COD"){
+      payment_method = "cod_711"; // 尾款用貨到付款
+    }else if(activePay === "PAID"){
+      if(paidChannel === "card_once"){
+        payment_method = "paid_card_once";
+      }else if(paidChannel === "card_inst"){
+        const months = $("#instMonths").value || "3";
+        payment_method = `paid_card_inst_${months}`;
+      }else if(paidChannel === "linepay"){
+        payment_method = "paid_linepay";
+      }else if(paidChannel === "af"){
+        payment_method = "paid_af";
+      }
+    }else if(activePay === "ATM"){
+      payment_method = "atm_full_tail"; // 給你辨識是「尾款匯款」
+    }else if(activePay === "ZEROCARD"){
+      const months = $("#zcMonths").value || "3";
+      payment_method = `zero_card_${months}`;
+    }
+
+    if(!payment_method){
+      alert("請先選擇尾款付款方式");
+      return;
+    }
+
+    try{
+      $("#submitBtn").disabled = true;
+
+      const payload = {
+        parent_order_id: tailInfo.parent_order_id,
+        items_json: tailInfo.items_text || "",
+        tail_amount: tailInfo.tail_amount || 0,
+        payment_method,
+        shipping_info: tailInfo.shipping_info || {}
+      };
+
+      const r = await fetch(`${API}/tail/checkout`,{
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify(payload)
+      });
+      const j = await r.json();
+
+      if(!r.ok || !j.ok){
+        const msg = j.message || j.error || "尾款訂單建立失敗，請再試一次。";
+        alert(msg);
+        $("#submitBtn").disabled = false;
+        return;
+      }
+
+      const newOrderId = j.order_id;
+
+      // 1) 線上刷卡類：轉給 PayUNI
+      if(payment_method.startsWith("paid_")){
+        try{
+          const pr = await fetch(`${API}/payuni/start`,{
+            method:"POST",
+            headers:{ "Content-Type":"application/json" },
+            body: JSON.stringify({ order_id: newOrderId })
+          });
+          const up = await pr.json();
+          if(!pr.ok || !up.ok){
+            alert("線上刷卡啟動失敗：" + (up.error || up.message || ""));
+            $("#submitBtn").disabled = false;
+            return;
+          }
+
+          const f = document.createElement("form");
+          f.method = "POST";
+          f.action = up.url;
+          ["MerID","Version","EncryptInfo","HashInfo"].forEach(k=>{
+            const input = document.createElement("input");
+            input.type="hidden";
+            input.name=k;
+            input.value=up[k];
+            f.appendChild(input);
+          });
+          document.body.appendChild(f);
+          f.submit();
+          return;
+        }catch(e){
+          console.error(e);
+          alert("線上刷卡啟動失敗（網路或程式錯誤）。");
+          $("#submitBtn").disabled = false;
+          return;
+        }
+      }
+
+      // 2) 無卡零角：轉給 /zero-card/start
+      if(payment_method.startsWith("zero_card_")){
+        try{
+          const zr = await fetch(`${API}/zero-card/start`,{
+            method:"POST",
+            headers:{ "Content-Type":"application/json" },
+            body: JSON.stringify({ order_id: newOrderId })
+          });
+          const zj = await zr.json();
+          if(!zr.ok || !zj.ok){
+            alert("中租無卡零角啟動失敗：" + (zj.error || zj.message || ""));
+            $("#submitBtn").disabled = false;
+            return;
+          }
+          // 後端回 payment_url
+          location.href = zj.payment_url;
+          return;
+        }catch(e){
+          console.error(e);
+          alert("中租無卡零角啟動失敗（網路或程式錯誤）。");
+          $("#submitBtn").disabled = false;
+          return;
+        }
+      }
+
+      // 3) COD / ATM：只建立尾款訂單，不跳外部頁面
+      alert("尾款訂單已建立，感謝您！");
+      location.href = `/order-result.html?order_id=${encodeURIComponent(newOrderId)}&from=tail`;
+
+    }catch(e){
+      console.error(e);
+      alert("系統錯誤，請稍後再試。");
+      $("#submitBtn").disabled = false;
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", ()=>{
+    initTabs();
+    loadTailInfo();
+    $("#submitBtn").addEventListener("click", submitTail);
+  });
+})();
+</script>
 </body>
 </html>
