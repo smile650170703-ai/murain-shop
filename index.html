@@ -207,176 +207,310 @@
   </div>
 
   <script>
-  const API_BASE = 'https://api.murain.tw';
-  const PRODUCT_API = API_BASE + '/public/products';
+  const API_BASE      = 'https://api.murain.tw';
+  const PRODUCT_API   = API_BASE + '/public/products';
+  const CART_KEY      = 'MURAIN_WEB_CART_TOKEN';
+  const LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
 
-  let allItems = [];   // 全部商品
-  let cartCount = 0;   // 目前顯示用，之後接購物車再改
+  let allItems  = [];   // 全部商品
+  let cartCount = 0;    // 顯示用
+  let cartToken = '';   // 從 API / localStorage 取得
+
+  // ---------- 小工具 ----------
+
+  function $(id){ return document.getElementById(id); }
+
+  async function jfetch(url, opt){
+    const r   = await fetch(url, Object.assign({
+      headers: { 'content-type': 'application/json' }
+    }, opt || {}));
+    const txt = await r.text();
+    try { return JSON.parse(txt); } catch { return { raw: txt }; }
+  }
+
+  function setCartToken(t){
+    cartToken = t || '';
+    try { localStorage.setItem(CART_KEY, cartToken); } catch(e){}
+  }
+
+  function updateCartCountFromItems(items){
+    let c = 0;
+    (items || []).forEach(it => {
+      c += Number(it.qty || 0);
+    });
+    cartCount = c;
+    const el = $('cartCount');
+    if (el) el.textContent = String(cartCount);
+  }
+
+  async function restoreCartFromStorage(){
+    let saved = '';
+    try { saved = localStorage.getItem(CART_KEY) || ''; } catch(e){}
+    if (!saved) return;
+
+    try{
+      const r = await fetch(`${API_BASE}/cart/${encodeURIComponent(saved)}`);
+      const j = await r.json();
+      if (!r.ok || !Array.isArray(j.items)) {
+        // 找不到這個 cart，就當作失效
+        try { localStorage.removeItem(CART_KEY); } catch(e){}
+        return;
+      }
+      setCartToken(saved);
+      updateCartCountFromItems(j.items || []);
+    }catch(e){
+      console.warn('restoreCart error', e);
+    }
+  }
+
+  async function ensureCart(){
+    if (cartToken) return cartToken;
+
+    // 先嘗試還原
+    let saved = '';
+    try { saved = localStorage.getItem(CART_KEY) || ''; } catch(e){}
+    if (saved) {
+      try{
+        const r = await fetch(`${API_BASE}/cart/${encodeURIComponent(saved)}`);
+        const j = await r.json();
+        if (r.ok && Array.isArray(j.items)) {
+          setCartToken(saved);
+          updateCartCountFromItems(j.items || []);
+          return cartToken;
+        }
+      }catch(e){
+        console.warn('check saved cart error', e);
+      }
+    }
+
+    // 沒有的話就新建一個「官網」用購物車
+    const res = await jfetch(API_BASE + '/cart/create', {
+      method: 'POST',
+      body: JSON.stringify({
+        streamer_name: '官網',
+        customer_type: 'web'
+      })
+    });
+    if (!res || res.ok !== true || !res.cart_token) {
+      throw new Error('建立購物車失敗，請稍後再試一次。');
+    }
+    setCartToken(res.cart_token);
+    updateCartCountFromItems([]);
+    return cartToken;
+  }
+
+  // ---------- 讀商品 ----------
 
   async function fetchProducts(){
     try {
-      const res = await fetch(PRODUCT_API);
+      const res  = await fetch(PRODUCT_API);
       const json = await res.json();
       if (!json.ok) throw new Error(json.error || 'error');
 
       allItems = json.items || [];
       renderCategoryBar(allItems);
       renderProducts(allItems);
+
+      if (!allItems.length) {
+        const tip = $('emptyTip');
+        if (tip) tip.style.display = 'block';
+      }
     } catch (err) {
       console.error(err);
-      const tip = document.getElementById('emptyTip');
+      const tip = $('emptyTip');
       if (tip) {
         tip.style.display = 'block';
-        tip.textContent = '商品載入失敗，請稍後再試。';
+        tip.textContent   = '讀取商品失敗，請稍後再試一次。';
       }
     }
   }
 
-  // 渲染分類按鈕
-  function renderCategoryBar(items){
-    const bar = document.getElementById('categoryBar');
+  // ---------- 分類 bar ----------
+
+  function renderCategoryBar(list){
+    const bar = $('categoryBar');
     if (!bar) return;
+    bar.innerHTML = '';
 
-    // 取得所有有填的分類
-    const cats = Array.from(new Set(
-      items
-        .map(it => it.category || '')
-        .filter(c => c && c.trim() !== '')
-    ));
+    const cats = Array.from(
+      new Set(list.map(it => it.category || '').filter(Boolean))
+    );
 
-    // 如果沒有分類，就把整條隱藏
-    if (!cats.length){
-      bar.style.display = 'none';
-      return;
-    }
-
-    bar.style.display = 'flex';
-
-    const btnHtml = [
-      `<button class="cat-btn cat-btn-active" data-cat="">全部</button>`,
-      ...cats.map(c =>
-        `<button class="cat-btn" data-cat="${c}">${c}</button>`
-      )
-    ].join('');
-
-    bar.innerHTML = btnHtml;
-
-    // 綁定點擊事件
-    bar.querySelectorAll('.cat-btn').forEach(btn => {
+    const makeBtn = (label, catValue) => {
+      const btn = document.createElement('button');
+      btn.className = 'pill';
+      btn.textContent = label;
       btn.addEventListener('click', () => {
-        const cat = btn.dataset.cat || "";
+        const active = bar.querySelector('.pill-active');
+        if (active) active.classList.remove('pill-active');
+        btn.classList.add('pill-active');
 
-        // 切換 active 樣式
-        bar.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('cat-btn-active'));
-        btn.classList.add('cat-btn-active');
-
-        if (!cat) {
+        if (!catValue) {
           renderProducts(allItems);
         } else {
-          const filtered = allItems.filter(it => (it.category || "") === cat);
-          renderProducts(filtered);
+          renderProducts(allItems.filter(it => (it.category || '') === catValue));
         }
       });
+      return btn;
+    };
+
+    const allBtn = makeBtn('全部', '');
+    allBtn.classList.add('pill-active');
+    bar.appendChild(allBtn);
+
+    cats.forEach(cat => {
+      bar.appendChild(makeBtn(cat, cat));
     });
   }
 
-  function renderProducts(items){
-    const listEl = document.getElementById('productList');
-    const emptyEl = document.getElementById('emptyTip');
-    if (!listEl || !emptyEl) return;
+  // ---------- 商品卡片 ----------
 
-    if (!items.length){
-      listEl.innerHTML = '';
-      emptyEl.style.display = 'block';
-      emptyEl.textContent = '目前沒有符合條件的商品。';
+  function renderProducts(list){
+    const wrap = $('productList');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+
+    if (!list.length) {
+      const tip = $('emptyTip');
+      if (tip) tip.style.display = 'block';
       return;
+    } else {
+      const tip = $('emptyTip');
+      if (tip) tip.style.display = 'none';
     }
 
-    emptyEl.style.display = 'none';
+    list.forEach(p => {
+      const card = document.createElement('div');
+      card.className = 'card';
 
-    const html = items.map(it => {
-      const img = it.image || '';
-      const title = it.title || it.sku || '';
-      const desc = it.description || '';
-      const price = Number(it.price || 0);
-      const listPrice = Number(it.list_price || 0);
-      const hasDiscount = listPrice > price && price > 0;
+      const img = document.createElement('div');
+      img.className = 'card-image';
+      if (p.image) {
+        img.style.backgroundImage = `url(${p.image})`;
+        img.style.backgroundSize = 'cover';
+        img.style.backgroundPosition = 'center';
+      } else {
+        img.innerHTML = '<span style="color:#666;font-size:11px;">No Image</span>';
+      }
 
-      return `
-        <div class="product-card">
-          <div class="product-img-wrap">
-            ${img ? `<img src="${img}" alt="${title}">` : ''}
-          </div>
-          <div class="product-body">
-            <div class="product-title">${title}</div>
-            <div class="product-desc">${desc}</div>
-            <div class="price-row">
-              <div class="price-main">NT$ ${price.toLocaleString()}</div>
-              ${hasDiscount ? `<div class="price-old">NT$ ${listPrice.toLocaleString()}</div>` : ''}
-            </div>
-            <div class="card-footer">
-              <div class="pill">
-                ${it.category ? `${it.category}｜` : ''}SKU：${it.sku || ''}
-              </div>
-              <button class="btn"
-                data-sku="${it.sku || ''}"
-                data-price="${price}">
-                加入購物車
-              </button>
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('');
+      const body = document.createElement('div');
+      body.className = 'card-body';
 
-    listEl.innerHTML = html;
+      const title = document.createElement('div');
+      title.className = 'card-title';
+      title.textContent = p.title || p.sku;
 
-    listEl.querySelectorAll('.btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const sku = btn.dataset.sku;
-        const price = Number(btn.dataset.price || 0);
-        handleAddToCart(sku, price);
-      });
+      const desc = document.createElement('div');
+      desc.className = 'card-desc';
+      desc.textContent = p.description || '';
+
+      const priceRow = document.createElement('div');
+      priceRow.className = 'price-row';
+
+      const price = document.createElement('div');
+      price.className = 'price';
+      price.textContent = 'NT$ ' + (Number(p.price || 0)).toLocaleString();
+
+      const old = document.createElement('div');
+      old.className = 'price-old';
+      if (p.list_price && p.list_price > p.price) {
+        old.textContent = 'NT$ ' + (Number(p.list_price || 0)).toLocaleString();
+      } else {
+        old.textContent = '';
+      }
+      priceRow.appendChild(price);
+      priceRow.appendChild(old);
+
+      const footer = document.createElement('div');
+      footer.className = 'card-footer';
+
+      const sku = document.createElement('div');
+      sku.className = 'pill';
+      sku.textContent = p.sku || '';
+
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = '加入購物車';
+      btn.addEventListener('click', () => handleAddToCart(p.sku, p.price));
+
+      footer.appendChild(sku);
+      footer.appendChild(btn);
+
+      body.appendChild(title);
+      body.appendChild(desc);
+      body.appendChild(priceRow);
+      body.appendChild(footer);
+
+      card.appendChild(img);
+      card.appendChild(body);
+      wrap.appendChild(card);
     });
   }
 
-  function handleAddToCart(sku, price){
+  // ---------- 加入購物車 ----------
+
+  async function handleAddToCart(sku, price){
     if (!sku) return;
+    try{
+      const token = await ensureCart();
+      const res = await jfetch(API_BASE + '/cart/add', {
+        method: 'POST',
+        body: JSON.stringify({
+          cart_token: token,
+          sku: sku,
+          qty: 1
+          // 價格不帶，後端會用 Products 的 WebPrice
+        })
+      });
 
-    // TODO: 之後接購物車 API
-    cartCount += 1;
-    const countEl = document.getElementById('cartCount');
-    if (countEl) countEl.textContent = cartCount;
+      if (!res || res.ok !== true) {
+        alert('加入購物車失敗：' + (res && res.error ? res.error : ''));
+        return;
+      }
 
-    alert('已加入購物車（目前是測試用，之後會接正式結帳流程）');
+      updateCartCountFromItems(res.items || []);
+
+      alert('已加入購物車。\n\n下一步請點右下角「前往結帳」，在 LINE 中完成結帳。');
+    }catch(e){
+      console.error(e);
+      alert('加入購物車失敗，請稍後再試一次。');
+    }
   }
 
-  document.getElementById('checkoutBtn').addEventListener('click', () => {
-    alert('下一步我們會把這裡改成「帶購物車編號 → liff 結帳頁」。');
+  // ---------- 前往結帳（打開 LIFF 頁） ----------
+
+  async function goCheckout(){
+    try{
+      if (!cartToken) {
+        await restoreCartFromStorage();
+      }
+
+      if (!cartToken || cartCount <= 0) {
+        alert('請先選擇商品，再前往結帳。');
+        return;
+      }
+
+      const url = `${LIFF_CHECKOUT}?cart_token=${encodeURIComponent(cartToken)}`;
+      location.href = url;
+    }catch(e){
+      console.error(e);
+      alert('無法前往結帳，請稍後再試一次。');
+    }
+  }
+
+  // ---------- 初始化 ----------
+
+  window.addEventListener('DOMContentLoaded', async () => {
+    await restoreCartFromStorage();   // 先把舊購物車帶回來（如果有）
+    await fetchProducts();            // 再載商品
+
+    const btn = $('checkoutBtn');
+    if (btn) {
+      btn.addEventListener('click', goCheckout);
+    }
   });
-
-  // 分類按鈕的樣式（簡單加在這裡）
-  const style = document.createElement('style');
-  style.textContent = `
-    .cat-btn {
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.2);
-      background: transparent;
-      color: #f7f7f7;
-      font-size: 11px;
-      padding: 4px 10px;
-      cursor: pointer;
-    }
-    .cat-btn-active {
-      background: linear-gradient(135deg, #f5e2a0, #d4af37);
-      color: #111;
-      border-color: transparent;
-    }
-  `;
-  document.head.appendChild(style);
-
-  fetchProducts();
 </script>
+
 
 </body>
 </html>
