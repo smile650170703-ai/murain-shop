@@ -1,142 +1,101 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8" />
-  <title>MURAIN 訂單完成</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Noto Sans TC", system-ui, sans-serif;
-      margin: 0;
-      padding: 0;
-      background: #f7f4f2;
-      color: #333;
-    }
-    .wrap {
-      max-width: 480px;
-      margin: 40px auto;
-      padding: 24px 20px 32px;
-      background: #fff;
-      border-radius: 16px;
-      box-shadow: 0 8px 20px rgba(0,0,0,.04);
-      text-align: center;
-    }
-    h1 {
-      font-size: 22px;
-      margin-bottom: 12px;
-    }
-    .ok-icon {
-      width: 64px;
-      height: 64px;
-      border-radius: 50%;
-      border: 2px solid #7c8c5b;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto 12px;
-      font-size: 28px;
-    }
-    .order-box {
-      margin-top: 16px;
-      padding: 12px 14px;
-      background: #f8faf7;
-      border-radius: 12px;
-      text-align: left;
-      font-size: 14px;
-      line-height: 1.6;
-    }
-    .label {
-      color: #666;
-      margin-right: 4px;
-    }
-    .highlight {
-      font-weight: 600;
-    }
-    .note {
-      margin-top: 18px;
-      font-size: 13px;
-      color: #777;
-      text-align: left;
-    }
-    .btn {
-      margin-top: 20px;
-      display: inline-block;
-      padding: 10px 20px;
-      border-radius: 999px;
-      border: none;
-      background: #333;
-      color: #fff;
-      font-size: 14px;
-      text-decoration: none;
-    }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>MURAIN — 訂單完成</title>
+<style>
+  *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
+  body{margin:0;background:#020617;color:#e2e8f0}
+  .wrap{max-width:720px;margin:0 auto;padding:24px 16px 40px}
+  h1{margin:0 0 12px;font-size:22px}
+  .card{background:rgba(15,23,42,.96);border:1px solid rgba(148,163,184,.35);border-radius:18px;padding:18px;box-shadow:0 18px 45px rgba(0,0,0,.65);margin-top:12px}
+  .muted{font-size:13px;color:#94a3b8;margin-top:4px}
+  .highlight{font-size:18px;font-weight:600;margin:8px 0}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;font-size:14px}
+  .btn{margin-top:16px;width:100%;padding:12px 14px;border-radius:999px;border:none;background:#e2e8f0;color:#020617;font-size:15px;font-weight:600}
+  .btn.secondary{background:transparent;color:#e2e8f0;border:1px solid rgba(148,163,184,.7)}
+  .section-title{font-size:14px;font-weight:600;margin-top:12px;margin-bottom:4px}
+</style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="ok-icon">✓</div>
-    <h1>訂單已完成</h1>
+<div class="wrap">
+  <h1>訂單已送出</h1>
+  <div class="card">
+    <div id="okBlock">
+      <div>感謝您的訂購，系統已收到訂單。</div>
+      <div class="highlight mono" id="orderLine">訂單編號：—</div>
+      <div class="muted" id="amountLine">訂單金額：—</div>
 
-    <p id="mainText">系統已收到您的訂單與付款資訊。</p>
-
-    <div class="order-box" id="orderBox" hidden>
-      <div>
-        <span class="label">訂單編號：</span>
-        <span class="highlight" id="orderId"></span>
-      </div>
-      <div id="amountRow" hidden>
-        <span class="label">訂單金額：</span>
-        <span class="highlight" id="orderAmount"></span>
+      <div class="section-title">提醒您</div>
+      <div class="muted">
+        請先截圖或記下上方的訂單編號，<br />
+        若您有任何問題或需更改收件資訊，歡迎私訊 栩願國際 官方 LINE 客服，我們會盡快為您處理。
       </div>
     </div>
 
-    <div class="note" id="noteText">
-      ・若是使用信用卡 / LINE&nbsp;Pay / AFTEE 先享後付，實際付款結果以金流頁面及銀行/AFTEE 通知為準。<br>
-      ・系統會在付款確認後，自動更新訂單狀態並開立電子發票。<br>
-      ・您也可以稍後回到 LINE 官方帳號或會員中心查看訂單與出貨狀態。
+    <div id="errorBlock" style="display:none;">
+      <div class="highlight">找不到訂單編號</div>
+      <div class="muted">
+        無法從網址中取得訂單資訊，可能是：
+        <ul>
+          <li>網址被修改或遺失參數</li>
+          <li>頁面停留時間過久重新整理造成</li>
+        </ul>
+        請回到上一頁重新下單，或私訊客服協助處理。
+      </div>
     </div>
-
-    <button class="btn" onclick="closeOrBack()">關閉此頁面</button>
+<button class="btn" id="backLineBtn">回到官方 LINE</button>
   </div>
 
-  <script>
-    (function init() {
-      const params   = new URLSearchParams(location.search);
-      const orderId  = params.get('order_id') || '';
-      const totalRaw = params.get('total') || '';
+  <div class="muted" style="margin-top:10px;font-size:12px;">
+    若畫面與直播說明不符，請以 MURAIN 客服公告為主。
+  </div>
+</div>
 
-      const orderBox   = document.getElementById('orderBox');
-      const orderIdEl  = document.getElementById('orderId');
-      const amountRow  = document.getElementById('amountRow');
-      const amountEl   = document.getElementById('orderAmount');
-      const mainTextEl = document.getElementById('mainText');
-      const noteTextEl = document.getElementById('noteText');
+<script>
+  const qs = new URLSearchParams(location.search);
+  const orderId = qs.get('order_id') || '';
+  const total = qs.get('total') || '';
 
-      if (orderId) {
-        orderIdEl.textContent = orderId;
-        orderBox.hidden = false;
+  const orderLine = document.getElementById('orderLine');
+  const amountLine = document.getElementById('amountLine');
+  const okBlock = document.getElementById('okBlock');
+  const errorBlock = document.getElementById('errorBlock');
 
-        if (totalRaw) {
-          const n = Number(totalRaw.replace(/,/g, '')) || 0;
-          if (n > 0) {
-            amountEl.textContent = 'NT$ ' + n.toLocaleString('zh-TW');
-            amountRow.hidden = false;
-          }
-        }
-
-        mainTextEl.textContent = '您的訂單已建立完成，詳細資訊如下：';
-      } else {
-        // PayUNI 回來通常不會帶 order_id，就顯示一段比較通用的文案
-        mainTextEl.textContent = '系統已完成處理，若您在金流頁面看到「付款成功」，訂單就會在稍後自動更新為已付款。';
-      }
-    })();
-
-    function closeOrBack() {
-      // 如果是在 LINE / app 裡，可以嘗試關閉視窗；失敗就往上一頁
-      if (window.liff && typeof liff.closeWindow === 'function') {
-        try { liff.closeWindow(); return; } catch (e) {}
-      }
-      history.back();
+    if (orderId) {
+    // 有帶 order_id：照原本邏輯顯示訂單資訊（購物車 / 匯款等）
+    orderLine.textContent = '訂單編號：' + orderId;
+    if (total) {
+      const n = Number(total) || 0;
+      amountLine.textContent = '訂單金額：NT$ ' + n.toLocaleString();
+    } else {
+      amountLine.textContent = '訂單金額：依實際訂單為準';
     }
-  </script>
+  } else {
+    // 沒有帶 order_id：多半是 PayUNI 金流回來的情況
+    // → 不當成錯誤，用一般完成文案 + 提醒以 LINE / 訂單明細為主
+    okBlock.style.display = 'block';
+    errorBlock.style.display = 'none';
+
+    orderLine.textContent = '訂單編號：請以 LINE 通知與訂單明細為準';
+    amountLine.textContent = '訂單金額：依金流頁面與訂單明細為準';
+  }
+
+   // 回到官方 LINE 按鈕
+  const lineBtn = document.getElementById('backLineBtn');
+  if (lineBtn) {
+    // 把 @你的ID 換成你官方帳號的 ID（例如 @murain123）
+    const lineUrl = 'https://line.me/R/ti/p/@cc0857';
+
+    lineBtn.addEventListener('click', () => {
+      location.href = lineUrl;
+    });
+
+    // 如果你想「結單幾秒後自動跳回 LINE」，可以把下面這行註解打開：
+     setTimeout(() => { location.href = lineUrl; }, 4000);
+  }
+
+</script>
 </body>
 </html>
