@@ -1,138 +1,178 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
-  <title>訂單結果</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8" />
+  <title>付款結果｜MURAIN</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body{
-      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-      margin:0;
-      padding:0;
-      background:#f8f8f8;
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: #f5f5f5;
+      color: #222;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
     }
-    .wrap{
-      max-width:480px;
-      margin:40px auto;
-      padding:24px 20px 32px;
-      background:#fff;
-      border-radius:16px;
-      box-shadow:0 4px 12px rgba(0,0,0,.06);
-      text-align:center;
+    .wrap {
+      width: 100%;
+      max-width: 480px;
+      padding: 20px 16px;
     }
-    h1{
-      font-size:20px;
-      margin:0 0 8px;
+    .card {
+      background: #ffffff;
+      border-radius: 18px;
+      padding: 22px 20px 18px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      text-align: center;
     }
-    .ok{color:#008a00;}
-    .fail{color:#d34040;}
-    .order-id{
-      font-weight:600;
-      margin:8px 0;
-      word-break:break-all;
+    .badge {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      margin: 0 auto 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
     }
-    .amount{
-      margin:4px 0 12px;
+    .badge.success {
+      background: #e6f8f0;
     }
-    .tip{
-      font-size:13px;
-      color:#777;
-      line-height:1.5;
-      margin-top:12px;
+    .badge.fail {
+      background: #ffecec;
     }
-    .btn{
-      margin-top:20px;
-      padding:10px 18px;
-      border-radius:999px;
-      border:none;
-      font-size:15px;
-      background:#222;
-      color:#fff;
+    .badge span {
+      line-height: 1;
+    }
+    h1 {
+      font-size: 20px;
+      margin: 4px 0 6px;
+      letter-spacing: 0.05em;
+    }
+    p {
+      margin: 4px 0;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #555;
+    }
+    .hint {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #888;
+    }
+    .btn-row {
+      margin-top: 16px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    button {
+      border: none;
+      outline: none;
+      cursor: pointer;
+      border-radius: 999px;
+      padding: 9px 18px;
+      font-size: 14px;
+      line-height: 1.2;
+    }
+    .btn-main {
+      background: #111;
+      color: #fff;
+      min-width: 120px;
+    }
+    .btn-ghost {
+      background: #f2f2f2;
+      color: #333;
+    }
+    .brand {
+      margin-top: 14px;
+      text-align: center;
+      font-size: 11px;
+      color: #aaa;
+      letter-spacing: .12em;
+      text-transform: uppercase;
     }
   </style>
 </head>
 <body>
-  <div class="wrap" id="box">
-    <h1>處理中...</h1>
-    <p class="tip">請稍候</p>
+  <div class="wrap">
+    <div class="card">
+      <div id="badge" class="badge success">
+        <span id="badgeIcon">✓</span>
+      </div>
+      <h1 id="title">付款已送出</h1>
+      <p id="message">
+        系統已收到金流的回傳。實際訂單狀態與明細，請以
+        <br>LINE 通知與 MURAIN 後台訂單為準。
+      </p>
+      <p id="subMessage"></p>
+      <p class="hint">
+        若您沒有在幾分鐘內收到任何訊息，或付款狀態有疑問，
+        請截圖此畫面並聯繫沐雨客服協助確認。
+      </p>
+      <div class="btn-row">
+        <button class="btn-main" onclick="closeWindowOrBack()">關閉此頁面</button>
+        <button class="btn-ghost" onclick="refreshPage()">重新整理</button>
+      </div>
+    </div>
+    <div class="brand">MURAIN</div>
   </div>
 
   <script>
-    (function(){
-      const params = new URLSearchParams(location.search);
+    (function init() {
+      const params = new URLSearchParams(window.location.search);
+      const status = (params.get("status") || "").toLowerCase();
+      const msg = params.get("msg") || params.get("message") || "";
 
-      // 兩種來源：
-      // ① 你自己導過來的：?order_id=xxx&total=yyy
-      // ② PayUNI 回傳：?Status=SUCCESS&MerTradeNo=xxx&Amount=yyy...
-      let orderId = params.get("order_id")
-                  || params.get("MerTradeNo")
-                  || params.get("merTradeNo")
-                  || "";
-      let total   = params.get("total")
-                  || params.get("Amount")
-                  || params.get("amount")
-                  || "";
-      let status  = (params.get("Status") || params.get("status") || "").toUpperCase();
+      const badge = document.getElementById("badge");
+      const badgeIcon = document.getElementById("badgeIcon");
+      const title = document.getElementById("title");
+      const message = document.getElementById("message");
+      const subMessage = document.getElementById("subMessage");
 
-      const box = document.getElementById("box");
-
-      function fmtAmount(v){
-        const n = Number(v || 0);
-        if (!n) return "";
-        return "NT$ " + n.toLocaleString("zh-TW");
-      }
-
-      // 沒拿到任何資訊，就給一個安全的提示，不要空白
-      if (!orderId && !status && !total) {
-        box.innerHTML = `
-          <h1>付款結果回傳中</h1>
-          <p class="tip">
-            如果畫面長時間停留在此頁，<br>
-            請回到 LINE 聊天室重新開啟「訂單查詢」或聯絡小幫手確認。
-          </p>
-        `;
-        return;
-      }
-
-      // 判斷成功 / 失敗 / 其他狀態
-      let isSuccess = false;
-      let title = "訂單已建立";
-      let cls = "ok";
-      let desc = "";
-
-      if (status) {
-        if (status === "SUCCESS") {
-          isSuccess = true;
-          title = "付款成功，訂單已成立";
-          desc  = "我們已收到您的款項，後續會盡快為您安排出貨。";
-        } else if (status === "FAIL" || status === "FAILED") {
-          title = "付款失敗";
-          cls   = "fail";
-          desc  = "此筆交易未完成扣款，若有疑問請聯絡客服。";
-        } else {
-          title = "付款處理中";
-          desc  = "交易狀態由金流端處理中，請稍後再查詢訂單狀態。";
-        }
+      if (status === "success") {
+        badge.classList.remove("fail");
+        badge.classList.add("success");
+        badgeIcon.textContent = "✓";
+        title.textContent = "付款成功";
+        message.textContent = "感謝您的購買，我們已收到本次付款。訂單細節與出貨進度將透過 LINE 通知。";
+      } else if (status === "fail" || status === "error") {
+        badge.classList.remove("success");
+        badge.classList.add("fail");
+        badgeIcon.textContent = "!";
+        title.textContent = "付款未完成";
+        message.textContent = "剛剛的付款尚未成功，或金流回報有誤。建議請勿重複刷卡，先聯繫沐雨客服協助確認。";
       } else {
-        // 沒有 Status（例如你自己帶 order_id 過來），當作訂單已建立
-        isSuccess = true;
-        title = "訂單建立完成";
-        desc  = "後續付款狀態請以通知訊息為準。";
+        // 沒帶 status → 使用預設文案（目前 AFTEE / 信用卡情況）
+        badge.classList.add("success");
+        badgeIcon.textContent = "✓";
+        title.textContent = "付款已送出";
+        message.innerHTML = "金流端已回傳結果。實際訂單狀態請以 LINE 通知與訂單明細為準。";
       }
 
-      box.innerHTML = `
-        <h1 class="${cls}">${title}</h1>
-        ${orderId ? `<div class="order-id">訂單編號：${orderId}</div>` : ""}
-        ${total   ? `<div class="amount">訂單金額：${fmtAmount(total)}</div>` : ""}
-        <p class="tip">${desc || ""}</p>
-        <p class="tip">
-          您可以關閉此頁面，回到 LINE 聊天室查看訂單明細或聯絡小幫手。
-        </p>
-        <button class="btn" onclick="window.location.href='https://line.me/R/msg/text/?我已完成付款，請協助確認訂單狀態，訂單編號：${encodeURIComponent(orderId || '')}'">
-          回到 LINE 通知小幫手
-        </button>
-      `;
+      if (msg) {
+        subMessage.textContent = msg;
+      }
     })();
+
+    function closeWindowOrBack() {
+      // 盡量關掉頁面：先試 window.close，再退回上一頁
+      try { window.close(); } catch (e) {}
+      setTimeout(function () {
+        if (window.history.length > 1) {
+          window.history.back();
+        }
+      }, 150);
+    }
+
+    function refreshPage() {
+      window.location.reload();
+    }
   </script>
 </body>
 </html>
