@@ -1,95 +1,138 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>MURAIN — 訂單完成</title>
-<style>
-  *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
-  body{margin:0;background:#020617;color:#e2e8f0}
-  .wrap{max-width:720px;margin:0 auto;padding:24px 16px 40px}
-  h1{margin:0 0 12px;font-size:22px}
-  .card{background:rgba(15,23,42,.96);border:1px solid rgba(148,163,184,.35);border-radius:18px;padding:18px;box-shadow:0 18px 45px rgba(0,0,0,.65);margin-top:12px}
-  .muted{font-size:13px;color:#94a3b8;margin-top:4px}
-  .highlight{font-size:18px;font-weight:600;margin:8px 0}
-  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;font-size:14px}
-  .btn{margin-top:16px;width:100%;padding:12px 14px;border-radius:999px;border:none;background:#e2e8f0;color:#020617;font-size:15px;font-weight:600}
-  .btn.secondary{background:transparent;color:#e2e8f0;border:1px solid rgba(148,163,184,.7)}
-  .section-title{font-size:14px;font-weight:600;margin-top:12px;margin-bottom:4px}
-</style>
+  <meta charset="UTF-8">
+  <title>訂單結果</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      margin:0;
+      padding:0;
+      background:#f8f8f8;
+    }
+    .wrap{
+      max-width:480px;
+      margin:40px auto;
+      padding:24px 20px 32px;
+      background:#fff;
+      border-radius:16px;
+      box-shadow:0 4px 12px rgba(0,0,0,.06);
+      text-align:center;
+    }
+    h1{
+      font-size:20px;
+      margin:0 0 8px;
+    }
+    .ok{color:#008a00;}
+    .fail{color:#d34040;}
+    .order-id{
+      font-weight:600;
+      margin:8px 0;
+      word-break:break-all;
+    }
+    .amount{
+      margin:4px 0 12px;
+    }
+    .tip{
+      font-size:13px;
+      color:#777;
+      line-height:1.5;
+      margin-top:12px;
+    }
+    .btn{
+      margin-top:20px;
+      padding:10px 18px;
+      border-radius:999px;
+      border:none;
+      font-size:15px;
+      background:#222;
+      color:#fff;
+    }
+  </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>訂單已送出</h1>
-  <div class="card">
-    <div id="okBlock">
-      <div>感謝您的訂購，系統已收到訂單。</div>
-      <div class="highlight mono" id="orderLine">訂單編號：—</div>
-      <div class="muted" id="amountLine">訂單金額：—</div>
-
-      <div class="section-title">提醒您</div>
-      <div class="muted">
-        請先截圖或記下上方的訂單編號，<br />
-        若您有任何問題或需更改收件資訊，歡迎私訊 栩願國際 官方 LINE 客服，我們會盡快為您處理。
-      </div>
-    </div>
-
-    <div id="errorBlock" style="display:none;">
-      <div class="highlight">找不到訂單編號</div>
-      <div class="muted">
-        無法從網址中取得訂單資訊，可能是：
-        <ul>
-          <li>網址被修改或遺失參數</li>
-          <li>頁面停留時間過久重新整理造成</li>
-        </ul>
-        請回到上一頁重新下單，或私訊客服協助處理。
-      </div>
-    </div>
-<button class="btn" id="backLineBtn">回到官方 LINE</button>
+  <div class="wrap" id="box">
+    <h1>處理中...</h1>
+    <p class="tip">請稍候</p>
   </div>
 
-  <div class="muted" style="margin-top:10px;font-size:12px;">
-    若畫面與直播說明不符，請以 MURAIN 客服公告為主。
-  </div>
-</div>
+  <script>
+    (function(){
+      const params = new URLSearchParams(location.search);
 
-<script>
-  const qs = new URLSearchParams(location.search);
-  const orderId = qs.get('order_id') || '';
-  const total = qs.get('total') || '';
+      // 兩種來源：
+      // ① 你自己導過來的：?order_id=xxx&total=yyy
+      // ② PayUNI 回傳：?Status=SUCCESS&MerTradeNo=xxx&Amount=yyy...
+      let orderId = params.get("order_id")
+                  || params.get("MerTradeNo")
+                  || params.get("merTradeNo")
+                  || "";
+      let total   = params.get("total")
+                  || params.get("Amount")
+                  || params.get("amount")
+                  || "";
+      let status  = (params.get("Status") || params.get("status") || "").toUpperCase();
 
-  const orderLine = document.getElementById('orderLine');
-  const amountLine = document.getElementById('amountLine');
-  const okBlock = document.getElementById('okBlock');
-  const errorBlock = document.getElementById('errorBlock');
+      const box = document.getElementById("box");
 
-  if (!orderId) {
-    // 沒有帶 order_id：顯示錯誤區塊
-    okBlock.style.display = 'none';
-    errorBlock.style.display = 'block';
-  } else {
-    orderLine.textContent = '訂單編號：' + orderId;
-    if (total) {
-      const n = Number(total) || 0;
-      amountLine.textContent = '訂單金額：NT$ ' + n.toLocaleString();
-    } else {
-      amountLine.textContent = '訂單金額：依實際訂單為準';
-    }
-  }
-   // 回到官方 LINE 按鈕
-  const lineBtn = document.getElementById('backLineBtn');
-  if (lineBtn) {
-    // 把 @你的ID 換成你官方帳號的 ID（例如 @murain123）
-    const lineUrl = 'https://line.me/R/ti/p/@cc0857';
+      function fmtAmount(v){
+        const n = Number(v || 0);
+        if (!n) return "";
+        return "NT$ " + n.toLocaleString("zh-TW");
+      }
 
-    lineBtn.addEventListener('click', () => {
-      location.href = lineUrl;
-    });
+      // 沒拿到任何資訊，就給一個安全的提示，不要空白
+      if (!orderId && !status && !total) {
+        box.innerHTML = `
+          <h1>付款結果回傳中</h1>
+          <p class="tip">
+            如果畫面長時間停留在此頁，<br>
+            請回到 LINE 聊天室重新開啟「訂單查詢」或聯絡小幫手確認。
+          </p>
+        `;
+        return;
+      }
 
-    // 如果你想「結單幾秒後自動跳回 LINE」，可以把下面這行註解打開：
-     setTimeout(() => { location.href = lineUrl; }, 4000);
-  }
+      // 判斷成功 / 失敗 / 其他狀態
+      let isSuccess = false;
+      let title = "訂單已建立";
+      let cls = "ok";
+      let desc = "";
 
-</script>
+      if (status) {
+        if (status === "SUCCESS") {
+          isSuccess = true;
+          title = "付款成功，訂單已成立";
+          desc  = "我們已收到您的款項，後續會盡快為您安排出貨。";
+        } else if (status === "FAIL" || status === "FAILED") {
+          title = "付款失敗";
+          cls   = "fail";
+          desc  = "此筆交易未完成扣款，若有疑問請聯絡客服。";
+        } else {
+          title = "付款處理中";
+          desc  = "交易狀態由金流端處理中，請稍後再查詢訂單狀態。";
+        }
+      } else {
+        // 沒有 Status（例如你自己帶 order_id 過來），當作訂單已建立
+        isSuccess = true;
+        title = "訂單建立完成";
+        desc  = "後續付款狀態請以通知訊息為準。";
+      }
+
+      box.innerHTML = `
+        <h1 class="${cls}">${title}</h1>
+        ${orderId ? `<div class="order-id">訂單編號：${orderId}</div>` : ""}
+        ${total   ? `<div class="amount">訂單金額：${fmtAmount(total)}</div>` : ""}
+        <p class="tip">${desc || ""}</p>
+        <p class="tip">
+          您可以關閉此頁面，回到 LINE 聊天室查看訂單明細或聯絡小幫手。
+        </p>
+        <button class="btn" onclick="window.location.href='https://line.me/R/msg/text/?我已完成付款，請協助確認訂單狀態，訂單編號：${encodeURIComponent(orderId || '')}'">
+          回到 LINE 通知小幫手
+        </button>
+      `;
+    })();
+  </script>
 </body>
 </html>
