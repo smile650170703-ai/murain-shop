@@ -1104,16 +1104,16 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
     return;
   }
 
-  shipping_info.ship = ship;
+    shipping_info.ship = ship;
   const isZeroCard = payment_method.startsWith('zero_card_');
 
-  try{
+  try {
     $('#submitBtn').disabled = true;
 
     // 1) 先建立訂單
-        const r = await fetch(`${API}/checkout`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
+    const r = await fetch(`${API}/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cart_token: cartToken, payment_method, shipping_info })
     });
     const j = await r.json();
@@ -1122,12 +1122,14 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
       throw new Error(msg);
     }
 
-       // 2.5) 如果是「面交付款」，自動幫客人發一則訊息給官方 LINE
+    // 2.5) 如果是「面交付款」，自動幫客人發一則訊息給官方 LINE
     if (payment_method === 'cod_meet' && window.liff && liff.isLoggedIn && liff.isLoggedIn()) {
       try {
         await liff.sendMessages([
           {
             type: 'text',
+            // ★ 如果只想要純文字：[我要面交] 就改成下一行：
+            // text: '[我要面交]'
             text: `[我要面交]\n訂單編號：${j.order_id}`
           }
         ]);
@@ -1137,29 +1139,26 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
       }
     }
 
-
-
     // ★★★ 下單成功 → 清掉 localStorage 暫存資料
     clearCheckoutState();
 
-   // ★ 一頁式商城購物車：下單成功後，也把 cart token 清掉
+    // ★ 一頁式商城購物車：下單成功後，也把 cart token 清掉
     try {
       localStorage.removeItem('MURAIN_WEB_CART_TOKEN');
     } catch (e) {}
 
-   // 如果是 PayUni（信用卡一次 / 分期 / LINE Pay / AFTEE）
-if (payment_method && payment_method.startsWith('paid_')) {
-  try {
-    // ★ 已經在前面 /checkout 建立好訂單，這裡只要用 order_id 去叫 /payuni/start
-    const pr = await fetch(`${API}/payuni/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        order_id: j.order_id
-      })
-    });
+    // 如果是 PayUni（信用卡一次 / 分期 / LINE Pay / AFTEE）
+    if (payment_method && payment_method.startsWith('paid_')) {
+      try {
+        // ★ 已經在前面 /checkout 建立好訂單，這裡只要用 order_id 去叫 /payuni/start
+        const pr = await fetch(`${API}/payuni/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order_id: j.order_id })
+        });
+        const up = await pr.json();
+        // ...（後面原本 PayUni 的程式碼全部照舊）
 
-    const up = await pr.json();
     console.log('payuni start resp', up);
 
     if (!pr.ok || !up.ok) {
