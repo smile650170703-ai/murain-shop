@@ -78,20 +78,12 @@
     <!-- COD: 7-11 貨到付款（老客/信任客人） -->
     <div id="paneCOD">
       <div class="section-title mt-4">7-11 收件資料</div>
-      <!-- ★ 新增：COD 取貨方式，預設 7-11，另外多一個面交 -->
-      <label class="mt-2">取貨方式 *</label>
-      <select id="cod_ship_method">
-        <option value="711" selected>7-11 取貨付款</option>
-        <option value="meet">面交付款</option>
-      </select>
       <div class="row">
         <div><label>姓名 *</label><input id="cod_name" required /></div>
         <div><label>電話 *</label><input id="cod_phone" required /></div>
       </div>
       <label>Email *</label>
       <input id="cod_email" required type="email" placeholder="example@gmail.com" />
-     <label>面交時間 / 地點</label>
-  <textarea id="cod_meet_note" placeholder="『 面交 』下方門市資料不需填寫"></textarea>
       <div class="row mt-2">
         <div><label>7-11 門市代號 *</label><input id="cod_store_id" required /></div>
         <div><label>7-11 門市名稱 *</label><input id="cod_store_name" required /></div>
@@ -791,60 +783,29 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
   // 目前選到哪個分頁（COD / PAID / DEPOSIT / ZEROCARD）
   const activeTab = [...tabs].find(t=>t.classList.contains('active'))?.dataset.pay || 'COD';
 
-      // ===== COD =====
-  if (activeTab === 'COD') {
-    // 取貨方式：預設 7-11；如果有下拉選單就用選到的值
-    const shipMethodSel = $('#cod_ship_method');
-    const shipMethod = shipMethodSel ? shipMethodSel.value : '711';
-
+  // ===== COD =====
+  if(activeTab === 'COD'){
     const name  = $('#cod_name').value;
     const phone = $('#cod_phone').value;
+    const id    = $('#cod_store_id').value;
+    const sname = $('#cod_store_name').value;
+    const addr  = $('#cod_store_addr').value;
     const emailCod = ($('#cod_email').value || '').trim();
 
-    // 面交時間 / 地點欄位（如果沒加那個 textarea，這裡會是空字串）
-    const noteEl = $('#cod_meet_note');
-    const note   = noteEl ? (noteEl.value || '').trim() : '';
-
-    if (shipMethod === '711') {
-      // 7-11 貨到付款：維持原本邏輯完全不變
-      const id    = $('#cod_store_id').value;
-      const sname = $('#cod_store_name').value;
-      const addr  = $('#cod_store_addr').value;
-
-      if (![name, phone, id, sname, addr, emailCod].every(required)) {
-        alert('請填完 COD 必填欄位（含 Email）');
-        return;
-      }
-
-      payment_method = 'cod_711';
-      ship = {
-        type: '711',
-        name,
-        phone,
-        email: emailCod,
-        store: { id, name: sname, addr }
-      };
-    } else if (shipMethod === 'meet') {
-      // 面交付款：姓名 / 電話 / Email + 面交時間地點 都要填
-      if (![name, phone, emailCod, note].every(required)) {
-        alert('請填完面交必填欄位（含 Email 與面交時間/地點）');
-        return;
-      }
-
-      payment_method = 'cod_meet';
-      ship = {
-        type: 'meet',
-        name,
-        phone,
-        email: emailCod,
-        note   // shipping_info.ship.note 裡會看到這段文字
-      };
-    } else {
-      alert('請先選擇取貨方式');
+    if(![name,phone,id,sname,addr,emailCod].every(required)) {
+      alert('請填完 COD 必填欄位（含 Email）');
       return;
     }
-  }
 
+    payment_method = 'cod_711';
+    ship = {
+      type:'711',
+      name,
+      phone,
+      email: emailCod,
+      store:{ id, name:sname, addr }
+    };
+  }
 
   // ===== PAID =====
   if(activeTab === 'PAID'){
@@ -1104,16 +1065,16 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
     return;
   }
 
-    shipping_info.ship = ship;
+  shipping_info.ship = ship;
   const isZeroCard = payment_method.startsWith('zero_card_');
 
-  try {
+  try{
     $('#submitBtn').disabled = true;
 
     // 1) 先建立訂單
-    const r = await fetch(`${API}/checkout`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+        const r = await fetch(`${API}/checkout`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ cart_token: cartToken, payment_method, shipping_info })
     });
     const j = await r.json();
@@ -1122,43 +1083,28 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
       throw new Error(msg);
     }
 
-    // 2.5) 如果是「面交付款」，自動幫客人發一則訊息給官方 LINE
-    if (payment_method === 'cod_meet' && window.liff && liff.isLoggedIn && liff.isLoggedIn()) {
-      try {
-        await liff.sendMessages([
-          {
-            type: 'text',
-            // ★ 如果只想要純文字：[我要面交] 就改成下一行：
-            // text: '[我要面交]'
-            text: `[我要面交]\n訂單編號：${j.order_id}`
-          }
-        ]);
-      } catch (e) {
-        console.log('sendMessages error (ignore):', e);
-        // 就算送訊息失敗，也不要影響下面跳轉
-      }
-    }
 
     // ★★★ 下單成功 → 清掉 localStorage 暫存資料
     clearCheckoutState();
 
-    // ★ 一頁式商城購物車：下單成功後，也把 cart token 清掉
+   // ★ 一頁式商城購物車：下單成功後，也把 cart token 清掉
     try {
       localStorage.removeItem('MURAIN_WEB_CART_TOKEN');
     } catch (e) {}
 
-    // 如果是 PayUni（信用卡一次 / 分期 / LINE Pay / AFTEE）
-    if (payment_method && payment_method.startsWith('paid_')) {
-      try {
-        // ★ 已經在前面 /checkout 建立好訂單，這裡只要用 order_id 去叫 /payuni/start
-        const pr = await fetch(`${API}/payuni/start`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ order_id: j.order_id })
-        });
-        const up = await pr.json();
-        // ...（後面原本 PayUni 的程式碼全部照舊）
+   // 如果是 PayUni（信用卡一次 / 分期 / LINE Pay / AFTEE）
+if (payment_method && payment_method.startsWith('paid_')) {
+  try {
+    // ★ 已經在前面 /checkout 建立好訂單，這裡只要用 order_id 去叫 /payuni/start
+    const pr = await fetch(`${API}/payuni/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        order_id: j.order_id
+      })
+    });
 
+    const up = await pr.json();
     console.log('payuni start resp', up);
 
     if (!pr.ok || !up.ok) {
