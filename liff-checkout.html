@@ -228,8 +228,9 @@
 
   <label class="mt-2">保留到期日（最多 1 個月內） *</label>
   <input id="dep_old_hold_until" type="date" />
+</div>
 
-        <div class="hint">
+<div class="hint">
   ．訂金入帳後可為您保留商品最長 1 個月。<br/>
   ．一般包款訂金 NT$ 1,000；Tory Burch 等指定品牌訂金 NT$ 2,000。<br/>
   ．⚠️ 收件資料請務必填寫正確，之後若有「訂金／尾款」付款，
@@ -471,13 +472,6 @@ function updatePaidShip(){
 }
 
 /* ===== DEPOSIT：切換 Pane ===== */
-function updateDepositPane(){
-  const v = $('input[name="depType"]:checked').value;
-  $('#depOldPane').hidden  = (v !== 'old');
-  $('#depNewFullPane').hidden = (v !== 'new_full');
-}
-$$('input[name="depType"]').forEach(r=>r.addEventListener('change',updateDepositPane));
- updateDepositPane(); // ← 新增這行，載入時就先套一次
 $('#dep_new_full_method').addEventListener('change',()=>{
   const m=$('#dep_new_full_method').value;
   $('#depNewFull711').hidden=(m!=='711');
@@ -499,6 +493,46 @@ if (depOldMethod) {
   depOldMethod.addEventListener('change', updateDepOldShip);
   updateDepOldShip(); // 進頁面先跑一次
 }
+
+ // --- 匯款方式：匯款全額 / 匯款訂金 切換 ---
+const depTypeRadios     = document.querySelectorAll('input[name="depType"]');
+const depOldPane        = document.querySelector('#depOldPane');
+const depNewFullPane    = document.querySelector('#depNewFullPane');
+const depOldDepositBox  = document.querySelector('#dep_old_deposit_fields');
+const depOldAmount      = document.querySelector('#dep_old_amount');
+const depOldHoldUntil   = document.querySelector('#dep_old_hold_until');
+
+function refreshDepType() {
+  const checked   = document.querySelector('input[name="depType"]:checked');
+  const v         = checked ? checked.value : 'new_full';
+  const isDeposit = (v === 'old');   // value="old" 是「匯款訂金 - 保留」
+
+  // Pane：顯示哪一塊
+  if (depOldPane && depNewFullPane) {
+    depOldPane.hidden     = !isDeposit;  // 匯款訂金才顯示
+    depNewFullPane.hidden =  isDeposit;  // 其他情況顯示匯款全額
+  }
+
+  // 訂金專用欄位：金額＋保留日期
+  if (depOldDepositBox) {
+    depOldDepositBox.hidden = !isDeposit;
+  }
+  if (depOldAmount) {
+    depOldAmount.required = isDeposit;
+  }
+  if (depOldHoldUntil) {
+    depOldHoldUntil.required = isDeposit;
+  }
+}
+
+if (depTypeRadios.length) {
+  depTypeRadios.forEach(r => {
+    r.addEventListener('change', refreshDepType);
+  });
+  // 一載入就先跑一次，依預設 radio 狀態決定顯示
+  refreshDepType();
+}
+
 
 /* ===== ZEROCARD ===== */
 function calcZC(){
