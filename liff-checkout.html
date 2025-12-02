@@ -159,7 +159,7 @@
         <div class="pill">銀行：<span>郵局（700）</span></div>
         <div class="pill">帳號：<span>01912890973712</span></div>
       </div>
-      <div class="muted">可直接一鍵複製帳號貼到 APP。匯款完成請於下方填寫帳號後五碼。</div>
+      <div class="muted">可直接一鍵複製帳號貼到 APP。</div>
 
       <div class="mt-4 section-title">選擇匯款方式</div>
 <div class="radio-row">
@@ -274,8 +274,11 @@
           <input id="dep_new_full_post_addr" required />
         </div>
 
-        <label class="mt-3">匯款金額（全額） *</label>
-        <input id="dep_new_full_amount" required />
+        <!-- 匯款全額：金額由系統自動帶入，只讓客人填後五碼 -->
+        <div class="muted mt-3">
+          匯款金額（全額）將由系統自動帶入，您只需填寫匯款帳號後五碼。
+        </div>
+        <input id="dep_new_full_amount" type="hidden" />
         <label class="mt-2">匯款帳號後五碼 *</label>
         <input id="dep_new_full_last5" required />
       </div>
@@ -944,34 +947,63 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
 
     
 
-    if(depType === 'new_full'){
-      const method   = $('#dep_new_full_method').value;   // 711 / post
+        if (depType === 'new_full') {
+      const method    = $('#dep_new_full_method').value;   // 711 / post
       const emailNewF = ($('#dep_new_full_email').value || '').trim();
+      const amount    = CART_TOTAL_RAW || 0;  // 全額金額由系統帶入
 
-      if(method === '711'){
+      // 順便寫回隱藏欄位，之後查資料看得見
+      const depNewFullAmountInput = $('#dep_new_full_amount');
+      if (depNewFullAmountInput) {
+        depNewFullAmountInput.value = amount;
+      }
+
+      if (method === '711') {
         const name   = $('#dep_new_full_name').value;
         const phone  = $('#dep_new_full_phone').value;
         const id     = $('#dep_new_full_store_id').value;
         const sname  = $('#dep_new_full_store_name').value;
         const addr   = $('#dep_new_full_store_addr').value;
-        const amount = $('#dep_new_full_amount').value;
         const last5  = $('#dep_new_full_last5').value;
 
-        if(![name,phone,id,sname,addr,amount,last5,emailNewF].every(required)){
-          alert('請填完新客全額匯款（7-11）欄位（含 Email）');
+        if (![name, phone, id, sname, addr, last5, emailNewF].every(required)) {
+          alert('請填完新客全額匯款（7-11）欄位（含 Email、帳號後五碼）');
           return;
         }
 
         payment_method = 'deposit_new_full_711';
         ship = {
-          type:'711',
+          type: '711',
           name,
           phone,
           email: emailNewF,
-          store:{ id, name:sname, addr },
-          deposit:{ type:'new_full', method:'711', amount, last5 }
+          store: { id, name: sname, addr },
+          deposit: { type: 'new_full', method: '711', amount, last5 }
         };
       } else {
+        const name   = $('#dep_new_full_name').value;
+        const phone  = $('#dep_new_full_phone').value;
+        const zip    = $('#dep_new_full_post_zip').value;
+        const addr   = $('#dep_new_full_post_addr').value;
+        const last5  = $('#dep_new_full_last5').value;
+
+        if (![name, phone, zip, addr, last5, emailNewF].every(required)) {
+          alert('請填完新客全額匯款（郵寄）欄位（含 Email、帳號後五碼）');
+          return;
+        }
+
+        payment_method = 'deposit_new_full_post';
+        ship = {
+          type: 'post',
+          name,
+          phone,
+          email: emailNewF,
+          post: { zip, addr },
+          deposit: { type: 'new_full', method: 'post', amount, last5 }
+        };
+      }
+    }
+ else {
         const name   = $('#dep_new_full_name').value;
         const phone  = $('#dep_new_full_phone').value;
         const zip    = $('#dep_new_full_post_zip').value;
