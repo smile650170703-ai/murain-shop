@@ -861,11 +861,12 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
     }
   }
 
-  // ===== DEPOSIT =====
-  if(activeTab === 'DEPOSIT'){
-    const depType = $('input[name="depType"]:checked').value;
+   // ===== DEPOSIT =====
+  if (activeTab === 'DEPOSIT') {
+    const depType = $('input[name="depType"]:checked').value; // new_full / old
 
-              if (depType === 'old') {
+    // --- ① 匯款訂金（保留） ---
+    if (depType === 'old') {
       const method   = $('#dep_old_method').value;   // 711 / post
       const name     = $('#dep_old_name').value;
       const phone    = $('#dep_old_phone').value;
@@ -945,14 +946,13 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
       payment_method = 'deposit_old';
     }
 
-    
-
-        if (depType === 'new_full') {
+    // --- ② 匯款全額：金額用系統帶入，只填後五碼 ---
+    else if (depType === 'new_full') {
       const method    = $('#dep_new_full_method').value;   // 711 / post
       const emailNewF = ($('#dep_new_full_email').value || '').trim();
       const amount    = CART_TOTAL_RAW || 0;  // 全額金額由系統帶入
 
-      // 順便寫回隱藏欄位，之後查資料看得見
+      // 順便寫回隱藏欄位，之後在後台看得見
       const depNewFullAmountInput = $('#dep_new_full_amount');
       if (depNewFullAmountInput) {
         depNewFullAmountInput.value = amount;
@@ -980,7 +980,7 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
           store: { id, name: sname, addr },
           deposit: { type: 'new_full', method: '711', amount, last5 }
         };
-      } else {
+      } else if (method === 'post') {
         const name   = $('#dep_new_full_name').value;
         const phone  = $('#dep_new_full_phone').value;
         const zip    = $('#dep_new_full_post_zip').value;
@@ -1001,33 +1001,19 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
           post: { zip, addr },
           deposit: { type: 'new_full', method: 'post', amount, last5 }
         };
+      } else {
+        alert('請先選擇匯款全額的取貨方式');
+        return;
       }
     }
- else {
-        const name   = $('#dep_new_full_name').value;
-        const phone  = $('#dep_new_full_phone').value;
-        const zip    = $('#dep_new_full_post_zip').value;
-        const addr   = $('#dep_new_full_post_addr').value;
-        const amount = $('#dep_new_full_amount').value;
-        const last5  = $('#dep_new_full_last5').value;
 
-        if(![name,phone,zip,addr,amount,last5,emailNewF].every(required)){
-          alert('請填完新客全額匯款（郵寄）欄位（含 Email）');
-          return;
-        }
-
-        payment_method = 'deposit_new_full_post';
-        ship = {
-          type:'post',
-          name,
-          phone,
-          email: emailNewF,
-          post:{ zip, addr },
-          deposit:{ type:'new_full', method:'post', amount, last5 }
-        };
-      }
+    // depType 根本沒選到（理論上不會，但保險）
+    else {
+      alert('請先選擇匯款方式（匯款全額 / 匯款訂金）');
+      return;
     }
   }
+
 
   // ===== ZEROCARD（中租無卡零角） =====
   if(activeTab === 'ZEROCARD'){
