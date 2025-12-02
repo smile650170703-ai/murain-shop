@@ -90,6 +90,8 @@
       </div>
       <label>Email *</label>
       <input id="cod_email" required type="email" placeholder="example@gmail.com" />
+     <label>面交時間 / 地點（如果選面交時必填）</label>
+  <textarea id="cod_meet_note" placeholder="例如：12/10(三) 19:30 台南南紡購物中心 1F 星巴克"></textarea>
       <div class="row mt-2">
         <div><label>7-11 門市代號 *</label><input id="cod_store_id" required /></div>
         <div><label>7-11 門市名稱 *</label><input id="cod_store_name" required /></div>
@@ -789,9 +791,9 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
   // 目前選到哪個分頁（COD / PAID / DEPOSIT / ZEROCARD）
   const activeTab = [...tabs].find(t=>t.classList.contains('active'))?.dataset.pay || 'COD';
 
-    // ===== COD =====
+      // ===== COD =====
   if (activeTab === 'COD') {
-    // ★ 新增：取貨方式，預設 7-11；舊版沒有 cod_ship_method 時也會自動用 711
+    // 取貨方式：預設 7-11；如果有下拉選單就用選到的值
     const shipMethodSel = $('#cod_ship_method');
     const shipMethod = shipMethodSel ? shipMethodSel.value : '711';
 
@@ -799,8 +801,12 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
     const phone = $('#cod_phone').value;
     const emailCod = ($('#cod_email').value || '').trim();
 
+    // 面交時間 / 地點欄位（如果沒加那個 textarea，這裡會是空字串）
+    const noteEl = $('#cod_meet_note');
+    const note   = noteEl ? (noteEl.value || '').trim() : '';
+
     if (shipMethod === '711') {
-      // 7-11 貨到付款：維持原本邏輯不變
+      // 7-11 貨到付款：維持原本邏輯完全不變
       const id    = $('#cod_store_id').value;
       const sname = $('#cod_store_name').value;
       const addr  = $('#cod_store_addr').value;
@@ -819,9 +825,9 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
         store: { id, name: sname, addr }
       };
     } else if (shipMethod === 'meet') {
-      // ★ 面交付款：只收姓名 / 電話 / Email，不要求門市欄位
-      if (![name, phone, emailCod].every(required)) {
-        alert('請填完面交必填欄位（含 Email）');
+      // 面交付款：姓名 / 電話 / Email + 面交時間地點 都要填
+      if (![name, phone, emailCod, note].every(required)) {
+        alert('請填完面交必填欄位（含 Email 與面交時間/地點）');
         return;
       }
 
@@ -830,8 +836,8 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
         type: 'meet',
         name,
         phone,
-        email: emailCod
-        // 面交不用 store / address，有需要之後可在 note 填面交地點
+        email: emailCod,
+        note   // shipping_info.ship.note 裡會看到這段文字
       };
     } else {
       alert('請先選擇取貨方式');
