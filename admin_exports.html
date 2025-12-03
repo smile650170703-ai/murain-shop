@@ -1,21 +1,139 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>MURAIN — 訂單後台（整合版）</title>
- <script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MURAIN — 匯出中心</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      background: #111827;
+      color: #f9fafb;
+    }
+    .container {
+      padding: 16px 20px 32px;
+    }
+    h1, h2 {
+      margin: 0;
+    }
+    h1 {
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+    h2 {
+      font-size: 16px;
+      margin-top: 24px;
+      margin-bottom: 4px;
+    }
+    label {
+      font-size: 14px;
+      margin-right: 8px;
+    }
+    input[type="date"],
+    select {
+      padding: 4px 6px;
+      border-radius: 4px;
+      border: 1px solid #4b5563;
+      background: #020617;
+      color: #f9fafb;
+    }
+    button {
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid #6b7280;
+      background: #0f172a;
+      color: #f9fafb;
+      cursor: pointer;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    button:hover {
+      background: #1f2937;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th, td {
+      border: 1px solid #374151;
+      padding: 3px 4px;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: #111827;
+      z-index: 1;
+    }
+    #previewBox {
+      max-height: 480px;
+      overflow: auto;
+      border: 1px solid #374151;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>匯出中心（含日期篩選）</h1>
+
+    <!-- 日期篩選區 -->
+    <div style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+      <label>起始日期：
+        <input id="dateFrom" type="date" />
+      </label>
+      <label>結束日期：
+        <input id="dateTo" type="date" />
+      </label>
+      <label>預覽類型：
+        <select id="previewKind">
+          <option value="orders">總訂單</option>
+          <option value="accounting">會計師</option>
+          <option value="ship">出貨明細／賣貨便</option>
+          <option value="zero">0 元包裹明細</option>
+        </select>
+      </label>
+      <button id="btnPreview">查詢（只預覽，不下載）</button>
+    </div>
+
+    <!-- 下載區：用同一組日期下載 4 種檔案 -->
+    <div style="margin-top: 16px;">
+      <div style="margin-bottom: 4px;">依上方日期，下載不同類型：</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+        <button id="btnDownloadOrders">下載「總訂單」檔案</button>
+        <button id="btnDownloadAccounting">下載「會計師」檔案</button>
+        <button id="btnDownloadShip">下載「出貨明細／賣貨便」檔案</button>
+        <button id="btnDownloadZero">下載「0 元包裹明細」檔案</button>
+      </div>
+    </div>
+
+    <!-- 預覽結果區 -->
+    <h2 id="previewTitle">預覽結果</h2>
+    <div id="previewInfo" style="margin-bottom: 8px; font-size: 13px; color: #e5e7eb;">
+      尚未查詢。
+    </div>
+    <div id="previewBox">
+      <table id="previewTable">
+        <thead id="previewThead"></thead>
+        <tbody id="previewTbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
     const $ = (sel) => document.querySelector(sel);
 
-    // ==== 後台密碼（跟原本 Orders 後台用同一組） ====
+    // ==== 後台密碼 ====
     const API_ORIGIN  = location.origin;
-    const STORAGE_KEY = 'murain_admin_op_key';   // 可以跟原本後台一樣
+    const STORAGE_KEY = 'murain_admin_op_key';
     let OP_KEY        = localStorage.getItem(STORAGE_KEY) || '';
 
     async function ensureOpKey() {
       while (!OP_KEY) {
         const v = window.prompt('請輸入後台密碼（OP_KEY）：', '');
-        if (v === null) break;       // 按取消就停
+        if (v === null) break;
         OP_KEY = v.trim();
         if (OP_KEY) {
           localStorage.setItem(STORAGE_KEY, OP_KEY);
@@ -33,7 +151,7 @@
       return params.length ? '&' + params.join('&') : '';
     }
 
-    // 預覽：用 format=json 把資料抓回來，塞到下面的表格
+    // 預覽：format=json
     async function preview(kind) {
       const queryDates = getDateParams();
       const url = `${API_ORIGIN}/admin/export-view?key=${
@@ -56,9 +174,7 @@
         $('#previewTitle').textContent = `預覽結果（類型：${kind}）`;
         $('#previewInfo').textContent = `共有 ${records.length} 筆（只顯示前 100 筆）`;
 
-        if (!records.length) {
-          return;
-        }
+        if (!records.length) return;
 
         const firstFields = records[0].fields || {};
         const fieldNames = Object.keys(firstFields);
@@ -68,11 +184,6 @@
         fieldNames.forEach((name) => {
           const th = document.createElement('th');
           th.textContent = name;
-          th.style.border = '1px solid #ddd';
-          th.style.padding = '4px';
-          th.style.position = 'sticky';
-          th.style.top = '0';
-          th.style.background = '#f7f7f7';
           theadTr.appendChild(th);
         });
         $('#previewThead').appendChild(theadTr);
@@ -81,17 +192,13 @@
         const maxRows = Math.min(records.length, 100);
         for (let i = 0; i < maxRows; i++) {
           const rec = records[i];
-          const f = rec.fields || {};
-          const tr = document.createElement('tr');
+          const f   = rec.fields || {};
+          const tr  = document.createElement('tr');
           fieldNames.forEach((name) => {
             const td = document.createElement('td');
             let v = f[name];
-            if (Array.isArray(v)) {
-              v = v.join(', ');
-            }
+            if (Array.isArray(v)) v = v.join(', ');
             td.textContent = v == null ? '' : String(v);
-            td.style.border = '1px solid #eee';
-            td.style.padding = '3px 4px';
             tr.appendChild(td);
           });
           $('#previewTbody').appendChild(tr);
@@ -102,18 +209,18 @@
       }
     }
 
-    // 下載：直接打 CSV 版
+    // 下載 CSV
     function downloadKind(kind) {
       const queryDates = getDateParams();
       const url = `${API_ORIGIN}/admin/export-view?key=${
         encodeURIComponent(OP_KEY)
       }&kind=${encodeURIComponent(kind)}${queryDates}`;
-      window.location.href = url; // 觸發下載
+      window.location.href = url;
     }
 
-    // 頁面初始化
+    // 初始化
     document.addEventListener('DOMContentLoaded', async () => {
-      // 1) 先要密碼
+      // 1) 要密碼
       await ensureOpKey();
 
       // 2) 預設日期：本月 1 號 ~ 今天
@@ -126,7 +233,7 @@
       if ($('#dateFrom') && !$('#dateFrom').value) $('#dateFrom').value = first;
       if ($('#dateTo')   && !$('#dateTo').value)   $('#dateTo').value   = todayStr;
 
-      // 3) 綁定按鈕
+      // 3) 綁按鈕
       const btnPreview = $('#btnPreview');
       const selKind    = $('#previewKind');
 
