@@ -1097,7 +1097,56 @@ async function confirmPay(mode){
     msgEl.textContent = '❌ 付款狀態更新失敗：' + (e.message || e);
   }
 }
+/* ===== 預約面交通知：發 LINE ===== */
+async function sendMeetupNotify(){
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
 
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = f.order_id;
+  if (!orderId) {
+    alert('這筆訂單沒有 order_id，無法發送面交通知。');
+    return;
+  }
+
+  const msgEl = $('#detailMsg');
+  if (msgEl) msgEl.textContent = '發送面交通知中…';
+
+  // 把「內部備註」當成面交補充說明一起傳給後端（選填）
+  const note = ($('#d_internal_note')?.value || '').trim();
+
+  const payload = {
+    op_key: OP_KEY,
+    order_id: orderId,
+    note: note
+  };
+
+  try {
+    const res = await fetch(API + '/admin/order/meetup-notify', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const j = await res.json().catch(()=> ({}));
+    if (!res.ok || !j.ok) {
+      throw new Error(j.error || ('HTTP ' + res.status));
+    }
+
+    if (msgEl) {
+      if (j.line_sent) {
+        msgEl.textContent = '✅ 已發送面交 LINE 通知';
+      } else {
+        msgEl.textContent = '✅ 已處理，但找不到此訂單的 LINE 綁定';
+      }
+    }
+  } catch(e) {
+    console.error(e);
+    if (msgEl) msgEl.textContent = '❌ 面交通知失敗：' + (e.message || e);
+    alert('面交通知失敗，請稍後再試');
+  }
+}
 /* ===== 複製出貨通知 ===== */
 async function copyNotice(){
   const ta = $('#d_notice_text');
