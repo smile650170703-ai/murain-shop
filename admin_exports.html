@@ -125,21 +125,24 @@
   <script>
     const $ = (sel) => document.querySelector(sel);
 
-    // ==== 後台密碼 ====
-    const API_ORIGIN  = location.origin;
-    const STORAGE_KEY = 'murain_admin_op_key';
-    let OP_KEY        = localStorage.getItem(STORAGE_KEY) || '';
+// 用原本後台注入的 API_ORIGIN / OP_KEY，如果沒有才用備用方案
+const API_ORIGIN = window.API_ORIGIN || location.origin;
+let OP_KEY       = window.OP_KEY || "";
 
-    async function ensureOpKey() {
-      while (!OP_KEY) {
-        const v = window.prompt('請輸入後台密碼（OP_KEY）：', '');
-        if (v === null) break;
-        OP_KEY = v.trim();
-        if (OP_KEY) {
-          localStorage.setItem(STORAGE_KEY, OP_KEY);
-        }
-      }
+async function ensureAdminKey() {
+  // 優先使用原本後台的 ensureOpKey（你在 admin_orders.html 用的那個）
+  if (typeof window.ensureOpKey === "function") {
+    await window.ensureOpKey();
+    OP_KEY = window.OP_KEY || "";
+  } else {
+    // 備用：自己簡單問一次密碼
+    while (!OP_KEY) {
+      const v = window.prompt("請輸入後台密碼（OP_KEY）：", "");
+      if (v === null) break;
+      OP_KEY = v.trim();
     }
+  }
+}
 
     // 日期參數
     function getDateParams() {
@@ -221,7 +224,7 @@
     // 初始化
     document.addEventListener('DOMContentLoaded', async () => {
       // 1) 要密碼
-      await ensureOpKey();
+      await ensureAdminKey();
 
       // 2) 預設日期：本月 1 號 ~ 今天
       const today = new Date();
