@@ -1286,12 +1286,15 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     });
   });
 
-  // OP_KEY 重設
-  $('#btnChangeKey').addEventListener('click', ()=>{
-    localStorage.removeItem(STORAGE_KEY);
-    OP_KEY = '';
-    ensureOpKey().then(()=>loadOrders(currentFilter));
-  });
+  // OP_KEY 重設（如果你已經拿掉更改密碼那顆，可以保留這段但加保護）
+  const btnChangeKey = $('#btnChangeKey');
+  if (btnChangeKey){
+    btnChangeKey.addEventListener('click', ()=>{
+      localStorage.removeItem(STORAGE_KEY);
+      OP_KEY = '';
+      ensureOpKey().then(()=>loadOrders(currentFilter));
+    });
+  }
 
   // 預設把日期帶成「本月 1 號 ~ 今天」
   const today = new Date();
@@ -1311,6 +1314,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       await loadOrdersByDate();
     });
   }
+
   const btnQuickPaid = $('#btnQuickPaid');
   if (btnQuickPaid){
     btnQuickPaid.addEventListener('click', async ()=>{
@@ -1319,32 +1323,34 @@ document.addEventListener('DOMContentLoaded', async ()=>{
       await loadOrdersByDate();
     });
   }
+
   const btnExport = $('#exportBtn');
   if (btnExport){
     btnExport.addEventListener('click', exportCSV);
   }
-const btnRemindToday = $('#btnRemindToday');
-if (btnRemindToday){
-  btnRemindToday.addEventListener('click', async () =>{
-    await ensureOpKey();
-    try {
-      const url = `${API}/admin/deposit/remind-today?op_key=${encodeURIComponent(OP_KEY)}`;
-      const r = await fetch(url);
-      const j = await r.json().catch(()=> ({}));
 
-      if (!r.ok || !j.ok) {
-        alert('載入訂金提醒失敗：' + (j.error || r.status));
-        return;
+  const btnRemindToday = $('#btnRemindToday');
+  if (btnRemindToday){
+    btnRemindToday.addEventListener('click', async () =>{
+      await ensureOpKey();
+      try {
+        const url = `${API}/admin/deposit/remind-today?op_key=${encodeURIComponent(OP_KEY)}`;
+        const r = await fetch(url);
+        const j = await r.json().catch(()=> ({}));
+
+        if (!r.ok || !j.ok) {
+          alert('載入訂金提醒失敗：' + (j.error || r.status));
+          return;
+        }
+        renderDepositRemind(j);
+      } catch (e) {
+        console.error(e);
+        alert('載入訂金提醒時發生錯誤，請稍後再試。');
       }
-      renderDepositRemind(j);
-    } catch (e) {
-      console.error(e);
-      alert('載入訂金提醒時發生錯誤，請稍後再試。');
-    }
-  });
-}
+    });
+  }
 
- // ★ 這裡開始：上方取消訂單按鈕 ★
+  // ★ 上方「取消訂單（補回庫存）」按鈕：直接走 cancelCurrentOrder()
   const btnCancelTop = $('#btnCancelOrderTop');
   if (btnCancelTop) {
     btnCancelTop.addEventListener('click', () => {
@@ -1355,7 +1361,8 @@ if (btnRemindToday){
       cancelCurrentOrder();
     });
   }
-  // 上方工具列：快捷操作目前選取的訂單（其實是幫你按下面那排按鈕）
+
+  // 上方工具列：快捷操作目前選取的訂單（這幾顆如果你有保留）
   function proxyButton(topId, originalId){
     const top = $('#' + topId);
     if (!top) return;
@@ -1374,8 +1381,10 @@ if (btnRemindToday){
   proxyButton('btnMarkZcFailTop',    'btnMarkZcFail');
   proxyButton('btnPrintOrderTop',    'btnPrintOrder');
   proxyButton('btnSendTailLinkTop',  'btnSendTailLink');
-  proxyButton('btnCancelOrderTop',   'btnCancelOrder');
+  // ★ 這行拿掉，因為取消已經上面直接綁 cancelCurrentOrder 了
+  // proxyButton('btnCancelOrderTop',   'btnCancelOrder');
   proxyButton('btnMeetupNotifyTop',  'btnMeetupNotify');
+
   await ensureOpKey();
   await loadOrders('all');
 });
