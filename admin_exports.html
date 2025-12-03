@@ -122,136 +122,148 @@
     </div>
   </div>
 
-  <script>
-    const $ = (sel) => document.querySelector(sel);
+ <script>
+  const $ = (sel) => document.querySelector(sel);
 
-// 用原本後台注入的 API_ORIGIN / OP_KEY，如果沒有才用備用方案
-const API_ORIGIN = window.API_ORIGIN || location.origin;
-let OP_KEY       = window.OP_KEY || "";
+  // 跟「訂單後台」同一個 API 設定
+  const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
+  const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
+  let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
 
-async function ensureAdminKey() {
-  // 優先使用原本後台的 ensureOpKey（你在 admin_orders.html 用的那個）
-  if (typeof window.ensureOpKey === "function") {
-    await window.ensureOpKey();
-    OP_KEY = window.OP_KEY || "";
-  } else {
-    // 備用：自己簡單問一次密碼
-    while (!OP_KEY) {
-      const v = window.prompt("請輸入後台密碼（OP_KEY）：", "");
-      if (v === null) break;
-      OP_KEY = v.trim();
+  // 跟訂單後台一樣的 OP_KEY 驗證
+  async function ensureOpKey(){
+    const label = document.querySelector('#opLabel');
+    if (label) label.textContent = OP_KEY ? '已登入後台' : '尚未登入';
+
+    while(!OP_KEY){
+      const k = prompt('請輸入管理密碼 (OP_KEY)');
+      if(!k){ alert('沒有密碼就無法進入後台喔'); continue; }
+      try{
+        const r = await fetch(`${API}/op/auth`,{
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({ op_key:k })
+        });
+        const j = await r.json();
+        if(!r.ok || !j.ok){
+          alert('密碼錯誤，請再試一次');
+          continue;
+        }
+        OP_KEY = k;
+        localStorage.setItem(STORAGE_KEY, OP_KEY);
+        if (label) label.textContent = '已登入後台';
+        break;
+      }catch(e){
+        console.error(e);
+        alert('驗證失敗，請稍後再試');
+      }
     }
   }
-}
 
-    // 日期參數
-    function getDateParams() {
-      const from = $('#dateFrom')?.value || '';
-      const to   = $('#dateTo')?.value || '';
-      const params = [];
-      if (from) params.push(`date_from=${encodeURIComponent(from)}`);
-      if (to)   params.push(`date_to=${encodeURIComponent(to)}`);
-      return params.length ? '&' + params.join('&') : '';
-    }
+  // 日期參數
+  function getDateParams() {
+    const from = $('#dateFrom')?.value || '';
+    const to   = $('#dateTo')?.value || '';
+    const params = [];
+    if (from) params.push(`date_from=${encodeURIComponent(from)}`);
+    if (to)   params.push(`date_to=${encodeURIComponent(to)}`);
+    return params.length ? '&' + params.join('&') : '';
+  }
 
-    // 預覽：format=json
-    async function preview(kind) {
-      const queryDates = getDateParams();
-      const url = `${API_ORIGIN}/admin/export-view?key=${
-        encodeURIComponent(OP_KEY)
-      }&kind=${encodeURIComponent(kind)}&format=json${queryDates}`;
+  // 預覽：打 /admin/export-view?format=json
+  async function preview(kind) {
+    const queryDates = getDateParams();
+    const url = `${API}/admin/export-view?key=${
+      encodeURIComponent(OP_KEY)
+    }&kind=${encodeURIComponent(kind)}&format=json${queryDates}`;
 
-      $('#previewInfo').textContent = '載入中…';
-      $('#previewThead').innerHTML = '';
-      $('#previewTbody').innerHTML = '';
+    $('#previewInfo').textContent = '載入中…';
+    $('#previewThead').innerHTML = '';
+    $('#previewTbody').innerHTML = '';
 
-      try {
-        const res = await fetch(url);
-        if (!res.ok) {
-          const txt = await res.text();
-          $('#previewInfo').textContent = `讀取失敗（${res.status}）：${txt}`;
-          return;
-        }
-        const data = await res.json();
-        const records = data.records || [];
-        $('#previewTitle').textContent = `預覽結果（類型：${kind}）`;
-        $('#previewInfo').textContent = `共有 ${records.length} 筆（只顯示前 100 筆）`;
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        const txt = await res.text();
+        $('#previewInfo').textContent = `讀取失敗（${res.status}）：${txt}`;
+        return;
+      }
+      const data = await res.json();
+      const records = data.records || [];
+      $('#previewTitle').textContent = `預覽結果（類型：${kind}）`;
+      $('#previewInfo').textContent = `共有 ${records.length} 筆（只顯示前 100 筆）`;
 
-        if (!records.length) return;
+      if (!records.length) return;
 
-        const firstFields = records[0].fields || {};
-        const fieldNames = Object.keys(firstFields);
+      const firstFields = records[0].fields || {};
+      const fieldNames = Object.keys(firstFields);
 
-        // 表頭
-        const theadTr = document.createElement('tr');
+      const theadTr = document.createElement('tr');
+      fieldNames.forEach((name) => {
+        const th = document.createElement('th');
+        th.textContent = name;
+        theadTr.appendChild(th);
+      });
+      $('#previewThead').appendChild(theadTr);
+
+      const maxRows = Math.min(records.length, 100);
+      for (let i = 0; i < maxRows; i++) {
+        const rec = records[i];
+        const f   = rec.fields || {};
+        const tr  = document.createElement('tr');
         fieldNames.forEach((name) => {
-          const th = document.createElement('th');
-          th.textContent = name;
-          theadTr.appendChild(th);
+          const td = document.createElement('td');
+          let v = f[name];
+          if (Array.isArray(v)) v = v.join(', ');
+          td.textContent = v == null ? '' : String(v);
+          tr.appendChild(td);
         });
-        $('#previewThead').appendChild(theadTr);
-
-        // 資料列（最多 100 筆）
-        const maxRows = Math.min(records.length, 100);
-        for (let i = 0; i < maxRows; i++) {
-          const rec = records[i];
-          const f   = rec.fields || {};
-          const tr  = document.createElement('tr');
-          fieldNames.forEach((name) => {
-            const td = document.createElement('td');
-            let v = f[name];
-            if (Array.isArray(v)) v = v.join(', ');
-            td.textContent = v == null ? '' : String(v);
-            tr.appendChild(td);
-          });
-          $('#previewTbody').appendChild(tr);
-        }
-      } catch (err) {
-        console.error(err);
-        $('#previewInfo').textContent = '讀取時發生錯誤：' + err.message;
+        $('#previewTbody').appendChild(tr);
       }
+    } catch (err) {
+      console.error(err);
+      $('#previewInfo').textContent = '讀取時發生錯誤：' + err.message;
+    }
+  }
+
+  // 下載 CSV：打 /admin/export-view（預設就是 csv）
+  function downloadKind(kind) {
+    const queryDates = getDateParams();
+    const url = `${API}/admin/export-view?key=${
+      encodeURIComponent(OP_KEY)
+    }&kind=${encodeURIComponent(kind)}${queryDates}`;
+    window.location.href = url;
+  }
+
+  // 初始化
+  document.addEventListener('DOMContentLoaded', async () => {
+    await ensureOpKey();
+
+    // 預設日期：本月 1 號 ~ 今天
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm   = String(today.getMonth() + 1).padStart(2, '0');
+    const dd   = String(today.getDate()).padStart(2, '0');
+    const first    = `${yyyy}-${mm}-01`;
+    const todayStr = `${yyyy}-${mm}-${dd}`;
+    if ($('#dateFrom') && !$('#dateFrom').value) $('#dateFrom').value = first;
+    if ($('#dateTo')   && !$('#dateTo').value)   $('#dateTo').value   = todayStr;
+
+    const btnPreview = $('#btnPreview');
+    const selKind    = $('#previewKind');
+    if (btnPreview && selKind) {
+      btnPreview.addEventListener('click', () => {
+        const kind = selKind.value || 'orders';
+        preview(kind);
+      });
     }
 
-    // 下載 CSV
-    function downloadKind(kind) {
-      const queryDates = getDateParams();
-      const url = `${API_ORIGIN}/admin/export-view?key=${
-        encodeURIComponent(OP_KEY)
-      }&kind=${encodeURIComponent(kind)}${queryDates}`;
-      window.location.href = url;
-    }
+    $('#btnDownloadOrders')?.addEventListener('click',     () => downloadKind('orders'));
+    $('#btnDownloadAccounting')?.addEventListener('click', () => downloadKind('accounting'));
+    $('#btnDownloadShip')?.addEventListener('click',       () => downloadKind('ship'));
+    $('#btnDownloadZero')?.addEventListener('click',       () => downloadKind('zero'));
+  });
+</script>
 
-    // 初始化
-    document.addEventListener('DOMContentLoaded', async () => {
-      // 1) 要密碼
-      await ensureAdminKey();
-
-      // 2) 預設日期：本月 1 號 ~ 今天
-      const today = new Date();
-      const yyyy = today.getFullYear();
-      const mm   = String(today.getMonth() + 1).padStart(2, '0');
-      const dd   = String(today.getDate()).padStart(2, '0');
-      const first     = `${yyyy}-${mm}-01`;
-      const todayStr  = `${yyyy}-${mm}-${dd}`;
-      if ($('#dateFrom') && !$('#dateFrom').value) $('#dateFrom').value = first;
-      if ($('#dateTo')   && !$('#dateTo').value)   $('#dateTo').value   = todayStr;
-
-      // 3) 綁按鈕
-      const btnPreview = $('#btnPreview');
-      const selKind    = $('#previewKind');
-
-      if (btnPreview && selKind) {
-        btnPreview.addEventListener('click', () => {
-          const kind = selKind.value || 'orders';
-          preview(kind);
-        });
-      }
-
-      $('#btnDownloadOrders')?.addEventListener('click',     () => downloadKind('orders'));
-      $('#btnDownloadAccounting')?.addEventListener('click', () => downloadKind('accounting'));
-      $('#btnDownloadShip')?.addEventListener('click',       () => downloadKind('ship'));
-      $('#btnDownloadZero')?.addEventListener('click',       () => downloadKind('zero'));
-    });
-  </script>
 </body>
 </html>
