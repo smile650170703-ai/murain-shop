@@ -729,7 +729,8 @@ function renderDetail(rec){
         <textarea id="d_internal_note">${f.internal_note || ''}</textarea>
 
         <div class="detail-actions">
-        <button class="btn-primary" id="btnSaveAndShip">儲存出貨 / 付款資訊 ＋ 標記已出貨 ＋ 發 LINE 通知</button>
+        <button class="btn-primary" id="btnSaveAndShip">儲存資訊+標記已出貨+LINE通知</button>
+        <button class="btn-secondary" id="btnDepositPayAndNotice">💰 已收訂金＋發保留通知（自動勾勾）</button>
         <button class="btn-secondary" id="btnConfirmPayOk">✅ 確認已收款／審核通過 ＋ 發 LINE</button>
         <button class="btn-secondary" id="btnMarkZcFail">❌ 中租審核未通過 ＋ 發 LINE</button>
         <button class="btn-secondary" id="btnPrintOrder">列印訂購單</button>
@@ -791,6 +792,10 @@ if (btnTail) {
 
   const btnPayOk = $('#btnConfirmPayOk');
   if (btnPayOk) btnPayOk.addEventListener('click', ()=>confirmPay('ok'));
+
+ // ★ 新增：已收訂金＋發保留通知（自動勾勾）
+  const btnDepNotice = $('#btnDepositPayAndNotice');
+  if (btnDepNotice) btnDepNotice.addEventListener('click', depositReceivedAndNotify);
 
   const btnZcFail = $('#btnMarkZcFail');
   if (btnZcFail) btnZcFail.addEventListener('click', ()=>confirmPay('zc_fail'));
@@ -1136,6 +1141,32 @@ async function confirmPay(mode){
     console.error(e);
     msgEl.textContent = '❌ 付款狀態更新失敗：' + (e.message || e);
   }
+}
+ // ★ 新增：已收訂金＋發保留通知（自動勾勾）
+async function depositReceivedAndNotify() {
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  // 1) 自動勾選「已收到訂金」＋「已發出款/保留通知」
+  const depChk    = $('#d_deposit_received');
+  const noticeChk = $('#d_pay_notice_sent');
+  if (depChk)    depChk.checked    = true;
+  if (noticeChk) noticeChk.checked = true;
+
+  // 2) 先存右邊欄位（包含勾勾、內部備註等等）
+  await saveDetail();
+
+  const msgEl = $('#detailMsg');
+  if (msgEl && msgEl.textContent.includes('❌')) {
+    // 如果儲存失敗，就不要往下跑確認付款
+    return;
+  }
+
+  // 3) 再走一次原本的「確認已收款」流程
+  //    → 後端會依付款方式：線上支付 / 中租 / 匯款 / 訂金 自己決定 pay_status / status
+  await confirmPay('ok');
 }
 /* ===== 預約面交通知：發 LINE ===== */
 async function sendMeetupNotify(){
