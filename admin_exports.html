@@ -309,6 +309,107 @@
     }&kind=${encodeURIComponent(kind)}${queryDates}`;
     window.location.href = url;
   }
+  // 列印「出貨明細」：抓 JSON → 開新視窗 → 80mm 熱感版面
+  async function printOrders() {
+    const queryDates = getDateParams();
+    const url = `${API}/admin/export-view?key=${
+      encodeURIComponent(OP_KEY)
+    }&kind=orders&format=json${queryDates}`;
+
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        const txt = await res.text();
+        alert(`讀取出貨明細失敗（${res.status}）：${txt}`);
+        return;
+      }
+
+      const data    = await res.json();
+      const records = data.records || [];
+      if (!records.length) {
+        alert('目前日期區間沒有訂單可以列印');
+        return;
+      }
+
+      const win = window.open('', '_blank');
+      const doc = win.document;
+
+      const slipsHtml = records.map((rec) => {
+        const f = rec.fields || {};
+        const orderId   = f['訂單編號'] || '';
+        const doneAt    = f['結單完成時間'] || '';
+        const name      = f['收件人姓名'] || '';
+        const phone     = f['收件人電話'] || '';
+        const zip       = f['郵遞區號'] || '';
+        const addr      = f['收件地址'] || '';
+        const storeName = f['超商店名'] || '';
+        const payMethod = f['付款方式'] || '';
+        const amount    = f['應付金額'] || '';
+
+        return `
+          <div class="slip">
+            <div class="line big">${name}</div>
+            <div class="line">電話：${phone}</div>
+            <div class="line">地址：${zip} ${addr}</div>
+            ${storeName ? `<div class="line">門市：${storeName}</div>` : ''}
+            <div class="line">訂單：${orderId}</div>
+            <div class="line">金額：${amount}　(${payMethod})</div>
+            <div class="line small">結單時間：${doneAt}</div>
+          </div>
+        `;
+      }).join('<div class="page-break"></div>');
+
+      doc.write(`<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>出貨明細列印</title>
+<style>
+  @page {
+    size: 80mm auto;      /* TP809 3" 熱感紙 */
+    margin: 3mm;
+  }
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 12px;
+  }
+  .slip {
+    width: 72mm;
+    padding: 2mm 2mm 4mm;
+    box-sizing: border-box;
+  }
+  .line {
+    margin-bottom: 2px;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .line.big {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .line.small {
+    font-size: 11px;
+    color: #555;
+  }
+  .page-break {
+    page-break-after: always;
+  }
+</style>
+</head>
+<body>
+${slipsHtml}
+</body>
+</html>`);
+      doc.close();
+      win.focus();
+      win.print();
+    } catch (err) {
+      console.error(err);
+      alert('列印出貨明細時發生錯誤：' + err.message);
+    }
+  }
 
   // 初始化
   document.addEventListener('DOMContentLoaded', async () => {
@@ -333,11 +434,12 @@
       });
     }
 
-    $('#btnDownloadOrders')?.addEventListener('click',     () => downloadKind('orders'));
+    $('#btnPrintOrders')?.addEventListener('click',        () => printOrders());
     $('#btnDownloadAccounting')?.addEventListener('click', () => downloadKind('accounting'));
     $('#btnDownloadShip')?.addEventListener('click',       () => downloadKind('ship'));
     $('#btnDownloadZero')?.addEventListener('click',       () => downloadKind('zero'));
-    $("#btnDownloadStreamer")?.addEventListener("click",   () => downloadKind("streamer"));
+    $('#btnDownloadStreamer')?.addEventListener('click',   () => downloadKind('streamer'));
+    $('#btnDownloadNet')?.addEventListener('click',        () => downloadKind('net'));
   });
 </script>
 
