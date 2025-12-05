@@ -24,6 +24,63 @@
 </head>
 <body class="h-screen">
   <div id="root" class="h-full"></div>
+<!-- 🔒 工具頁專用：OP 密碼檢查 -->
+<script>
+  (function () {
+    // 後端 API 位址（和你其他頁一樣，用 api.murain.tw）
+    const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/, '');
+
+    // 兩個可能存 OP 的 localStorage key
+    const STORAGE_KEYS = ['MURAIN_ADMIN_OP_KEY', 'OP_KEY'];
+
+    function loadOpKey() {
+      for (const k of STORAGE_KEYS) {
+        const v = localStorage.getItem(k);
+        if (v) return v;
+      }
+      return '';
+    }
+
+    function saveOpKey(v) {
+      STORAGE_KEYS.forEach(k => localStorage.setItem(k, v));
+    }
+
+    async function ensureOpKeyForTool() {
+      let opKey = loadOpKey();
+      if (opKey) return; // 已經登入過就不再詢問
+
+      while (!opKey) {
+        const input = prompt('請輸入管理密碼 (OP_KEY)');
+        if (!input) {
+          alert('沒有密碼就無法使用這個工具');
+          continue;
+        }
+
+        try {
+          const res = await fetch(`${API}/op/auth`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ op_key: input })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok) {
+            alert('密碼錯誤，請再試一次');
+            continue;
+          }
+
+          opKey = input;
+          saveOpKey(opKey); // 同時寫入兩個 key，之後 admin / 開單頁都認得
+        } catch (e) {
+          console.error(e);
+          alert('驗證失敗，請稍後再試');
+        }
+      }
+    }
+
+    // 等整個頁面載入後再檢查
+    window.addEventListener('DOMContentLoaded', ensureOpKeyForTool);
+  })();
+</script>
 
   <script type="text/babel">
     const { useState, useEffect } = React;
