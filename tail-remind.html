@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MURAIN — 今日尾款自動提醒工具</title>
+<style>
+  *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
+  body{margin:0;background:#020617;color:#e2e8f0}
+  .wrap{max-width:960px;margin:0 auto;padding:16px}
+  h1{margin:0 0 8px;font-size:22px}
+  p{margin:4px 0 8px;font-size:13px;color:#cbd5f5}
+  .card{background:#020617;border:1px solid #1f2937;border-radius:14px;padding:14px;margin-top:10px}
+  label{font-size:12px;color:#9ca3af;margin-bottom:4px;display:block}
+  input{width:100%;padding:7px 9px;border-radius:8px;border:1px solid #4b5563;background:#020617;color:#e5e7eb;font-size:13px}
+  input:focus{outline:2px solid #38bdf8;outline-offset:1px;border-color:#38bdf8}
+  .row{display:grid;grid-template-columns:2fr 1fr;gap:8px;align-items:flex-end}
+  .btn{border:none;border-radius:99px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer}
+  .btn-primary{background:#38bdf8;color:#0f172a}
+  .btn-secondary{background:#111827;color:#e5e7eb;border:1px solid #4b5563}
+  .btn[disabled]{opacity:.5;cursor:not-allowed}
+  .muted{font-size:12px;color:#9ca3af}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+  th,td{padding:5px 6px;border-bottom:1px solid #1f2937}
+  th{text-align:left;color:#e5e7eb;background:#020617;position:sticky;top:0}
+  td.status-ok{color:#4ade80}
+  td.status-fail{color:#fca5a5}
+  .tag{display:inline-block;padding:2px 6px;border-radius:999px;font-size:11px;border:1px solid #4b5563;color:#e5e7eb;margin-right:4px}
+  .log{font-size:12px;white-space:pre-wrap;background:#020617;border:1px solid #1f2937;border-radius:10px;padding:8px;margin-top:8px;max-height:180px;overflow:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>今日尾款自動提醒工具</h1>
+  <p class="muted">
+    ✅ 不會動到原本 <code>admin.html</code> 設定。<br>
+    ✅ 使用現成 API：<code>/admin/deposit/remind-today</code> ＋ <code>/admin/deposit/send-tail-link</code>。<br>
+    ✅ 每天只要按一下「載入」＋「一鍵發送」，就會幫你把今日所有尾款 LINE 通知都送出去。
+  </p>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label for="opKey">OP_KEY（跟訂單後台一樣）</label>
+        <input id="opKey" placeholder="輸入一次就會記住" />
+        <p class="muted">會共用 <code>MURAIN_ADMIN_OP_KEY</code>，如果你已經在訂單後台登入，這裡會自動帶入。</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <button class="btn btn-secondary" id="btnLoad">1️⃣ 載入今日尾款清單</button>
+        <button class="btn btn-primary" id="btnSendAll" disabled>2️⃣ 一鍵發送今日全部尾款提醒（LINE）</button>
+      </div>
+    </div>
+    <p class="muted" id="summary">尚未載入。</p>
+  </div>
+
+  <div class="card" style="margin-top:12px;">
+    <div class="tag">今日尾款列表</div>
+    <div id="tableWrap" style="margin-top:6px;max-height:260px;overflow:auto;"></div>
+    <div class="tag" style="margin-top:10px;">發送紀錄</div>
+    <div id="log" class="log">尚未開始。</div>
+  </div>
+</div>
+
+<script>
+const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/, '');
+const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
+
+let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
+let CURRENT_LIST = []; // 目前載入的「今日尾款」清單
+
+const $ = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+
+function appendLog(msg){
+  const logEl = $('#log');
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2,'0');
+  const mm = String(now.getMinutes()).padStart(2,'0');
+  const ss = String(now.getSeconds()).padStart(2,'0');
+  logEl.textContent += `\n[${hh}:${mm}:${ss}] ${msg}`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+async function ensureOpKey(){
+  if (!OP_KEY){
+    OP_KEY = ($('#opKey').value || '').trim();
+    if (!OP_KEY){
+      OP_KEY = prompt('請輸入 OP_KEY（和訂單後台一樣）：') || '';
+      OP_KEY = OP_KEY.trim();
+    }
+    if (!OP_KEY){
+      throw new Error('沒有 OP_KEY，無法呼叫 API');
+    }
+    localStorage.setItem(STORAGE_KEY, OP_KEY);
+  }else{
+    // 如果 input 有值，以 input 為主
+    const inVal = ($('#opKey').value || '').trim();
+    if (inVal && inVal !== OP_KEY){
+      OP_KEY = inVal;
+      localStorage.setItem(STORAGE_KEY, OP_KEY);
+    }
+  }
+  $('#opKey').value = OP_KEY;
+}
+
+function renderList(payload){
+  const list = payload.records || [];
+  const date = payload.date || '';
+  CURRENT_LIST = list;
+  const summary = $('#summary');
+  const wrap = $('#tableWrap');
+  const btnSendAll = $('#btnSendAll');
+
+  if (!list.length){
+    summary.textContent = `今天（${date}）沒有需要提醒尾款的訂單。`;
+    wrap.innerHTML = '<p class="muted">清單為空。</p>';
+    btnSendAll.disabled = true;
+    return;
+  }
+
+  summary.textContent = `今天（${date}）共有 ${list.length} 筆需要提醒的訂單。`;
+  const rows = list.map((r,idx)=>`
+    <tr data-idx="${idx}">
+      <td>${r.order_id || ''}</td>
+      <td>${r.name || ''}</td>
+      <td>${r.phone || ''}</td>
+      <td style="text-align:right;">${r.amount || 0}</td>
+      <td>${r.hold_until || ''}</td>
+      <td class="status">尚未發送</td>
+    </tr>
+  `).join('');
+
+  wrap.innerHTML = `
+    <div style="overflow:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>訂單編號</th>
+            <th>客戶姓名</th>
+            <th>電話</th>
+            <th style="text-align:right;">尾款金額</th>
+            <th>保留到</th>
+            <th>狀態</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  btnSendAll.disabled = false;
+}
+
+async function loadTodayList(){
+  const btnLoad = $('#btnLoad');
+  const btnSendAll = $('#btnSendAll');
+  btnLoad.disabled = true;
+  btnLoad.textContent = '載入中…';
+  btnSendAll.disabled = true;
+  appendLog('開始載入今日尾款清單…');
+
+  try{
+    await ensureOpKey();
+    const url = `${API}/admin/deposit/remind-today?op_key=${encodeURIComponent(OP_KEY)}`;
+    const r = await fetch(url);
+    const j = await r.json().catch(()=> ({}));
+    if (!r.ok || !j.ok){
+      alert('載入訂金提醒失敗：' + (j.error || r.status));
+      appendLog('❌ 載入失敗：' + (j.error || r.status));
+      return;
+    }
+    renderList(j);
+    appendLog('✅ 載入成功。');
+  }catch(e){
+    console.error(e);
+    alert('載入訂金提醒時發生錯誤，請稍後再試。');
+    appendLog('❌ 系統錯誤：' + (e.message || e));
+  }finally{
+    btnLoad.disabled = false;
+    btnLoad.textContent = '1️⃣ 載入今日尾款清單';
+  }
+}
+
+async function sendAll(){
+  if (!CURRENT_LIST.length){
+    alert('目前清單是空的，請先載入今日尾款清單。');
+    return;
+  }
+
+  if (!confirm(`確定要發送 ${CURRENT_LIST.length} 筆「尾款結帳連結 ＋ LINE 通知」給客人嗎？`)){
+    return;
+  }
+
+  const btnSendAll = $('#btnSendAll');
+  btnSendAll.disabled = true;
+  btnSendAll.textContent = '發送中…';
+
+  await ensureOpKey();
+  appendLog(`開始發送，共 ${CURRENT_LIST.length} 筆…`);
+
+  let okCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < CURRENT_LIST.length; i++){
+    const r = CURRENT_LIST[i] || {};
+    const oid = r.order_id;
+    const tr = document.querySelector(`tr[data-idx="${i}"]`);
+    const statusTd = tr ? tr.querySelector('.status') : null;
+
+    if (!oid){
+      failCount++;
+      if (statusTd){
+        statusTd.textContent = '缺少 order_id';
+        statusTd.classList.add('status-fail');
+      }
+      appendLog(`❌ 第 ${i+1} 筆缺少 order_id，略過。`);
+      continue;
+    }
+
+    if (statusTd){
+      statusTd.textContent = '發送中…';
+    }
+
+    try{
+      const res = await fetch(`${API}/admin/deposit/send-tail-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ op_key: OP_KEY, order_id: oid })
+      });
+      const j = await res.json().catch(()=> ({}));
+      if (!res.ok || !j.ok){
+        failCount++;
+        const msg = j.message || j.error || ('HTTP ' + res.status);
+        if (statusTd){
+          statusTd.textContent = '失敗：' + msg;
+          statusTd.classList.add('status-fail');
+        }
+        appendLog(`❌ 訂單 ${oid} 發送失敗：${msg}`);
+      }else{
+        okCount++;
+        if (statusTd){
+          statusTd.textContent = '已發送';
+          statusTd.classList.add('status-ok');
+        }
+        appendLog(`✅ 訂單 ${oid} 已發送尾款連結＋LINE。`);
+      }
+    }catch(e){
+      failCount++;
+      const msg = e.message || String(e);
+      if (statusTd){
+        statusTd.textContent = '錯誤：' + msg;
+        statusTd.classList.add('status-fail');
+      }
+      appendLog(`❌ 訂單 ${oid} 系統錯誤：${msg}`);
+    }
+  }
+
+  appendLog(`完成：成功 ${okCount} 筆，失敗 ${failCount} 筆。`);
+  btnSendAll.disabled = false;
+  btnSendAll.textContent = '2️⃣ 一鍵發送今日全部尾款提醒（LINE）';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  // 帶入之前的 OP_KEY
+  if (OP_KEY){
+    $('#opKey').value = OP_KEY;
+  }
+
+  $('#btnLoad').addEventListener('click', loadTodayList);
+  $('#btnSendAll').addEventListener('click', sendAll);
+
+  // 預設幫你載入一次（如果有 OP_KEY）
+  if (OP_KEY){
+    loadTodayList();
+  }else{
+    appendLog('請先輸入 OP_KEY，然後按「載入今日尾款清單」。');
+  }
+});
+</script>
+</body>
+</html>
