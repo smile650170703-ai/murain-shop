@@ -1477,14 +1477,46 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     });
   }
 
-  const btnQuickPaid = $('#btnQuickPaid');
+    const btnQuickPaid = $('#btnQuickPaid');
   if (btnQuickPaid){
     btnQuickPaid.addEventListener('click', async ()=>{
-      $('#status').value = 'paid';
+      // 不再只看 paid，改成「只看運費未填寫」
+      $('#status').value = '';      // 狀態清空，後端回傳全部狀態
+
       await ensureOpKey();
-      await loadOrdersByDate();
+      await loadOrdersByDate();     // 先載入這段日期內的全部訂單
+
+      // 判斷這筆訂單是否已經有運費
+      const hasFee = (f) => {
+        if (!f) return false;
+        const fee1 = f.shipping_fee;
+        const fee2 = f.ship_fee;
+        const filled1 = fee1 !== undefined && fee1 !== null && String(fee1) !== '';
+        const filled2 = fee2 !== undefined && fee2 !== null && String(fee2) !== '';
+        // 只要任一欄位有值就算「有填運費」
+        return filled1 || filled2;
+      };
+
+      const msgEl = $('#msg');
+
+      // 只保留「已收款(paid_ok)」且「運費未填寫」的訂單
+    currentOrders = (currentOrders || []).filter(rec => {
+      const f = rec.fields || rec || {};
+      const feeMissing = !hasFee(f);
+      const isPaidOk   = (f.pay_status === 'paid_ok');
+      return feeMissing && isPaidOk;
+    });
+      ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+      renderOrderList();
+
+       if (!currentOrders.length){
+      msgEl.textContent = '目前沒有「已收款且運費未填寫」的訂單。';
+    } else {
+      msgEl.textContent = '僅顯示「已收款(pay_status = paid_ok) 且 運費 TWD 未填寫」的訂單。';
+    }
     });
   }
+
 
   const btnExport = $('#exportBtn');
   if (btnExport){
