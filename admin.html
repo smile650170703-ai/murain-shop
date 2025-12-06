@@ -1575,23 +1575,41 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     btnExport.addEventListener('click', exportCSV);
   }
 
-  const btnRemindToday = $('#btnRemindToday');
+    const btnRemindToday = $('#btnRemindToday');
   if (btnRemindToday){
-    btnRemindToday.addEventListener('click', async () =>{
-      await ensureOpKey();
-      try {
-        const url = `${API}/admin/deposit/remind-today?op_key=${encodeURIComponent(OP_KEY)}`;
-        const r = await fetch(url);
-        const j = await r.json().catch(()=> ({}));
+    btnRemindToday.addEventListener('click', async () => {
+      const msgEl = $('#msg');
+      if (msgEl) msgEl.textContent = '';
 
-        if (!r.ok || !j.ok) {
-          alert('載入訂金提醒失敗：' + (j.error || r.status));
-          return;
+      // 1. 清空日期 → 變成「全部日期」
+      if ($('#date_from')) $('#date_from').value = '';
+      if ($('#date_to'))   $('#date_to').value   = '';
+
+      // 2. 狀態(status) 改成「全部」
+      if ($('#status')) $('#status').value = '';
+
+      // 3. 先載入目前條件（全部日期＋全部狀態）的訂單
+      await ensureOpKey();
+      await loadOrdersByDate();   // 這裡只跟原本一樣抓資料
+
+      // 4. 前端再篩選：訂金保留＋尚未出貨
+      currentOrders = (currentOrders || []).filter(rec => {
+        const f = rec.fields || rec || {};
+        const isDepositHold = (f.pay_status === 'deposit_hold');  // 訂金保留
+        const notShipped    = (f.ship_status !== 'shipped');      // 尚未出貨
+        return isDepositHold && notShipped;
+      });
+
+      // 更新快取＆畫面
+      ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+      renderOrderList();
+
+      if (msgEl){
+        if (!currentOrders.length){
+          msgEl.textContent = '目前沒有「訂金保留＋尚未出貨」的訂單。';
+        } else {
+          msgEl.textContent = '僅顯示「訂金保留(pay_status = deposit_hold) ＋ 尚未出貨」的訂單。';
         }
-        renderDepositRemind(j);
-      } catch (e) {
-        console.error(e);
-        alert('載入訂金提醒時發生錯誤，請稍後再試。');
       }
     });
   }
