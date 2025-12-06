@@ -1657,24 +1657,28 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
 
   const btnRemindToday = $('#btnRemindToday');
-
   if (btnRemindToday){
     btnRemindToday.addEventListener('click', async () => {
       const msgEl = $('#msg');
       if (msgEl) msgEl.textContent = '';
 
-      // 1. 清空日期 → 變成「全部日期」
-      if ($('#date_from')) $('#date_from').value = '';
-      if ($('#date_to'))   $('#date_to').value   = '';
+      // 1. 日期改成「很大一段範圍」：例如 2024-01-01 ~ 今天
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm   = String(today.getMonth() + 1).padStart(2, '0');
+      const dd   = String(today.getDate()).padStart(2, '0');
 
-      // 2. 狀態(status) 改成「全部」
+      if ($('#date_from')) $('#date_from').value = '2024-01-01';   // 你第一筆訂單之前的日期
+      if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
+
+      // 2. 狀態清空（全部），後面用前端自己篩
       if ($('#status')) $('#status').value = '';
 
-      // 3. 先載入目前條件（全部日期＋全部狀態）的訂單
+      // 3. 先照原本方式載入這段日期內的全部訂單
       await ensureOpKey();
-      await loadOrdersByDate();   // 這裡只跟原本一樣抓資料
+      await loadOrdersByDate();
 
-      // 4. 前端再篩選：訂金保留＋尚未出貨
+      // 4. 前端再篩選：訂金保留 + 尚未出貨
       currentOrders = (currentOrders || []).filter(rec => {
         const f = rec.fields || rec || {};
         const isDepositHold = (f.pay_status === 'deposit_hold');  // 訂金保留
@@ -1682,20 +1686,19 @@ document.addEventListener('DOMContentLoaded', async ()=>{
         return isDepositHold && notShipped;
       });
 
-      // 更新快取＆畫面
+      // 5. 更新快取 & 畫面
       ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
       renderOrderList();
 
       if (msgEl){
         if (!currentOrders.length){
-          msgEl.textContent = '目前沒有「訂金保留＋尚未出貨」的訂單。';
+          msgEl.textContent = '目前沒有「訂金保留 ＋ 尚未出貨」的訂單。';
         } else {
           msgEl.textContent = '僅顯示「訂金保留(pay_status = deposit_hold) ＋ 尚未出貨」的訂單。';
         }
       }
     });
   }
-
   // ★ 上方「取消訂單（補回庫存）」按鈕：直接走 cancelCurrentOrder()
   const btnCancelTop = $('#btnCancelOrderTop');
   if (btnCancelTop) {
