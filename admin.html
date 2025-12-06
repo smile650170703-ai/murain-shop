@@ -903,8 +903,8 @@ if (btnSaveOnly) {
     }
   });
 }
-// ★ 計算賣貨便在對應月份的累積金額，顯示在 detail 右側
-function updateVendorStats(){
+// ★ 計算賣貨便在對應月份的累積金額，顯示在 detail 右側（改版：儲存後可以立刻重算）
+function updateVendorStats() {
   const sel    = $('#d_vendor_name');
   const infoEl = $('#d_vendor_stats');
   if (!sel || !infoEl) return;
@@ -915,12 +915,20 @@ function updateVendorStats(){
     return;
   }
 
-  // 取目前這筆訂單的「賣貨便月份」（Airtable 公式欄位）
+  // 目前這筆訂單的欄位
   const f = (currentRecord && (currentRecord.fields || currentRecord)) || {};
-  const month = f['賣貨便月份'] || '';
+
+  // 先用 Airtable 的「賣貨便月份」，沒有的話就用 ship_at 自己算 YYYY-MM
+  let month = f['賣貨便月份'] || '';
+  if (!month) {
+    const shipAt = f.ship_at || '';
+    if (shipAt) {
+      month = String(shipAt).slice(0, 7); // 2025-12-06T... → 2025-12
+    }
+  }
 
   if (!month) {
-    infoEl.textContent = '尚未有對應月份（請先讓 Airtable 算出「賣貨便月份」）';
+    infoEl.textContent = '尚未有對應月份（請先填出貨時間 ship_at）';
     return;
   }
 
@@ -928,15 +936,34 @@ function updateVendorStats(){
   let count = 0;
 
   (ORDERS_CACHE || []).forEach(o => {
-    const fo = o || {};
-    if (fo['賣貨便名稱'] === name && fo['賣貨便月份'] === month) {
-      sum   += Number(fo['賣貨便金額'] || 0);
-      count += 1;
+    if (!o) return;
+    const fo = o;
+
+    if (fo['賣貨便名稱'] !== name) return;
+
+    // 這一筆的月份：一樣先看「賣貨便月份」，沒有就用 ship_at 算
+    let m2 = fo['賣貨便月份'] || '';
+    if (!m2) {
+      const shipAt2 = fo.ship_at || '';
+      if (shipAt2) {
+        m2 = String(shipAt2).slice(0, 7);
+      }
     }
+    if (m2 !== month) return;
+
+    // 優先用「賣貨便金額」，沒有就退而用 ship_fee / shipping_fee
+    let amount = fo['賣貨便金額'];
+    if (amount === undefined || amount === null || amount === '') {
+      amount = fo.ship_fee ?? fo.shipping_fee ?? 0;
+    }
+
+    sum   += Number(amount || 0);
+    count += 1;
   });
 
   infoEl.textContent = `${month}，${name} 本月累積 ${count} 筆，合計 ${money(sum)}`;
 }
+
 
  // ★★★ 新增「面交按鈕事件綁定」只加這兩行 ***
 const btnMeetup = $('#btnMeetupNotify');
