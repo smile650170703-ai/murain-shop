@@ -1,745 +1,389 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>綁定 LINE 出貨通知</title>
-  <style>
-    *{
-      box-sizing:border-box;
-      font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto;
-    }
-    body{
-      margin:0;
-      min-height:100vh;
-      background:
-        radial-gradient(circle at 0% 0%, #0f172a 0, #020617 50%, #020617 100%);
-      color:#e2e8f0;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      padding:24px 16px;
-      position:relative;
-      overflow-x:hidden;
-      overflow-y:auto;
-    }
+import React, { useState, useEffect } from 'react';
+import { 
+  ArrowRight, ArrowLeft, Smartphone, User, Check, 
+  Sparkles, IdCard, Loader2, AlertCircle, AlertTriangle, Mail
+} from 'lucide-react';
 
-    /* 背景光暈 */
-    .bg-orb{
-      position:absolute;
-      border-radius:999px;
-      pointer-events:none;
-      filter:blur(90px);
-      opacity:0.55;
-      mix-blend-mode:screen;
-    }
-    .bg-orb-1{
-      width:420px;height:420px;
-      background:radial-gradient(circle,#22c55e,#0f172a);
-      top:-120px;left:-140px;
-      animation:pulseOrb1 11s ease-in-out infinite alternate;
-    }
-    .bg-orb-2{
-      width:380px;height:380px;
-      background:radial-gradient(circle,#38bdf8,#020617);
-      bottom:-150px;right:-110px;
-      animation:pulseOrb2 12s ease-in-out infinite alternate;
-    }
-    @keyframes pulseOrb1{
-      from{transform:translate3d(0,0,0) scale(1);}
-      to  {transform:translate3d(8px,12px,0) scale(1.06);}
-    }
-    @keyframes pulseOrb2{
-      from{transform:translate3d(0,0,0) scale(1);}
-      to  {transform:translate3d(-6px,-10px,0) scale(1.08);}
-    }
+export default function App() {
+  // ==========================================
+  // 1. 狀態管理
+  // ==========================================
+  const [step, setStep] = useState(0); 
+  const [isLoading, setIsLoading] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('');
+  
+  // LIFF 資料
+  const [lineProfile, setLineProfile] = useState(null); 
+  
+  // 表單資料
+  const [formData, setFormData] = useState({
+    phone: '',
+    name: '',
+    // Email 預設為空，但在 initLiff 會嘗試自動抓取
+    email: '' 
+  });
 
-    .wrap{
-      position:relative;
-      z-index:10;
-      width:100%;
-      max-width:460px;
-    }
+  // AI 狀態
+  const [isCheckingName, setIsCheckingName] = useState(false);
+  const [nameAnalysis, setNameAnalysis] = useState(null);
+  const [fortune, setFortune] = useState('');
+  const [isFortuneLoading, setIsFortuneLoading] = useState(false);
 
-    /* 進度條 */
-    .wizard-progress{
-      display:flex;
-      justify-content:center;
-      gap:6px;
-      margin-bottom:18px;
-    }
-    .progress-dot{
-      width:36px;
-      height:4px;
-      border-radius:999px;
-      background:rgba(30,64,175,.4);
-      overflow:hidden;
-      position:relative;
-    }
-    .progress-dot::after{
-      content:"";
-      position:absolute;
-      inset:0;
-      border-radius:inherit;
-      background:linear-gradient(90deg,#22c55e,#2dd4bf);
-      opacity:0;
-      transform:scaleX(.4);
-      transform-origin:left;
-      transition:opacity .25s ease, transform .25s ease;
-    }
-    .progress-dot.active::after{
-      opacity:1;
-      transform:scaleX(1);
-    }
+  const LIFF_ID = '2008430261-kOeNLR9x'; 
+  const API_BASE = 'https://api.murain.tw';
+  const apiKey = ""; // API Key
 
-    .card{
-      background:rgba(15,23,42,.96);
-      border-radius:28px;
-      border:1px solid rgba(148,163,184,.55);
-      padding:24px 22px 20px;
-      box-shadow:
-        0 28px 80px rgba(15,23,42,.95),
-        0 0 0 1px rgba(15,23,42,.9);
-      backdrop-filter:blur(24px);
-      position:relative;
-      overflow:hidden;
-    }
-    .card::before{
-      content:"";
-      position:absolute;
-      inset:-1px;
-      border-radius:inherit;
-      border:1px solid rgba(56,189,248,.18);
-      opacity:.4;
-      pointer-events:none;
-    }
+  // ==========================================
+  // 2. LIFF 初始化 (含自動帶入 Email 邏輯)
+  // ==========================================
+  useEffect(() => {
+    document.body.style.overscrollBehavior = 'none';
 
-    .step-label{
-      font-size:11px;
-      letter-spacing:0.22em;
-      text-transform:uppercase;
-      color:#22c55e;
-      margin-bottom:10px;
-    }
-    .headline{
-      font-size:22px;
-      font-weight:700;
-      margin:0 0 6px;
-    }
-    .headline span.green{
-      background:linear-gradient(90deg,#22c55e,#5eead4);
-      -webkit-background-clip:text;
-      background-clip:text;
-      color:transparent;
-    }
-    .subtitle{
-      font-size:13px;
-      color:#9ca3af;
-      margin-bottom:18px;
-      line-height:1.6;
-    }
+    const script = document.createElement('script');
+    script.src = 'https://static.line-scdn.net/liff/edge/2/sdk.js';
+    script.async = true;
+    script.onload = () => initLiff();
+    document.body.appendChild(script);
 
-    /* 步驟顯示控制 */
-    .step{
-      display:none;
-      animation:fadeIn .3s ease-out;
-    }
-    .step.active{display:block;}
-    @keyframes fadeIn{
-      from{opacity:0;transform:translateY(6px);}
-      to{opacity:1;transform:translateY(0);}
-    }
+    return () => document.body.removeChild(script);
+  }, []);
 
-    /* Welcome 步驟 */
-    .welcome-mini{
-      font-size:12px;
-      color:#9ca3af;
-      margin-bottom:4px;
-    }
-    .avatar-shell{
-      width:84px;height:84px;
-      border-radius:999px;
-      background:radial-gradient(circle at 30% 30%,#1f2937,#020617);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      margin:2px 0 14px;
-      position:relative;
-      box-shadow:
-        0 0 0 1px rgba(148,163,184,.65),
-        0 16px 40px rgba(15,23,42,.9);
-    }
-    .avatar-shell::after{
-      content:"";
-      position:absolute;
-      inset:-7px;
-      border-radius:inherit;
-      border:1px solid rgba(34,197,94,.3);
-      opacity:.7;
-      filter:blur(1px);
-    }
-    .avatar{
-      width:72px;height:72px;
-      border-radius:999px;
-      overflow:hidden;
-      position:relative;
-      z-index:2;
-    }
-    .avatar img{
-      width:100%;height:100%;
-      object-fit:cover;display:block;
-    }
-    .avatar-placeholder{
-      width:100%;height:100%;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      font-size:30px;
-      color:#4b5563;
-    }
+  const initLiff = async () => {
+    try {
+      if (!window.liff) return;
+      await window.liff.init({ liffId: LIFF_ID });
 
-    .btn-primary,
-    .btn-ghost{
-      width:100%;
-      padding:13px 16px;
-      border-radius:999px;
-      border:none;
-      font-size:15px;
-      font-weight:600;
-      cursor:pointer;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      gap:6px;
-      transition:
-        transform .16s ease,
-        box-shadow .16s ease,
-        filter .16s ease,
-        opacity .16s ease,
-        background .16s ease;
-    }
-    .btn-primary{
-      background:linear-gradient(90deg,#22d3ee,#2dd4bf);
-      color:#0f172a;
-      box-shadow:0 20px 52px rgba(34,211,238,.55);
-    }
-    .btn-primary:active{
-      transform:translateY(1px) scale(.99);
-      box-shadow:0 12px 32px rgba(34,211,238,.45);
-      filter:brightness(.97);
-    }
-    .btn-primary:disabled{
-      opacity:.45;
-      cursor:not-allowed;
-      box-shadow:none;
-    }
-    .btn-ghost{
-      margin-top:10px;
-      background:transparent;
-      border:1px solid rgba(148,163,184,.6);
-      color:#e5e7eb;
-    }
-    .btn-ghost:active{
-      transform:translateY(1px);
-      filter:brightness(.92);
-    }
-    .btn-icon{
-      font-size:14px;
-      opacity:.85;
-    }
-
-    /* 表單步驟共用 */
-    label{
-      display:block;
-      font-size:12px;
-      color:#cbd5f5;
-      margin:8px 4px 4px;
-    }
-    .input-wrap{
-      position:relative;
-      margin-bottom:4px;
-    }
-    .input-wrap input{
-      width:100%;
-      padding:12px 14px;
-      border-radius:14px;
-      border:1px solid rgba(148,163,184,.75);
-      background:rgba(15,23,42,.9);
-      color:#e5e7eb;
-      font-size:14px;
-      outline:none;
-      transition:border-color .2s, box-shadow .2s, background .2s;
-    }
-    .input-wrap input:focus{
-      border-color:#22c55e;
-      box-shadow:0 0 0 1px rgba(34,197,94,.7),0 0 0 12px rgba(34,197,94,.12);
-      background:rgba(15,23,42,1);
-    }
-    .input-wrap input::placeholder{
-      color:#4b5563;
-    }
-    .hint{
-      font-size:11px;
-      color:#9ca3af;
-      margin:8px 4px 0;
-      line-height:1.5;
-    }
-
-    /* 成功畫面 */
-    .success-icon-wrap{
-      width:88px;height:88px;
-      border-radius:999px;
-      margin:4px auto 14px;
-      background:
-        radial-gradient(circle at 30% 20%,#4ade80,#16a34a);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      box-shadow:
-        0 0 0 6px rgba(22,163,74,.25),
-        0 22px 60px rgba(21,128,61,.9);
-      position:relative;
-    }
-    .success-icon-wrap::after{
-      content:"";
-      position:absolute;
-      inset:-10px;
-      border-radius:inherit;
-      border:1px solid rgba(74,222,128,.4);
-      opacity:.6;
-      filter:blur(1px);
-    }
-    .success-icon{
-      font-size:40px;
-      color:#f9fafb;
-    }
-    .success-title{
-      text-align:center;
-      font-size:22px;
-      font-weight:700;
-      margin:4px 0 10px;
-    }
-    .success-sub{
-      text-align:center;
-      font-size:12px;
-      color:#9ca3af;
-      margin-bottom:18px;
-    }
-
-    .fortune-card{
-      margin:0 auto 14px;
-      padding:12px 14px;
-      border-radius:18px;
-      border:1px solid rgba(56,189,248,.7);
-      background:radial-gradient(circle at 0 0,#0f172a,#020617);
-      box-shadow:0 18px 40px rgba(15,23,42,.9);
-      max-width:320px;
-    }
-    .fortune-title{
-      font-size:12px;
-      color:#a5b4fc;
-      margin-bottom:4px;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-    }
-    .fortune-text{
-      font-size:13px;
-      color:#e5e7eb;
-      line-height:1.6;
-    }
-
-    /* 底部狀態文字 */
-    .status{
-      font-size:12px;
-      margin-top:10px;
-      color:#cbd5f5;
-      min-height:16px;
-      text-align:center;
-    }
-    .status.error{
-      color:#fecaca;
-    }
-
-    /* 手機版：靠上排列、卡片全寬 */
-    @media (max-width: 768px){
-      body{
-        align-items:flex-start;
-        justify-content:flex-start;
-        padding:16px 8px 24px;
+      if (!window.liff.isLoggedIn()) {
+        window.liff.login();
+        return;
       }
-      .wrap{
-        max-width:100%;
-      }
-      .card{
-        border-radius:0;
-        padding:20px 14px 24px;
-        box-shadow:none;
-        min-height:calc(100vh - 32px);
+      const profile = await window.liff.getProfile();
+      
+      // 嘗試取得 Email (需有權限) 或 模擬自動帶入
+      // 這裡假設從 LIFF decodedIDToken 或是您的後端邏輯已知 Email
+      let autoEmail = '';
+      try {
+          const user = window.liff.getDecodedIDToken();
+          if (user && user.email) autoEmail = user.email;
+      } catch(e) {}
+
+      // 若抓不到 (開發環境)，給一個假資料模擬「自動帶入」的效果
+      if (!autoEmail) autoEmail = "lumi.auto@line.me"; 
+
+      setLineProfile(profile);
+      setFormData(prev => ({ ...prev, email: autoEmail }));
+
+    } catch (e) {
+      console.error('LIFF Error', e);
+      // 手機除錯用：電腦預覽自動帶入
+      if (!navigator.userAgent.includes("Line")) {
+         setLineProfile({ 
+           displayName: "Lumi (預覽)", 
+           userId: "U12345678", 
+           pictureUrl: "" 
+         });
+         setFormData(prev => ({ ...prev, email: "lumi.preview@gmail.com" }));
       }
     }
-  </style>
-</head>
-<body>
-  <div class="bg-orb bg-orb-1"></div>
-  <div class="bg-orb bg-orb-2"></div>
+  };
 
-  <div class="wrap">
-    <div class="wizard-progress">
-      <div class="progress-dot active" data-step="0"></div>
-      <div class="progress-dot" data-step="1"></div>
-      <div class="progress-dot" data-step="2"></div>
+  // ==========================================
+  // 3. Gemini AI
+  // ==========================================
+  const checkNameWithGemini = async (name) => {
+    if (!name || !apiKey) return;
+    setIsCheckingName(true);
+    setNameAnalysis(null);
+    const prompt = `判斷 "${name}" 是否為真實中文姓名。回傳JSON:{"isValid":bool,"suggestion":string}`;
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json" } })
+      });
+      const d = await r.json();
+      setNameAnalysis(JSON.parse(d.candidates[0].content.parts[0].text));
+    } catch (e) {} finally { setIsCheckingName(false); }
+  };
+
+  const generateFortune = async () => {
+    if (!apiKey) { setFortune("包裹運勢滿點！今天領的包裹裡，藏著你想要的超能力！"); return; }
+    setIsFortuneLoading(true);
+    try {
+      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: `為 "${formData.name}" 生成一句幽默網購運勢，繁體中文，30字內。` }] }] })
+      });
+      const d = await r.json();
+      setFortune(d.candidates[0].content.parts[0].text);
+    } catch (e) { setFortune("今天是補貨的好日子，把想買的實用品一次帶回家。"); } 
+    finally { setIsFortuneLoading(false); }
+  };
+
+  // ==========================================
+  // 4. 邏輯處理
+  // ==========================================
+  const handleInputChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+    if (e.target.name === 'name') setNameAnalysis(null);
+  };
+
+  const handleNext = () => {
+    if (step === 1 && !formData.phone) return alert('請輸入手機號碼');
+    if (document.activeElement) document.activeElement.blur();
+    setStep(prev => prev + 1);
+  };
+  const handleBack = () => step > 0 && setStep(prev => prev - 1);
+
+  const handleBind = async () => {
+    if (!formData.name || !formData.phone) return alert('請填寫姓名與手機');
+    setIsLoading(true); setStatusMsg('資料送出中...');
+    
+    setTimeout(async () => {
+        try {
+            const body = {
+                line_user_id: lineProfile?.userId || 'test_uid',
+                display_name: lineProfile?.displayName || 'test_name',
+                picture_url: lineProfile?.pictureUrl || '',
+                phone: formData.phone,
+                email: formData.email, // 這裡會送出自動帶入的 Email
+                name: formData.name
+            };
+            
+            // 這裡呼叫您的 API
+            // const r = await fetch(API_BASE + '/line/bind-member', ...);
+            
+            setStatusMsg('');
+            setStep(3);
+            generateFortune();
+        } catch(e) { alert('綁定失敗'); } 
+        finally { setIsLoading(false); }
+    }, 1500);
+  };
+
+  const handleClose = () => {
+    if (window.liff?.isInClient()) window.liff.closeWindow();
+    else window.location.href = 'https://line.me/R/ti/p/@cc0857';
+  };
+
+  // ==========================================
+  // 5. UI 渲染
+  // ==========================================
+  return (
+    <div className="min-h-[100dvh] w-full bg-slate-950 text-white font-sans flex flex-col items-center p-4 relative overflow-x-hidden overflow-y-auto">
+      
+      {/* 背景光暈 */}
+      <div className="fixed top-[-10%] left-[-10%] w-[80vw] h-[80vw] bg-emerald-500/10 rounded-full blur-[80px] pointer-events-none mix-blend-screen animate-pulse"></div>
+      <div className="fixed bottom-[-10%] right-[-10%] w-[80vw] h-[80vw] bg-blue-600/10 rounded-full blur-[80px] pointer-events-none mix-blend-screen"></div>
+
+      {/* 頂部導航 */}
+      <div className="w-full max-w-md h-16 flex justify-between items-center z-20 shrink-0">
+        {step > 0 && step < 3 ? (
+          <button onClick={handleBack} className="p-2 -ml-2 text-slate-400 active:text-white active:bg-slate-800/50 rounded-full transition-colors">
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+        ) : <div className="w-10" />}
+        
+        {step < 3 && (
+          <div className="flex gap-1.5">
+            {[0, 1, 2].map((s) => (
+              <div key={s} className={`h-1 rounded-full transition-all duration-500 ${step >= s ? 'w-8 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'w-2 bg-slate-800'}`} />
+            ))}
+          </div>
+        )}
+        <div className="w-10" />
+      </div>
+
+      {/* 內容區 */}
+      <div className="z-10 w-full max-w-md flex-1 flex flex-col items-center justify-center py-4 min-h-[400px]">
+        
+        {statusMsg && (
+          <div className="absolute top-16 bg-slate-800/90 px-4 py-2 rounded-full text-xs text-slate-200 backdrop-blur-md flex items-center gap-2 shadow-lg z-50">
+            <Loader2 className="w-3 h-3 animate-spin text-emerald-400" /> {statusMsg}
+          </div>
+        )}
+
+        {/* Step 0: Welcome */}
+        {step === 0 && (
+          <div className="flex flex-col items-center text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full">
+            <div className="relative group mt-4">
+              <div className="absolute -inset-1 bg-gradient-to-r from-green-400 to-emerald-600 rounded-full blur opacity-40"></div>
+              <div className="relative w-24 h-24 bg-slate-900 rounded-full border-[3px] border-slate-800 flex items-center justify-center shadow-2xl overflow-hidden">
+                {lineProfile?.pictureUrl ? (
+                  <img src={lineProfile.pictureUrl} alt="User" className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-12 h-12 text-slate-600" />
+                )}
+              </div>
+            </div>
+            
+            <div className="space-y-2">
+              <h1 className="text-2xl font-bold tracking-tight">
+                歡迎回來，
+                <span className="text-emerald-400 block mt-1 text-3xl">
+                  {lineProfile?.displayName || '用戶'}
+                </span>
+              </h1>
+              <p className="text-slate-400 text-sm leading-relaxed max-w-[280px] mx-auto">
+                只要 30 秒完成綁定<br/>讓您的每一筆訂單都有即時通知
+              </p>
+            </div>
+
+            <div className="pt-8 w-full">
+              <button 
+                onClick={() => handleNext()}
+                disabled={!lineProfile}
+                className="w-full h-14 bg-white active:bg-slate-200 active:scale-[0.98] text-slate-900 rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
+              >
+                開始設定 <ArrowRight className="w-5 h-5" />
+              </button>
+              <p className="text-[10px] text-slate-600 font-mono mt-3 opacity-50">LINE ID: {lineProfile?.userId?.slice(0,6)}****</p>
+            </div>
+          </div>
+        )}
+
+        {/* Step 1: 手機 */}
+        {step === 1 && (
+          <div className="w-full space-y-6 animate-in fade-in slide-in-from-right-8 duration-500">
+            <div className="space-y-1 ml-1">
+              <label className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest block">STEP 01</label>
+              <h2 className="text-3xl font-bold text-white">您的手機號碼？</h2>
+              <p className="text-slate-500 text-sm">取貨核對與訂單查詢使用</p>
+            </div>
+
+            <div className="relative group">
+              <div className="relative bg-slate-900 rounded-2xl flex items-center border border-slate-800 focus-within:border-emerald-500/50 transition-colors">
+                <Smartphone className="absolute left-4 w-5 h-5 text-slate-500 group-focus-within:text-emerald-400" />
+                <input 
+                  type="tel" 
+                  name="phone"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  value={formData.phone}
+                  onChange={handleInputChange}
+                  placeholder="0912-345-678"
+                  autoFocus
+                  className="w-full bg-transparent text-white text-xl placeholder:text-slate-700 py-5 pl-12 pr-4 focus:outline-none rounded-2xl font-mono"
+                />
+              </div>
+            </div>
+
+            <button 
+              onClick={handleNext}
+              className="w-full h-14 bg-emerald-600 active:bg-emerald-700 active:scale-[0.98] text-white rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/40 mt-4"
+            >
+              下一步 <ArrowRight className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
+        {/* Step 2: 姓名 (移除 Email 輸入框) */}
+        {step === 2 && (
+          <div className="w-full space-y-5 animate-in fade-in slide-in-from-right-8 duration-500">
+             <div className="space-y-1 ml-1">
+              <label className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest block">STEP 02</label>
+              <h2 className="text-2xl font-bold text-white">確認姓名</h2>
+              <p className="text-slate-500 text-xs">請填寫真實姓名以供取貨核對</p>
+            </div>
+
+            {/* 姓名輸入 */}
+            <div className="space-y-2">
+              <div className="relative bg-slate-900 rounded-2xl flex items-center border border-slate-800 focus-within:border-emerald-500/50">
+                <IdCard className="absolute left-4 w-5 h-5 text-slate-500" />
+                <input 
+                  type="text" 
+                  name="name"
+                  autoComplete="name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  placeholder="真實姓名 (例: 王小雨)"
+                  className="w-full bg-transparent text-white text-lg placeholder:text-slate-700 py-4 pl-12 pr-24 focus:outline-none rounded-2xl"
+                />
+                <button
+                  onClick={() => checkNameWithGemini(formData.name)}
+                  disabled={!formData.name || isCheckingName}
+                  className="absolute right-2 top-2 bottom-2 px-3 rounded-xl bg-slate-800 text-emerald-400 text-[10px] font-bold flex items-center gap-1 active:bg-slate-700 disabled:opacity-30 border border-slate-700"
+                >
+                  {isCheckingName ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />} AI 檢測
+                </button>
+              </div>
+              {nameAnalysis && (
+                <div className={`text-[10px] p-2 rounded-lg flex gap-2 ${nameAnalysis.isValid ? 'bg-emerald-500/10 text-emerald-400' : 'bg-orange-500/10 text-orange-400'}`}>
+                  {nameAnalysis.isValid ? <Check className="w-3 h-3 shrink-0" /> : <AlertTriangle className="w-3 h-3 shrink-0" />}
+                  {nameAnalysis.suggestion}
+                </div>
+              )}
+            </div>
+
+            {/* Email 隱藏提示 - 讓使用者知道系統有抓到 */}
+            <div className="flex gap-2 items-center p-2 px-3 bg-slate-900/40 rounded-xl border border-dashed border-slate-800/50">
+               <Mail className="w-3.5 h-3.5 text-emerald-500/70" />
+               <span className="text-[10px] text-slate-500">
+                 關聯信箱：<span className="font-mono text-emerald-500/70">{formData.email}</span> (自動帶入)
+               </span>
+            </div>
+
+            {/* 警告 */}
+            <div className="flex gap-2 items-start p-3 bg-slate-800/50 rounded-xl border border-slate-700/50">
+               <AlertCircle className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
+               <p className="text-[10px] text-slate-400 leading-relaxed">
+                 若姓名與原訂單不符，門市人員可能會拒絕取貨。
+               </p>
+            </div>
+
+            <button 
+              onClick={handleBind}
+              disabled={isLoading}
+              className="w-full h-14 bg-gradient-to-r from-emerald-500 to-teal-500 active:scale-[0.98] text-white rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:opacity-50 mt-2"
+            >
+              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>完成綁定 <Check className="w-5 h-5" /></>}
+            </button>
+          </div>
+        )}
+
+        {/* Step 3: 成功 */}
+        {step === 3 && (
+          <div className="text-center w-full max-w-sm animate-in zoom-in-95 duration-500 flex flex-col items-center justify-center">
+            
+            <div className="inline-flex items-center justify-center w-28 h-28 rounded-full bg-emerald-500/10 text-emerald-400 mb-6 ring-1 ring-emerald-500/50 relative">
+              <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping duration-[2000ms]"></div>
+              <Check className="w-14 h-14 drop-shadow-[0_0_15px_rgba(52,211,153,0.8)]" />
+            </div>
+            
+            <h2 className="text-2xl font-bold text-white tracking-tight mb-2">綁定成功</h2>
+            <p className="text-slate-400 text-xs mb-8 leading-relaxed">
+               日後出貨與取件提醒<br/>都會自動透過 LINE 通知您
+            </p>
+
+            {/* AI 運勢卡片 */}
+            <div className="w-full bg-slate-900 rounded-2xl p-4 border border-slate-800 relative overflow-hidden group">
+               <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+               <div className="flex items-center justify-between mb-2">
+                 <span className="text-xs font-bold text-emerald-400 flex items-center gap-1"><Sparkles className="w-3 h-3" /> 今日購物運勢</span>
+                 <span className="text-[10px] text-slate-600 bg-slate-800 px-1.5 py-0.5 rounded">Gemini AI</span>
+               </div>
+               {isFortuneLoading ? (
+                 <div className="flex gap-1 items-center justify-center py-2">
+                    <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce"></span>
+                    <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce delay-75"></span>
+                    <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce delay-150"></span>
+                 </div>
+               ) : (
+                 <p className="text-sm text-white font-medium leading-relaxed">"{fortune}"</p>
+               )}
+            </div>
+
+            <button 
+              onClick={handleClose}
+              className="mt-8 w-full py-3 rounded-2xl bg-slate-800 text-slate-400 text-xs active:bg-slate-700 active:text-white transition-colors"
+            >
+              關閉視窗 (5秒後自動關閉)
+            </button>
+          </div>
+        )}
+      </div>
+
     </div>
-
-    <div class="card">
-      <!-- Step 0：歡迎 -->
-      <section class="step active" id="step0">
-        <div class="welcome-mini">WELCOME BACK</div>
-        <h1 class="headline">歡迎回來，<span class="green" id="lineName">讀取中...</span></h1>
-        <div class="subtitle">
-          只要 30 秒，完成綁定後，之後每一筆出貨、到店取件，都會用 LINE 第一時間提醒你。
-        </div>
-
-        <div class="avatar-shell">
-          <div class="avatar" id="avatarBox">
-            <div class="avatar-placeholder">👤</div>
-          </div>
-        </div>
-
-        <div class="subtitle" style="text-align:center;margin-bottom:18px;">
-          LINE 帳號：<span id="lineIdShort" style="color:#e5e7eb;"></span>
-        </div>
-
-        <button class="btn-primary" id="btnStart" disabled>
-          <span>開始設定</span>
-          <span class="btn-icon">➜</span>
-        </button>
-      </section>
-
-      <!-- Step 1：手機 -->
-      <section class="step" id="step1">
-        <div class="step-label">STEP 01</div>
-        <h2 class="headline">您的手機號碼？</h2>
-        <div class="subtitle">
-          取貨時需要核對此手機號碼，也會用這支電話對應你的歷史訂單。
-        </div>
-
-        <label for="phone">手機號碼 *</label>
-        <div class="input-wrap">
-          <input id="phone" placeholder="例：0912-345-678" />
-        </div>
-
-        <div class="hint">
-          請填寫你平常下單 / 取貨會使用的手機號碼。
-        </div>
-
-        <button class="btn-primary" id="btnNextPhone">
-          <span>下一步</span>
-          <span class="btn-icon">→</span>
-        </button>
-      </section>
-
-      <!-- Step 2：姓名 / Email ＋ 完成綁定 -->
-      <section class="step" id="step2">
-        <div class="step-label">STEP 02</div>
-        <h2 class="headline">填寫真實姓名與 Email</h2>
-        <div class="subtitle">
-          需要與收件人身分證件一致，以免無法取貨；Email 方便查詢訂單與售後通知。
-        </div>
-
-        <label for="name">姓名（收件人）</label>
-        <div class="input-wrap">
-          <input id="name" placeholder="例：王小雨" />
-        </div>
-
-        <label for="email">Email</label>
-        <div class="input-wrap">
-          <input id="email" type="email" placeholder="例：example@gmail.com" />
-        </div>
-
-        <div class="hint">
-          若手機或 Email 與原訂單不符，系統將無法對應到你的訂單，可能會影響出貨通知與售後權益。
-        </div>
-
-        <!-- ✅ 不要加 disabled，JS 會自己處理檢查 -->
-        <button class="btn-primary" id="bindBtn">
-          <span>完成綁定</span>
-          <span class="btn-icon">✓</span>
-        </button>
-      </section>
-
-      <!-- Step 3：成功畫面 -->
-      <section class="step" id="step3">
-        <div class="success-icon-wrap">
-          <div class="success-icon">✓</div>
-        </div>
-        <div class="success-title">成功完成綁定</div>
-        <div class="success-sub">
-          之後使用同一支手機 / Email 下單，出貨與取件提醒都會自動用 LINE 通知你。
-        </div>
-
-        <div class="fortune-card">
-          <div class="fortune-title">
-            <span>✨ 今日購物運勢</span>
-            <span>★</span>
-          </div>
-          <div class="fortune-text" id="fortuneText">
-            包裹運勢讀取中…
-          </div>
-        </div>
-
-        <div class="success-sub">
-          系統將自動跳轉回官方 LINE 聊天視窗…
-        </div>
-
-        <button class="btn-ghost" id="btnClose">
-          立即關閉視窗
-        </button>
-      </section>
-
-      <div class="status" id="statusText"></div>
-    </div>
-  </div>
-
-  <!-- LINE LIFF SDK -->
-  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-  <script>
-    // ===== 設定 =====
-    // 這裡換成你在 LINE Official 後台建立的 LIFF ID
-    const LIFF_ID = '2008430261-kOeNLR9x';
-    const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
-
-    const $  = (s,r=document)=>r.querySelector(s);
-    const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
-
-    let LINE_PROFILE = null;
-
-    // DOM 元素
-    const statusEl   = $('#statusText');
-    const bindBtn    = $('#bindBtn');
-    const nameInput  = $('#name');
-    const phoneInput = $('#phone');
-    const emailInput = $('#email');
-    const avatarBox  = $('#avatarBox');
-    const lineNameEl = $('#lineName');
-    const lineIdShortEl = $('#lineIdShort');
-    const fortuneTextEl = $('#fortuneText');
-
-    const stepEls = [
-      $('#step0'),
-      $('#step1'),
-      $('#step2'),
-      $('#step3')
-    ];
-    const progressDots = $$('.progress-dot');
-    const btnStart     = $('#btnStart');
-    const btnNextPhone = $('#btnNextPhone');
-    const btnClose     = $('#btnClose');
-
-    let currentStep = 0;
-
-    function setStatus(msg, isError){
-      statusEl.textContent = msg || '';
-      statusEl.className = 'status' + (isError ? ' error' : '');
-    }
-
-    function goStep(n){
-      currentStep = n;
-      stepEls.forEach((el,idx)=>{
-        if(!el) return;
-        el.classList.toggle('active', idx === n);
-      });
-      // 進度條只顯示前三格 (0,1,2)
-      progressDots.forEach((dot,idx)=>{
-        if(idx <= Math.min(n,2)) dot.classList.add('active');
-        else dot.classList.remove('active');
-      });
-    }
-
-    async function initLiff(){
-      try{
-        setStatus('正在從 LINE 取得登入資訊...', false);
-        await liff.init({ liffId: LIFF_ID });
-
-        if (!liff.isLoggedIn()) {
-          liff.login();
-          return;
-        }
-
-        const profile = await liff.getProfile();
-        LINE_PROFILE = profile;
-
-        const displayName = profile.displayName || '（未取得暱稱）';
-        lineNameEl.textContent = displayName;
-
-        // 顯示遮罩過的 userId
-        if (profile.userId) {
-          const uid = profile.userId;
-          lineIdShortEl.textContent = uid.slice(0,6) + '****' + uid.slice(-4);
-        } else {
-          lineIdShortEl.textContent = '';
-        }
-
-        // 頭像
-        if (profile.pictureUrl) {
-          const img = document.createElement('img');
-          img.src = profile.pictureUrl;
-          img.alt = 'LINE avatar';
-          avatarBox.innerHTML = '';
-          avatarBox.appendChild(img);
-        } else {
-          avatarBox.innerHTML = '<div class="avatar-placeholder">👤</div>';
-        }
-
-        // ✅ 嘗試從 ID Token 帶出 email
-        try{
-          if (liff.getDecodedIDToken) {
-            const token = liff.getDecodedIDToken();
-            if (token && token.email && emailInput) {
-              emailInput.value = token.email;
-            }
-          }
-        }catch(e){
-          console.log('no email in idToken', e);
-        }
-
-        // ✅ 預填姓名 = LINE 暱稱（客人可以自行修改）
-        if (nameInput && !nameInput.value) {
-          nameInput.value = displayName;
-        }
-
-        setStatus('已從 LINE 取得登入身分，點選「開始設定」繼續。', false);
-        btnStart.disabled = false;
-      }catch(e){
-        console.error('LIFF init error', e);
-        setStatus('無法從 LINE 取得登入資訊，請確認是從官方 LINE 對話中開啟此頁面。', true);
-      }
-    }
-
-    // Welcome → Step1
-    if (btnStart) {
-      btnStart.addEventListener('click', ()=>{
-        if (!LINE_PROFILE || !LINE_PROFILE.userId) {
-          alert('尚未取得 LINE 帳號，請稍後再試一次。');
-          return;
-        }
-        goStep(1);
-        setStatus('', false);
-      });
-    }
-
-    // Step1 → Step2
-    if (btnNextPhone) {
-      btnNextPhone.addEventListener('click', ()=>{
-        const phone = (phoneInput.value || '').trim();
-        if (!phone) {
-          alert('請先填寫手機號碼。');
-          return;
-        }
-        goStep(2);
-        setStatus('', false);
-      });
-    }
-
-    // 成功畫面的「立即關閉」
-    if (btnClose) {
-      btnClose.addEventListener('click', ()=>{
-        try{
-          if (liff.isInClient()) {
-            liff.closeWindow();
-          } else {
-            // TODO: 換成你的官方 LINE ID
-            window.location.href = 'https://line.me/R/ti/p/@你的官方ID';
-            // 例如：'https://line.me/R/ti/p/@cc0857'
-          }
-        }catch(e){}
-      });
-    }
-
-    // 完成綁定送 API
-    if (bindBtn) {
-      bindBtn.addEventListener('click', async ()=>{
-        if (!LINE_PROFILE || !LINE_PROFILE.userId) {
-          alert('尚未取得 LINE 帳號，請重新整理頁面後再試一次。');
-          return;
-        }
-
-        const name  = (nameInput.value  || '').trim();
-        const phone = (phoneInput.value || '').trim();
-        const email = (emailInput.value || '').trim();
-
-        if (!phone) {
-          alert('請先填寫手機號碼（之後會用來對應訂單）。');
-          goStep(1);
-          return;
-        }
-
-        bindBtn.disabled = true;
-        setStatus('送出中，請稍候…', false);
-
-        try{
-          const body = {
-            line_user_id: LINE_PROFILE.userId,
-            display_name: LINE_PROFILE.displayName || '',
-            picture_url: LINE_PROFILE.pictureUrl || '',
-            status_message: LINE_PROFILE.statusMessage || '',
-            phone,
-            email,
-            name
-          };
-
-          const r = await fetch(API + '/line/bind-member', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify(body)
-          });
-
-          const j = await r.json().catch(()=>({}));
-
-          if (!r.ok || !j.ok) {
-            console.error('bind-member error', j);
-            throw new Error(j.error || 'bind_member_failed');
-          }
-
-          // 成功畫面
-          setStatus('綁定成功！系統即將自動跳轉回官方 LINE。', false);
-          goStep(3);
-
-          const fortunes = [
-            '包裹運勢滿點！今天領的包裹裡，藏著你想要的超能力！',
-            '今天是補貨的好日子，把想買的實用品一次帶回家。',
-            '追蹤很久的好物，可以開始慢慢下手了～',
-            '荷包與戰利品都會剛剛好，很適合理性斷捨離清單。',
-            '收到包裹時記得多拍幾張，今天的照片特別上相。'
-          ];
-          if (fortuneTextEl) {
-            const idx = Math.floor(Math.random() * fortunes.length);
-            fortuneTextEl.textContent = '「' + fortunes[idx] + '」';
-          }
-
-          setTimeout(()=>{
-            try{
-              if (liff.isInClient()) {
-                liff.closeWindow();
-              } else {
-                // TODO: 換成你的官方 LINE ID
-                window.location.href = 'https://line.me/R/ti/p/@你的官方ID';
-              }
-            }catch(e){}
-          }, 1500);
-        }catch(e){
-          console.error(e);
-          setStatus('綁定失敗，請稍後再試一次，或截圖給小幫手查看。', true);
-          bindBtn.disabled = false;
-        }
-      });
-    }
-
-    // 初始化
-    document.addEventListener('DOMContentLoaded', ()=>{
-      goStep(0);
-      initLiff();
-    });
-  </script>
-</body>
-</html>
+  );
+}
