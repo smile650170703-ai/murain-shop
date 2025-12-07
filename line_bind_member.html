@@ -131,29 +131,59 @@ setFormData(prev => ({
   const handleBack = () => step > 0 && setStep(prev => prev - 1);
 
   const handleBind = async () => {
-    if (!formData.name || !formData.phone) return alert('請填寫姓名與手機');
-    setIsLoading(true); setStatusMsg('資料送出中...');
-    
-    setTimeout(async () => {
-        try {
-            const body = {
-                line_user_id: lineProfile?.userId || 'test_uid',
-                display_name: lineProfile?.displayName || 'test_name',
-                picture_url: lineProfile?.pictureUrl || '',
-                phone: formData.phone,
-                email: formData.email,
-                name: formData.name
-            };
-            // 這裡呼叫您的 API
-            // const r = await fetch(API_BASE + '/line/bind-member', ...);
-            
-            setStatusMsg('');
-            setStep(3);
-            generateFortune();
-        } catch(e) { alert('綁定失敗'); } 
-        finally { setIsLoading(false); }
-    }, 1500);
-  };
+  // 必填檢查
+  if (!lineProfile || !lineProfile.userId) {
+    alert('尚未取得 LINE 帳號資訊，請在官方 LINE 裡開啟此頁面。');
+    return;
+  }
+  if (!formData.name || !formData.phone) {
+    alert('請填寫姓名與手機');
+    return;
+  }
+
+  setIsLoading(true);
+  setStatusMsg('資料送出中...');
+
+  try {
+    const body = {
+      line_user_id: lineProfile.userId,
+      display_name: lineProfile.displayName || '',
+      picture_url: lineProfile.pictureUrl || '',
+      status_message: lineProfile.statusMessage || '',
+      phone: formData.phone,
+      email: formData.email,
+      name: formData.name
+    };
+
+    const r = await fetch(API_BASE + '/line/bind-member', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      console.error('bind-member error', j);
+      throw new Error(j.error || 'bind_member_failed');
+    }
+
+    // 成功 → 跳成功畫面 + 運勢
+    setStatusMsg('');
+    setStep(3);
+    generateFortune();
+
+    // 自動關閉（你原本寫「5秒後自動關閉」就可以另外在 useEffect 裡做）
+    // 這邊我先不幫你動，保持你現有的 handleClose 邏輯就好
+
+  } catch (e) {
+    console.error(e);
+    alert('綁定失敗，請稍後再試一次。');
+  } finally {
+    setIsLoading(false);
+  }
+};
+
 
   const handleClose = () => {
     if (window.liff?.isInClient()) window.liff.closeWindow();
