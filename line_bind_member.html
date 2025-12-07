@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   ArrowRight, ArrowLeft, Smartphone, User, Check, 
-  Sparkles, IdCard, Loader2, AlertCircle, AlertTriangle, Mail
+  Sparkles, IdCard, Loader2, AlertCircle, AlertTriangle, Mail, ShoppingCart
 } from 'lucide-react';
 
 export default function App() {
@@ -19,7 +19,6 @@ export default function App() {
   const [formData, setFormData] = useState({
     phone: '',
     name: '',
-    // Email 預設為空，但在 initLiff 會嘗試自動抓取
     email: '' 
   });
 
@@ -34,7 +33,7 @@ export default function App() {
   const apiKey = ""; // API Key
 
   // ==========================================
-  // 2. LIFF 初始化 (含自動帶入 Email 邏輯)
+  // 2. LIFF 初始化
   // ==========================================
   useEffect(() => {
     document.body.style.overscrollBehavior = 'none';
@@ -59,15 +58,11 @@ export default function App() {
       }
       const profile = await window.liff.getProfile();
       
-      // 嘗試取得 Email (需有權限) 或 模擬自動帶入
-      // 這裡假設從 LIFF decodedIDToken 或是您的後端邏輯已知 Email
       let autoEmail = '';
       try {
           const user = window.liff.getDecodedIDToken();
           if (user && user.email) autoEmail = user.email;
       } catch(e) {}
-
-      // 若抓不到 (開發環境)，給一個假資料模擬「自動帶入」的效果
       if (!autoEmail) autoEmail = "lumi.auto@line.me"; 
 
       setLineProfile(profile);
@@ -75,7 +70,6 @@ export default function App() {
 
     } catch (e) {
       console.error('LIFF Error', e);
-      // 手機除錯用：電腦預覽自動帶入
       if (!navigator.userAgent.includes("Line")) {
          setLineProfile({ 
            displayName: "Lumi (預覽)", 
@@ -147,10 +141,9 @@ export default function App() {
                 display_name: lineProfile?.displayName || 'test_name',
                 picture_url: lineProfile?.pictureUrl || '',
                 phone: formData.phone,
-                email: formData.email, // 這裡會送出自動帶入的 Email
+                email: formData.email,
                 name: formData.name
             };
-            
             // 這裡呼叫您的 API
             // const r = await fetch(API_BASE + '/line/bind-member', ...);
             
@@ -204,33 +197,48 @@ export default function App() {
           </div>
         )}
 
-        {/* Step 0: Welcome */}
+        {/* Step 0: Welcome (新增首購提示) */}
         {step === 0 && (
-          <div className="flex flex-col items-center text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full">
-            <div className="relative group mt-4">
+          <div className="flex flex-col items-center text-center space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full">
+            
+            <div className="relative group mt-2">
               <div className="absolute -inset-1 bg-gradient-to-r from-green-400 to-emerald-600 rounded-full blur opacity-40"></div>
-              <div className="relative w-24 h-24 bg-slate-900 rounded-full border-[3px] border-slate-800 flex items-center justify-center shadow-2xl overflow-hidden">
+              <div className="relative w-20 h-20 bg-slate-900 rounded-full border-[3px] border-slate-800 flex items-center justify-center shadow-2xl overflow-hidden">
                 {lineProfile?.pictureUrl ? (
                   <img src={lineProfile.pictureUrl} alt="User" className="w-full h-full object-cover" />
                 ) : (
-                  <User className="w-12 h-12 text-slate-600" />
+                  <User className="w-10 h-10 text-slate-600" />
                 )}
               </div>
             </div>
             
-            <div className="space-y-2">
-              <h1 className="text-2xl font-bold tracking-tight">
+            <div className="space-y-1">
+              <h1 className="text-xl font-bold tracking-tight text-slate-200">
                 歡迎回來，
-                <span className="text-emerald-400 block mt-1 text-3xl">
+                <span className="text-emerald-400 font-bold ml-1">
                   {lineProfile?.displayName || '用戶'}
                 </span>
               </h1>
-              <p className="text-slate-400 text-sm leading-relaxed max-w-[280px] mx-auto">
-                只要 30 秒完成綁定<br/>讓您的每一筆訂單都有即時通知
-              </p>
             </div>
 
-            <div className="pt-8 w-full">
+            {/* 🔥 新增：首購必填提示區塊 🔥 */}
+            <div className="w-full bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-start gap-3 text-left animate-pulse">
+               <div className="p-2 bg-amber-500/20 rounded-full shrink-0">
+                 <ShoppingCart className="w-5 h-5 text-amber-400" />
+               </div>
+               <div>
+                 <h3 className="text-amber-400 font-bold text-sm mb-0.5">首次結帳前請先綁定</h3>
+                 <p className="text-amber-100/70 text-xs leading-relaxed">
+                   為了確保您的出貨權益，<br/>第一次使用購物車結帳皆需完成此設定。
+                 </p>
+               </div>
+            </div>
+
+            <p className="text-slate-400 text-xs leading-relaxed max-w-[280px] mx-auto opacity-80">
+               完成後系統將自動連結您的訂單資料<br/>只需 30 秒即可完成
+            </p>
+
+            <div className="pt-4 w-full">
               <button 
                 onClick={() => handleNext()}
                 disabled={!lineProfile}
@@ -278,7 +286,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Step 2: 姓名 (移除 Email 輸入框) */}
+        {/* Step 2: 姓名 (自動帶入 Email) */}
         {step === 2 && (
           <div className="w-full space-y-5 animate-in fade-in slide-in-from-right-8 duration-500">
              <div className="space-y-1 ml-1">
@@ -287,7 +295,6 @@ export default function App() {
               <p className="text-slate-500 text-xs">請填寫真實姓名以供取貨核對</p>
             </div>
 
-            {/* 姓名輸入 */}
             <div className="space-y-2">
               <div className="relative bg-slate-900 rounded-2xl flex items-center border border-slate-800 focus-within:border-emerald-500/50">
                 <IdCard className="absolute left-4 w-5 h-5 text-slate-500" />
@@ -316,7 +323,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Email 隱藏提示 - 讓使用者知道系統有抓到 */}
             <div className="flex gap-2 items-center p-2 px-3 bg-slate-900/40 rounded-xl border border-dashed border-slate-800/50">
                <Mail className="w-3.5 h-3.5 text-emerald-500/70" />
                <span className="text-[10px] text-slate-500">
@@ -324,7 +330,6 @@ export default function App() {
                </span>
             </div>
 
-            {/* 警告 */}
             <div className="flex gap-2 items-start p-3 bg-slate-800/50 rounded-xl border border-slate-700/50">
                <AlertCircle className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
                <p className="text-[10px] text-slate-400 leading-relaxed">
