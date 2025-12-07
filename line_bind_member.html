@@ -20,7 +20,8 @@
       justify-content:center;
       padding:24px 16px;
       position:relative;
-      overflow:hidden;
+      overflow-x:hidden;
+      overflow-y:auto;
     }
 
     /* 背景光暈 */
@@ -60,7 +61,7 @@
       max-width:460px;
     }
 
-    /* 頂部進度條 */
+    /* 進度條 */
     .wizard-progress{
       display:flex;
       justify-content:center;
@@ -138,7 +139,7 @@
       line-height:1.6;
     }
 
-    /* 步驟共用 */
+    /* 步驟顯示控制 */
     .step{
       display:none;
       animation:fadeIn .3s ease-out;
@@ -150,6 +151,11 @@
     }
 
     /* Welcome 步驟 */
+    .welcome-mini{
+      font-size:12px;
+      color:#9ca3af;
+      margin-bottom:4px;
+    }
     .avatar-shell{
       width:84px;height:84px;
       border-radius:999px;
@@ -190,11 +196,6 @@
       justify-content:center;
       font-size:30px;
       color:#4b5563;
-    }
-    .welcome-mini{
-      font-size:12px;
-      color:#9ca3af;
-      margin-bottom:4px;
     }
 
     .btn-primary,
@@ -242,13 +243,12 @@
       transform:translateY(1px);
       filter:brightness(.92);
     }
-
     .btn-icon{
       font-size:14px;
       opacity:.85;
     }
 
-    /* 表單步驟 */
+    /* 表單步驟共用 */
     label{
       display:block;
       font-size:12px;
@@ -278,7 +278,6 @@
     .input-wrap input::placeholder{
       color:#4b5563;
     }
-
     .hint{
       font-size:11px;
       color:#9ca3af;
@@ -362,10 +361,22 @@
       color:#fecaca;
     }
 
-    @media (max-width:480px){
-      body{padding:18px 10px;}
-      .card{border-radius:22px;padding:20px 16px 18px;}
-      .headline{font-size:20px;}
+    /* 手機版：靠上排列、卡片全寬 */
+    @media (max-width: 768px){
+      body{
+        align-items:flex-start;
+        justify-content:flex-start;
+        padding:16px 8px 24px;
+      }
+      .wrap{
+        max-width:100%;
+      }
+      .card{
+        border-radius:0;
+        padding:20px 14px 24px;
+        box-shadow:none;
+        min-height:calc(100vh - 32px);
+      }
     }
   </style>
 </head>
@@ -450,7 +461,8 @@
           若手機或 Email 與原訂單不符，系統將無法對應到你的訂單，可能會影響出貨通知與售後權益。
         </div>
 
-        <button class="btn-primary" id="bindBtn" disabled>
+        <!-- ✅ 不要加 disabled，JS 會自己處理檢查 -->
+        <button class="btn-primary" id="bindBtn">
           <span>完成綁定</span>
           <span class="btn-icon">✓</span>
         </button>
@@ -493,7 +505,8 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <script>
     // ===== 設定 =====
-    const LIFF_ID = '2008430261-kOeNLR9x'; // 原本的 LIFF ID
+    // 這裡換成你在 LINE Official 後台建立的 LIFF ID
+    const LIFF_ID = '2008430261-kOeNLR9x';
     const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
 
     const $  = (s,r=document)=>r.querySelector(s);
@@ -501,7 +514,7 @@
 
     let LINE_PROFILE = null;
 
-    // DOM
+    // DOM 元素
     const statusEl   = $('#statusText');
     const bindBtn    = $('#bindBtn');
     const nameInput  = $('#name');
@@ -559,6 +572,7 @@
         const displayName = profile.displayName || '（未取得暱稱）';
         lineNameEl.textContent = displayName;
 
+        // 顯示遮罩過的 userId
         if (profile.userId) {
           const uid = profile.userId;
           lineIdShortEl.textContent = uid.slice(0,6) + '****' + uid.slice(-4);
@@ -566,6 +580,7 @@
           lineIdShortEl.textContent = '';
         }
 
+        // 頭像
         if (profile.pictureUrl) {
           const img = document.createElement('img');
           img.src = profile.pictureUrl;
@@ -576,6 +591,23 @@
           avatarBox.innerHTML = '<div class="avatar-placeholder">👤</div>';
         }
 
+        // ✅ 嘗試從 ID Token 帶出 email
+        try{
+          if (liff.getDecodedIDToken) {
+            const token = liff.getDecodedIDToken();
+            if (token && token.email && emailInput) {
+              emailInput.value = token.email;
+            }
+          }
+        }catch(e){
+          console.log('no email in idToken', e);
+        }
+
+        // ✅ 預填姓名 = LINE 暱稱（客人可以自行修改）
+        if (nameInput && !nameInput.value) {
+          nameInput.value = displayName;
+        }
+
         setStatus('已從 LINE 取得登入身分，點選「開始設定」繼續。', false);
         btnStart.disabled = false;
       }catch(e){
@@ -584,114 +616,124 @@
       }
     }
 
-    btnStart.addEventListener('click', ()=>{
-      if (!LINE_PROFILE || !LINE_PROFILE.userId) {
-        alert('尚未取得 LINE 帳號，請稍後再試一次。');
-        return;
-      }
-      goStep(1);
-      setStatus('', false);
-    });
+    // Welcome → Step1
+    if (btnStart) {
+      btnStart.addEventListener('click', ()=>{
+        if (!LINE_PROFILE || !LINE_PROFILE.userId) {
+          alert('尚未取得 LINE 帳號，請稍後再試一次。');
+          return;
+        }
+        goStep(1);
+        setStatus('', false);
+      });
+    }
 
-    btnNextPhone.addEventListener('click', ()=>{
-      const phone = (phoneInput.value || '').trim();
-      if (!phone) {
-        alert('請先填寫手機號碼。');
-        return;
-      }
-      goStep(2);
-      setStatus('', false);
-    });
+    // Step1 → Step2
+    if (btnNextPhone) {
+      btnNextPhone.addEventListener('click', ()=>{
+        const phone = (phoneInput.value || '').trim();
+        if (!phone) {
+          alert('請先填寫手機號碼。');
+          return;
+        }
+        goStep(2);
+        setStatus('', false);
+      });
+    }
 
+    // 成功畫面的「立即關閉」
     if (btnClose) {
       btnClose.addEventListener('click', ()=>{
         try{
           if (liff.isInClient()) {
             liff.closeWindow();
           } else {
+            // TODO: 換成你的官方 LINE ID
             window.location.href = 'https://line.me/R/ti/p/@你的官方ID';
+            // 例如：'https://line.me/R/ti/p/@cc0857'
           }
         }catch(e){}
       });
     }
 
-    bindBtn.addEventListener('click', async ()=>{
-      if (!LINE_PROFILE || !LINE_PROFILE.userId) {
-        alert('尚未取得 LINE 帳號，請重新整理頁面後再試一次。');
-        return;
-      }
-
-      const name  = (nameInput.value  || '').trim();
-      const phone = (phoneInput.value || '').trim();
-      const email = (emailInput.value || '').trim();
-
-      if (!phone) {
-        alert('請先填寫手機號碼（之後會用來對應訂單）。');
-        goStep(1);
-        return;
-      }
-
-      bindBtn.disabled = true;
-      setStatus('送出中，請稍候…', false);
-
-      try{
-        const body = {
-          line_user_id: LINE_PROFILE.userId,
-          display_name: LINE_PROFILE.displayName || '',
-          picture_url: LINE_PROFILE.pictureUrl || '',
-          status_message: LINE_PROFILE.statusMessage || '',
-          phone,
-          email,
-          name
-        };
-
-        const r = await fetch(API + '/line/bind-member', {
-          method: 'POST',
-          headers: {'Content-Type':'application/json'},
-          body: JSON.stringify(body)
-        });
-
-        const j = await r.json().catch(()=>({}));
-
-        if (!r.ok || !j.ok) {
-          console.error('bind-member error', j);
-          throw new Error(j.error || 'bind_member_failed');
+    // 完成綁定送 API
+    if (bindBtn) {
+      bindBtn.addEventListener('click', async ()=>{
+        if (!LINE_PROFILE || !LINE_PROFILE.userId) {
+          alert('尚未取得 LINE 帳號，請重新整理頁面後再試一次。');
+          return;
         }
 
-        // 成功畫面
-        setStatus('綁定成功！系統即將自動跳轉回官方 LINE。', false);
-        goStep(3);
+        const name  = (nameInput.value  || '').trim();
+        const phone = (phoneInput.value || '').trim();
+        const email = (emailInput.value || '').trim();
 
-        const fortunes = [
-          '包裹運勢滿點！今天領的包裹裡，藏著你想要的超能力！',
-          '今天是補貨的好日子，把想買的實用品一次帶回家。',
-          '追蹤很久的好物，可以開始慢慢下手了～',
-          '荷包與戰利品都會剛剛好，很適合理性斷捨離清單。',
-          '收到包裹時記得多拍幾張，今天的照片特別上相。'
-        ];
-        if (fortuneTextEl) {
-          const idx = Math.floor(Math.random() * fortunes.length);
-          fortuneTextEl.textContent = '「' + fortunes[idx] + '」';
+        if (!phone) {
+          alert('請先填寫手機號碼（之後會用來對應訂單）。');
+          goStep(1);
+          return;
         }
 
-        setTimeout(()=>{
-          try{
-            if (liff.isInClient()) {
-              // 在 LINE App 裡面 → 關掉 LIFF 視窗，回聊天室
-              liff.closeWindow();
-            } else {
-              // 不是在 LINE 裡（例如直接用瀏覽器開）→ 直接導到官方 LINE 聊天
-              window.location.href = 'https://line.me/R/ti/p/@你的官方ID';
-              // 例：'https://line.me/R/ti/p/@cc0857'
-            }
-          }catch(e){}
-        }, 1500);
-      }catch(e){
-        console.error(e);
-        setStatus('綁定失敗，請稍後再試一次，或截圖給小幫手查看。', true);
-        bindBtn.disabled = false;
-      }
-    });
+        bindBtn.disabled = true;
+        setStatus('送出中，請稍候…', false);
+
+        try{
+          const body = {
+            line_user_id: LINE_PROFILE.userId,
+            display_name: LINE_PROFILE.displayName || '',
+            picture_url: LINE_PROFILE.pictureUrl || '',
+            status_message: LINE_PROFILE.statusMessage || '',
+            phone,
+            email,
+            name
+          };
+
+          const r = await fetch(API + '/line/bind-member', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(body)
+          });
+
+          const j = await r.json().catch(()=>({}));
+
+          if (!r.ok || !j.ok) {
+            console.error('bind-member error', j);
+            throw new Error(j.error || 'bind_member_failed');
+          }
+
+          // 成功畫面
+          setStatus('綁定成功！系統即將自動跳轉回官方 LINE。', false);
+          goStep(3);
+
+          const fortunes = [
+            '包裹運勢滿點！今天領的包裹裡，藏著你想要的超能力！',
+            '今天是補貨的好日子，把想買的實用品一次帶回家。',
+            '追蹤很久的好物，可以開始慢慢下手了～',
+            '荷包與戰利品都會剛剛好，很適合理性斷捨離清單。',
+            '收到包裹時記得多拍幾張，今天的照片特別上相。'
+          ];
+          if (fortuneTextEl) {
+            const idx = Math.floor(Math.random() * fortunes.length);
+            fortuneTextEl.textContent = '「' + fortunes[idx] + '」';
+          }
+
+          setTimeout(()=>{
+            try{
+              if (liff.isInClient()) {
+                liff.closeWindow();
+              } else {
+                // TODO: 換成你的官方 LINE ID
+                window.location.href = 'https://line.me/R/ti/p/@你的官方ID';
+              }
+            }catch(e){}
+          }, 1500);
+        }catch(e){
+          console.error(e);
+          setStatus('綁定失敗，請稍後再試一次，或截圖給小幫手查看。', true);
+          bindBtn.disabled = false;
+        }
+      });
+    }
 
     // 初始化
     document.addEventListener('DOMContentLoaded', ()=>{
