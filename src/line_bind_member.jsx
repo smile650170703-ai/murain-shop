@@ -1,0 +1,461 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  ArrowRight, ArrowLeft, Smartphone, User, Check, 
+  Sparkles, IdCard, Loader2, AlertCircle, AlertTriangle, Mail, ShoppingCart
+} from 'lucide-react';
+
+export default function App() {
+  // ==========================================
+  // 1. 狀態管理
+  // ==========================================
+  const [step, setStep] = useState(0); 
+  const [isLoading, setIsLoading] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('');
+  
+  // LIFF 資料
+  const [lineProfile, setLineProfile] = useState(null); 
+  
+  // 表單資料
+  const [formData, setFormData] = useState({
+    phone: '',
+    name: '',
+    email: '' 
+  });
+
+  // AI 狀態
+  const [isCheckingName, setIsCheckingName] = useState(false);
+  const [nameAnalysis, setNameAnalysis] = useState(null);
+  const [fortune, setFortune] = useState('');
+  const [isFortuneLoading, setIsFortuneLoading] = useState(false);
+
+  // ✅ 手機欄位的 ref（解決一開始鍵盤把畫面頂歪）
+  const phoneInputRef = useRef(null);
+
+  const LIFF_ID = '2008430261-kOeNLR9x'; 
+  const API_BASE = 'https://api.murain.tw';
+  const apiKey = ""; // 若要用 Gemini 就填，不填也能正常綁定
+
+  // ==========================================
+  // 2. LIFF 初始化
+  // ==========================================
+  useEffect(() => {
+    document.body.style.overscrollBehavior = 'none';
+
+    const script = document.createElement('script');
+    script.src = 'https://static.line-scdn.net/liff/edge/2/sdk.js';
+    script.async = true;
+    script.onload = () => initLiff();
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
+
+  const initLiff = async () => {
+    try {
+      if (!window.liff) return;
+      await window.liff.init({ liffId: LIFF_ID });
+
+      if (!window.liff.isLoggedIn()) {
+        window.liff.login();
+        return;
+      }
+      const profile = await window.liff.getProfile();
+      
+      // 嘗試自動帶入 Email
+      let autoEmail = '';
+      try {
+          const user = window.liff.getDecodedIDToken();
+          if (user && user.email) autoEmail = user.email;
+      } catch(e) {}
+
+      if (!autoEmail) autoEmail = "lumi.auto@line.me"; 
+
+      setLineProfile(profile);
+      setFormData(prev => ({ ...prev, email: autoEmail }));
+
+    } catch (e) {
+      console.error('LIFF Error', e);
+      // 非 LINE 內預覽
+      if (!navigator.userAgent.includes("Line")) {
+         setLineProfile({ 
+           displayName: "Lumi (預覽)", 
+           userId: "U12345678", 
+           pictureUrl: "" 
+         });
+         setFormData(prev => ({ ...prev, email: "lumi.preview@gmail.com" }));
+      }
+    }
+  };
+
+  // ==========================================
+  // 2-1. Step=1 時，拉到最上方＋延遲 focus 手機欄位
+  //      （修正一進畫面按鈕被鍵盤吃掉的問題）
+  // ==========================================
+  useEffect(() => {
+    if (step === 1) {
+      window.scrollTo(0, 0);
+      setTimeout(() => {
+        if (phoneInputRef.current) {
+          phoneInputRef.current.focus();
+        }
+      }, 300);
+    }
+  }, [step]);
+
+  // ==========================================
+  // 3. Gemini AI
+  // ==========================================
+  const checkNameWithGemini = async (name) => {
+    if (!name || !apiKey) return;
+    setIsCheckingName(true);
+    setNameAnalysis(null);
+    const prompt = `判斷 "${name}" 是否為真實中文姓名。回傳JSON:{"isValid":bool,"suggestion":string}`;
+    try {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: "application/json" }
+          })
+        }
+      );
+      const d = await r.json();
+      setNameAnalysis(JSON.parse(d.candidates[0].content.parts[0].text));
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsCheckingName(false);
+    }
+  };
+
+  const generateFortune = async () => {
+    if (!apiKey) {
+      setFortune("包裹運勢滿點！今天領的包裹裡，藏著你想要的超能力！");
+      return;
+    }
+    setIsFortuneLoading(true);
+    try {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `為 "${formData.name}" 生成一句幽默網購運勢，繁體中文，30字內。`
+              }]
+            }]
+          })
+        }
+      );
+      const d = await r.json();
+      setFortune(d.candidates[0].content.parts[0].text);
+    } catch (e) {
+      setFortune("今天是補貨的好日子，把想買的實用品一次帶回家。");
+    } finally {
+      setIsFortuneLoading(false);
+    }
+  };
+
+  // ==========================================
+  // 4. 邏輯處理
+  // ==========================================
+  const handleInputChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+    if (e.target.name === 'name') setNameAnalysis(null);
+  };
+
+  const handleNext = () => {
+    if (step === 1 && !formData.phone) return alert('請輸入手機號碼');
+    if (document.activeElement) document.activeElement.blur();
+    setStep(prev => prev + 1);
+  };
+  const handleBack = () => step > 0 && setStep(prev => prev - 1);
+
+  const handleBind = async () => {
+    if (!formData.name || !formData.phone) return alert('請填寫姓名與手機');
+    setIsLoading(true); 
+    setStatusMsg('資料送出中...');
+    
+    setTimeout(async () => {
+      try {
+        const body = {
+          line_user_id: lineProfile?.userId || 'test_uid',
+          display_name: lineProfile?.displayName || 'test_name',
+          picture_url: lineProfile?.pictureUrl || '',
+          phone: formData.phone,
+          email: formData.email,
+          name: formData.name
+        };
+        // 真實環境記得打開：
+        // const r = await fetch(API_BASE + '/line/bind-member', {
+        //   method: 'POST',
+        //   headers: { 'Content-Type':'application/json' },
+        //   body: JSON.stringify(body)
+        // });
+        // const j = await r.json();
+        // if (!r.ok || !j.ok) throw new Error(j.error || 'bind_failed');
+
+        setStatusMsg('');
+        setStep(3);
+        generateFortune();
+      } catch(e) {
+        console.error(e);
+        alert('綁定失敗');
+      } finally {
+        setIsLoading(false);
+      }
+    }, 1500);
+  };
+
+  const handleClose = () => {
+    if (window.liff?.isInClient()) window.liff.closeWindow();
+    else window.location.href = 'https://line.me/R/ti/p/@cc0857';
+  };
+
+  // ==========================================
+  // 5. UI 渲染
+  // ==========================================
+  return (
+    <div className="min-h-[100dvh] w-full bg-slate-950 text-white font-sans flex flex-col items-center p-4 relative overflow-x-hidden overflow-y-auto">
+      
+      {/* 背景光暈 */}
+      <div className="fixed top-[-10%] left-[-10%] w-[80vw] h-[80vw] bg-emerald-500/10 rounded-full blur-[80px] pointer-events-none mix-blend-screen animate-pulse"></div>
+      <div className="fixed bottom-[-10%] right-[-10%] w-[80vw] h-[80vw] bg-blue-600/10 rounded-full blur-[80px] pointer-events-none mix-blend-screen"></div>
+
+      {/* 頂部導航 */}
+      <div className="w-full max-w-md h-16 flex justify-between items-center z-20 shrink-0">
+        {step > 0 && step < 3 ? (
+          <button onClick={handleBack} className="p-2 -ml-2 text-slate-400 active:text-white active:bg-slate-800/50 rounded-full transition-colors">
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+        ) : <div className="w-10" />}
+
+        {step < 3 && (
+          <div className="flex gap-1.5">
+            {[0, 1, 2].map((s) => (
+              <div
+                key={s}
+                className={`h-1 rounded-full transition-all duration-500 ${
+                  step >= s
+                    ? 'w-8 bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]'
+                    : 'w-2 bg-slate-800'
+                }`}
+              />
+            ))}
+          </div>
+        )}
+        <div className="w-10" />
+      </div>
+
+      {/* 內容區：這裡改成靠上，避免鍵盤頂掉按鈕 */}
+      <div className="z-10 w-full max-w-md flex-1 flex flex-col items-center justify-start pt-6 pb-4 min-h-[400px]">
+        
+        {statusMsg && (
+          <div className="absolute top-16 bg-slate-800/90 px-4 py-2 rounded-full text-xs text-slate-200 backdrop-blur-md flex items-center gap-2 shadow-lg z-50">
+            <Loader2 className="w-3 h-3 animate-spin text-emerald-400" /> {statusMsg}
+          </div>
+        )}
+
+        {/* Step 0: Welcome */}
+        {step === 0 && (
+          <div className="flex flex-col items-center text-center space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 w-full">
+            <div className="relative group mt-2">
+              <div className="absolute -inset-1 bg-gradient-to-r from-green-400 to-emerald-600 rounded-full blur opacity-40"></div>
+              <div className="relative w-20 h-20 bg-slate-900 rounded-full border-[3px] border-slate-800 flex items-center justify-center shadow-2xl overflow-hidden">
+                {lineProfile?.pictureUrl ? (
+                  <img src={lineProfile.pictureUrl} alt="User" className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-10 h-10 text-slate-600" />
+                )}
+              </div>
+            </div>
+            
+            <div className="space-y-1">
+              <h1 className="text-xl font-bold tracking-tight text-slate-200">
+                歡迎回來，
+                <span className="text-emerald-400 font-bold ml-1">
+                  {lineProfile?.displayName || '用戶'}
+                </span>
+              </h1>
+            </div>
+
+            <div className="w-full bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-start gap-3 text-left animate-pulse">
+              <div className="p-2 bg-amber-500/20 rounded-full shrink-0">
+                <ShoppingCart className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <h3 className="text-amber-400 font-bold text-sm mb-0.5">首次結帳前請先綁定</h3>
+                <p className="text-amber-100/70 text-xs leading-relaxed">
+                  為了確保您的出貨權益，<br />第一次使用購物車結帳皆需完成此設定。
+                </p>
+              </div>
+            </div>
+
+            <p className="text-slate-400 text-xs leading-relaxed max-w-[280px] mx-auto opacity-80">
+              完成後系統會把訂單對到這組手機 + 姓名<br />只需 30 秒即可完成
+            </p>
+
+            <div className="pt-4 w-full">
+              <button 
+                onClick={handleNext}
+                disabled={!lineProfile}
+                className="w-full h-14 bg-white active:bg-slate-200 active:scale-[0.98] text-slate-900 rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-lg disabled:opacity-50"
+              >
+                開始設定 <ArrowRight className="w-5 h-5" />
+              </button>
+              <p className="text-[10px] text-slate-600 font-mono mt-3 opacity-50">
+                LINE ID: {lineProfile?.userId?.slice(0,6)}****
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Step 1: 手機 */}
+        {step === 1 && (
+          <div className="w-full space-y-6 animate-in fade-in slide-in-from-right-8 duration-500">
+            <div className="space-y-1 ml-1">
+              <label className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest block">STEP 01</label>
+              <h2 className="text-3xl font-bold text-white">您的手機號碼？</h2>
+              <p className="text-slate-500 text-sm">取貨與通知都會使用此號碼</p>
+            </div>
+
+            <div className="relative group">
+              <div className="relative bg-slate-900 rounded-2xl flex items-center border border-slate-800 focus-within:border-emerald-500/50 transition-colors">
+                <Smartphone className="absolute left-4 w-5 h-5 text-slate-500 group-focus-within:text-emerald-400" />
+                <input 
+                  ref={phoneInputRef}
+                  type="tel" 
+                  name="phone"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  value={formData.phone}
+                  onChange={handleInputChange}
+                  placeholder="0912-345-678"
+                  className="w-full bg-transparent text-white text-xl placeholder:text-slate-700 py-5 pl-12 pr-4 focus:outline-none rounded-2xl font-mono"
+                />
+              </div>
+            </div>
+
+            <button 
+              onClick={handleNext}
+              className="w-full h-14 bg-emerald-600 active:bg-emerald-700 active:scale-[0.98] text-white rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/40 mt-4"
+            >
+              下一步 <ArrowRight className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
+        {/* Step 2: 姓名 */}
+        {step === 2 && (
+          <div className="w-full space-y-5 animate-in fade-in slide-in-from-right-8 duration-500">
+            <div className="space-y-1 ml-1">
+              <label className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest block">STEP 02</label>
+              <h2 className="text-2xl font-bold text-white">確認姓名</h2>
+              <p className="text-slate-500 text-xs">需與身分證一致，以免取貨被拒收</p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="relative bg-slate-900 rounded-2xl flex items-center border border-slate-800 focus-within:border-emerald-500/50">
+                <IdCard className="absolute left-4 w-5 h-5 text-slate-500" />
+                <input 
+                  type="text" 
+                  name="name"
+                  autoComplete="name"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  placeholder="例：王小雨"
+                  className="w-full bg-transparent text-white text-lg placeholder:text-slate-700 py-4 pl-12 pr-24 focus:outline-none rounded-2xl"
+                />
+                <button
+                  onClick={() => checkNameWithGemini(formData.name)}
+                  disabled={!formData.name || isCheckingName}
+                  className="absolute right-2 top-2 bottom-2 px-3 rounded-xl bg-slate-800 text-emerald-400 text-[10px] font-bold flex items-center gap-1 active:bg-slate-700 disabled:opacity-30 border border-slate-700"
+                >
+                  {isCheckingName ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />} AI 檢查
+                </button>
+              </div>
+              {nameAnalysis && (
+                <div className={`text-[10px] p-2 rounded-lg flex gap-2 ${nameAnalysis.isValid ? 'bg-emerald-500/10 text-emerald-400' : 'bg-orange-500/10 text-orange-400'}`}>
+                  {nameAnalysis.isValid ? <Check className="w-3 h-3 shrink-0" /> : <AlertTriangle className="w-3 h-3 shrink-0" />}
+                  {nameAnalysis.suggestion}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 items-center p-2 px-3 bg-slate-900/40 rounded-xl border border-dashed border-slate-800/50">
+              <Mail className="w-3.5 h-3.5 text-emerald-500/70" />
+              <span className="text-[10px] text-slate-500">
+                關聯信箱：<span className="font-mono text-emerald-500/70">{formData.email}</span>（自動帶入，可修改）
+              </span>
+            </div>
+
+            <div className="flex gap-2 items-start p-3 bg-slate-800/50 rounded-xl border border-slate-700/50">
+              <AlertCircle className="w-4 h-4 text-slate-500 flex-shrink-0 mt-0.5" />
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                若姓名與原訂單不符，門市人員可能會拒絕取貨。
+              </p>
+            </div>
+
+            <button 
+              onClick={handleBind}
+              disabled={isLoading}
+              className="w-full h-14 bg-gradient-to-r from-emerald-500 to-teal-500 active:scale-[0.98] text-white rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(16,185,129,0.3)] disabled:opacity-50 mt-2"
+            >
+              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>完成綁定 <Check className="w-5 h-5" /></>}
+            </button>
+          </div>
+        )}
+
+        {/* Step 3: 成功 */}
+        {step === 3 && (
+          <div className="text-center w-full max-w-sm animate-in zoom-in-95 duration-500 flex flex-col items-center justify-center">
+            <div className="inline-flex items-center justify-center w-28 h-28 rounded-full bg-emerald-500/10 text-emerald-400 mb-6 ring-1 ring-emerald-500/50 relative">
+              <div className="absolute inset-0 rounded-full bg-emerald-500/20 animate-ping duration-[2000ms]"></div>
+              <Check className="w-14 h-14 drop-shadow-[0_0_15px_rgba(52,211,153,0.8)]" />
+            </div>
+            
+            <h2 className="text-2xl font-bold text-white tracking-tight mb-2">成功完成綁定</h2>
+            <p className="text-slate-400 text-xs mb-8 leading-relaxed">
+              之後每一筆出貨與到店取件<br />都會第一時間透過 LINE 通知你
+            </p>
+
+            <div className="w-full bg-slate-900 rounded-2xl p-4 border border-slate-800 relative overflow-hidden group">
+              <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/10 to-blue-500/10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-emerald-400 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> 今日購物運勢
+                </span>
+                <span className="text-[10px] text-slate-600 bg-slate-800 px-1.5 py-0.5 rounded">
+                  Gemini AI
+                </span>
+              </div>
+              {isFortuneLoading ? (
+                <div className="flex gap-1 items-center justify-center py-2">
+                  <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce"></span>
+                  <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce delay-75"></span>
+                  <span className="w-1.5 h-1.5 bg-slate-600 rounded-full animate-bounce delay-150"></span>
+                </div>
+              ) : (
+                <p className="text-sm text-white font-medium leading-relaxed">"{fortune}"</p>
+              )}
+            </div>
+
+            <button 
+              onClick={handleClose}
+              className="mt-8 w-full py-3 rounded-2xl bg-slate-800 text-slate-400 text-xs active:bg-slate-700 active:text-white transition-colors"
+            >
+              關閉視窗（5 秒後自動關閉）
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
