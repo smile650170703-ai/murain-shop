@@ -1553,17 +1553,61 @@ function printCurrentOrder(){
   w.print();
 }
 
-/* ===== 頁面初始化 ===== */
 document.addEventListener('DOMContentLoaded', async ()=>{
   // 上方快速分類按鈕
   $$('.filter-btn').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
+      // 先把按鈕外觀切換
       $$('.filter-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
+
+      const filter = btn.dataset.filter || 'all';
       await ensureOpKey();
-      await loadOrders(btn.dataset.filter);
+
+      // ⭐「線上付款待確認」特別處理：全部日期 + pay_status = pending
+      if (filter === 'pending_online') {
+        const msgEl = $('#msg');
+        if (msgEl) msgEl.textContent = '';
+
+        // 日期自動改成 2024-01-01 ~ 今天（不用你手動選）
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm   = String(today.getMonth() + 1).padStart(2, '0');
+        const dd   = String(today.getDate()).padStart(2, '0');
+
+        if ($('#date_from')) $('#date_from').value = '2024-01-01';
+        if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
+
+        // 狀態清空，讓後端回傳全部狀態
+        if ($('#status')) $('#status').value = '';
+
+        // 先載入這段日期內「全部」訂單
+        await loadOrdersByDate();
+
+        // 再在前端只留下「付款狀態 = 待確認」的
+        currentOrders = (currentOrders || []).filter(rec => {
+          const f = rec.fields || rec || {};
+          return f.pay_status === 'pending';
+        });
+
+        // 更新快取＋畫面
+        ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+        renderOrderList();
+
+        if (msgEl) {
+          if (!currentOrders.length) {
+            msgEl.textContent = '目前沒有「付款狀態＝待確認」的訂單。';
+          } else {
+            msgEl.textContent = '僅顯示「付款狀態＝待確認(pay_status = pending)」的訂單。';
+          }
+        }
+      } else {
+        // 其他三顆維持原本的 filter 行為（完全不動）
+        await loadOrders(filter);
+      }
     });
   });
+
 
   // OP_KEY 重設（如果你已經拿掉更改密碼那顆，可以保留這段但加保護）
   const btnChangeKey = $('#btnChangeKey');
