@@ -2,867 +2,923 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8" />
+  <title>綁定 LINE 出貨通知</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Member binding — 會員綁定</title>
   <style>
-    *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
-    body{
-      margin:0;
-      background:#020617;
-      color:#e5e7eb;
+    :root {
+      color-scheme: dark;
+      --bg-main: #020617;
+      --bg-card: #020617;
+      --bg-field: #020617;
+      --border-subtle: #0f172a;
+      --border-strong: #22c55e;
+      --text-main: #e5e7eb;
+      --text-sub: #64748b;
+      --accent: #22c55e;
     }
-    .page{
-      min-height:100vh;
-      min-height:100dvh;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      padding:16px;
-      position:relative;
-      overflow:hidden;
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      background: radial-gradient(circle at 0 0, #22c55e22, transparent 55%),
+        radial-gradient(circle at 100% 100%, #2563eb22, transparent 55%),
+        #020617;
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none;
     }
-    .bg-glow{
-      position:absolute;
-      inset:-40%;
-      background:
-        radial-gradient(circle at 0% 0%,rgba(16,185,129,.28),transparent 60%),
-        radial-gradient(circle at 100% 100%,rgba(37,99,235,.22),transparent 60%);
-      pointer-events:none;
-      opacity:.9;
+
+    .app {
+      width: 100%;
+      max-width: 480px;
+      padding: 16px;
+      padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      display: flex;
+      flex-direction: column;
     }
-    .shell{
-      position:relative;
-      width:100%;
-      max-width:420px;
-      z-index:1;
+
+    header {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
-    .top-nav{
-      height:40px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      margin-bottom:8px;
+
+    .step-dots {
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+      align-items: center;
+      flex: 1;
     }
-    .progress{
-      display:flex;
-      gap:6px;
+
+    .dot {
+      height: 4px;
+      border-radius: 999px;
+      background: #0f172a;
+      width: 8px;
+      transition: all 0.25s ease;
     }
-    .prog-dot{
-      width:20px;
-      height:4px;
-      border-radius:999px;
-      background:rgba(30,64,175,.6);
-      opacity:.4;
-      transition:.3s;
+
+    .dot.active {
+      width: 32px;
+      background: var(--accent);
+      box-shadow: 0 0 10px rgba(34, 197, 94, 0.7);
     }
-    .prog-dot.on{
-      width:30px;
-      background:linear-gradient(90deg,#22c55e,#14b8a6);
-      box-shadow:0 0 10px rgba(45,212,191,.7);
-      opacity:1;
+
+    .step-back-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      border: none;
+      background: transparent;
+      color: #64748b;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      cursor: pointer;
     }
-    .card{
-      background:rgba(15,23,42,.96);
-      border-radius:22px;
-      padding:20px 18px 20px;
-      border:1px solid rgba(148,163,184,.4);
-      box-shadow:0 20px 60px rgba(15,23,42,.9);
-      position:relative;
-      overflow:hidden;
+
+    .step-back-btn:active {
+      background: #020617;
+      color: #e5e7eb;
     }
-    .card::before{
-      content:"";
-      position:absolute;
-      inset:-40%;
-      background:radial-gradient(circle at 0 0,rgba(16,185,129,.25),transparent 60%);
-      opacity:.95;
-      pointer-events:none;
+
+    main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    .card-inner{
-      position:relative;
+
+    .card {
+      width: 100%;
+      background: radial-gradient(circle at 0 0, #22c55e22, transparent 65%),
+        #020617ee;
+      border-radius: 24px;
+      border: 1px solid rgba(15, 23, 42, 0.95);
+      box-shadow: 0 20px 60px rgba(15, 23, 42, 0.9);
+      padding: 20px 18px 18px;
+      position: relative;
+      overflow: hidden;
     }
-    .tag{
-      display:inline-flex;
-      align-items:center;
-      padding:4px 10px;
-      border-radius:999px;
-      background:rgba(15,23,42,1);
-      border:1px solid rgba(45,212,191,.45);
-      font-size:11px;
-      letter-spacing:.18em;
-      text-transform:uppercase;
-      color:#5eead4;
-      margin-bottom:10px;
+
+    .badge-line {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(22, 163, 74, 0.8);
+      font-size: 11px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #a5f3fc;
+      margin-bottom: 12px;
     }
-    .tag-dot{
-      width:8px;
-      height:8px;
-      border-radius:999px;
-      background:radial-gradient(circle,#22c55e,#16a34a);
-      box-shadow:0 0 10px rgba(34,197,94,.8);
-      margin-right:6px;
+
+    .badge-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: #22c55e;
+      box-shadow: 0 0 6px rgba(34, 197, 94, 0.8);
     }
-    h1{
-      margin:0 0 6px;
-      font-size:22px;
+
+    .welcome-row {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 16px;
     }
-    h1 span{
-      color:#4ade80;
+
+    .avatar-wrap {
+      position: relative;
+      width: 64px;
+      height: 64px;
+      border-radius: 999px;
+      border: 2px solid rgba(15, 23, 42, 1);
+      background: radial-gradient(circle at 0 0, #22c55e44, #020617);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      flex-shrink: 0;
     }
-    .sub{
-      font-size:13px;
-      color:#9ca3af;
-      line-height:1.6;
-      margin-bottom:16px;
+
+    .avatar-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
-    .avatar-wrap{
-      display:flex;
-      align-items:center;
-      gap:14px;
-      margin-bottom:14px;
+
+    .avatar-placeholder {
+      font-size: 30px;
+      color: #475569;
     }
-    .avatar{
-      width:68px;
-      height:68px;
-      border-radius:999px;
-      border:2px solid rgba(34,197,94,.9);
-      background:radial-gradient(circle at 30% 0,rgba(34,197,94,.5),#020617);
-      overflow:hidden;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      box-shadow:0 0 22px rgba(16,185,129,.6);
-      position:relative;
+
+    .welcome-text h1 {
+      font-size: 20px;
+      margin: 0 0 4px;
+      letter-spacing: 1px;
     }
-    .avatar img{
-      width:100%;
-      height:100%;
-      object-fit:cover;
+
+    .welcome-text h1 span {
+      color: var(--accent);
+      font-weight: 700;
     }
-    .avatar-badge{
-      position:absolute;
-      right:-2px;
-      bottom:-2px;
-      width:18px;
-      height:18px;
-      border-radius:999px;
-      background:radial-gradient(circle,#22c55e,#15803d);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      border:2px solid #020617;
-      font-size:11px;
-      color:#ecfdf5;
-      box-shadow:0 0 12px rgba(34,197,94,.9);
+
+    .welcome-text p {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text-sub);
+      line-height: 1.5;
     }
-    .welcome-en{
-      font-size:11px;
-      letter-spacing:.18em;
-      text-transform:uppercase;
-      color:#6b7280;
-      margin-bottom:4px;
+
+    .hint-box {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 16px;
+      background: rgba(248, 250, 252, 0.02);
+      border: 1px dashed rgba(148, 163, 184, 0.6);
+      font-size: 11px;
+      color: #e5e7eb;
+      line-height: 1.6;
     }
-    .welcome-name{
-      font-size:17px;
-      font-weight:700;
-      margin-bottom:2px;
+
+    .hint-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: #facc15;
+      margin-bottom: 4px;
     }
-    .line-id{
-      font-size:11px;
-      color:#9ca3af;
-      margin-bottom:4px;
+
+    .field-group {
+      margin-top: 14px;
     }
-    .bullet{
-      font-size:12px;
-      color:#9ca3af;
-      line-height:1.5;
+
+    .field-label-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 4px;
+      font-size: 12px;
     }
-    .bullet span{color:#a5b4fc}
-    .hint-box{
-      margin-top:10px;
-      padding:8px 10px;
-      border-radius:12px;
-      border:1px dashed rgba(148,163,184,.5);
-      background:rgba(15,23,42,.95);
-      font-size:11px;
-      color:#9ca3af;
-      line-height:1.5;
+
+    .field-label {
+      color: #e5e7eb;
+      font-weight: 600;
     }
-    .hint-box b{color:#e5e7eb}
-    .btn-main{
-      width:100%;
-      margin-top:18px;
-      border-radius:999px;
-      border:none;
-      padding:13px 16px;
-      background:linear-gradient(90deg,#f9fafb,#e5e7eb);
-      color:#020617;
-      font-weight:700;
-      font-size:15px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      gap:6px;
-      box-shadow:0 14px 35px rgba(15,23,42,.9);
-      cursor:pointer;
+
+    .field-note {
+      font-size: 11px;
+      color: var(--text-sub);
+      text-align: right;
     }
-    .btn-main:disabled{
-      opacity:.5;
-      cursor:not-allowed;
-      box-shadow:none;
+
+    .field {
+      position: relative;
+      background: rgba(15, 23, 42, 0.9);
+      border-radius: 999px;
+      border: 1px solid rgba(30, 64, 175, 0.3);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
     }
-    .btn-main.color{
-      background:linear-gradient(90deg,#22c55e,#14b8a6);
-      color:#0f172a;
-      box-shadow:0 14px 40px rgba(16,185,129,.55);
+
+    .field input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: #e5e7eb;
+      font-size: 14px;
+      font-family: inherit;
     }
-    .btn-main.small{
-      margin-top:14px;
-      padding:11px 14px;
-      font-size:14px;
+
+    .field input::placeholder {
+      color: #475569;
     }
-    .footer-txt{
-      margin-top:10px;
-      text-align:center;
-      font-size:10px;
-      color:#64748b;
+
+    .field-icon {
+      width: 20px;
+      text-align: center;
+      font-size: 14px;
+      color: #64748b;
     }
-    .steps{
-      margin-top:8px;
+
+    .email-hint {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--text-sub);
     }
-    .step{
-      display:none;
+
+    .warning-box {
+      margin-top: 12px;
+      padding: 9px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(248, 250, 252, 0.06);
+      background: rgba(15, 23, 42, 0.8);
+      font-size: 11px;
+      color: #cbd5f5;
+      line-height: 1.6;
+      display: flex;
+      gap: 8px;
     }
-    .step.active{
-      display:block;
+
+    .warning-icon {
+      font-size: 14px;
+      margin-top: 2px;
+      color: #facc15;
+      flex-shrink: 0;
     }
-    .step-title{
-      font-size:22px;
-      font-weight:700;
-      margin-bottom:4px;
+
+    .btn-primary {
+      margin-top: 18px;
+      width: 100%;
+      border-radius: 999px;
+      border: none;
+      padding: 12px 16px;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      background: linear-gradient(90deg, #22c55e, #14b8a6);
+      color: #020617;
+      cursor: pointer;
+      box-shadow: 0 12px 35px rgba(8, 47, 18, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
     }
-    .step-sub{
-      font-size:13px;
-      color:#9ca3af;
-      margin-bottom:18px;
+
+    .btn-primary:active {
+      transform: translateY(1px) scale(0.99);
+      box-shadow: 0 6px 22px rgba(8, 47, 18, 0.8);
     }
-    .step-label{
-      font-size:11px;
-      letter-spacing:.22em;
-      text-transform:uppercase;
-      color:#22c55e;
-      margin-bottom:6px;
+
+    .btn-primary[disabled] {
+      opacity: 0.6;
+      cursor: not-allowed;
+      box-shadow: none;
     }
-    .field{
-      margin-bottom:16px;
+
+    .btn-outline {
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.7);
+      background: transparent;
+      color: #94a3b8;
+      font-size: 11px;
+      padding: 8px 14px;
+      margin-top: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
     }
-    .f-head{
-      display:flex;
-      justify-content:space-between;
-      align-items:flex-end;
-      margin-bottom:4px;
-      font-size:12px;
+
+    .status-toast {
+      position: fixed;
+      top: 70px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(30, 64, 175, 0.6);
+      font-size: 11px;
+      color: #e5e7eb;
+      display: none;
+      align-items: center;
+      gap: 6px;
+      z-index: 20;
+      backdrop-filter: blur(8px);
     }
-    .f-main{font-weight:600;color:#e5e7eb}
-    .f-sub{font-size:11px;color:#9ca3af}
-    .input-wrap{
-      position:relative;
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      border: 2px solid rgba(125, 211, 252, 0.9);
+      border-top-color: transparent;
+      animation: spin 0.9s linear infinite;
     }
-    .input{
-      width:100%;
-      padding:13px 14px 12px 40px;
-      border-radius:999px;
-      border:1px solid rgba(75,85,99,.95);
-      background:radial-gradient(circle at 0 0,rgba(15,23,42,.9),#020617);
-      color:#e5e7eb;
-      font-size:15px;
-      outline:none;
-      box-shadow:0 0 0 1px rgba(15,23,42,1);
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
     }
-    .input:focus{
-      border-color:#22c55e;
-      box-shadow:0 0 0 1px rgba(16,185,129,.7),0 0 24px rgba(16,185,129,.4);
+
+    .step {
+      display: none;
+      animation: fadeIn 0.35s ease-out;
     }
-    .input::placeholder{color:#4b5563}
-    .i-icon{
-      position:absolute;
-      left:14px;
-      top:50%;
-      transform:translateY(-50%);
-      width:18px;
-      height:18px;
-      border-radius:999px;
-      border:1px solid rgba(148,163,184,.7);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      font-size:11px;
-      color:#9ca3af;
-      background:radial-gradient(circle at 0 0,rgba(30,64,175,.5),rgba(15,23,42,1));
-      box-shadow:0 0 10px rgba(59,130,246,.5);
+
+    .step.active {
+      display: block;
     }
-    .i-icon::before{content:"";}
-    .i-phone::before{content:"📱"}
-    .i-user::before{content:"👤"}
-    .i-mail::before{content:"✉"}
-    .ai-badge{
-      position:absolute;
-      right:4px;
-      top:4px;
-      bottom:4px;
-      padding:0 8px;
-      border-radius:999px;
-      border:1px solid rgba(148,163,184,.6);
-      background:rgba(15,23,42,.95);
-      font-size:10px;
-      color:#a5b4fc;
-      display:flex;
-      align-items:center;
-      gap:4px;
-      cursor:pointer;
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
-    .ai-dot{
-      width:6px;height:6px;
-      border-radius:999px;
-      background:radial-gradient(circle,#a5b4fc,#6366f1);
+
+    .success-icon-wrap {
+      width: 104px;
+      height: 104px;
+      border-radius: 999px;
+      margin: 8px auto 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at 30% 0, #4ade8033, #064e3b),
+        #022c22;
+      border: 1px solid rgba(34, 197, 94, 0.7);
+      box-shadow: 0 0 35px rgba(34, 197, 94, 0.8);
+      position: relative;
     }
-    .ai-tip{
-      font-size:11px;
-      padding:7px 9px;
-      border-radius:10px;
-      background:rgba(15,23,42,.95);
-      border:1px solid rgba(148,163,184,.5);
-      color:#cbd5f5;
-      margin-top:6px;
-      display:none;
+
+    .success-icon-wrap::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      opacity: 0.6;
+      filter: blur(2px);
     }
-    .ai-tip.on{display:flex;gap:6px}
-    .ai-tip span{font-size:12px}
-    .ai-tip small{font-size:10px;color:#9ca3af}
-    .warn{
-      margin-top:10px;
-      padding:8px 10px;
-      border-radius:12px;
-      background:rgba(15,23,42,.98);
-      border:1px solid rgba(75,85,99,.9);
-      font-size:11px;
-      color:#9ca3af;
-      line-height:1.6;
-      display:flex;
-      gap:8px;
+
+    .success-icon {
+      font-size: 42px;
+      color: #bbf7d0;
     }
-    .warn-icon{
-      width:16px;height:16px;
-      border-radius:999px;
-      border:1px solid rgba(248,250,252,.2);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      font-size:11px;
-      color:#e5e7eb;
-      background:rgba(30,64,175,.8);
-      flex-shrink:0;
+
+    .fortune-card {
+      margin-top: 16px;
+      padding: 12px 12px 11px;
+      border-radius: 16px;
+      border: 1px solid rgba(15, 23, 42, 0.9);
+      background: radial-gradient(circle at 0 0, #22c55e22, transparent 60%),
+        #020617;
+      font-size: 12px;
     }
-    .status{
-      margin-top:8px;
-      font-size:12px;
-      min-height:16px;
-      color:#a5b4fc;
+
+    .fortune-title {
+      font-size: 11px;
+      color: #4ade80;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
     }
-    .status.error{color:#fecaca}
-    .btn-row{
-      margin-top:10px;
-      display:flex;
-      gap:8px;
+
+    .fortune-title span:last-child {
+      font-size: 10px;
+      color: #64748b;
     }
-    .btn-secondary{
-      flex:1;
-      border-radius:999px;
-      border:1px solid rgba(51,65,85,1);
-      background:rgba(15,23,42,1);
-      color:#9ca3af;
-      padding:11px 12px;
-      font-size:13px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      gap:6px;
-      cursor:pointer;
+
+    .fortune-text {
+      color: #e5e7eb;
+      line-height: 1.6;
     }
-    .btn-secondary span.icon{
-      font-size:14px;
+
+    .footer-tip {
+      margin-top: 10px;
+      font-size: 11px;
+      color: #64748b;
+      text-align: center;
     }
-    .btn-secondary.main{
-      border-color:transparent;
-      background:linear-gradient(90deg,#22c55e,#14b8a6);
-      color:#020617;
-      font-weight:600;
-      box-shadow:0 12px 32px rgba(16,185,129,.55);
-    }
-    /* 成功頁 */
-    .success-icon-wrap{
-      width:88px;
-      height:88px;
-      border-radius:999px;
-      background:rgba(22,163,74,.16);
-      border:1px solid rgba(74,222,128,.7);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      margin:0 auto 16px;
-      position:relative;
-      box-shadow:0 0 22px rgba(34,197,94,.75);
-    }
-    .success-icon-wrap::before{
-      content:"";
-      position:absolute;
-      inset:-8px;
-      border-radius:999px;
-      border:1px dashed rgba(74,222,128,.5);
-      opacity:.7;
-    }
-    .success-check{
-      width:32px;
-      height:32px;
-      border-radius:999px;
-      background:radial-gradient(circle,#22c55e,#16a34a);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      color:#ecfdf5;
-      font-size:20px;
-      box-shadow:0 0 16px rgba(34,197,94,.9);
-    }
-    .fortune-card{
-      margin-top:14px;
-      padding:10px 11px;
-      border-radius:16px;
-      background:rgba(15,23,42,.96);
-      border:1px solid rgba(148,163,184,.6);
-      font-size:12px;
-      color:#e5e7eb;
-      line-height:1.5;
-      position:relative;
-      overflow:hidden;
-    }
-    .fortune-card::before{
-      content:"";
-      position:absolute;
-      inset:-40%;
-      background:radial-gradient(circle at 0 0,rgba(34,197,94,.22),transparent 60%);
-      opacity:.9;
-      pointer-events:none;
-    }
-    .fortune-tag{
-      font-size:11px;
-      color:#a5b4fc;
-      margin-bottom:4px;
-    }
-    .fortune-src{
-      font-size:10px;
-      color:#9ca3af;
-    }
-    .fortune-text{
-      margin-top:4px;
-      position:relative;
-      z-index:1;
-    }
-    .close-note{
-      margin-top:10px;
-      font-size:11px;
-      color:#94a3b8;
-      text-align:center;
-    }
-    @media (max-width:480px){
-      .card{padding:18px 16px 18px}
-      h1{font-size:21px}
-      .step-title{font-size:20px}
+
+    @media (max-width: 360px) {
+      .card {
+        padding: 18px 14px 16px;
+      }
+      .welcome-row {
+        align-items: flex-start;
+      }
     }
   </style>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 </head>
 <body>
-<div class="page">
-  <div class="bg-glow"></div>
-
-  <div class="shell">
-    <!-- 進度列 -->
-    <div class="top-nav">
-      <div class="progress" id="progressDots">
-        <div class="prog-dot on" data-step="0"></div>
-        <div class="prog-dot" data-step="1"></div>
-        <div class="prog-dot" data-step="2"></div>
+  <div class="app">
+    <header>
+      <button class="step-back-btn" id="btnBack" aria-label="返回">
+        ←
+      </button>
+      <div class="step-dots">
+        <div class="dot active" data-dot="0"></div>
+        <div class="dot" data-dot="1"></div>
+        <div class="dot" data-dot="2"></div>
       </div>
-    </div>
+      <div style="width:40px;"></div>
+    </header>
 
-    <div class="card">
-      <div class="card-inner">
+    <main>
+      <div class="card">
+        <div class="badge-line">
+          <span class="badge-dot"></span>
+          <span>LINE 出貨通知綁定</span>
+        </div>
 
         <!-- Step 0: Welcome -->
-        <div class="step active" id="step0">
-          <div class="tag"><span class="tag-dot"></span>LINE 出貨通知綁定</div>
-          <h1>歡迎回來，<span id="welcomeName">用戶</span></h1>
-          <p class="sub">
-            只要 30 秒，完成一次綁定，之後每一筆出貨、到店取件，<br>
-            都會優先用 LINE 提醒你。
-          </p>
-
-          <div class="avatar-wrap">
-            <div class="avatar" id="avatarBox">
-              <div class="avatar-badge">✔</div>
+        <section class="step active" id="step0">
+          <div class="welcome-row">
+            <div class="avatar-wrap">
+              <img id="avatar" alt="" style="display:none;" />
+              <div id="avatarPlaceholder" class="avatar-placeholder">🙂</div>
             </div>
-            <div>
-              <div class="welcome-en">WELCOME BACK</div>
-              <div class="welcome-name" id="welcomeName2">LINE 用戶</div>
-              <div class="line-id" id="lineIdShort">userId：—</div>
-              <div class="bullet">
-                綁定後，系統會自動將你的 LINE 帳號與 <span>收件人姓名、手機、Email</span> 做關聯，
-                之後用同一組資料下單就能自動對應。
-              </div>
+            <div class="welcome-text">
+              <h1>
+                歡迎回來，
+                <span id="displayName">用戶</span>
+              </h1>
+              <p id="userIdShort">正在取得你的 LINE 資訊...</p>
             </div>
           </div>
 
           <div class="hint-box">
-            <b>小提醒：</b>第一次使用購物車結帳前，都需要先完成此設定，以保障你的出貨與售後權益。
+            <div class="hint-title">首次結帳前請先綁定</div>
+            <div>
+              為了確保你的出貨權益，第一次使用購物車結帳前，需先完成本次綁定。
+              之後每一筆出貨、到店取件都會優先用 LINE 提醒你。
+            </div>
           </div>
 
-          <button class="btn-main" id="startBtn" disabled>
+          <p style="margin-top:10px;font-size:11px;color:#94a3b8;">
+            綁定只需約 30 秒，系統會自動將你的 LINE 帳號與「收件人姓名、手機、Email」連在一起。
+          </p>
+
+          <button class="btn-primary" id="btnStart">
             開始設定
+            <span style="font-size:16px;">→</span>
           </button>
-          <div class="footer-txt">已從 LINE 取得登入身分後，即可開始設定通知。</div>
-        </div>
 
-        <!-- Step 1: 手機 -->
-        <div class="step" id="step1">
-          <div class="step-label">STEP 01</div>
-          <div class="step-title">您的手機號碼？</div>
-          <div class="step-sub">取貨核對與訂單查詢都會用到，請填寫常用手機。</div>
+          <button class="btn-outline" id="btnPreviewNote" type="button">
+            <span style="font-size:10px;">i</span> 若未顯示頭像 / 暱稱，請確認是從 LINE 中開啟頁面
+          </button>
+        </section>
 
-          <div class="field">
-            <div class="f-head">
-              <div class="f-main">手機號碼</div>
-              <div class="f-sub">請輸入 09 開頭之手機</div>
+        <!-- Step 1: Phone -->
+        <section class="step" id="step1">
+          <div class="field-group">
+            <div class="field-label-row">
+              <div class="field-label">手機號碼</div>
+              <div class="field-note">取貨時會用來核對與查詢訂單</div>
             </div>
-            <div class="input-wrap">
-              <div class="i-icon i-phone"></div>
-              <input id="phoneInput" class="input" type="tel" inputmode="numeric"
-                     placeholder="0912-345-678" />
-            </div>
-          </div>
-
-          <div class="warn">
-            <div class="warn-icon">!</div>
-            <div>若手機號碼與原訂單不符，系統將無法正確對應，可能會影響出貨通知與取件權益。</div>
-          </div>
-
-          <div class="btn-row">
-            <button class="btn-secondary" id="backFrom1"><span class="icon">←</span> 上一步</button>
-            <button class="btn-secondary main" id="nextFrom1">下一步 →</button>
-          </div>
-        </div>
-
-        <!-- Step 2: 姓名 + Email -->
-        <div class="step" id="step2">
-          <div class="step-label">STEP 02</div>
-          <div class="step-title">確認收件資料</div>
-          <div class="step-sub">請填寫真實姓名，Email 將自動帶入 LINE 帳號信箱，可視情況修改。</div>
-
-          <div class="field">
-            <div class="f-head">
-              <div class="f-main">收件人姓名</div>
-              <div class="f-sub">需與身分證件一致，以免取貨時被拒收</div>
-            </div>
-            <div class="input-wrap">
-              <div class="i-icon i-user"></div>
-              <input id="nameInput" class="input" type="text"
-                     placeholder="真實姓名（例：王小雨）" />
-              <div class="ai-badge" id="aiNameBadge">
-                <span class="ai-dot"></span>AI 檢查
-              </div>
-            </div>
-            <div class="ai-tip" id="aiTip">
-              <span>⚡</span>
-              <div>
-                <span>請避免暱稱／emoji，盡量使用與證件一致的姓名。</span><br>
-                <small>（例如：不要填「小雨寶貝」、「Lumi✨」）</small>
-              </div>
+            <div class="field">
+              <div class="field-icon">📱</div>
+              <input
+                id="inputPhone"
+                type="tel"
+                inputmode="numeric"
+                autocomplete="tel"
+                placeholder="請輸入 09 開頭的手機號碼"
+              />
             </div>
           </div>
 
-          <div class="field">
-            <div class="f-head">
-              <div class="f-main">Email（自動帶入）</div>
-              <div class="f-sub">用於查詢訂單與信件通知</div>
-            </div>
-            <div class="input-wrap">
-              <div class="i-icon i-mail"></div>
-              <input id="emailInput" class="input" type="email"
-                     placeholder="將自動帶入 LINE Email，可自行修改" />
+          <div class="warning-box">
+            <div class="warning-icon">!</div>
+            <div>
+              請填寫你平常在超商取貨會留的手機號碼；若與原訂單不同，系統將無法自動對應。
             </div>
           </div>
 
-          <div class="warn">
-            <div class="warn-icon">!</div>
-            <div>若姓名、手機或 Email 與原訂單不符，系統將無法對應你的訂單，可能會影響出貨通知與售後權益。</div>
+          <button class="btn-primary" id="btnToStep2">
+            下一步
+            <span style="font-size:16px;">→</span>
+          </button>
+        </section>
+
+        <!-- Step 2: Name + Email -->
+        <section class="step" id="step2">
+          <div class="field-group">
+            <div class="field-label-row">
+              <div class="field-label">收件人姓名</div>
+              <div class="field-note">需與身分證件一致，以免取貨被拒收</div>
+            </div>
+            <div class="field">
+              <div class="field-icon">🧾</div>
+              <input
+                id="inputName"
+                type="text"
+                autocomplete="name"
+                placeholder="請輸入真實姓名（例：王小雨）"
+              />
+            </div>
           </div>
 
-          <div class="btn-row">
-            <button class="btn-secondary" id="backFrom2"><span class="icon">←</span> 上一步</button>
-            <button class="btn-secondary main" id="bindBtn">完成綁定 ✓</button>
+          <div class="field-group">
+            <div class="field-label-row">
+              <div class="field-label">Email（自動帶入，可修改）</div>
+              <div class="field-note">用於訂單通知與電子發票</div>
+            </div>
+            <div class="field">
+              <div class="field-icon">✉️</div>
+              <input
+                id="inputEmail"
+                type="email"
+                autocomplete="email"
+                placeholder="稍後將自動帶入你的 LINE Email"
+              />
+            </div>
+            <div class="email-hint" id="emailHint">
+              正在讀取你的 LINE Email...
+            </div>
           </div>
 
-          <div class="status" id="statusText"></div>
-        </div>
+          <div class="warning-box">
+            <div class="warning-icon">!</div>
+            <div>
+              請填寫真實且與訂單相符的資料。
+              若手機或 Email 與原訂單不符，系統可能無法對應，將影響出貨通知與售後權益。
+            </div>
+          </div>
 
-        <!-- Step 3: 成功 -->
-        <div class="step" id="step3">
+          <button class="btn-primary" id="btnBind">
+            確認綁定
+            <span style="font-size:18px;">✓</span>
+          </button>
+        </section>
+
+        <!-- Step 3: Success -->
+        <section class="step" id="step3">
           <div class="success-icon-wrap">
-            <div class="success-check">✓</div>
+            <div class="success-icon">✓</div>
           </div>
-          <div class="step-title" style="text-align:center;margin-bottom:6px;">綁定成功</div>
-          <div class="step-sub" style="text-align:center;margin-bottom:10px;">
-            往後的出貨進度、到店取件提醒，都會自動透過 LINE 告訴你。
-          </div>
+
+          <h2
+            style="
+              text-align: center;
+              margin: 0 0 6px;
+              font-size: 22px;
+              letter-spacing: 2px;
+            "
+          >
+            綁定成功
+          </h2>
+
+          <p
+            style="
+              text-align: center;
+              font-size: 12px;
+              color: #94a3b8;
+              line-height: 1.6;
+              margin: 0 0 6px;
+            "
+          >
+            之後每一筆出貨與到店取件，都會第一時間透過 LINE 通知你。
+          </p>
 
           <div class="fortune-card">
-            <div class="fortune-tag">✨ 今日購物運勢</div>
-            <div class="fortune-src">系統小占卜</div>
+            <div class="fortune-title">
+              <span>今日購物運勢</span>
+              <span>由系統隨機占卜</span>
+            </div>
             <div class="fortune-text" id="fortuneText">
               包裹運勢滿點！今天領的包裹裡，藏著你想要的超能力！
             </div>
           </div>
 
-          <div class="close-note">
-            視窗將在 5 秒後自動關閉，或你也可以直接關閉本頁並返回 LINE 聊天室。
-          </div>
-        </div>
+          <button class="btn-outline" id="btnCloseNow">
+            立即關閉視窗
+          </button>
 
+          <div class="footer-tip" id="autoCloseTip">
+            系統將在 5 秒後自動關閉…
+          </div>
+        </section>
       </div>
+    </main>
+
+    <div class="footer-tip" id="previewTip" style="display:none;">
+      🔍 目前為預覽模式（非從 LINE 開啟），實際綁定請從官方帳號訊息中點開。
     </div>
   </div>
-</div>
 
-<!-- LIFF SDK -->
-<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-<script>
-  const LIFF_ID = '2008430261-kOeNLR9x';
-  const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
-  const OFFICIAL_LINE_ID = '@cc0857'; // 這裡如需更改官方帳號，就改這一行
+  <!-- 狀態提示 -->
+  <div class="status-toast" id="statusToast">
+    <div class="status-dot"></div>
+    <span id="statusText">載入中…</span>
+  </div>
 
-  const $  = (s,r=document)=>r.querySelector(s);
-  const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+  <script>
+    // ==== 基本設定 ====
+    const LIFF_ID = "2008430261-kOeNLR9x";
+    const API_BASE = "https://api.murain.tw";
 
-  let LINE_PROFILE = null;
-  let currentStep = 0;
+    let currentStep = 0;
+    let lineProfile = null;
+    let autoCloseTimer = null;
 
-  const stepEls = {
-    0: $('#step0'),
-    1: $('#step1'),
-    2: $('#step2'),
-    3: $('#step3'),
-  };
-  const progressDots = $$('#progressDots .prog-dot');
-
-  const startBtn   = $('#startBtn');
-  const phoneInput = $('#phoneInput');
-  const nameInput  = $('#nameInput');
-  const emailInput = $('#emailInput');
-  const statusEl   = $('#statusText');
-
-  const backFrom1 = $('#backFrom1');
-  const nextFrom1 = $('#nextFrom1');
-  const backFrom2 = $('#backFrom2');
-  const bindBtn   = $('#bindBtn');
-  const aiBadge   = $('#aiNameBadge');
-  const aiTip     = $('#aiTip');
-
-  const avatarBox   = $('#avatarBox');
-  const welcomeName = $('#welcomeName');
-  const welcomeName2= $('#welcomeName2');
-  const lineIdShort = $('#lineIdShort');
-  const fortuneText = $('#fortuneText');
-
-  function setStatus(msg,isError){
-    statusEl.textContent = msg || '';
-    if (isError) statusEl.classList.add('error');
-    else statusEl.classList.remove('error');
-  }
-
-  function setStep(n){
-    currentStep = n;
-    Object.keys(stepEls).forEach(k=>{
-      stepEls[k].classList.toggle('active', Number(k)===n);
-    });
-    // 進度：成功頁不顯示高亮
-    progressDots.forEach(dot=>{
-      const s = Number(dot.dataset.step);
-      dot.classList.toggle('on', n>=s && n<=2);
-    });
-  }
-
-  function randomFortune(){
-    const list = [
-      '今天是補貨的好日子，把想買的實用品一次帶回家。',
-      '物流小天使正在加班搬貨，你的包裹很快就要出發了！',
-      '荷包理智線穩定，適合下單補貨但不要亂失控唷。',
-      '如果包裹遲到一點點，那只是為了讓你更有期待感。',
-      '今天查貨號特別順利，下次記得多留意推播通知。'
+    const steps = [
+      document.getElementById("step0"),
+      document.getElementById("step1"),
+      document.getElementById("step2"),
+      document.getElementById("step3")
     ];
-    return list[Math.floor(Math.random()*list.length)];
-  }
+    const dots = Array.from(document.querySelectorAll(".dot[data-dot]"));
 
-  async function initLiff(){
-    try{
-      await liff.init({ liffId: LIFF_ID });
+    const btnBack = document.getElementById("btnBack");
+    const btnStart = document.getElementById("btnStart");
+    const btnToStep2 = document.getElementById("btnToStep2");
+    const btnBind = document.getElementById("btnBind");
+    const btnCloseNow = document.getElementById("btnCloseNow");
 
-      if (!liff.isLoggedIn()) {
-        liff.login({ scope:'openid profile email' });
-        return;
-      }
+    const inputPhone = document.getElementById("inputPhone");
+    const inputName = document.getElementById("inputName");
+    const inputEmail = document.getElementById("inputEmail");
 
-      // 先取 ID Token 試著拿 email
-      let user = null;
-      try{
-        if (typeof liff.getDecodedIDToken === 'function'){
-          user = liff.getDecodedIDToken();
-        }
-      }catch(e){
-        console.log('getDecodedIDToken error', e);
-      }
+    const statusToast = document.getElementById("statusToast");
+    const statusText = document.getElementById("statusText");
+    const previewTip = document.getElementById("previewTip");
 
-      if (!user || !user.email){
-        // 可能是舊 token，強制重新登入一次要求 email scope
-        try{ liff.logout(); }catch(e){}
-        liff.login({ scope:'openid profile email' });
-        return;
-      }
+    const displayNameEl = document.getElementById("displayName");
+    const userIdShortEl = document.getElementById("userIdShort");
+    const avatarImg = document.getElementById("avatar");
+    const avatarPlaceholder = document.getElementById("avatarPlaceholder");
+    const emailHint = document.getElementById("emailHint");
+    const fortuneTextEl = document.getElementById("fortuneText");
+    const autoCloseTip = document.getElementById("autoCloseTip");
 
-      if (user.email && !emailInput.value){
-        emailInput.value = user.email;
-      }
-
-      const profile = await liff.getProfile();
-      LINE_PROFILE = profile;
-
-      const displayName = profile.displayName || '用戶';
-      welcomeName.textContent  = displayName;
-      welcomeName2.textContent = displayName;
-
-      if (profile.userId){
-        const uid = profile.userId;
-        lineIdShort.textContent = 'userId：' + uid.slice(0,6) + '****' + uid.slice(-4);
-      }else{
-        lineIdShort.textContent = '';
-      }
-
-      if (profile.pictureUrl){
-        const img = document.createElement('img');
-        img.src = profile.pictureUrl;
-        avatarBox.innerHTML = '';
-        avatarBox.appendChild(img);
-        const badge = document.createElement('div');
-        badge.className = 'avatar-badge';
-        badge.textContent = '✔';
-        avatarBox.appendChild(badge);
-      }
-
-      startBtn.disabled = false;
-    }catch(e){
-      console.error('LIFF init error', e);
-      // 如果不是在 LINE 內，給一個預覽用假資料
-      if (!navigator.userAgent.includes('Line')){
-        LINE_PROFILE = {
-          userId:'U12345678',
-          displayName:'預覽用帳號',
-          pictureUrl:''
-        };
-        welcomeName.textContent = '預覽用帳號';
-        welcomeName2.textContent = '預覽用帳號';
-        lineIdShort.textContent = 'userId：U1234****5678';
-        startBtn.disabled = false;
-      }
+    function showToast(msg) {
+      statusText.textContent = msg;
+      statusToast.style.display = "flex";
     }
-  }
-
-  // ─── 事件綁定 ─────────────────────
-  startBtn.addEventListener('click', ()=> setStep(1));
-  backFrom1.addEventListener('click', ()=> setStep(0));
-  backFrom2.addEventListener('click', ()=> setStep(1));
-
-  nextFrom1.addEventListener('click', ()=>{
-    const phone = (phoneInput.value||'').trim();
-    if (!phone){
-      alert('請先填寫手機號碼');
-      return;
+    function hideToast() {
+      statusToast.style.display = "none";
     }
-    setStep(2);
-  });
 
-  aiBadge.addEventListener('click', ()=>{
-    aiTip.classList.toggle('on');
-  });
-
-  bindBtn.addEventListener('click', async ()=>{
-    const name  = (nameInput.value || '').trim();
-    const phone = (phoneInput.value || '').trim();
-    const email = (emailInput.value || '').trim();
-
-    if (!LINE_PROFILE || !LINE_PROFILE.userId){
-      alert('尚未取得 LINE 帳號資訊，請重新整理頁面後再試一次。');
-      return;
-    }
-    if (!phone){
-      alert('請先填寫手機號碼');
-      return;
-    }
-    // 姓名可以留空（例如用電話+email 對應），但建議填
-    bindBtn.disabled = true;
-    setStatus('資料送出中，請稍候…', false);
-
-    try{
-      const body = {
-        line_user_id: LINE_PROFILE.userId,
-        display_name: LINE_PROFILE.displayName || '',
-        picture_url: LINE_PROFILE.pictureUrl || '',
-        status_message: LINE_PROFILE.statusMessage || '',
-        phone,
-        email,
-        name
-      };
-
-      const res = await fetch(API + '/line/bind-member', {
-        method: 'POST',
-        headers: { 'Content-Type':'application/json' },
-        body: JSON.stringify(body)
+    function setStep(step) {
+      currentStep = step;
+      steps.forEach((s, i) => {
+        s.classList.toggle("active", i === step);
       });
-      const j = await res.json().catch(()=>({}));
+      dots.forEach((d, i) => {
+        d.classList.toggle("active", i <= step && step < 3 ? true : false);
+      });
+      // 返回按鈕顯示邏輯
+      if (step === 0 || step === 3) {
+        btnBack.style.visibility = "hidden";
+      } else {
+        btnBack.style.visibility = "visible";
+      }
+    }
 
-      if (!res.ok || !j.ok){
-        console.error('bind-member error', j);
-        throw new Error(j.error || 'bind_member_failed');
+    function randomFortune(name) {
+      const n = name || "今天";
+      const list = [
+        n + "的包裹氣場超強，適合一次把缺的日用品補齊。",
+        "物流小天使今天特別關照你，包裹幾乎都會準時報到。",
+        n + "只要記得取貨，今天就算完成一件人生大事。",
+        "今天是補貨好日子，把想要的實用品一次帶回家。",
+        n + "的購物雷達全開，容易撿到超值好貨。"
+      ];
+      const idx = Math.floor(Math.random() * list.length);
+      return list[idx];
+    }
+
+    // ==== LIFF 初始化 ====
+    async function initLiff() {
+      if (!window.liff) {
+        console.warn("liff not found, preview mode.");
+        previewModeFallback();
+        return;
+      }
+      try {
+        showToast("正在初始化 LINE...");
+        await liff.init({ liffId: LIFF_ID });
+
+        if (!liff.isLoggedIn()) {
+          // 要求 openid + email
+          liff.login({ scope: "openid profile email" });
+          return;
+        }
+
+        lineProfile = await liff.getProfile();
+        const decoded = liff.getDecodedIDToken && liff.getDecodedIDToken();
+        const emailFromLine = decoded && decoded.email ? decoded.email : "";
+
+        // 更新 UI
+        if (lineProfile.displayName) {
+          displayNameEl.textContent = lineProfile.displayName;
+        }
+        if (lineProfile.userId) {
+          const uid = lineProfile.userId;
+          userIdShortEl.textContent =
+            "userId：" + uid.slice(0, 4) + "****" + uid.slice(-3);
+        } else {
+          userIdShortEl.textContent = "";
+        }
+
+        if (lineProfile.pictureUrl) {
+          avatarImg.src = lineProfile.pictureUrl;
+          avatarImg.style.display = "block";
+          avatarPlaceholder.style.display = "none";
+        }
+
+        if (emailFromLine) {
+          inputEmail.value = emailFromLine;
+          emailHint.textContent = "已自動帶入 LINE Email，可視需要調整。";
+        } else {
+          emailHint.textContent =
+            "未取得 LINE Email，請手動輸入常用收件 Email。";
+        }
+        hideToast();
+      } catch (e) {
+        console.error("LIFF Init Error", e);
+        hideToast();
+        previewModeFallback();
+      }
+    }
+
+    function previewModeFallback() {
+      previewTip.style.display = "block";
+      displayNameEl.textContent = "預覽用戶";
+      userIdShortEl.textContent = "目前為預覽模式";
+      avatarPlaceholder.textContent = "👀";
+      emailHint.textContent =
+        "預覽模式下無法讀取 LINE Email，實際綁定請在 LINE 中開啟。";
+    }
+
+    // ==== 綁定流程 ====
+    btnStart.addEventListener("click", function () {
+      setStep(1);
+      setTimeout(() => inputPhone.focus(), 50);
+    });
+
+    btnToStep2.addEventListener("click", function () {
+      const phone = inputPhone.value.trim();
+      if (!phone || !/^09\d{8}$/.test(phone)) {
+        alert("請輸入正確的手機號碼（09 開頭共 10 碼）");
+        inputPhone.focus();
+        return;
+      }
+      setStep(2);
+      setTimeout(() => inputName.focus(), 50);
+    });
+
+    btnBack.addEventListener("click", function () {
+      if (currentStep === 1) {
+        setStep(0);
+      } else if (currentStep === 2) {
+        setStep(1);
+      }
+    });
+
+    btnBind.addEventListener("click", async function () {
+      const phone = inputPhone.value.trim();
+      const name = inputName.value.trim();
+      const email = inputEmail.value.trim();
+
+      if (!phone || !name) {
+        alert("請先填寫手機與收件人姓名。");
+        return;
+      }
+      if (!email) {
+        if (!confirm("尚未填寫 Email，確定要繼續綁定嗎？")) return;
       }
 
-      // 成功
-      setStatus('', false);
-      fortuneText.textContent = randomFortune();
-      setStep(3);
+      showToast("資料送出中...");
+      btnBind.disabled = true;
 
-      setTimeout(()=>{
-        try{
-          if (liff.isInClient()){
-            liff.closeWindow();
-          }else{
-            window.location.href = 'https://line.me/R/ti/p/' + OFFICIAL_LINE_ID;
-          }
-        }catch(e){}
-      }, 5000);
-    }catch(e){
-      console.error(e);
-      setStatus('綁定失敗，請稍後再試一次，或截圖給小幫手查看。', true);
-      bindBtn.disabled = false;
+      try {
+        const body = {
+          line_user_id: lineProfile && lineProfile.userId
+            ? lineProfile.userId
+            : "preview_uid",
+          display_name:
+            (lineProfile && lineProfile.displayName) || "預覽用戶",
+          picture_url:
+            (lineProfile && lineProfile.pictureUrl) || "",
+          status_message:
+            (lineProfile && lineProfile.statusMessage) || "",
+          phone,
+          email,
+          name
+        };
+
+        const res = await fetch(API_BASE + "/line/bind-member", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        });
+
+        const j = await res.json().catch(() => ({}));
+        if (!res.ok || !j.ok) {
+          console.error("bind-member error:", j);
+          throw new Error(j.error || "bind_failed");
+        }
+
+        hideToast();
+        setStep(3);
+        fortuneTextEl.textContent = randomFortune(name);
+        startAutoClose();
+      } catch (err) {
+        console.error(err);
+        hideToast();
+        alert("綁定失敗，請稍後再試。");
+      } finally {
+        btnBind.disabled = false;
+      }
+    });
+
+    function startAutoClose() {
+      let countdown = 5;
+      autoCloseTip.textContent = "系統將在 " + countdown + " 秒後自動關閉…";
+
+      autoCloseTimer = setInterval(() => {
+        countdown -= 1;
+        if (countdown <= 0) {
+          clearInterval(autoCloseTimer);
+          closeWindow();
+        } else {
+          autoCloseTip.textContent =
+            "系統將在 " + countdown + " 秒後自動關閉…";
+        }
+      }, 1000);
     }
-  });
 
-  document.addEventListener('DOMContentLoaded', initLiff);
-</script>
+    function closeWindow() {
+      try {
+        if (window.liff && liff.isInClient()) {
+          liff.closeWindow();
+          return;
+        }
+      } catch (e) {
+        console.warn("closeWindow error", e);
+      }
+      // 不在 LINE 內，就導回官方帳號
+      window.location.href = "https://line.me/R/ti/p/@cc0857";
+    }
+
+    btnCloseNow.addEventListener("click", function () {
+      if (autoCloseTimer) clearInterval(autoCloseTimer);
+      closeWindow();
+    });
+
+    // 初始化
+    window.addEventListener("DOMContentLoaded", initLiff);
+  </script>
 </body>
 </html>
