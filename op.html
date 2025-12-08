@@ -228,15 +228,39 @@ function buildCheckoutUrl() {
   return `${LIFF_CHECKOUT_URL}?cart_token=${encodeURIComponent(CART)}`;
 }
 
-function linkCheckout() {
-  if (!guardCart()) return;
+async function linkCheckout() {
+    if (!guardCart()) return;
+    const url = buildCheckoutUrl();
+    $('#link_out').value = url;
+    $('#link_out').select();
+    document.execCommand('copy');
+    alert('已複製結帳連結');
+  }
 
-  const url = buildCheckoutUrl();
-  $('#link_out').value = url;
-  $('#link_out').select();
-  document.execCommand('copy');
-  alert('已複製結帳連結');
-}
+  // ★ 新增：呼叫後端，請官方 LINE 幫你發 Flex 卡片
+  async function sendCheckoutLinkByLine() {
+    if (!guardCart()) return;
+    if (!OP) return alert('請先登入 OP Key');
+
+    const lineUserId = ($('#line_user_id').value || '').trim();
+    if (!lineUserId) return alert('請先貼上客人的 LineUserId');
+
+    const res = await jfetch(API + '/op/cart/send-link', {
+      method: 'POST',
+      body: JSON.stringify({
+        op_key: OP,
+        cart_token: CART,
+        line_user_id: lineUserId
+      })
+    });
+
+    if (!res || res.ok !== true) {
+      console.log('send-link error', res);
+      return alert('發送失敗：' + (res && res.error || 'unknown'));
+    }
+
+    alert('已從官方 LINE 發送結帳卡片');
+  }
 
 // 新增：複製一整段要貼給客人的 LINE 訊息
 function copyLineMessage() {
