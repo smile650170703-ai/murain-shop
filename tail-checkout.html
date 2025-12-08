@@ -98,6 +98,22 @@
       font-size:13px;
       margin-bottom:10px;
     }
+    .pill-inline{
+  display:inline-block;
+  padding:2px 8px;
+  border-radius:999px;
+  border:1px solid rgba(148,163,184,.6);
+  font-size:13px;
+}
+
+.btn-sm{
+  font-size:12px;
+  padding:4px 10px;
+}
+
+.required{
+  color:#f97373;
+}
     .mono{font-family:ui-monospace,Menlo,Consolas,monospace;}
     .pill-bar{
       display:flex;
@@ -299,40 +315,65 @@
       <div class="mt-2" id="instBox" style="display:none">
         <label>分期期數</label>
         <select id="instMonths" style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border);background:#020617;color:var(--txt);font-size:14px;">
-          <option value="3">3 期</option>
-          <option value="6">6 期</option>
-          <option value="9">9 期</option>
-          <option value="12">12 期</option>
-        </select>
-        <div class="hint mt-1 small">實際分期利率與每期金額以刷卡頁面為準。</div>
+  <option value="3">3 期（零利率）</option>
+  <option value="6">6 期（零利率）</option>
+  <option value="9">9 期（零利率）</option>
+</select>
+<div class="hint mt-1 small">實際分期利率與每期金額以刷卡頁面為準。</div>
       </div>
       </div>
     </div>
 
     <!-- ATM 匯款 -->
-    <div class="pay-pane" id="paneATM">
-      <div class="hint mt-2">
-        尾款將以「匯款全額」方式結清，請於顯示的期限內匯款完成。<br>
-        <br>
-        匯款資訊：<br>
-        · 銀行：中國信託商業銀行（822）<br>
-        · 帳號：222540458194<br>
-        · 戶名：潘羿如（MURAIN）<br>
-      </div>
+<div class="pay-pane" id="paneATM">
+  <div class="hint mt-2">
+    尾款將以「匯款全額」方式結清，請於顯示的期限內匯款完成。
+  </div>
+
+  <div class="card mt-2">
+    <div class="small">
+      匯款資訊：
     </div>
+    <div class="mt-2 small">
+      銀行：
+      <span class="pill-inline">郵局（700）</span><br>
+      帳號：
+      <span id="atmAccount" class="pill-inline">01912890973712</span>
+      <button type="button" class="btn-secondary btn-sm" id="btnCopyAtm">
+        一鍵複製
+      </button>
+    </div>
+    <div class="muted small mt-1">
+      可直接一鍵複製帳號貼到 APP。
+    </div>
+  </div>
+
+  <div class="mt-3">
+    <label>匯款帳號後五碼 <span class="required">*</span></label>
+    <input
+      id="atmLast5"
+      type="text"
+      maxlength="5"
+      inputmode="numeric"
+      pattern="[0-9]*"
+      style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border);background:#020617;color:var(--txt);font-size:14px;"
+      placeholder="請輸入匯款帳號後五碼"
+    />
+  </div>
+</div>
 
     <!-- 無卡零角 -->
     <div class="pay-pane" id="paneZEROCARD">
       <div class="mt-2">
         <label>分期期數</label>
         <select id="zcMonths" style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border);background:#020617;color:var(--txt);font-size:14px;">
-          <option value="3">3 期</option>
-          <option value="6">6 期</option>
-          <option value="9">9 期</option>
-          <option value="12">12 期</option>
-          <option value="18">18 期</option>
-          <option value="24">24 期</option>
-        </select
+  <option value="3">3 期（零利率）</option>
+  <option value="6">6 期</option>
+  <option value="9">9 期</option>
+  <option value="12">12 期</option>
+  <option value="18">18 期</option>
+  <option value="24">24 期</option>
+</select>
       </div>
     </div>
 
@@ -468,42 +509,55 @@
     }
 
     let payment_method = "";
+const extra = {};  // 額外資料（例如 ATM 匯款後五碼）
 
-    if(activePay === "COD"){
-      payment_method = "cod_711"; // 尾款用貨到付款
-    }else if(activePay === "PAID"){
-      if(paidChannel === "card_once"){
-        payment_method = "paid_card_once";
-      }else if(paidChannel === "card_inst"){
-        const months = $("#instMonths").value || "3";
-        payment_method = `paid_card_inst_${months}`;
-      }else if(paidChannel === "linepay"){
-        payment_method = "paid_linepay";
-      }else if(paidChannel === "af"){
-        payment_method = "paid_af";
-      }
-    }else if(activePay === "ATM"){
-      payment_method = "atm_full_tail"; // 給你辨識是「尾款匯款」
-    }else if(activePay === "ZEROCARD"){
-      const months = $("#zcMonths").value || "3";
-      payment_method = `zero_card_${months}`;
-    }
+if(activePay === "COD"){
+  payment_method = "cod_711"; // 尾款用貨到付款
+}else if(activePay === "PAID"){
+  if(paidChannel === "card_once"){
+    payment_method = "paid_card_once";
+  }else if(paidChannel === "card_inst"){
+    const months = $("#instMonths").value || "3";
+    payment_method = `paid_card_inst_${months}`;
+  }else if(paidChannel === "linepay"){
+    payment_method = "paid_linepay";
+  }else if(paidChannel === "af"){
+    payment_method = "paid_af";
+  }
+}else if(activePay === "ATM"){
+  const last5Input = $("#atmLast5");
+  const last5 = (last5Input && last5Input.value || "").trim();
+  if (!/^\d{5}$/.test(last5)) {
+    alert("請先輸入匯款帳號後五碼（5 位數字）");
+    if (last5Input) last5Input.focus();
+    return;
+  }
+  payment_method = "atm_full_tail"; // 給你辨識是「尾款匯款」
+  extra.atm_last5 = last5;
+}else if(activePay === "ZEROCARD"){
+  const months = $("#zcMonths").value || "3";
+  payment_method = `zero_card_${months}`;
+}
 
     if(!payment_method){
-      alert("請先選擇尾款付款方式");
-      return;
-    }
+  alert("請先選擇尾款付款方式");
+  return;
+}
 
-    try{
-      $("#submitBtn").disabled = true;
+try{
+  $("#submitBtn").disabled = true;
 
-      const payload = {
-        parent_order_id: tailInfo.parent_order_id,
-        items_json: tailInfo.items_text || "",
-        tail_amount: tailInfo.tail_amount || 0,
-        payment_method,
-        shipping_info: tailInfo.shipping_info || {}
-      };
+  const payload = {
+    parent_order_id: tailInfo.parent_order_id,
+    items_json: tailInfo.items_text || "",
+    tail_amount: tailInfo.tail_amount || 0,
+    payment_method,
+    shipping_info: tailInfo.shipping_info || {}
+  };
+
+  if (extra.atm_last5) {
+    payload.atm_last5 = extra.atm_last5;
+  }
 
       const r = await fetch(`${API}/tail/checkout`,{
         method:"POST",
@@ -593,10 +647,30 @@
     }
   }
 document.addEventListener("DOMContentLoaded", ()=>{
-    initTabs();
-    loadTailInfo();
-    $("#submitBtn").addEventListener("click", submitTail);
-  });
+  initTabs();
+  loadTailInfo();
+  $("#submitBtn").addEventListener("click", submitTail);
+
+  const btnCopy = $("#btnCopyAtm");
+  if (btnCopy) {
+    btnCopy.addEventListener("click", ()=>{
+      const accEl = $("#atmAccount");
+      const acc = (accEl && accEl.textContent || "").replace(/\s+/g,"");
+      if (!acc) return;
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(acc).then(()=>{
+          alert("匯款帳號已複製");
+        }).catch(()=>{
+          alert("匯款帳號： " + acc + "\n如無法自動複製，請手動長按複製。");
+        });
+      } else {
+        alert("匯款帳號： " + acc + "\n如無法自動複製，請手動長按複製。");
+      }
+    });
+  }
+});
+
 })();
 </script>
 </body>
