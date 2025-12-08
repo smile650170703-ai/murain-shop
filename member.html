@@ -179,7 +179,25 @@
 .order-meta div {
   white-space: normal;   /* 收件人 / 地址 可以折行 */
 }
-
+.credit-bar {
+      margin: 8px 0;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(15,23,42,0.9);
+      border: 1px solid rgba(148,163,184,0.6);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13px;
+    }
+    .credit-label {
+      color: var(--muted);
+    }
+    .credit-value {
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 14px;
+    }
 
     @media (max-width: 380px) {
   .brand-title { font-size: 20px; }
@@ -210,6 +228,12 @@
       <button class="tab" data-tab="web">官網訂單</button>
     </div>
 
+     <!-- 新增：購物金顯示 -->
+    <div class="credit-bar" id="creditBar" style="display:none;">
+      <div class="credit-label">可用購物金</div>
+      <div class="credit-value" id="creditValue">NT$ 0</div>
+    </div>
+
     <div class="msg" id="infoMsg">載入中…</div>
 
     <div class="order-list" id="orderList"></div>
@@ -227,6 +251,7 @@
 
   let currentUserId = null;
   let orders = [];
+  let memberInfo = null;  // ★ 新增
 
     let currentFilter = "all";
 
@@ -239,6 +264,8 @@
   const infoMsg    = document.getElementById("infoMsg");
   const orderList  = document.getElementById("orderList");
   const emptyText  = document.getElementById("emptyText");
+  const creditBar  = document.getElementById("creditBar");     // ★ 新增
+  const creditValue = document.getElementById("creditValue");  // ★ 新增
 
   document.getElementById("reloadBtn").addEventListener("click", () => {
     if (currentUserId) {
@@ -415,6 +442,40 @@ l2Right.textContent = formatDate(o.created_at);
     }
   }
 
+ async function loadMemberInfo() {
+    if (!currentUserId) return;
+    if (!MEMBER_INFO_API) return;
+
+    try {
+      const url = MEMBER_INFO_API + "?user_id=" + encodeURIComponent(currentUserId);
+      const res = await fetch(url, { credentials: "omit" });
+      const json = await res.json();
+
+      if (!res.ok || !json.ok) {
+        throw new Error(json && json.error || "member_info_failed");
+      }
+
+      memberInfo = json;
+      updateCreditUI();
+    } catch (e) {
+      console.error("loadMemberInfo error", e);
+      // 失敗就不要顯示購物金，不會影響訂單列表
+    }
+  }
+
+  function updateCreditUI() {
+    if (!creditBar || !creditValue) return;
+
+    const credit =
+      memberInfo && typeof memberInfo.credit === "number"
+        ? memberInfo.credit
+        : 0;
+
+    creditBar.style.display = "flex";
+    creditValue.textContent = "NT$ " + credit.toLocaleString();
+  }
+
+  
   async function loadOrders() {
     if (!currentUserId) return;
     infoMsg.classList.remove("error");
@@ -469,6 +530,8 @@ l2Right.textContent = formatDate(o.created_at);
       const name    = profile.displayName || "";
       statusText.textContent = name ? (name + " 您好") : "已登入";
 
+      // 同時載入會員資料 + 訂單
+      loadMemberInfo();
       loadOrders();
     } catch (e) {
       console.error(e);
