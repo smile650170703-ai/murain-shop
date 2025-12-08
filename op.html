@@ -94,11 +94,20 @@
 
   <!-- 結帳 & 清單 -->
   <div class="card hidden" id="card-list">
-  <h2>產生結帳連結</h2>
-  <div class="row">
-    <button id="btn-link" class="ghost">複製結帳連結</button>
-  </div>
-  <input id="link_out" class="mono" readonly style="margin-top:10px" />
+    <h2>產生結帳連結</h2>
+    <div class="row">
+      <button id="btn-link" class="ghost">複製結帳連結</button>
+      <button id="btn-link-msg" class="ghost">複製 LINE 訊息</button>
+    </div>
+    <input id="link_out" class="mono" readonly style="margin-top:10px" />
+    <textarea
+      id="line_msg"
+      rows="4"
+      class="mono"
+      readonly
+      style="margin-top:8px"
+      placeholder="這裡會自動產生要貼給客人的訊息"
+    ></textarea>
 
     <ul id="items" class="list"></ul>
     <div class="grid2" style="margin-top:8px">
@@ -204,16 +213,47 @@
     await refreshList();
   }
 
-  function linkCheckout() {
+  // 共用：產生這一車的結帳網址
+function buildCheckoutUrl() {
+  const LIFF_CHECKOUT_URL = 'https://liff.line.me/2008430261-KLwoQjm4';
+  return `${LIFF_CHECKOUT_URL}?cart_token=${encodeURIComponent(CART)}`;
+}
+
+function linkCheckout() {
   if (!guardCart()) return;
 
-  // 用 LIFF 的結帳頁 ID
-  const LIFF_CHECKOUT_URL = 'https://liff.line.me/2008430261-KLwoQjm4';
-
-  $('#link_out').value = `${LIFF_CHECKOUT_URL}?cart_token=${encodeURIComponent(CART)}`;
+  const url = buildCheckoutUrl();
+  $('#link_out').value = url;
   $('#link_out').select();
   document.execCommand('copy');
   alert('已複製結帳連結');
+}
+
+// 新增：複製一整段要貼給客人的 LINE 訊息
+function copyLineMessage() {
+  if (!guardCart()) return;
+
+  const url = buildCheckoutUrl();
+  const totalText = $('#total') ? $('#total').textContent.trim() : '';
+
+  const msgLines = [
+    '親愛的寶寶您好，這是您的專屬結帳連結：',
+    url,
+    '',
+    totalText ? `本次結帳金額：${totalText}` : '',
+    '請在 10 分鐘內完成填寫與送出，如需調整可以直接回覆此訊息喔💖'
+  ].filter(Boolean);
+
+  const msg = msgLines.join('\n');
+
+  const ta = $('#line_msg');
+  if (ta) ta.value = msg;
+
+  // 直接複製到剪貼簿
+  (ta || $('#link_out')).value = msg;
+  (ta || $('#link_out')).select();
+  document.execCommand('copy');
+  alert('已複製 LINE 訊息');
 }
 
 
@@ -235,6 +275,8 @@
     $('#btn-refresh').addEventListener('click', refreshList);
     $('#btn-clear').addEventListener('click', clearCart);
     $('#btn-link').addEventListener('click', linkCheckout);
+     const btnLineMsg = $('#btn-link-msg');
+    if (btnLineMsg) btnLineMsg.addEventListener('click', copyLineMessage);
     Object.keys(quick).forEach(sel=>{
       const v = quick[sel];
       document.querySelector(sel).addEventListener('click', ()=>applyQuick(v));
