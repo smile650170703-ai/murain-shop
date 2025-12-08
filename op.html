@@ -273,6 +273,56 @@
 
     alert('已從官方 LINE 發送結帳卡片');
   }
+  // ★ 新增：用 LINE 名稱 / 本名查詢會員，找到就自動帶 LineUserId
+  async function searchLineMember() {
+    if (!OP) {
+      alert('請先登入 OP Key');
+      return;
+    }
+
+    const q = ($('#line_search_name').value || '').trim();
+    if (!q) {
+      alert('請先輸入要查的 LINE 名稱或本名');
+      return;
+    }
+
+    try {
+      const res = await jfetch(API + '/op/line-member/search', {
+        method: 'POST',
+        body: JSON.stringify({
+          op_key: OP,
+          keyword: q
+        })
+      });
+
+      if (!res || res.ok !== true) {
+        if (res && res.error === 'not_found') {
+          alert('找不到相符的會員（名稱要跟 Airtable 上的一模一樣）');
+        } else {
+          alert('搜尋失敗：' + (res && res.error || 'unknown'));
+        }
+        return;
+      }
+
+      const m = res.member || {};
+
+      // 自動帶入 LineUserId
+      $('#line_user_id').value = m.lineUserId || '';
+
+      // 顯示一下找到的是誰
+      const infoEl = $('#line_search_info');
+      if (infoEl) {
+        const namePart =
+          (m.displayName || '') ||
+          (m.name || '');
+        const phonePart = m.phone ? ` / ${m.phone}` : '';
+        infoEl.textContent = `已選擇：${namePart}${phonePart}`;
+      }
+    } catch (e) {
+      console.error(e);
+      alert('搜尋失敗：' + e.message);
+    }
+  }
 
 // 新增：複製一整段要貼給客人的 LINE 訊息
 function copyLineMessage() {
