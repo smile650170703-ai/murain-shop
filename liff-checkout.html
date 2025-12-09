@@ -549,6 +549,7 @@ function applyMemberInfoToForm(info) {
     '#dep_new_full_name',  // 新客全額匯款
     '#ship_name_zc',       // 中租 + 7-11
     '#zc_post_name'        // 中租 + 郵寄
+   '#cod_meet_name'       // ★ COD 面交姓名
   ].forEach(sel => fillIfEmpty(sel, name));
 
   // ② 電話
@@ -649,6 +650,22 @@ const tabs=$$('#payTabs .tab'); tabs.forEach(t=>t.addEventListener('click',()=>{
   const kt=t.dataset.pay;
   ['COD','PAID','DEPOSIT','ZEROCARD'].forEach(x=>$('#pane'+x).hidden=(x!==kt));
 }));
+
+ /* ===== COD：7-11 / 面交 切換 ===== */
+const codShipSelect  = document.getElementById('cod_ship_method');
+const codShip711Box  = document.getElementById('codShip711');
+const codMeetupBox   = document.getElementById('codShipMeetup');
+
+function updateCodShip() {
+  if (!codShipSelect) return;
+  const m = codShipSelect.value; // '711' or 'meetup'
+  if (codShip711Box)  codShip711Box.hidden  = (m !== '711');
+  if (codMeetupBox)   codMeetupBox.hidden   = (m !== 'meetup');
+}
+
+if (codShipSelect) {
+  codShipSelect.addEventListener('change', updateCodShip);
+}
 
 /* ===== PAID ===== */
 function updatePaidChannelBox(){
@@ -978,29 +995,61 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
   // 目前選到哪個分頁（COD / PAID / DEPOSIT / ZEROCARD）
   const activeTab = [...tabs].find(t=>t.classList.contains('active'))?.dataset.pay || 'COD';
 
-  // ===== COD =====
-  if(activeTab === 'COD'){
-    const name  = $('#cod_name').value;
-    const phone = $('#cod_phone').value;
-    const id    = $('#cod_store_id').value;
-    const sname = $('#cod_store_name').value;
-    const addr  = $('#cod_store_addr').value;
-    const emailCod = ($('#cod_email').value || '').trim();
+    // ===== COD：7-11 貨到付款 / 現金面交 =====
+  if (activeTab === 'COD') {
+    const codMethodEl = document.getElementById('cod_ship_method');
+    const codMethod   = codMethodEl ? codMethodEl.value : '711';  // 711 | meetup
 
-    if(![name,phone,id,sname,addr,emailCod].every(required)) {
-      alert('請填完 COD 必填欄位（含 Email）');
-      return;
+    // --- ① 7-11 取貨付款 ---
+    if (codMethod === '711') {
+      const name     = $('#cod_name').value;
+      const phone    = $('#cod_phone').value;
+      const id       = $('#cod_store_id').value;
+      const sname    = $('#cod_store_name').value;
+      const addr     = $('#cod_store_addr').value;
+      const emailCod = ($('#cod_email').value || '').trim();
+
+      if (![name, phone, id, sname, addr, emailCod].every(required)) {
+        alert('請填完 7-11 貨到付款必填欄位（含 Email）');
+        return;
+      }
+
+      payment_method = 'cod_711';
+      ship = {
+        type: '711',
+        name,
+        phone,
+        email: emailCod,
+        store: { id, name: sname, addr }
+      };
     }
 
-    payment_method = 'cod_711';
-    ship = {
-      type:'711',
-      name,
-      phone,
-      email: emailCod,
-      store:{ id, name:sname, addr }
-    };
+    // --- ② 面交（現金） ---
+    else if (codMethod === 'meetup') {
+      const name       = $('#cod_meet_name').value;
+      const phone      = $('#cod_meet_phone').value;
+      const emailMeet  = ($('#cod_meet_email').value || '').trim();
+
+      if (![name, phone, emailMeet].every(required)) {
+        alert('請填完面交聯絡資料（含 Email）');
+        return;
+      }
+
+      payment_method = 'cod_meetup';   // 給後端辨識：現金面交
+      ship = {
+        type: 'meetup',
+        name,
+        phone,
+        email: emailMeet
+      };
+    }
+
+    else {
+      alert('請先選擇取貨方式');
+      return;
+    }
   }
+
 
   // ===== PAID =====
   if(activeTab === 'PAID'){
@@ -1405,6 +1454,7 @@ try{
   }
 
   // 2. 把各種選項的預設畫面處理好
+ updateCodShip();        // COD：預設取貨方式
  updatePaidChannelBox(); // 線上付款：預設一次付就隱藏分期
   updatePaidShip();     // 線上付款 7-11 / 郵寄 哪一塊
   refreshDepType();   // ⬅ 把原本的 updateDepositPane() 改成這個
