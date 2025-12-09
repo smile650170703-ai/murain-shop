@@ -372,10 +372,15 @@ const creditsEmpty = document.getElementById("creditsEmpty");  // ★ 新增
   }
 
     function renderOrders() {
-    orderList.innerHTML = "";
-    emptyText.style.display = "none";
+  // 顯示訂單區、隱藏紅利明細區
+  orderList.style.display   = "block";
+  emptyText.style.display   = "none";
+  if (creditsList)  creditsList.style.display  = "none";
+  if (creditsEmpty) creditsEmpty.style.display = "none";
 
-    let list = orders.slice();
+  orderList.innerHTML = "";
+
+  let list = orders.slice();
 
     // 依目前分頁：all / live / web
     if (currentFilter === "live") {
@@ -518,6 +523,88 @@ l2Right.textContent = formatDate(o.created_at);
     creditValue.textContent = "NT$ " + credit.toLocaleString();
   }
 
+  async function loadCredits() {
+    if (!currentUserId) return;
+    try {
+      const url = CREDITS_API + "?line_user_id=" + encodeURIComponent(currentUserId);
+      const res = await fetch(url, { credentials: "omit" });
+      const json = await res.json();
+
+      if (!res.ok || !json.ok) {
+        throw new Error(json && json.error || "load_credits_failed");
+      }
+
+      credits = json.items || [];
+      if (currentFilter === "credits") {
+        renderCredits();
+      }
+    } catch (e) {
+      console.error("loadCredits error", e);
+      if (currentFilter === "credits") {
+        infoMsg.textContent = "載入紅利明細時發生錯誤，請稍後再試。";
+      }
+    }
+  }
+
+  function renderCredits() {
+    if (!creditsList || !creditsEmpty) return;
+
+    // 顯示紅利明細區、隱藏訂單區
+    orderList.style.display   = "none";
+    emptyText.style.display   = "none";
+    creditsList.style.display = "block";
+    creditsEmpty.style.display = "none";
+
+    creditsList.innerHTML = "";
+
+    if (!credits.length) {
+      creditsEmpty.style.display = "block";
+      infoMsg.textContent = "";
+      return;
+    }
+
+    infoMsg.textContent = "";
+
+    for (const item of credits) {
+      const wrap = document.createElement("div");
+      wrap.className = "credit-item";
+
+      const top = document.createElement("div");
+      top.className = "credit-top";
+
+      const left = document.createElement("div");
+      left.textContent = item.reason ||
+        (item.type === "use" ? "使用購物金" : "購物金入帳");
+
+      const amtEl = document.createElement("div");
+      amtEl.className = "credit-amount";
+      const amount = Number(item.amount || 0);
+      const sign = amount > 0 ? "+" : "";
+      amtEl.textContent = sign + amount.toLocaleString("zh-TW") + " 點";
+      if (amount > 0) amtEl.classList.add("positive");
+      else if (amount < 0) amtEl.classList.add("negative");
+
+      top.appendChild(left);
+      top.appendChild(amtEl);
+
+      const meta = document.createElement("div");
+      meta.className = "credit-meta";
+      const metaParts = [];
+      if (item.order_id) {
+        metaParts.push("訂單：" + item.order_id);
+      }
+      if (item.created_at) {
+        metaParts.push(formatDate(item.created_at));
+      }
+      meta.textContent = metaParts.join(" ｜ ");
+
+      wrap.appendChild(top);
+      wrap.appendChild(meta);
+
+      creditsList.appendChild(wrap);
+    }
+  }
+
   
   async function loadOrders() {
     if (!currentUserId) return;
@@ -586,19 +673,26 @@ l2Right.textContent = formatDate(o.created_at);
   }
 
    document.addEventListener("DOMContentLoaded", () => {
-    // tab 點擊切換篩選
-    document.querySelectorAll(".tab").forEach(btn => {
-      btn.addEventListener("click", () => {
-        currentFilter = btn.dataset.tab || "all";
-        updateTabsUI();
-        renderOrders();
-      });
-    });
+  // tab 點擊切換篩選
+  document.querySelectorAll(".tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      currentFilter = btn.dataset.tab || "all";
+      updateTabsUI();
 
-    updateTabsUI();
-    initLiff();
+      if (currentFilter === "credits") {
+        // 切到紅利明細分頁
+        renderCredits();
+        loadCredits();
+      } else {
+        // 其他分頁照原本的訂單列表
+        renderOrders();
+      }
+    });
   });
 
+  updateTabsUI();
+  initLiff();
+});
 </script>
 
 </body>
