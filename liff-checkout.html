@@ -721,12 +721,13 @@ if (depTypeRadios.length) {
 
 /* ===== ZEROCARD ===== */
 function calcZC(){
-  const months=Number($('#zc_months').value||3);
-  const base=CART_TOTAL_RAW || 0;
-  const rate=(RATE_TABLE[months]||0)/100;
-  const total=Math.round(base*(1+rate));
-  const each=Math.round(total/months);
-  $('#zc_each').value=money(each)+' × '+months+' 期';
+  const months = Number($('#zc_months').value || 3);
+  // ★ 分期的基礎金額＝原始金額 - 本次使用購物金
+  const base   = Math.max(0, (CART_TOTAL_RAW || 0) - (CREDIT_USED || 0));
+  const rate   = (RATE_TABLE[months] || 0) / 100;
+  const total  = Math.round(base * (1 + rate));
+  const each   = months ? Math.round(total / months) : 0;
+  $('#zc_each').value = money(each) + ' × ' + months + ' 期';
 }
 $('#zc_months').addEventListener('change',calcZC);
 $('#zc_ship_method').addEventListener('change',updateZcShip);
@@ -763,8 +764,8 @@ async function loadCart(){
     const detailBox = document.querySelector('#itemsText');
     if (detailBox) detailBox.value = detail;
 
-    setTotal(total);
-    calcZC();
+    // ★ 金額＋購物金顯示全部重算一次
+    refreshAmounts();
   } catch (e) {
     console.error('loadCart error', e);
     alert('讀取購物車失敗，請再試一次。');
@@ -1257,7 +1258,12 @@ if (LINE_PROFILE && LINE_PROFILE.userId) {
         const r = await fetch(`${API}/checkout`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ cart_token: cartToken, payment_method, shipping_info })
+      body: JSON.stringify({
+        cart_token: cartToken,
+        payment_method,
+        shipping_info,
+        credit_used: CREDIT_USED || 0   // ★ 新增：本次折抵的購物金金額
+      })
     });
     const j = await r.json();
     if (!r.ok || !j.ok) {
@@ -1391,6 +1397,36 @@ try{
   updatePaidShip();     // 線上付款 7-11 / 郵寄 哪一塊
   refreshDepType();   // ⬅ 把原本的 updateDepositPane() 改成這個
   updateZcShip();       // 中租 顯示 7-11 / 郵寄
+
+ // ★ 購物金輸入欄位事件：即時重算
+  const creditInput   = document.getElementById('creditUse');
+  const creditMaxBtn  = document.getElementById('creditUseMaxBtn');
+
+  if (creditInput) {
+    creditInput.addEventListener('input', () => {
+      const base  = CART_TOTAL_RAW || 0;
+      const avail = CREDIT_AVAILABLE || 0;
+      let v = parseInt(creditInput.value.replace(/[^\d]/g, ''), 10);
+      if (!Number.isFinite(v)) v = 0;
+      if (v < 0) v = 0;
+      const max = Math.min(avail, base);
+      if (v > max) v = max;
+      CREDIT_USED = v;
+      creditInput.value = v ? String(v) : '';
+      refreshAmounts();
+    });
+  }
+
+  if (creditMaxBtn) {
+    creditMaxBtn.addEventListener('click', () => {
+      const base  = CART_TOTAL_RAW || 0;
+      const avail = CREDIT_AVAILABLE || 0;
+      const max   = Math.min(avail, base);
+      CREDIT_USED = max;
+      if (creditInput) creditInput.value = max ? String(max) : '';
+      refreshAmounts();
+    });
+  }
 
   // 3. 讀購物車，塞進「商品明細 / 小計 / 應付金額」，順便更新中租試算
   await loadCart();
