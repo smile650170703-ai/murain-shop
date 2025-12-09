@@ -1,23 +1,148 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>正在前往付款 / 結果頁…</title>
-<style>
-  body{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto;margin:0;padding:24px;background:#0b1222;color:#e2e8f0}
-  .card{max-width:720px;margin:0 auto;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:16px}
-  .muted{opacity:.8}
-  a.button{display:inline-block;margin-top:12px;padding:10px 14px;border-radius:12px;background:#22d3ee;color:#0b1222;text-decoration:none;font-weight:700}
-  code{background:rgba(255,255,255,.07);padding:2px 6px;border-radius:6px}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>XUYUAN | Processing...</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-color: #050505;
+      --card-bg: #111;
+      --text-main: #fff;
+      --text-muted: #666;
+      --gold-primary: #D4AF37; 
+      --font-serif: 'Playfair Display', serif;
+      --font-sans: 'Lato', sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    /* --- Brand --- */
+    .brand {
+      font-family: var(--font-serif);
+      font-size: 24px;
+      letter-spacing: 0.2em;
+      color: var(--gold-primary);
+      margin-bottom: 60px;
+      text-transform: uppercase;
+      opacity: 0;
+      animation: fadeIn 1s ease forwards;
+    }
+
+    /* --- Loading Animation --- */
+    .loader-container {
+      position: relative;
+      width: 80px; height: 80px;
+      margin-bottom: 40px;
+    }
+    
+    .circle {
+      position: absolute; inset: 0;
+      border: 1px solid var(--gold-primary);
+      border-radius: 50%;
+      opacity: 0;
+      animation: ripple 2s infinite cubic-bezier(0, 0.2, 0.8, 1);
+    }
+    .circle:nth-child(2) { animation-delay: -0.5s; }
+
+    .msg-box {
+      text-align: center;
+      opacity: 0;
+      animation: fadeIn 1s ease forwards 0.5s;
+    }
+
+    h2 {
+      font-family: var(--font-serif);
+      font-weight: 400;
+      font-size: 18px;
+      letter-spacing: 0.1em;
+      margin: 0 0 8px;
+      color: #eee;
+    }
+
+    .muted {
+      font-size: 12px;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+    }
+
+    /* --- Action Links --- */
+    #links { margin-top: 30px; }
+
+    a.button {
+      display: inline-block;
+      padding: 12px 30px;
+      border: 1px solid var(--gold-primary);
+      color: var(--gold-primary);
+      text-decoration: none;
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      transition: all 0.3s;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+    a.button:hover {
+      background: var(--gold-primary);
+      color: #000;
+    }
+
+    code {
+      font-family: monospace;
+      color: var(--gold-primary);
+      background: rgba(255,255,255,0.05);
+      padding: 2px 6px;
+      border-radius: 2px;
+    }
+
+    /* 錯誤提示樣式 */
+    .error-hint {
+      color: #aaa;
+      font-size: 11px;
+      margin-top: 8px;
+      opacity: 0.7;
+    }
+
+    @keyframes ripple {
+      0% { transform: scale(0); opacity: 1; }
+      100% { transform: scale(1.5); opacity: 0; }
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  </style>
 </head>
 <body>
-<div class="card">
-  <h2>處理中</h2>
-  <div id="msg" class="muted">請稍候…</div>
-  <div id="links"></div>
-</div>
+
+  <div class="brand">XUYUAN</div>
+
+  <div class="loader-container">
+    <div class="circle"></div>
+    <div class="circle"></div>
+  </div>
+
+  <div class="msg-box">
+    <h2 id="title">Processing</h2>
+    <div id="msg" class="muted">Please wait a moment...</div>
+    <div id="links"></div>
+  </div>
 
 <script>
   // === 依付款方式對應到你的金流 / 目的頁 ===
@@ -38,33 +163,58 @@
   const pm = qs.get('pm') || '';
   const orderId = qs.get('order_id') || '';
   const total = qs.get('total') || '';
-  const resultURL = `/order-result.html?order_id=${encodeURIComponent(orderId)}&total=${encodeURIComponent(total)}`;
+  
+  // 修改：使用相對路徑，避免在預覽環境報錯
+  const resultURL = `order-result.html?order_id=${encodeURIComponent(orderId)}&total=${encodeURIComponent(total)}`;
 
   const msg = document.getElementById('msg');
+  const title = document.getElementById('title');
   const links = document.getElementById('links');
 
-  function go(url){ location.href = url; }
+  // 修改：增加錯誤處理，防止在 Blob URL 環境下報錯
+  function go(url) {
+    try {
+      window.location.href = url;
+    } catch (e) {
+      console.warn("Auto-redirect blocked (preview mode):", e);
+      // 如果跳轉失敗，顯示提示訊息
+      const errDiv = document.createElement('div');
+      errDiv.className = 'error-hint';
+      errDiv.innerText = '(預覽模式無法自動跳轉，請點擊上方按鈕)';
+      links.appendChild(errDiv);
+    }
+  }
 
   (function main(){
     const target = LINKS[pm];
+    
     if (target) {
-      msg.innerHTML = `偵測到付款方式 <code>${pm}</code>，準備前往金流頁…`;
+      // 需要跳轉金流
+      title.innerText = "Payment Gateway";
+      msg.innerHTML = `Redirecting to payment provider for <br><code>${pm}</code>`;
+      
       const a = document.createElement('a');
       a.className = 'button';
-      a.textContent = '若未自動前往，請點我繼續付款';
+      a.textContent = 'Click here if not redirected';
       a.href = target;
       links.appendChild(a);
-      setTimeout(()=>go(target), 500);
+      
+      setTimeout(()=>go(target), 800); 
     } else {
-      msg.innerHTML = `此付款方式 <code>${pm||'(無)'}</code> 不需跳金流，將回訂單結果頁。`;
+      // 不需要跳轉 (如貨到付款、匯款)，直接回結果頁
+      title.innerText = "Order Complete";
+      msg.innerHTML = `Method: <code>${pm||'Standard'}</code><br>Redirecting to receipt...`;
+      
       const a = document.createElement('a');
       a.className = 'button';
-      a.textContent = '前往訂單結果頁';
+      a.textContent = 'View Receipt';
       a.href = resultURL;
       links.appendChild(a);
-      setTimeout(()=>go(resultURL), 600);
+      
+      setTimeout(()=>go(resultURL), 1500); 
     }
   })();
 </script>
+
 </body>
 </html>
