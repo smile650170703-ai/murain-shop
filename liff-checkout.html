@@ -407,6 +407,49 @@ const RATE_TABLE={3:0,6:4.0,9:5.5,12:6.5,18:9.0,24:11.5};
 const NEW_DEPOSIT_AMOUNT=1000;
 let CART_TOTAL_RAW = 0;   // 真實金額（數字）
 
+ let CART_TOTAL_RAW = 0;   // 真實金額（數字）
+
+// ★ 購物金：可用餘額 & 本次使用
+let CREDIT_AVAILABLE = 0;  // 從 /line/member-info 帶進來
+let CREDIT_USED      = 0;  // 客人這次輸入要折抵多少
+
+// 重新計算：小計、折抵後應付金額、畫面顯示
+function refreshAmounts() {
+  const base  = CART_TOTAL_RAW || 0;                 // 原始金額
+  const avail = CREDIT_AVAILABLE || 0;
+  const max   = Math.min(avail, base);
+
+  // 夾在 0 ~ max 之間
+  if (CREDIT_USED > max) CREDIT_USED = max;
+  if (CREDIT_USED < 0)   CREDIT_USED = 0;
+
+  const used = CREDIT_USED || 0;
+  const pay  = base - used;
+
+  const subEl   = document.querySelector('#subtotal');
+  const totalEl = document.querySelector('#total');
+  if (subEl)   subEl.value   = money(base);
+  if (totalEl) totalEl.value = money(pay);
+
+  const availEl   = document.getElementById('creditAvailable');
+  const maxTextEl = document.getElementById('creditMaxText');
+  const payTextEl = document.getElementById('payAmountText');
+
+  if (availEl)   availEl.textContent   = 'NT$ ' + avail.toLocaleString();
+  if (maxTextEl) maxTextEl.textContent = 'NT$ ' + max.toLocaleString();
+  if (payTextEl) payTextEl.textContent = 'NT$ ' + pay.toLocaleString();
+
+  // ZeroCard 分期試算改用「折抵後金額」
+  try {
+    calcZC();
+  } catch (e) {}
+}
+
+// 原本的 setTotal 用不到舊邏輯了，直接改成呼叫 refreshAmounts
+function setTotal(v){
+  refreshAmounts();
+}
+
  // ===== LIFF 設定 =====
   const LIFF_ID = "2008430261-KLwoQjm4";
 
@@ -440,10 +483,16 @@ let CART_TOTAL_RAW = 0;   // 真實金額（數字）
       const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(profile.userId)}`);
       const j = await r.json();
       if (j.ok) {
-  MEMBER_INFO = j;
-  // 用會員資料幫你把各種表單欄位預填好
-  applyMemberInfoToForm(j);
-}
+        MEMBER_INFO = j;
+        // 預填姓名 / 電話 / email / 門市
+        applyMemberInfoToForm(j);
+
+        // ★ 把會員購物金餘額記起來，給結帳頁使用
+        if (typeof j.credit === 'number') {
+          CREDIT_AVAILABLE = j.credit;
+          refreshAmounts();
+        }
+      }
     } catch (e) {
       console.log('member-info error', e);
     }
