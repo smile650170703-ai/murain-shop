@@ -5,10 +5,10 @@
   <title>XUYUAN | 會員綁定</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   
-  <!-- 引入品牌字體 -->
+  <!-- 引入 Google Fonts: Playfair Display (標題) & Noto Sans TC (內文) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
   
   <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -18,13 +18,24 @@
         extend: {
           colors: {
             gold: '#D4AF37',
-            goldLight: '#F3E5AB',
-            dark: '#050505',
-            card: '#111',
+            goldDark: '#AA8C2C',
+            goldLight: '#F9E5B3',
+            dark: '#080808',
+            card: '#121212',
           },
           fontFamily: {
             serif: ['"Playfair Display"', 'serif'],
-            sans: ['"Lato"', 'sans-serif'],
+            sans: ['"Noto Sans TC"', 'sans-serif'],
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both',
+            'float': 'float 6s ease-in-out infinite',
+            'shimmer': 'shimmer 2s linear infinite',
+          },
+          keyframes: {
+            fadeIn: { from: { opacity: 0, transform: 'translateY(10px)' }, to: { opacity: 1, transform: 'translateY(0)' } },
+            float: { '0%, 100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-10px)' } },
+            shimmer: { from: { backgroundPosition: '0 0' }, to: { backgroundPosition: '-200% 0' } }
           }
         }
       }
@@ -34,17 +45,39 @@
   <style>
     body {
       margin: 0;
-      background-color: #050505; /* 統一背景色 */
-      color: #fff;
-      font-family: "Lato", sans-serif;
-      overscroll-behavior: none;
+      background-color: #050505;
+      color: #e5e5e5;
+      font-family: "Noto Sans TC", sans-serif;
+      overflow: hidden; /* 防止滾動 */
     }
-    .fade-in { animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     
-    /* 金色光暈動畫 */
-    .glow-gold {
-      box-shadow: 0 0 20px rgba(212, 175, 55, 0.2);
+    /* 金屬漸層文字 */
+    .text-gradient-gold {
+      background: linear-gradient(135deg, #F9E5B3 0%, #D4AF37 50%, #AA8C2C 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* 金屬流光按鈕 */
+    .btn-gold {
+      background: linear-gradient(90deg, #AA8C2C, #D4AF37, #F9E5B3, #D4AF37);
+      background-size: 200% auto;
+      color: #000;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(212, 175, 55, 0.3);
+    }
+    .btn-gold:hover {
+      background-position: right center;
+      box-shadow: 0 6px 20px rgba(212, 175, 55, 0.5);
+    }
+    .btn-gold:disabled {
+      background: #333; color: #666; box-shadow: none; cursor: not-allowed;
+    }
+
+    /* 輸入框聚焦光暈 */
+    .input-group:focus-within {
+      border-color: #D4AF37;
+      box-shadow: 0 0 15px rgba(212, 175, 55, 0.15);
     }
   </style>
 
@@ -53,8 +86,9 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
-<body class="bg-dark text-white h-[100dvh] flex flex-col">
-  <div id="root" class="flex-1 flex flex-col"></div>
+<body class="bg-dark h-[100dvh] w-full flex flex-col items-center justify-center relative">
+  
+  <div id="root" class="w-full max-w-md h-full flex flex-col relative z-10"></div>
 
   <script type="text/babel">
     const { useState, useEffect } = React;
@@ -88,7 +122,7 @@
       async function initLiff() {
         try {
           if (!window.liff) return;
-          setStatusMsg("INITIALIZING...");
+          setStatusMsg("系統載入中...");
           await window.liff.init({ liffId: LIFF_ID });
           
           if (!window.liff.isLoggedIn()) {
@@ -109,20 +143,20 @@
           setStatusMsg("");
         } catch (e) {
           console.error(e);
-          setStatusMsg("INIT FAILED");
+          setStatusMsg("初始化失敗");
           // 預覽模式
           if (!navigator.userAgent.includes("Line")) {
-            setLineProfile({ displayName: "Guest", userId: "U123", pictureUrl: "" });
+            setLineProfile({ displayName: "預覽用戶", userId: "U123", pictureUrl: "" });
             setStatusMsg("");
           }
         }
       }
 
-      // ===== Gemini =====
+      // ===== Gemini AI 檢查與運勢 =====
       async function checkNameWithGemini(name) {
         if (!name) return;
         if (!GEMINI_API_KEY) {
-          setNameAnalysis({ isValid: true, suggestion: "格式正確 (Demo)" });
+          setNameAnalysis({ isValid: true, suggestion: "格式正確 (演示模式)" });
           return;
         }
         setIsCheckingName(true);
@@ -131,7 +165,7 @@
           const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              contents: [{ parts: [{ text: `Check if "${name}" is a valid Chinese name. Return JSON:{"isValid":bool,"suggestion":string}` }] }],
+              contents: [{ parts: [{ text: `判斷中文姓名 "${name}" 是否合理。回傳 JSON:{"isValid":bool,"suggestion":string}` }] }],
               generationConfig: { responseMimeType: "application/json" }
             })
           });
@@ -150,7 +184,7 @@
           const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              contents: [{ parts: [{ text: `Give a short shopping fortune for "${formData.name}" in Traditional Chinese, max 30 chars, elegant tone.` }] }]
+              contents: [{ parts: [{ text: `為 "${formData.name}" 生成一句優雅的繁體中文購物運勢，30字內，語氣高級。` }] }]
             })
           });
           const d = await r.json();
@@ -176,7 +210,7 @@
       async function handleBind() {
         if (!formData.name || !formData.phone) return alert("請完整填寫資料");
         setIsLoading(true);
-        setStatusMsg("PROCESSING...");
+        setStatusMsg("資料處理中...");
         
         try {
           const body = {
@@ -197,9 +231,10 @@
 
           setStep(3);
           generateFortune();
-          setTimeout(handleClose, 6000);
+          // 成功後倒數關閉
+          setTimeout(handleClose, 8000);
         } catch (e) {
-          alert("綁定失敗，請重試");
+          alert("綁定失敗，請稍後再試");
         } finally { setIsLoading(false); }
       }
 
@@ -210,149 +245,180 @@
 
       // ===== UI Components =====
       return (
-        <div className="flex-1 flex flex-col items-center px-6 relative overflow-hidden">
+        <div className="flex-1 flex flex-col items-center px-8 relative overflow-hidden bg-gradient-to-b from-[#0a0a0a] to-[#000]">
           
-          {/* 背景裝飾 (極簡光影) */}
-          <div className="absolute top-0 left-0 w-full h-64 bg-gradient-to-b from-white/5 to-transparent pointer-events-none" />
-          
-          {/* Header */}
-          <div className="w-full h-20 flex items-center justify-between z-10">
+          {/* 背景光影裝飾 */}
+          <div className="absolute top-[-10%] left-[-20%] w-[500px] h-[500px] bg-gold/5 rounded-full blur-[100px] pointer-events-none" />
+          <div className="absolute bottom-[-10%] right-[-20%] w-[400px] h-[400px] bg-white/5 rounded-full blur-[80px] pointer-events-none" />
+
+          {/* Header 導航欄 */}
+          <div className="w-full h-24 flex items-center justify-between z-20">
             {step > 0 && step < 3 ? (
-              <button onClick={handleBack} className="text-white/50 hover:text-gold transition text-xl">←</button>
-            ) : <div />}
-            <div className="font-serif text-gold tracking-widest font-bold text-lg">XUYUAN</div>
-            <div className="w-5" />
+              <button onClick={handleBack} className="w-10 h-10 flex items-center justify-center rounded-full bg-white/5 text-white/60 hover:text-gold hover:bg-white/10 transition">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+              </button>
+            ) : <div className="w-10" />}
+            
+            <div className="text-center">
+              <div className="font-serif text-gold text-lg tracking-[0.2em] font-bold">XUYUAN</div>
+              <div className="text-[10px] text-white/30 uppercase tracking-[0.3em] mt-1">Membership</div>
+            </div>
+            
+            <div className="w-10" />
           </div>
 
-          {/* Progress Dots */}
+          {/* 進度指示器 */}
           {step < 3 && (
-            <div className="flex gap-2 mb-8 z-10">
+            <div className="flex gap-2 mb-10 z-10">
               {[0, 1, 2].map(s => (
-                <div key={s} className={`h-1 rounded-full transition-all duration-500 ${step >= s ? 'w-8 bg-gold' : 'w-2 bg-white/20'}`} />
+                <div key={s} className={`h-1 rounded-full transition-all duration-700 ease-out ${step >= s ? 'w-8 bg-gradient-to-r from-gold to-goldLight shadow-[0_0_10px_rgba(212,175,55,0.4)]' : 'w-2 bg-white/10'}`} />
               ))}
             </div>
           )}
 
-          {/* Main Content Area */}
+          {/* 主要內容區 */}
           <div className="w-full max-w-sm flex-1 flex flex-col justify-center pb-20 z-10">
             
-            {/* Step 0: Welcome */}
+            {/* Step 0: 歡迎頁 */}
             {step === 0 && (
-              <div className="fade-in text-center">
-                <div className="relative w-24 h-24 mx-auto mb-8">
-                  <div className="absolute inset-0 border border-gold/30 rounded-full animate-[spin_10s_linear_infinite]" />
-                  <div className="w-full h-full rounded-full overflow-hidden border-2 border-gold bg-card flex items-center justify-center shadow-[0_0_30px_rgba(212,175,55,0.15)]">
+              <div className="animate-fade-in text-center">
+                <div className="relative w-28 h-28 mx-auto mb-8 group">
+                  {/* 頭像外框光圈 */}
+                  <div className="absolute inset-[-4px] rounded-full bg-gradient-to-tr from-goldDark via-gold to-goldLight opacity-70 blur-sm group-hover:opacity-100 transition-opacity duration-700" />
+                  
+                  <div className="relative w-full h-full rounded-full overflow-hidden border-2 border-black bg-card flex items-center justify-center">
                     {lineProfile?.pictureUrl ? (
                       <img src={lineProfile.pictureUrl} className="w-full h-full object-cover" />
-                    ) : <span className="text-2xl">👤</span>}
+                    ) : <span className="text-3xl text-gold">👤</span>}
                   </div>
                 </div>
                 
-                <h1 className="font-serif text-3xl mb-2 text-white">Welcome</h1>
-                <p className="text-gold mb-6 tracking-widest text-sm uppercase">{lineProfile?.displayName || 'GUEST'}</p>
-                <p className="text-white/40 text-xs font-light leading-relaxed mb-10">
-                  Join our exclusive membership.<br/>
-                  Unlock premium rewards.
+                <h1 className="font-serif text-4xl mb-3 text-white tracking-wide">Welcome</h1>
+                <p className="text-gradient-gold mb-8 tracking-widest text-sm uppercase font-bold">
+                  {lineProfile?.displayName || '貴賓'}
+                </p>
+                <p className="text-white/50 text-xs font-light leading-loose mb-12 tracking-wider">
+                  誠摯邀請您啟用 XUYUAN 會員資格<br/>
+                  即刻享有專屬禮遇與積分回饋
                 </p>
 
                 <button onClick={handleNext} disabled={!lineProfile} 
-                  className="w-full py-4 bg-gold text-black font-bold uppercase tracking-widest text-xs hover:bg-white transition-colors disabled:opacity-50">
-                  Start Registration
+                  className="btn-gold w-full py-4 rounded-sm font-bold text-xs tracking-[0.2em] uppercase">
+                  立即啟用
                 </button>
               </div>
             )}
 
-            {/* Step 1: Phone */}
+            {/* Step 1: 輸入手機 */}
             {step === 1 && (
-              <div className="fade-in">
-                <div className="mb-8">
-                  <div className="text-gold text-xs tracking-widest mb-2 uppercase">Step 01</div>
-                  <h2 className="font-serif text-3xl text-white">Mobile Number</h2>
+              <div className="animate-fade-in">
+                <div className="mb-10">
+                  <div className="text-gold text-[10px] tracking-[0.3em] mb-3 uppercase font-bold opacity-80">Step 01</div>
+                  <h2 className="font-serif text-3xl text-white mb-2">Mobile Number</h2>
+                  <p className="text-white/40 text-xs font-light">請輸入您的手機號碼以建立連結</p>
                 </div>
 
-                <div className="bg-[#111] border-b border-white/20 focus-within:border-gold transition-colors mb-10">
+                <div className="input-group relative bg-[#111] border border-white/10 rounded-sm transition-all duration-300 mb-12 group">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 text-lg group-focus-within:text-gold transition-colors">📱</span>
                   <input 
                     type="tel" name="phone" autoFocus
                     value={formData.phone} onChange={handleInputChange}
                     placeholder="0912-345-678"
-                    className="w-full bg-transparent text-white text-xl py-4 px-2 outline-none font-light placeholder:text-white/20"
+                    className="w-full bg-transparent text-white text-xl py-5 pl-14 pr-4 outline-none font-light placeholder:text-white/10 tracking-widest"
                   />
                 </div>
 
-                <button onClick={handleNext} className="w-full py-4 bg-gold text-black font-bold uppercase tracking-widest text-xs hover:bg-white transition-colors">
-                  Next Step
+                <button onClick={handleNext} className="btn-gold w-full py-4 rounded-sm font-bold text-xs tracking-[0.2em] uppercase">
+                  下一步
                 </button>
               </div>
             )}
 
-            {/* Step 2: Name */}
+            {/* Step 2: 輸入姓名 */}
             {step === 2 && (
-              <div className="fade-in">
+              <div className="animate-fade-in">
                 <div className="mb-8">
-                  <div className="text-gold text-xs tracking-widest mb-2 uppercase">Step 02</div>
-                  <h2 className="font-serif text-3xl text-white">Full Name</h2>
-                  <p className="text-white/30 text-xs mt-2">Please match your legal ID.</p>
+                  <div className="text-gold text-[10px] tracking-[0.3em] mb-3 uppercase font-bold opacity-80">Step 02</div>
+                  <h2 className="font-serif text-3xl text-white mb-2">Your Name</h2>
+                  <p className="text-white/40 text-xs font-light">請填寫真實姓名，以利訂單核對</p>
                 </div>
 
-                <div className="relative bg-[#111] border-b border-white/20 focus-within:border-gold transition-colors mb-4">
+                <div className="input-group relative bg-[#111] border border-white/10 rounded-sm transition-all duration-300 mb-4 group">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 text-lg group-focus-within:text-gold transition-colors">✎</span>
                   <input 
                     type="text" name="name"
                     value={formData.name} onChange={handleInputChange}
-                    placeholder="Your Name"
-                    className="w-full bg-transparent text-white text-xl py-4 px-2 outline-none font-light placeholder:text-white/20"
+                    placeholder="請輸入姓名"
+                    className="w-full bg-transparent text-white text-xl py-5 pl-14 pr-24 outline-none font-light placeholder:text-white/10 tracking-wide"
                   />
+                  
+                  {/* AI 檢查按鈕 */}
                   <button onClick={() => checkNameWithGemini(formData.name)} disabled={!formData.name || isCheckingName}
-                    className="absolute right-0 top-4 text-[10px] text-gold border border-gold/50 px-2 py-1 uppercase tracking-wider hover:bg-gold hover:text-black transition">
-                    {isCheckingName ? "Checking..." : "AI Check"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gold/80 border border-gold/30 px-3 py-1.5 hover:bg-gold hover:text-black transition uppercase tracking-wider">
+                    {isCheckingName ? "檢查中..." : "AI 檢查"}
                   </button>
                 </div>
 
-                {nameAnalysis && (
-                  <div className={`text-xs mb-8 flex items-center gap-2 ${nameAnalysis.isValid ? 'text-gold' : 'text-red-400'}`}>
-                    <span>{nameAnalysis.isValid ? '✦' : 'info'}</span>
-                    {nameAnalysis.suggestion}
-                  </div>
-                )}
-
-                <div className="text-xs text-white/30 mb-10 font-light">
-                  Email: <span className="text-white/60">{formData.email || "Loading..."}</span>
+                {/* AI 提示區塊 */}
+                <div className={`text-xs mb-8 flex items-center gap-2 h-6 transition-opacity ${nameAnalysis ? 'opacity-100' : 'opacity-0'}`}>
+                  {nameAnalysis && (
+                    <>
+                      <span className={nameAnalysis.isValid ? 'text-gold' : 'text-red-400'}>
+                        {nameAnalysis.isValid ? '✓' : '!'}
+                      </span>
+                      <span className="text-white/60">{nameAnalysis.suggestion}</span>
+                    </>
+                  )}
                 </div>
 
-                <button onClick={handleBind} disabled={isLoading} className="w-full py-4 bg-gold text-black font-bold uppercase tracking-widest text-xs hover:bg-white transition-colors disabled:opacity-50">
-                  {isLoading ? "Processing..." : "Complete Registration"}
+                <div className="text-[10px] text-white/30 mb-10 font-light flex items-center justify-between border-t border-white/5 pt-4">
+                  <span>綁定 Email</span>
+                  <span className="text-gold/80 font-mono">{formData.email || "讀取中..."}</span>
+                </div>
+
+                <button onClick={handleBind} disabled={isLoading} className="btn-gold w-full py-4 rounded-sm font-bold text-xs tracking-[0.2em] uppercase">
+                  {isLoading ? "綁定資料中..." : "完成綁定"}
                 </button>
               </div>
             )}
 
-            {/* Step 3: Success */}
+            {/* Step 3: 成功畫面 */}
             {step === 3 && (
-              <div className="fade-in text-center flex flex-col items-center">
-                {/* 金色勾勾動畫 */}
-                <div className="relative w-24 h-24 flex items-center justify-center mb-8">
-                  <div className="absolute inset-0 border border-gold rounded-full animate-[ping_2s_infinite_opacity]" />
-                  <div className="absolute inset-0 border border-gold/30 rounded-full" />
-                  <span className="text-5xl text-gold drop-shadow-[0_0_15px_rgba(212,175,55,0.5)]">✓</span>
+              <div className="animate-fade-in text-center flex flex-col items-center">
+                
+                {/* 成功動畫 */}
+                <div className="relative w-28 h-28 flex items-center justify-center mb-8">
+                  <div className="absolute inset-0 border border-gold/40 rounded-full animate-[ping_2s_infinite]" />
+                  <div className="absolute inset-2 border border-gold/20 rounded-full" />
+                  <span className="text-5xl text-gold drop-shadow-[0_0_20px_rgba(212,175,55,0.6)] animate-float">✓</span>
                 </div>
 
-                <h2 className="font-serif text-3xl text-white mb-2">Registration Complete</h2>
-                <p className="text-white/40 text-xs tracking-widest uppercase mb-10">Welcome to XUYUAN</p>
+                <h2 className="font-serif text-3xl text-white mb-2 tracking-wide">Success</h2>
+                <p className="text-white/40 text-xs tracking-[0.2em] uppercase mb-12">
+                  Welcome to XUYUAN
+                </p>
 
-                {/* 運勢卡片 */}
-                <div className="w-full bg-[#111] border border-gold/20 p-6 relative overflow-hidden group">
-                  <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-gold to-transparent opacity-50" />
-                  <div className="text-[10px] text-gold uppercase tracking-[0.2em] mb-3 flex items-center justify-center gap-2">
-                    <span>✦</span> Gemini Forecast <span>✦</span>
+                {/* 運勢卡片 (黑金卡質感) */}
+                <div className="w-full bg-gradient-to-br from-[#1a1a1a] to-black border border-white/10 p-8 relative overflow-hidden group shadow-2xl">
+                  {/* 金屬邊框流光 */}
+                  <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-gold to-transparent opacity-50 animate-shimmer" />
+                  
+                  <div className="text-[10px] text-gold uppercase tracking-[0.3em] mb-4 flex items-center justify-center gap-3 opacity-80">
+                    <span className="w-8 h-[1px] bg-gold/30"></span>
+                    <span>Exclusive Luck</span>
+                    <span className="w-8 h-[1px] bg-gold/30"></span>
                   </div>
+                  
                   {isFortuneLoading ? (
-                    <div className="text-white/30 text-xs animate-pulse">Consulting the stars...</div>
+                    <div className="text-white/30 text-xs animate-pulse font-light tracking-wider">正在解讀星象...</div>
                   ) : (
-                    <p className="text-white text-sm font-serif leading-relaxed italic opacity-90">
-                      "{fortune}"
+                    <p className="text-white text-sm font-serif leading-relaxed tracking-wide opacity-90 text-shadow-sm">
+                      {fortune}
                     </p>
                   )}
                 </div>
 
-                <button onClick={handleClose} className="mt-12 text-white/30 text-xs uppercase tracking-widest hover:text-gold transition-colors">
+                <button onClick={handleClose} className="mt-12 text-white/30 text-[10px] uppercase tracking-[0.2em] hover:text-gold transition-colors py-2 border-b border-transparent hover:border-gold/50">
                   Close Window
                 </button>
               </div>
