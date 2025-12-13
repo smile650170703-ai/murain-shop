@@ -347,6 +347,73 @@
     return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
   }
 
+  function safeJsonParse(x, fallback = null) {
+    try {
+      if (!x) return fallback;
+      if (typeof x === "object") return x;
+      return JSON.parse(x);
+    } catch (e) {
+      return fallback;
+    }
+  }
+
+  function getShipFromOrder(o) {
+    // API 若有直接給 ship 就用；沒有就從 shipping_info 解析
+    if (o && o.ship && typeof o.ship === "object") return o.ship;
+
+    const si = safeJsonParse(o?.shipping_info, null) || o?.shipping_info || {};
+    const ship = (si && si.ship && typeof si.ship === "object") ? si.ship : {};
+    return ship || {};
+  }
+
+  function payMethodLabel(pmRaw) {
+    const pm = String(pmRaw || "").toLowerCase();
+
+    if (!pm) return "—";
+    if (pm === "cod_711") return "7-11 取貨付款";
+    if (pm === "cod_post") return "宅配貨到付款";
+    if (pm === "meetup_cash") return "面交現金";
+    if (pm === "bank_transfer") return "匯款";
+    if (pm.startsWith("atm")) return "ATM 轉帳";
+    if (pm.startsWith("paid_linepay")) return "LINE Pay";
+    if (pm.startsWith("paid_af")) return "AFtee";
+    if (pm.startsWith("paid_card_once")) return "信用卡（一次付清）";
+    if (pm.startsWith("paid_card_inst_")) return "信用卡（分期）";
+    if (pm.startsWith("zero_card_")) return "中租零卡（分期）";
+    if (pm.startsWith("deposit_")) return "訂金";
+    return pmRaw; // 看不懂就原樣顯示，避免資訊丟失
+  }
+
+  function shipSummary(ship) {
+    const type = String(ship?.type || ship?.ship_type || "").toLowerCase();
+
+    // 7-11 門市
+    if (type.includes("711") || ship.store_id || ship.store_name) {
+      const sname = ship.store_name || "";
+      const sid = ship.store_id ? `（${ship.store_id}）` : "";
+      const saddr = ship.store_address ? ` ${ship.store_address}` : "";
+      return `7-11 ${sname}${sid}${saddr}`.trim();
+    }
+
+    // 宅配 / 郵寄
+    if (ship.address) return String(ship.address);
+
+    // 面交
+    if (type.includes("meetup")) return "面交";
+
+    return type ? type : "尚未填寫";
+  }
+
+  function receiverSummary(ship) {
+    const name = String(ship?.name || ship?.receiver_name || "").trim();
+    const phone = String(ship?.phone || ship?.receiver_phone || "").trim();
+    const email = String(ship?.email || "").trim();
+
+    const a = [name, phone].filter(Boolean).join(" / ");
+    if (a) return a + (email ? ` / ${email}` : "");
+    return email || "—";
+  }
+
   function displayStatus(st) {
     switch (st) {
       case "submitted": return "已送出";
