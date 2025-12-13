@@ -136,12 +136,12 @@
     }
     .credit-label { font-size: 12px; color: #888; letter-spacing: 0.1em; margin-bottom: 4px; }
     .credit-amount {
-      font-family: var(--font-serif);
+      font-family: var(--font-sans);
       font-size: 32px;
       background: linear-gradient(135deg, #fff, #F3E5AB);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
-      font-weight: 500;
+      font-weight: 700;
       line-height: 1;
     }
     
@@ -222,7 +222,8 @@
     
     .amount-display { text-align: right; }
     .amount-label { font-size: 11px; color: #666; margin-bottom: 2px; letter-spacing: 0.1em; }
-    .amount-val { font-family: var(--font-serif); font-size: 20px; color: var(--gold-light); }
+    .amount-val { font-family: var(--font-sans);
+      font-weight: 700; font-size: 20px; color: var(--gold-light); }
 
     /* --- 紅利明細列表 (Credits) --- */
     .credits-list { display: flex; flex-direction: column; gap: 12px; }
@@ -237,7 +238,7 @@
     .c-reason { font-size: 14px; color: #eee; font-weight: 500; }
     .c-date { font-size: 11px; color: #666; }
     
-    .c-amount { font-family: var(--font-serif); font-size: 18px; font-weight: 600; text-align: right; }
+    .c-amount { font-family: var(--font-sans); font-size: 18px; font-weight: 700; text-align: right; }
     .c-amount.pos { color: var(--success); }
     .c-amount.neg { color: var(--danger); }
     .c-balance { font-size: 10px; color: #555; text-align: right; margin-top: 2px;}
@@ -373,100 +374,7 @@
       case "failed":     return "付款失敗";
       default:           return ps || "未付款";
     }
-  
-
-  // ====== 會員中心顯示用：解析配送/收件 & COD/面交顯示「待付款」(只影響前端顯示) ======
-
-  function safeJsonParse(x, fallback = null) {
-    try {
-      if (!x) return fallback;
-      if (typeof x === "object") return x;
-      return JSON.parse(x);
-    } catch (e) {
-      return fallback;
-    }
   }
-
-  function getShipFromOrder(o) {
-    // API 若有直接給 ship 就用；沒有就從 shipping_info 解析
-    if (o && o.ship && typeof o.ship === "object") return o.ship;
-
-    const si = safeJsonParse(o?.shipping_info, null) || o?.shipping_info || {};
-    if (si && si.ship && typeof si.ship === "object") return si.ship;
-
-    // fallback：萬一 shipping_info 本身就是 ship 結構
-    return (si && typeof si === "object") ? si : {};
-  }
-
-  function payMethodLabel(pmRaw) {
-    const pm = String(pmRaw || "").toLowerCase();
-    if (!pm) return "—";
-    if (pm === "cod_711") return "7-11 取貨付款";
-    if (pm === "cod_post") return "宅配貨到付款";
-    if (pm === "meetup_cash") return "面交現金";
-    if (pm === "bank_transfer") return "匯款";
-    if (pm.startsWith("atm")) return "ATM 轉帳";
-    if (pm.startsWith("paid_linepay")) return "LINE Pay";
-    if (pm.startsWith("paid_af")) return "AFtee";
-    if (pm.startsWith("paid_card_once")) return "信用卡（一次付清）";
-    if (pm.startsWith("paid_card_inst_")) return "信用卡（分期）";
-    if (pm.startsWith("zero_card_")) return "中租零卡（分期）";
-    if (pm.startsWith("deposit_")) return "訂金";
-    return pmRaw;
-  }
-
-  function shipSummary(ship) {
-    const type = String(ship?.type || ship?.ship_type || "").toLowerCase();
-
-    // 7-11 門市
-    if (type.includes("711") || ship.store_id || ship.store_name) {
-      const sname = ship.store_name || "";
-      const sid   = ship.store_id ? `（${ship.store_id}）` : "";
-      const saddr = ship.store_address ? ` ${ship.store_address}` : "";
-      return `7-11 ${sname}${sid}${saddr}`.trim();
-    }
-
-    // 宅配 / 郵寄
-    if (ship.address) return String(ship.address);
-
-    // 面交
-    if (type.includes("meetup")) return "面交";
-
-    return type ? type : "尚未填寫";
-  }
-
-  function receiverSummary(ship) {
-    const name  = String(ship?.name || ship?.receiver_name || "").trim();
-    const phone = String(ship?.phone || ship?.receiver_phone || "").trim();
-    const email = String(ship?.email || "").trim();
-
-    const a = [name, phone].filter(Boolean).join(" / ");
-    if (a) return a + (email ? ` / ${email}` : "");
-    return email || "—";
-  }
-
-  function isMemberShowAsUnpaid(pmRaw) {
-    const pm = String(pmRaw || "").toLowerCase();
-    return pm.startsWith("cod_") || pm === "meetup_cash";
-  }
-
-  function getStatusClassForMember(o) {
-    // ✅ 只改會員中心顯示：COD / 面交一律顯示「待付款」顏色
-    if (isMemberShowAsUnpaid(o?.payment_method)) return "st-pending";
-    return getStatusClass(o?.pay_status);
-  }
-
-  function displayPayStatusForMember(o) {
-    // ✅ 只改會員中心顯示：COD / 面交一律顯示「待付款」文字
-    const pm = String(o?.payment_method || "").toLowerCase();
-
-    if (pm === "cod_711")  return "待取貨付款";
-    if (pm === "cod_post") return "待到貨付款";
-    if (pm === "meetup_cash") return "待面交付款";
-
-    return displayPayStatus(o?.pay_status);
-  }
-}
 
   /* --- 頁籤切換 --- */
   function updateTabsUI() {
@@ -529,29 +437,12 @@
         }
       }
 
-      const statusCls = getStatusClassForMember(o);
-      const payTxt    = displayPayStatusForMember(o);
-
-      const shipObj   = getShipFromOrder(o);
-      const shipTxt   = shipSummary(shipObj);
-      const recvTxt   = receiverSummary(shipObj);
-      const pmTxt     = payMethodLabel(o.payment_method);
-
-      const baseTotal  = Number(o.total_amount || 0) || 0;
-      const netTotal   = Number((o.net_amount ?? o.total_amount) || 0) || 0;
-      const creditUsed = Number(o.credit_used || 0) || 0;
-
+      const statusCls = getStatusClass(o.pay_status);
+      const payTxt    = displayPayStatus(o.pay_status);
+      const shipTxt   = (o.ship && o.ship.method) ? o.ship.method : "尚未配送";
       const depositAmt = Number(o.deposit_amount || 0) || 0;
       const depositLine = depositAmt > 0
         ? `<div><span class="info-label">訂金</span> NT$ ${depositAmt.toLocaleString()}</div>`
-        : "";
-
-      const creditLine = (creditUsed > 0 || netTotal !== baseTotal)
-        ? `<div><span class="info-label">購物金</span> -NT$ ${creditUsed.toLocaleString()}</div>`
-        : "";
-
-      const originLine = (netTotal !== baseTotal)
-        ? `<div style="font-size:11px;color:#666;margin-top:4px;">原價 NT$ ${baseTotal.toLocaleString()}</div>`
         : "";
 
       wrap.innerHTML = `
@@ -562,21 +453,17 @@
           </div>
           <div class="status-badge ${statusCls}">${payTxt}</div>
         </div>
-
+        
         <div class="card-body">
           <div class="info-group">
             <div><span class="info-label">狀態</span> ${displayStatus(o.status)}</div>
-            <div><span class="info-label">付款</span> ${pmTxt}</div>
-            <div><span class="info-label">配送</span> <span style="word-break:break-word;">${shipTxt}</span></div>
-            <div><span class="info-label">收件</span> <span style="word-break:break-word;">${recvTxt}</span></div>
+            <div><span class="info-label">配送</span> ${shipTxt}</div>
             ${depositLine}
-            ${creditLine}
           </div>
-
+          
           <div class="amount-display">
-            <div class="amount-label">應付金額</div>
-            <div class="amount-val">NT$ ${netTotal.toLocaleString()}</div>
-            ${originLine}
+            <div class="amount-label">總金額</div>
+            <div class="amount-val">NT$ ${(o.total_amount || 0).toLocaleString()}</div>
           </div>
         </div>
       `;
