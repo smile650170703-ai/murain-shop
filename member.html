@@ -274,12 +274,11 @@
       </div>
     </div>
 
-    <!-- 3. 導航頁籤 -->
+    <!-- 3. 導航頁籤（改成：歷史訂單 / 訂金保留訂單 / 購物金） -->
     <div class="tabs">
-      <button class="tab active" data-tab="all">全部訂單</button>
-      <button class="tab" data-tab="live">直播訂單</button>
-      <button class="tab" data-tab="web">官網訂單</button>
-      <button class="tab" data-tab="credits">點數明細</button>
+      <button class="tab active" data-tab="history">歷史訂單</button>
+      <button class="tab" data-tab="deposit">定金保留訂單</button>
+      <button class="tab" data-tab="credits">購物金</button>
     </div>
 
     <!-- 訊息提示 -->
@@ -310,7 +309,8 @@
   let orders = [];
   let memberInfo = null;
   let credits = [];
-  let currentFilter = "all";
+  // 預設顯示「歷史訂單」
+  let currentFilter = "history";
 
   const urlParams = new URLSearchParams(window.location.search || "");
   const initialOrderId = urlParams.get("order_id") || "";
@@ -352,6 +352,7 @@
       case "paid":      return "已付款";
       case "shipped":   return "已出貨";
       case "cancelled": return "已取消";
+        case "deposit_hold": return "訂金保留中";   // ← 新增這行（如果你的 Orders 有這個狀態）
       default:          return st || "處理中";
     }
   }
@@ -381,7 +382,7 @@
     });
   }
 
-  /* --- 渲染訂單 (使用尊榮版樣式) --- */
+   // 顯示訂單列表（歷史訂單 / 訂金保留訂單）
   function renderOrders() {
     orderList.style.display   = "flex";
     creditsList.style.display = "none";
@@ -389,8 +390,49 @@
     orderList.innerHTML       = "";
 
     let list = orders.slice();
-    if (currentFilter === "live") list = list.filter(o => !!o.streamer_name);
-    else if (currentFilter === "web") list = list.filter(o => !o.streamer_name);
+
+    // === 1. 歷史訂單：只顯示「最近一個月內」 ===
+    if (currentFilter === "history") {
+      const now = new Date();
+      const oneMonthAgo = new Date(now);
+      oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+      list = list.filter(o => {
+        // 如果是從「查看訂單」按鈕帶 order_id 進來的那一筆，一定要顯示
+        if (initialOrderId && o.order_id === initialOrderId) return true;
+
+        const createdAt = o.created_at ? new Date(o.created_at) : null;
+        if (!createdAt || isNaN(createdAt.getTime())) return false;
+        return createdAt >= oneMonthAgo;
+      });
+    }
+
+    // === 2. 訂金保留訂單：只抓有訂金、未完成的訂單 ===
+    else if (currentFilter === "deposit") {
+      list = list.filter(o => {
+        const pm        = String(o.payment_method || "");
+        const payStatus = String(o.pay_status || "");
+        const status    = String(o.status || "");
+        const deposit   = Number(o.deposit_amount || 0) || 0;
+
+        // 有設定訂金金額
+        const hasDeposit = deposit > 0;
+
+        // 付款方式是訂金/匯款類
+        const isDepositPm =
+          pm.startsWith("deposit") ||
+          pm.startsWith("atm") ||
+          pm.includes("deposit");
+
+        // 還沒完成 / 還沒取消
+        const notFinished =
+          status !== "shipped" &&
+          status !== "cancelled" &&
+          payStatus !== "failed";
+
+        return hasDeposit && isDepositPm && notFinished;
+      });
+    }
 
     if (!list.length) {
       emptyText.style.display = "block";
@@ -400,18 +442,28 @@
     for (const o of list) {
       const wrap = document.createElement("div");
       wrap.className = "order-card";
+
+      // 高亮：如果 URL 有帶 order_id，就把那一筆框起來
       if (initialOrderId && o.order_id === initialOrderId) {
         wrap.classList.add("highlight");
         if (!hasScrolledToInitialOrder) {
           hasScrolledToInitialOrder = true;
-          setTimeout(() => wrap.scrollIntoView({ behavior: "smooth", block: "center" }), 150);
+          setTimeout(() => {
+            wrap.scrollIntoView({ behavior: "smooth", block: "center" });
+          }, 150);
         }
       }
 
       const statusCls = getStatusClass(o.pay_status);
-      const payTxt = displayPayStatus(o.pay_status);
-      const shipTxt = o.ship && o.ship.method ? o.ship.method : "尚未配送";
-      
+      const payTxt    = displayPayStatus(o.pay_status);
+      const shipTxt   = (o.ship && o.ship.method) ? o.ship.method : "尚未配送";
+
+      // 額外：如果是訂金訂單，在卡片裡顯示訂金金額（可選）
+      const depositAmt = Number(o.deposit_amount || 0) || 0;
+      const depositLine = depositAmt > 0
+        ? `<div><span class="info-label">訂金</span> NT$ ${depositAmt.toLocaleString()}</div>`
+        : "";
+
       wrap.innerHTML = `
         <div class="card-header">
           <div>
@@ -425,6 +477,7 @@
           <div class="info-group">
             <div><span class="info-label">狀態</span> ${displayStatus(o.status)}</div>
             <div><span class="info-label">配送</span> ${shipTxt}</div>
+            ${depositLine}
           </div>
           
           <div class="amount-display">
@@ -433,40 +486,8 @@
           </div>
         </div>
       `;
-      
+
       orderList.appendChild(wrap);
-    }
-  }
-
-  /* --- 渲染紅利 (Credits) --- */
-  function renderCredits() {
-    orderList.style.display   = "none";
-    creditsList.style.display = "flex";
-    emptyText.style.display   = "none";
-    creditsList.innerHTML     = "";
-
-    if (!credits.length) {
-      emptyText.style.display = "block";
-      return;
-    }
-
-    for (const item of credits) {
-      const wrap = document.createElement("div");
-      wrap.className = "credit-item";
-      
-      const amount = Number(item.amount || 0);
-      const isPos = amount > 0;
-      
-      wrap.innerHTML = `
-        <div class="c-info">
-          <div class="c-reason">${item.reason || (item.type === 'use' ? '折抵使用' : '獲得點數')}</div>
-          <div class="c-date">${formatDate(item.created_at)}</div>
-        </div>
-        <div class="c-amount ${isPos ? 'pos' : 'neg'}">
-          ${isPos ? '+' : ''}${amount.toLocaleString()}
-        </div>
-      `;
-      creditsList.appendChild(wrap);
     }
   }
 
@@ -551,7 +572,7 @@
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".tab").forEach(btn => {
       btn.addEventListener("click", () => {
-        currentFilter = btn.dataset.tab || "all";
+        currentFilter = btn.dataset.tab || "history";
         updateTabsUI();
         if (currentFilter === "credits") {
           renderCredits();
