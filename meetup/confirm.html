@@ -34,7 +34,7 @@
 
         <!-- 歡迎語 -->
         <div class="text-center mb-6">
-            <p class="text-gray-600 mb-2 text-[15px]">親愛的 <span class="font-bold text-gray-800">Lumi</span> 您好：</p>
+            <p class="text-gray-600 mb-2 text-[15px]">親愛的 <span id="customerName" class="font-bold text-gray-800">Lumi</span> 您好：</p>
             <p class="text-gray-600 leading-relaxed text-[15px]">
                 您的商品已準備就緒，請選擇您預計取貨的日期與時間，並傳送至官方 LINE 確認。
             </p>
@@ -89,14 +89,14 @@
             
             <div class="flex justify-between items-center border-b border-gray-100 pb-2">
                 <span class="text-gold-custom text-sm font-medium uppercase tracking-wide">PAYMENT</span>
-                <span class="bg-orange-100 text-orange-700 px-2.5 py-1 rounded-md text-xs font-bold tracking-wide">
-                    現場付現
-                </span>
+               <span id="paymentLabel" class="bg-orange-100 text-orange-700 px-2.5 py-1 rounded-md text-xs font-bold tracking-wide">
+  現場付現
+</span>
             </div>
 
             <div class="flex justify-between items-center pt-1">
                 <span class="text-gold-custom text-sm font-medium uppercase tracking-wide">TOTAL AMOUNT</span>
-                <span class="text-gray-900 font-bold text-lg tracking-wide">NT$ 5,000</span>
+                <span id="totalAmount" class="text-gray-900 font-bold text-lg tracking-wide">NT$ 5,000</span>
             </div>
         </div>
 
@@ -108,6 +108,36 @@
         </button>
 
     </div>
+
+    // ✅ 讀取 URL 的 oid，先把訂單號填上
+const params = new URLSearchParams(location.search);
+const oid = params.get("oid");
+if (oid) document.getElementById("orderNo").innerText = oid;
+
+// ✅ 去 Worker 拉訂單資訊（你等一下會新增 /meetup/confirm-info）
+async function loadMeetupInfo() {
+  if (!oid) return;
+
+  const r = await fetch(`/meetup/confirm-info?oid=${encodeURIComponent(oid)}`, {
+    headers: { "accept": "application/json" }
+  });
+  const data = await r.json();
+  if (!data.ok) return;
+
+  if (data.customerName) {
+    document.getElementById("customerName").innerText = data.customerName;
+  }
+  if (data.paymentLabel) {
+    document.getElementById("paymentLabel").innerText = data.paymentLabel;
+  }
+  if (data.amount != null) {
+    document.getElementById("totalAmount").innerText = `NT$ ${Number(data.amount).toLocaleString("zh-TW")}`;
+  }
+
+  // 給送 LINE 用（商品明細）
+  window.__itemsText = data.itemsText || "";
+}
+loadMeetupInfo();
 
     <script>
         lucide.createIcons();
@@ -155,8 +185,20 @@
             }
 
             // 產生訊息內容
-            const message = `你好，訂單：${orderNo}\n我確認於【${date} ${time}】前往面交，謝謝！`;
-            const encodedMessage = encodeURIComponent(message);
+            const name = (document.getElementById("customerName")?.innerText || "").trim();
+const amountText = (document.getElementById("totalAmount")?.innerText || "").trim();
+const itemsText = (window.__itemsText || "").trim();
+
+let message =
+`你好，我要預約面交
+訂單：${orderNo}
+姓名：${name || "—"}
+金額：${amountText || "—"}
+日期時間：${date} ${time}`;
+
+if (itemsText) message += `\n商品：\n${itemsText}`;
+
+message += `\n謝謝！`;
 
             // 判斷開啟方式
             let url = "";
