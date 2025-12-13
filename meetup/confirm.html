@@ -34,7 +34,7 @@
 
         <!-- 歡迎語 -->
         <div class="text-center mb-6">
-            <p class="text-gray-600 mb-2 text-[15px]">親愛的 <span id="customerName" class="font-bold text-gray-800">Lumi</span> 您好：</p>
+            <p class="text-gray-600 mb-2 text-[15px]">親愛的 <span id="customerName" class="font-bold text-gray-800">貴賓</span> 您好：</p>
             <p class="text-gray-600 leading-relaxed text-[15px]">
                 您的商品已準備就緒，請選擇您預計取貨的日期與時間，並傳送至官方 LINE 確認。
             </p>
@@ -48,9 +48,8 @@
                 <i data-lucide="map-pin" class="w-5 h-5 text-gold-custom mt-0.5 flex-shrink-0 mr-3"></i>
                 <div>
                     <p class="text-xs text-gray-500 font-medium mb-1">面交地點</p>
-                    <a href="https://maps.google.com/?q=台南市佳里區義民街339號一樓" target="_blank" class="text-gray-800 text-[15px] font-medium hover:text-gold-custom transition-colors underline decoration-gray-300 underline-offset-4">
-                        台南市佳里區義民街339號一樓
-                    </a>
+                    <a id="meetPlaceLink" href="https://maps.google.com/?q=%E5%8F%B0%E5%8D%97%E5%B8%82%E4%BD%B3%E9%87%8C%E5%8D%80%E7%BE%A9%E6%B0%91%E8%A1%97339%E8%99%9F%E4%B8%80%E6%A8%93" target="_blank" class="text-gray-800 text-[15px] font-medium hover:text-gold-custom transition-colors underline decoration-gray-300 underline-offset-4"><span id="meetPlaceText">台南市佳里區義民街339號一樓
+                    </span></a>
                 </div>
             </div>
 
@@ -84,19 +83,17 @@
         <div class="space-y-4 mb-8 px-2">
             <div class="flex justify-between items-center border-b border-gray-100 pb-2">
                 <span class="text-gold-custom text-sm font-medium uppercase tracking-wide">ORDER NO.</span>
-                <span id="orderNo" class="text-gray-800 font-medium tracking-wide">OD1765136149231</span>
+                <span id="orderNo" class="text-gray-800 font-medium tracking-wide">-</span>
             </div>
             
             <div class="flex justify-between items-center border-b border-gray-100 pb-2">
                 <span class="text-gold-custom text-sm font-medium uppercase tracking-wide">PAYMENT</span>
-               <span id="paymentLabel" class="bg-orange-100 text-orange-700 px-2.5 py-1 rounded-md text-xs font-bold tracking-wide">
-  現場付現
-</span>
+                <span id="paymentBadge" class="bg-orange-100 text-orange-700 px-2.5 py-1 rounded-md text-xs font-bold tracking-wide">-</span>
             </div>
 
             <div class="flex justify-between items-center pt-1">
                 <span class="text-gold-custom text-sm font-medium uppercase tracking-wide">TOTAL AMOUNT</span>
-                <span id="totalAmount" class="text-gray-900 font-bold text-lg tracking-wide">NT$ 5,000</span>
+                <span class="text-gray-900 font-bold text-lg tracking-wide">NT$ <span id="totalAmount">-</span></span>
             </div>
         </div>
 
@@ -109,42 +106,59 @@
 
     </div>
 
-    // ✅ 讀取 URL 的 oid，先把訂單號填上
-const params = new URLSearchParams(location.search);
-const oid = params.get("oid");
-if (oid) document.getElementById("orderNo").innerText = oid;
-
-// ✅ 去 Worker 拉訂單資訊（你等一下會新增 /meetup/confirm-info）
-async function loadMeetupInfo() {
-  if (!oid) return;
-
-  const r = await fetch(`/meetup/confirm-info?oid=${encodeURIComponent(oid)}`, {
-    headers: { "accept": "application/json" }
-  });
-  const data = await r.json();
-  if (!data.ok) return;
-
-  if (data.customerName) {
-    document.getElementById("customerName").innerText = data.customerName;
-  }
-  if (data.paymentLabel) {
-    document.getElementById("paymentLabel").innerText = data.paymentLabel;
-  }
-  if (data.amount != null) {
-    document.getElementById("totalAmount").innerText = `NT$ ${Number(data.amount).toLocaleString("zh-TW")}`;
-  }
-
-  // 給送 LINE 用（商品明細）
-  window.__itemsText = data.itemsText || "";
-}
-loadMeetupInfo();
-
     <script>
         lucide.createIcons();
+        // 0. 讀取 URL 參數（oid）
+        const qs = new URLSearchParams(location.search);
+        const oid = qs.get('oid') || qs.get('order_id') || '';
+        if (oid) {
+            document.getElementById('orderNo').innerText = oid;
+        }
+
+        // 0-1. 盡量把頁面資訊自動帶入（不影響流程，失敗就略過）
+        // 需要後端提供 GET /order/info?order_id=ODxxxx
+        (async () => {
+            if (!oid) return;
+            try {
+                const resp = await fetch(`/order/info?order_id=${encodeURIComponent(oid)}`, { method: 'GET' });
+                const data = await resp.json();
+                if (!data || !data.ok) return;
+
+                // 客人姓名
+                if (data.customerName) {
+                    const el = document.getElementById('customerName');
+                    if (el) el.innerText = String(data.customerName);
+                }
+
+                // 金額（只顯示數字，外層固定 NT$）
+                if (typeof data.amount === 'number') {
+                    const el = document.getElementById('totalAmount');
+                    if (el) el.innerText = data.amount.toLocaleString('zh-TW');
+                }
+
+                // 付款方式 Badge
+                if (data.payMethodLabel) {
+                    const el = document.getElementById('paymentBadge');
+                    if (el) el.innerText = String(data.payMethodLabel);
+                }
+
+                // 面交地點
+                if (data.meetPlace) {
+                    const t = document.getElementById('meetPlaceText');
+                    if (t) t.innerText = String(data.meetPlace);
+
+                    const a = document.getElementById('meetPlaceLink');
+                    if (a) a.href = `https://maps.google.com/?q=${encodeURIComponent(String(data.meetPlace))}`;
+                }
+            } catch (e) {
+                console.log("order/info fetch failed", e);
+            }
+        })();
+
 
         // 1. 初始化日期選擇器 (設定最小值為今天，避免選到過去)
         const dateInput = document.getElementById('dateSelect');
-        const today = new Date().toISOString().split('T')[0];
+        const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD（本地時區）
         dateInput.min = today;
 
         // 2. 初始化時間選擇器
@@ -185,20 +199,9 @@ loadMeetupInfo();
             }
 
             // 產生訊息內容
-            const name = (document.getElementById("customerName")?.innerText || "").trim();
-const amountText = (document.getElementById("totalAmount")?.innerText || "").trim();
-const itemsText = (window.__itemsText || "").trim();
-
-let message =
-`你好，我要預約面交
-訂單：${orderNo}
-姓名：${name || "—"}
-金額：${amountText || "—"}
-日期時間：${date} ${time}`;
-
-if (itemsText) message += `\n商品：\n${itemsText}`;
-
-message += `\n謝謝！`;
+            const meetPlace = (document.getElementById('meetPlaceText')?.innerText || '').trim();
+            const message = `你好，訂單：${orderNo}\n我確認於【${date} ${time}】前往面交${meetPlace ? `（地點：${meetPlace}）` : ''}，謝謝！`;
+            const encodedMessage = encodeURIComponent(message);
 
             // 判斷開啟方式
             let url = "";
