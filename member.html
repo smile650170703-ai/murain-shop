@@ -363,8 +363,22 @@
 
     const si = safeJsonParse(o?.shipping_info, null) || o?.shipping_info || {};
     const ship = (si && si.ship && typeof si.ship === "object") ? si.ship : {};
-    return ship || {};
+    // fallback：萬一 shipping_info 本身就是 ship 結構
+  return (si && typeof si === "object") ? si : {};
   }
+
+  function getReceiverFromOrder(o) {
+  const si = safeJsonParse(o?.shipping_info, null) || o?.shipping_info || {};
+  const r = (si && si.receiver && typeof si.receiver === "object") ? si.receiver : {};
+
+  // 有些人會把收件人直接攤平在 shipping_info 或 order 欄位，這裡做保底
+  return {
+    name: r.name || si.name || o?.receiver_name || "",
+    phone: r.phone || si.phone || o?.receiver_phone || "",
+    email: r.email || si.email || o?.receiver_email || "",
+    address: r.address || si.address || o?.receiver_address || ""
+  };
+}
 
   function payMethodLabel(pmRaw) {
     const pm = String(pmRaw || "").toLowerCase();
@@ -404,15 +418,15 @@
     return type ? type : "尚未填寫";
   }
 
-  function receiverSummary(ship) {
-    const name = String(ship?.name || ship?.receiver_name || "").trim();
-    const phone = String(ship?.phone || ship?.receiver_phone || "").trim();
-    const email = String(ship?.email || "").trim();
+  function receiverSummary(receiver) {
+  const name  = String(receiver?.name || "").trim();
+  const phone = String(receiver?.phone || "").trim();
+  const email = String(receiver?.email || "").trim();
 
-    const a = [name, phone].filter(Boolean).join(" / ");
-    if (a) return a + (email ? ` / ${email}` : "");
-    return email || "—";
-  }
+  const a = [name, phone].filter(Boolean).join(" / ");
+  if (a) return a + (email ? ` / ${email}` : "");
+  return email || "—";
+}
 
   function displayStatus(st) {
     switch (st) {
@@ -509,8 +523,10 @@
       const payTxt    = displayPayStatus(o.pay_status);
 
       const shipObj   = getShipFromOrder(o);
-      const shipTxt   = shipSummary(shipObj);
-      const recvTxt   = receiverSummary(shipObj);
+const recvObj   = getReceiverFromOrder(o);
+
+const shipTxt   = shipSummary(shipObj);
+const recvTxt   = receiverSummary(recvObj);
 
       const pmTxt     = payMethodLabel(o.payment_method);
 
