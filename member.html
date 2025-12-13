@@ -136,8 +136,7 @@
     }
     .credit-label { font-size: 12px; color: #888; letter-spacing: 0.1em; margin-bottom: 4px; }
     .credit-amount {
-      font-family: var(--font-sans);  /* 改這裡 */
-  font-weight: 700;
+      font-family: var(--font-serif);
       font-size: 32px;
       background: linear-gradient(135deg, #fff, #F3E5AB);
       -webkit-background-clip: text;
@@ -223,13 +222,7 @@
     
     .amount-display { text-align: right; }
     .amount-label { font-size: 11px; color: #666; margin-bottom: 2px; letter-spacing: 0.1em; }
-    .amount-val { 
-  font-family: var(--font-sans);  /* 改這裡 */
-  font-weight: 700;               /* 加粗 */
-  font-size: 20px; 
-  color: var(--gold-light); 
-  letter-spacing: 0.02em;         /* 稍微加寬一點點 */
-}
+    .amount-val { font-family: var(--font-serif); font-size: 20px; color: var(--gold-light); }
 
     /* --- 紅利明細列表 (Credits) --- */
     .credits-list { display: flex; flex-direction: column; gap: 12px; }
@@ -244,12 +237,7 @@
     .c-reason { font-size: 14px; color: #eee; font-weight: 500; }
     .c-date { font-size: 11px; color: #666; }
     
-    .c-amount { 
-  font-family: var(--font-sans);  /* 改這裡 */
-  font-weight: 700;               /* 加粗 */
-  font-size: 18px; 
-  text-align: right; 
-}
+    .c-amount { font-family: var(--font-serif); font-size: 18px; font-weight: 600; text-align: right; }
     .c-amount.pos { color: var(--success); }
     .c-amount.neg { color: var(--danger); }
     .c-balance { font-size: 10px; color: #555; text-align: right; margin-top: 2px;}
@@ -359,6 +347,36 @@
     return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
   }
 
+  function displayStatus(st) {
+    switch (st) {
+      case "submitted": return "已送出";
+      case "paid":      return "已付款";
+      case "shipped":   return "已出貨";
+      case "cancelled": return "已取消";
+      case "deposit_hold": return "訂金保留中";
+      default:          return st || "處理中";
+    }
+  }
+
+  function getStatusClass(payStatus) {
+    if(payStatus === 'paid_ok' || payStatus === 'deposit_ok') return 'st-paid';
+    if(payStatus === 'failed') return 'st-unpaid';
+    return 'st-pending';
+  }
+
+  function displayPayStatus(ps) {
+    switch (ps) {
+      case "unpaid":     return "未收款";
+      case "pending":    return "待確認";
+      case "paid_ok":    return "已收款";
+      case "deposit_ok": return "已收訂金";
+      case "failed":     return "付款失敗";
+      default:           return ps || "未付款";
+    }
+  
+
+  // ====== 會員中心顯示用：解析配送/收件 & COD/面交顯示「待付款」(只影響前端顯示) ======
+
   function safeJsonParse(x, fallback = null) {
     try {
       if (!x) return fallback;
@@ -370,34 +388,18 @@
   }
 
   function getShipFromOrder(o) {
-  // API 若有直接給 ship 就用
-  if (o && o.ship && typeof o.ship === "object") return o.ship;
+    // API 若有直接給 ship 就用；沒有就從 shipping_info 解析
+    if (o && o.ship && typeof o.ship === "object") return o.ship;
 
-  const si = safeJsonParse(o?.shipping_info, null) || o?.shipping_info || {};
+    const si = safeJsonParse(o?.shipping_info, null) || o?.shipping_info || {};
+    if (si && si.ship && typeof si.ship === "object") return si.ship;
 
-  // 正常結構：shipping_info.ship
-  if (si && si.ship && typeof si.ship === "object") return si.ship;
-
-  // fallback：萬一 shipping_info 本身就是 ship 結構
-  return (si && typeof si === "object") ? si : {};
-}
-
-  function getReceiverFromOrder(o) {
-  const si = safeJsonParse(o?.shipping_info, null) || o?.shipping_info || {};
-  const r = (si && si.receiver && typeof si.receiver === "object") ? si.receiver : {};
-
-  // 有些人會把收件人直接攤平在 shipping_info 或 order 欄位，這裡做保底
-  return {
-    name: r.name || si.name || o?.receiver_name || "",
-    phone: r.phone || si.phone || o?.receiver_phone || "",
-    email: r.email || si.email || o?.receiver_email || "",
-    address: r.address || si.address || o?.receiver_address || ""
-  };
-}
+    // fallback：萬一 shipping_info 本身就是 ship 結構
+    return (si && typeof si === "object") ? si : {};
+  }
 
   function payMethodLabel(pmRaw) {
     const pm = String(pmRaw || "").toLowerCase();
-
     if (!pm) return "—";
     if (pm === "cod_711") return "7-11 取貨付款";
     if (pm === "cod_post") return "宅配貨到付款";
@@ -410,7 +412,7 @@
     if (pm.startsWith("paid_card_inst_")) return "信用卡（分期）";
     if (pm.startsWith("zero_card_")) return "中租零卡（分期）";
     if (pm.startsWith("deposit_")) return "訂金";
-    return pmRaw; // 看不懂就原樣顯示，避免資訊丟失
+    return pmRaw;
   }
 
   function shipSummary(ship) {
@@ -419,7 +421,7 @@
     // 7-11 門市
     if (type.includes("711") || ship.store_id || ship.store_name) {
       const sname = ship.store_name || "";
-      const sid = ship.store_id ? `（${ship.store_id}）` : "";
+      const sid   = ship.store_id ? `（${ship.store_id}）` : "";
       const saddr = ship.store_address ? ` ${ship.store_address}` : "";
       return `7-11 ${sname}${sid}${saddr}`.trim();
     }
@@ -433,63 +435,37 @@
     return type ? type : "尚未填寫";
   }
 
-  function receiverSummary(receiver) {
-  const name  = String(receiver?.name || "").trim();
-  const phone = String(receiver?.phone || "").trim();
-  const email = String(receiver?.email || "").trim();
+  function receiverSummary(ship) {
+    const name  = String(ship?.name || ship?.receiver_name || "").trim();
+    const phone = String(ship?.phone || ship?.receiver_phone || "").trim();
+    const email = String(ship?.email || "").trim();
 
-  const a = [name, phone].filter(Boolean).join(" / ");
-  if (a) return a + (email ? ` / ${email}` : "");
-  return email || "—";
-}
-
-  function displayStatus(st) {
-    switch (st) {
-      case "submitted": return "已送出";
-      case "paid":      return "已付款";
-      case "shipped":   return "已出貨";
-      case "cancelled": return "已取消";
-      case "deposit_hold": return "訂金保留中";
-      default:          return st || "處理中";
-    }
+    const a = [name, phone].filter(Boolean).join(" / ");
+    if (a) return a + (email ? ` / ${email}` : "");
+    return email || "—";
   }
 
-  function getStatusClass(payStatus) {
-  if (payStatus === "paid_ok" || payStatus === "deposit_ok") return "st-paid";
-  if (payStatus === "failed") return "st-unpaid";
-  return "st-pending";
-}
-
-// ✅ 只影響會員中心顯示（不改後台、不改資料庫）
-function getStatusClassForMember(o) {
-  const pm = String(o?.payment_method || "").toLowerCase();
-  const ps = String(o?.pay_status || "");
-
-  // 這些在會員中心不要顯示成「綠色已收款」
-  if (pm === "cod_711" || pm === "meetup_cash" || pm === "cod_post") return "st-pending";
-  return getStatusClass(ps);
-}
-
-function displayPayStatus(ps) {
-  switch (ps) {
-    case "unpaid":     return "未收款";
-    case "pending":    return "待確認";
-    case "paid_ok":    return "已收款";
-    case "deposit_ok": return "已收訂金";
-    case "failed":     return "付款失敗";
-    default:           return ps || "未付款";
+  function isMemberShowAsUnpaid(pmRaw) {
+    const pm = String(pmRaw || "").toLowerCase();
+    return pm.startsWith("cod_") || pm === "meetup_cash";
   }
-}
 
-// ✅ 只改「顯示文字」：7-11 取貨付款 / 面交 → 待付款
-function displayPayStatusForMember(o) {
-  const pm = String(o?.payment_method || "").toLowerCase();
-  const ps = String(o?.pay_status || "");
+  function getStatusClassForMember(o) {
+    // ✅ 只改會員中心顯示：COD / 面交一律顯示「待付款」顏色
+    if (isMemberShowAsUnpaid(o?.payment_method)) return "st-pending";
+    return getStatusClass(o?.pay_status);
+  }
 
-  if (pm === "cod_711" || pm === "meetup_cash") return "待付款";
-  if (pm === "cod_post") return "貨到付款"; // 你不想顯示就刪掉這行
+  function displayPayStatusForMember(o) {
+    // ✅ 只改會員中心顯示：COD / 面交一律顯示「待付款」文字
+    const pm = String(o?.payment_method || "").toLowerCase();
 
-  return displayPayStatus(ps);
+    if (pm === "cod_711")  return "待取貨付款";
+    if (pm === "cod_post") return "待到貨付款";
+    if (pm === "meetup_cash") return "待面交付款";
+
+    return displayPayStatus(o?.pay_status);
+  }
 }
 
   /* --- 頁籤切換 --- */
@@ -554,18 +530,15 @@ function displayPayStatusForMember(o) {
       }
 
       const statusCls = getStatusClassForMember(o);
-const payTxt = displayPayStatusForMember(o);
+      const payTxt    = displayPayStatusForMember(o);
 
-const shipObj = getShipFromOrder(o);
-const recvObj = getReceiverFromOrder(o);
+      const shipObj   = getShipFromOrder(o);
+      const shipTxt   = shipSummary(shipObj);
+      const recvTxt   = receiverSummary(shipObj);
+      const pmTxt     = payMethodLabel(o.payment_method);
 
-const shipTxt = shipSummary(shipObj);
-const recvTxt = receiverSummary(recvObj);
-
-const pmTxt   = payMethodLabel(o.payment_method);
-
-      const baseTotal = Number(o.total_amount || 0) || 0;
-      const netTotal  = Number((o.net_amount ?? o.total_amount) || 0) || 0;
+      const baseTotal  = Number(o.total_amount || 0) || 0;
+      const netTotal   = Number((o.net_amount ?? o.total_amount) || 0) || 0;
       const creditUsed = Number(o.credit_used || 0) || 0;
 
       const depositAmt = Number(o.deposit_amount || 0) || 0;
