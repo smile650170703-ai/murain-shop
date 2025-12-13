@@ -8,7 +8,7 @@
   <!-- 引入高級字體 -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
 
   <style>
     /* --- 核心變數 --- */
@@ -23,7 +23,7 @@
       --success: #4ade80;
       --danger: #ef4444;
       --font-serif: 'Playfair Display', serif;
-      --font-sans: 'Lato', sans-serif;
+      --font-sans: 'Lato', 'Noto Sans TC', sans-serif; /* 加入中文字體支援 */
     }
 
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -63,10 +63,11 @@
     }
     
     .page-title {
-      font-size: 12px;
+      font-size: 13px;
       letter-spacing: 0.2em;
       color: var(--text-muted);
       text-transform: uppercase;
+      font-weight: 500;
     }
 
     /* 重新整理按鈕 (右上角) */
@@ -133,7 +134,7 @@
       border-top: 1px solid rgba(255,255,255,0.1);
       padding-top: 16px;
     }
-    .credit-label { font-size: 11px; color: #888; letter-spacing: 0.1em; margin-bottom: 4px; }
+    .credit-label { font-size: 12px; color: #888; letter-spacing: 0.1em; margin-bottom: 4px; }
     .credit-amount {
       font-family: var(--font-serif);
       font-size: 32px;
@@ -220,7 +221,7 @@
     .info-label { font-size: 11px; color: #666; margin-right: 4px; border: 1px solid #333; padding: 1px 4px; border-radius: 4px; }
     
     .amount-display { text-align: right; }
-    .amount-label { font-size: 10px; color: #666; text-transform: uppercase; margin-bottom: 2px; letter-spacing: 0.1em; }
+    .amount-label { font-size: 11px; color: #666; margin-bottom: 2px; letter-spacing: 0.1em; }
     .amount-val { font-family: var(--font-serif); font-size: 20px; color: var(--gold-light); }
 
     /* --- 紅利明細列表 (Credits) --- */
@@ -236,9 +237,10 @@
     .c-reason { font-size: 14px; color: #eee; font-weight: 500; }
     .c-date { font-size: 11px; color: #666; }
     
-    .c-amount { font-family: var(--font-serif); font-size: 18px; font-weight: 600; }
+    .c-amount { font-family: var(--font-serif); font-size: 18px; font-weight: 600; text-align: right; }
     .c-amount.pos { color: var(--success); }
     .c-amount.neg { color: var(--danger); }
+    .c-balance { font-size: 10px; color: #555; text-align: right; margin-top: 2px;}
 
   </style>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
@@ -250,7 +252,7 @@
     <!-- 1. Header -->
     <div class="header-area">
       <div class="brand-title">XUYUAN</div>
-      <div class="page-title">MEMBER CENTER</div>
+      <div class="page-title">會員中心</div> <!-- 已修改為中文 -->
       <button class="refresh-btn" id="reloadBtn" title="重新整理">↻</button>
     </div>
 
@@ -274,11 +276,11 @@
       </div>
     </div>
 
-    <!-- 3. 導航頁籤（改成：歷史訂單 / 訂金保留訂單 / 購物金） -->
+    <!-- 3. 導航頁籤 -->
     <div class="tabs">
       <button class="tab active" data-tab="history">歷史訂單</button>
       <button class="tab" data-tab="deposit">定金保留訂單</button>
-      <button class="tab" data-tab="credits">購物金</button>
+      <button class="tab" data-tab="credits">購物金明細</button>
     </div>
 
     <!-- 訊息提示 -->
@@ -298,7 +300,6 @@
   </div>
 
 <script>
-  /* --- 您的核心邏輯保持不變 --- */
   const API_BASE    = "https://api.murain.tw";
   const MEMBER_API  = API_BASE + "/member/orders";
   const CREDITS_API = API_BASE + "/member/credits";
@@ -309,7 +310,6 @@
   let orders = [];
   let memberInfo = null;
   let credits = [];
-  // 預設顯示「歷史訂單」
   let currentFilter = "history";
 
   const urlParams = new URLSearchParams(window.location.search || "");
@@ -333,6 +333,7 @@
       infoMsg.style.display = "block";
       loadMemberInfo();
       loadOrders();
+      loadCredits(); // 同時更新購物金
     } else {
       initLiff();
     }
@@ -352,7 +353,7 @@
       case "paid":      return "已付款";
       case "shipped":   return "已出貨";
       case "cancelled": return "已取消";
-        case "deposit_hold": return "訂金保留中";   // ← 新增這行（如果你的 Orders 有這個狀態）
+      case "deposit_hold": return "訂金保留中";
       default:          return st || "處理中";
     }
   }
@@ -382,7 +383,7 @@
     });
   }
 
-   // 顯示訂單列表（歷史訂單 / 訂金保留訂單）
+  // 渲染訂單列表
   function renderOrders() {
     orderList.style.display   = "flex";
     creditsList.style.display = "none";
@@ -391,45 +392,27 @@
 
     let list = orders.slice();
 
-    // === 1. 歷史訂單：只顯示「最近一個月內」 ===
     if (currentFilter === "history") {
       const now = new Date();
       const oneMonthAgo = new Date(now);
       oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
 
       list = list.filter(o => {
-        // 如果是從「查看訂單」按鈕帶 order_id 進來的那一筆，一定要顯示
         if (initialOrderId && o.order_id === initialOrderId) return true;
-
         const createdAt = o.created_at ? new Date(o.created_at) : null;
         if (!createdAt || isNaN(createdAt.getTime())) return false;
         return createdAt >= oneMonthAgo;
       });
     }
-
-    // === 2. 訂金保留訂單：只抓有訂金、未完成的訂單 ===
     else if (currentFilter === "deposit") {
       list = list.filter(o => {
         const pm        = String(o.payment_method || "");
         const payStatus = String(o.pay_status || "");
         const status    = String(o.status || "");
         const deposit   = Number(o.deposit_amount || 0) || 0;
-
-        // 有設定訂金金額
         const hasDeposit = deposit > 0;
-
-        // 付款方式是訂金/匯款類
-        const isDepositPm =
-          pm.startsWith("deposit") ||
-          pm.startsWith("atm") ||
-          pm.includes("deposit");
-
-        // 還沒完成 / 還沒取消
-        const notFinished =
-          status !== "shipped" &&
-          status !== "cancelled" &&
-          payStatus !== "failed";
-
+        const isDepositPm = pm.startsWith("deposit") || pm.startsWith("atm") || pm.includes("deposit");
+        const notFinished = status !== "shipped" && status !== "cancelled" && payStatus !== "failed";
         return hasDeposit && isDepositPm && notFinished;
       });
     }
@@ -443,7 +426,6 @@
       const wrap = document.createElement("div");
       wrap.className = "order-card";
 
-      // 高亮：如果 URL 有帶 order_id，就把那一筆框起來
       if (initialOrderId && o.order_id === initialOrderId) {
         wrap.classList.add("highlight");
         if (!hasScrolledToInitialOrder) {
@@ -457,8 +439,6 @@
       const statusCls = getStatusClass(o.pay_status);
       const payTxt    = displayPayStatus(o.pay_status);
       const shipTxt   = (o.ship && o.ship.method) ? o.ship.method : "尚未配送";
-
-      // 額外：如果是訂金訂單，在卡片裡顯示訂金金額（可選）
       const depositAmt = Number(o.deposit_amount || 0) || 0;
       const depositLine = depositAmt > 0
         ? `<div><span class="info-label">訂金</span> NT$ ${depositAmt.toLocaleString()}</div>`
@@ -481,14 +461,51 @@
           </div>
           
           <div class="amount-display">
-            <div class="amount-label">TOTAL</div>
+            <div class="amount-label">總金額</div>
             <div class="amount-val">NT$ ${(o.total_amount || 0).toLocaleString()}</div>
           </div>
         </div>
       `;
-
       orderList.appendChild(wrap);
     }
+  }
+
+  // 渲染購物金明細 (新增的函式)
+  function renderCredits() {
+    orderList.style.display   = "none";
+    creditsList.style.display = "flex";
+    emptyText.style.display   = "none";
+    creditsList.innerHTML     = "";
+
+    if (!credits.length) {
+      emptyText.style.display = "block";
+      return;
+    }
+
+    credits.forEach(item => {
+      const el = document.createElement("div");
+      el.className = "credit-item";
+      
+      const isPositive = item.amount >= 0;
+      const amtClass = isPositive ? "pos" : "neg";
+      const sign = isPositive ? "+" : "";
+      
+      // 假設 item 有 reason, amount, created_at, balance 欄位
+      // 若 API 回傳欄位不同，需根據實際 API 調整
+      const reason = item.reason || "購物金異動";
+      
+      el.innerHTML = `
+        <div class="c-info">
+          <div class="c-reason">${reason}</div>
+          <div class="c-date">${formatDate(item.created_at)}</div>
+        </div>
+        <div>
+          <div class="c-amount ${amtClass}">${sign}${item.amount}</div>
+          ${item.balance !== undefined ? `<div class="c-balance">餘額: ${item.balance}</div>` : ''}
+        </div>
+      `;
+      creditsList.appendChild(el);
+    });
   }
 
   /* --- API 邏輯 --- */
@@ -507,7 +524,11 @@
 
   async function loadCredits() {
     if (!currentUserId) return;
-    infoMsg.textContent = "載入明細中...";
+    // 只有在當前頁籤是 credits 時才顯示載入中
+    if (currentFilter === "credits") {
+        infoMsg.textContent = "載入明細中...";
+        infoMsg.style.display = "block";
+    }
     try {
       const res = await fetch(CREDITS_API + "?line_user_id=" + encodeURIComponent(currentUserId));
       const json = await res.json();
@@ -516,14 +537,20 @@
         if (currentFilter === "credits") renderCredits();
       }
     } catch (e) { console.error(e); }
-    infoMsg.textContent = "";
-    infoMsg.style.display = "none";
+    
+    // 隱藏載入訊息
+    if (currentFilter === "credits") {
+        infoMsg.textContent = "";
+        infoMsg.style.display = "none";
+    }
   }
 
   async function loadOrders() {
     if (!currentUserId) return;
-    infoMsg.textContent = "更新資料中...";
-    infoMsg.style.display = "block";
+    if (currentFilter !== "credits") {
+        infoMsg.textContent = "更新資料中...";
+        infoMsg.style.display = "block";
+    }
     try {
       const res = await fetch(MEMBER_API + "?line_user_id=" + encodeURIComponent(currentUserId));
       const json = await res.json();
@@ -535,8 +562,10 @@
       infoMsg.textContent = "載入失敗"; 
       infoMsg.classList.add("error");
     }
-    infoMsg.textContent = "";
-    infoMsg.style.display = "none";
+    if (currentFilter !== "credits") {
+        infoMsg.textContent = "";
+        infoMsg.style.display = "none";
+    }
   }
 
   async function initLiff() {
@@ -551,7 +580,6 @@
       currentUserId = profile.userId;
       userName.textContent = profile.displayName;
       
-      // 設定頭像
       if(profile.pictureUrl){
         defaultAvatar.style.display = "none";
         userAvatarImg.style.display = "block";
@@ -562,6 +590,8 @@
       
       loadMemberInfo();
       loadOrders();
+      // 預先載入購物金，以免切換頁籤時空白
+      loadCredits();
     } catch (e) {
       infoMsg.textContent = "請從 LINE 官方帳號開啟";
       infoMsg.style.display = "block";
@@ -574,9 +604,12 @@
       btn.addEventListener("click", () => {
         currentFilter = btn.dataset.tab || "history";
         updateTabsUI();
+        
+        // 切換頁籤邏輯
         if (currentFilter === "credits") {
-          renderCredits();
-          loadCredits();
+          // 如果 credits 陣列是空的，嘗試重新載入，否則直接渲染
+          if(credits.length === 0) loadCredits();
+          else renderCredits();
         } else {
           renderOrders();
         }
