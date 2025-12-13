@@ -505,10 +505,30 @@
 
       const statusCls = getStatusClass(o.pay_status);
       const payTxt    = displayPayStatus(o.pay_status);
-      const shipTxt   = (o.ship && o.ship.method) ? o.ship.method : "尚未配送";
+       const statusCls = getStatusClass(o.pay_status);
+      const payTxt    = displayPayStatus(o.pay_status);
+
+      const shipObj   = getShipFromOrder(o);
+      const shipTxt   = shipSummary(shipObj);
+      const recvTxt   = receiverSummary(shipObj);
+
+      const pmTxt     = payMethodLabel(o.payment_method);
+
+      const baseTotal = Number(o.total_amount || 0) || 0;
+      const netTotal  = Number((o.net_amount ?? o.total_amount) || 0) || 0;
+      const creditUsed = Number(o.credit_used || 0) || 0;
+
       const depositAmt = Number(o.deposit_amount || 0) || 0;
       const depositLine = depositAmt > 0
         ? `<div><span class="info-label">訂金</span> NT$ ${depositAmt.toLocaleString()}</div>`
+        : "";
+
+      const creditLine = (creditUsed > 0 || netTotal !== baseTotal)
+        ? `<div><span class="info-label">購物金</span> -NT$ ${creditUsed.toLocaleString()}</div>`
+        : "";
+
+      const originLine = (netTotal !== baseTotal)
+        ? `<div style="font-size:11px;color:#666;margin-top:4px;">原價 NT$ ${baseTotal.toLocaleString()}</div>`
         : "";
 
       wrap.innerHTML = `
@@ -519,17 +539,21 @@
           </div>
           <div class="status-badge ${statusCls}">${payTxt}</div>
         </div>
-        
+
         <div class="card-body">
           <div class="info-group">
             <div><span class="info-label">狀態</span> ${displayStatus(o.status)}</div>
-            <div><span class="info-label">配送</span> ${shipTxt}</div>
+            <div><span class="info-label">付款</span> ${pmTxt}</div>
+            <div><span class="info-label">配送</span> <span style="word-break:break-word;">${shipTxt}</span></div>
+            <div><span class="info-label">收件</span> <span style="word-break:break-word;">${recvTxt}</span></div>
             ${depositLine}
+            ${creditLine}
           </div>
-          
+
           <div class="amount-display">
-            <div class="amount-label">總金額</div>
-            <div class="amount-val">NT$ ${(o.total_amount || 0).toLocaleString()}</div>
+            <div class="amount-label">應付金額</div>
+            <div class="amount-val">NT$ ${netTotal.toLocaleString()}</div>
+            ${originLine}
           </div>
         </div>
       `;
