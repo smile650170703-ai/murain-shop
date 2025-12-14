@@ -1519,33 +1519,31 @@ if (creditUsed > 0) {
       const msg = j.message || j.error || '送出失敗，請再試一次';
       throw new Error(msg);
     }
+    // ✅ next_url：只有「面交現金 meetup_cash」才立刻跳預約頁
+const nextUrl = (j && j.next_url) ? String(j.next_url) : "";
 
-    // ✅ 面交：後端會回 next_url，優先跳轉到預約頁
-if (j && j.ok && j.next_url) {
-  const url = String(j.next_url);
-
-  // 先清掉狀態（避免返回時還卡在舊購物車）
+// ① meetup_cash：建單後直接去預約頁
+if (payment_method === "meetup_cash" && nextUrl) {
   clearCheckoutState();
   try { localStorage.removeItem('MURAIN_WEB_CART_TOKEN'); } catch (e) {}
 
   if (window.liff && liff.isInClient && liff.isInClient()) {
-    liff.openWindow({ url, external: false });
+    liff.openWindow({ url: nextUrl, external: false });
   } else {
-    window.location.href = url;
+    window.location.href = nextUrl;
   }
-  return; // ✅ 一定要 return，避免繼續跑 PayUni / 成功頁
+  return; // ✅ 一定要 return
 }
 
-    clearCheckoutState();
+// ② paid_/zero_card_ 且取貨=meetup：先付款，先把 next_url 存起來，付款成功再跳
+if (nextUrl && (payment_method.startsWith("paid_") || payment_method.startsWith("zero_card_"))) {
+  try { sessionStorage.setItem("MEETUP_NEXT_URL", nextUrl); } catch (e) {}
+}
+
+   clearCheckoutState();
     try {
       localStorage.removeItem('MURAIN_WEB_CART_TOKEN');
     } catch (e) {}
-
-    // ✅ 1) 如果後端回 next_url（面交/面交取貨），就直接跳轉
-if (j.next_url) {
-  window.location.href = j.next_url;
-  return;
-}
 
     // PayUni
     if (payment_method && payment_method.startsWith('paid_')) {
