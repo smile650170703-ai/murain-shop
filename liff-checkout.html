@@ -575,8 +575,6 @@ async function initLiffAndMember() {
   try {
     const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(profile.userId)}`);
     const j = await r.json();
-
-    
     if (j && j.ok) {
       MEMBER_INFO = j;
       applyMemberInfoToForm(j);
@@ -935,12 +933,11 @@ function updateCreditAndTotal() {
 
   const pay = Math.max(CART_TOTAL_RAW - CREDIT_USED, 0);
   if (after) after.value = money(pay);
+  try { calcZC(); } catch (e) {}
 }
 
 // 綁定購物金輸入事件
 const creditInputEl = document.querySelector('#credit_input');
-    if (creditInputEl) creditInputEl.value = '0'; // 防止瀏覽器記住上一次輸入，導致不小心全額折抵
-
 if (creditInputEl) {
   creditInputEl.addEventListener('input', updateCreditAndTotal);
 }
@@ -1514,35 +1511,12 @@ if (creditUsed > 0) {
       const msg = j.message || j.error || '送出失敗，請再試一次';
       throw new Error(msg);
     }
-    // ✅ next_url：只有「面交現金 meetup_cash」才立刻跳預約頁
-const nextUrl = (j && j.next_url) ? String(j.next_url) : "";
 
-// ① meetup_cash：建單後直接去預約頁
-if (payment_method === "meetup_cash" && nextUrl) {
-  clearCheckoutState();
-  try { localStorage.removeItem('MURAIN_WEB_CART_TOKEN'); } catch (e) {}
-
-  if (window.liff && liff.isInClient && liff.isInClient()) {
-    liff.openWindow({ url: nextUrl, external: false });
-  } else {
-    window.location.href = nextUrl;
-  }
-  return; // ✅ 一定要 return
-}
-
-// ✅ 只有「線上付款/無卡分期 + 取貨=meetup」才需要付款後跳預約
-if (nextUrl && ship && ship.type === "meetup" && (payment_method.startsWith("paid_") || payment_method.startsWith("zero_card_"))) {
-  try {
-    sessionStorage.setItem("MURAIN_AFTER_PAY_NEXT_URL", nextUrl);
-    sessionStorage.setItem("MURAIN_AFTER_PAY_ORDER_ID", String(j.order_id || ""));
-  } catch (e) {}
-}
-
-   clearCheckoutState();
+    clearCheckoutState();
     try {
-  localStorage.removeItem('murain_cart_token');
-  localStorage.removeItem('MURAIN_WEB_CART_TOKEN');
-} catch (e) {}
+      localStorage.removeItem('MURAIN_WEB_CART_TOKEN');
+    } catch (e) {}
+
     // PayUni
     if (payment_method && payment_method.startsWith('paid_')) {
       try {
