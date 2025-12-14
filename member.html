@@ -502,18 +502,33 @@ function receiverFullText(receiver, ship, paymentMethod) {
         return createdAt >= oneMonthAgo;
       });
     }
-    else if (currentFilter === "deposit") {
-      list = list.filter(o => {
-        const pm        = String(o.payment_method || "");
-        const payStatus = String(o.pay_status || "");
-        const status    = String(o.status || "");
-        const deposit   = Number(o.deposit_amount || 0) || 0;
-        const hasDeposit = deposit > 0;
-        const isDepositPm = pm.startsWith("deposit") || pm.startsWith("atm") || pm.includes("deposit");
-        const notFinished = status !== "shipped" && status !== "cancelled" && payStatus !== "failed";
-        return hasDeposit && isDepositPm && notFinished;
-      });
-    }
+   else if (currentFilter === "deposit") {
+  list = list.filter(o => {
+    const pm = String(o.payment_method || "").toLowerCase();
+    const payStatus = String(o.pay_status || "").toLowerCase();
+    const status = String(o.status || "").toLowerCase();
+    const shipStatus = String(o.ship_status || "").toLowerCase();
+
+    const depositAmt = Number(o.deposit_amount || 0) || 0;
+    const last5 = String(o.deposit_last5 || "").trim();
+    const holdUntil = String(o.hold_until || "").trim();
+
+    const hasDepositInfo = depositAmt > 0 || !!last5 || !!holdUntil;
+
+    const looksDeposit =
+      pm.includes("deposit") || pm.startsWith("atm") ||
+      status === "deposit_hold" || status.includes("deposit") || status.includes("hold") ||
+      payStatus.includes("deposit") || payStatus === "deposit_hold";
+
+    const notFinished =
+      shipStatus !== "shipped" &&
+      status !== "shipped" &&
+      !status.includes("cancel") &&
+      payStatus !== "failed";
+
+    return notFinished && (hasDepositInfo || looksDeposit);
+  });
+}
 
     if (!list.length) {
       emptyText.style.display = "block";
