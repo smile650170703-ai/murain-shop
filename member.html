@@ -430,38 +430,48 @@ function shipBadgeClass(o) {
   return "st-pending"; // 灰色
 }
   // ✅ 依照你 API 回傳的 ship.method / ship.store_name / ship.address 來判斷
-  function deliveryPlaceText(ship, receiver) {
-    const methodRaw = String(ship?.method || ship?.type || ship?.ship_type || "");
-    const method = methodRaw.toLowerCase();
+  function deliveryPlaceText(ship, receiver, paymentMethod) {
+  const methodRaw = String(ship?.method || ship?.type || ship?.ship_type || "");
+  const method = methodRaw.toLowerCase();
+  const pm = String(paymentMethod || "").toLowerCase();
 
-    // 7-11 門市
-    if (
-      method.includes("7-11") ||
-      method.includes("711") ||
-      method.includes("超商") ||
-      ship?.store_id ||
-      ship?.store_name
-    ) {
-      const sname = ship.store_name || "";
-      const sid   = ship.store_id ? `（${ship.store_id}）` : "";
-      const saddr = ship.store_address ? ` ${ship.store_address}` : "";
-      const txt = `7-11 ${sname}${sid}${saddr}`.trim();
-      return txt || "7-11 門市";
-    }
-
-    // 宅配/郵寄：地址可能在 ship 或 receiver
-    if (receiver?.address) return String(receiver.address);
-    if (ship?.address) return String(ship.address);
-    if (ship?.addr) return String(ship.addr);
-
-    // 面交
-    if (method.includes("面交") || method.includes("meetup")) return "面交";
-
-    // method 顯示（例如：郵寄 / 宅配）
-    if (methodRaw) return methodRaw;
-
-    return "尚未填寫";
+  // 7-11 門市
+  if (
+    method.includes("7-11") ||
+    method.includes("711") ||
+    method.includes("超商") ||
+    ship?.store_id ||
+    ship?.store_name
+  ) {
+    const sname = ship.store_name || "";
+    const sid   = ship.store_id ? `（${ship.store_id}）` : "";
+    const saddr = ship.store_address ? ` ${ship.store_address}` : "";
+    const txt = `7-11 ${sname}${sid}${saddr}`.trim();
+    return txt || "7-11 門市";
   }
+
+  // ✅ 面交：就算 ship 沒資料，只要 payment_method 是 meetup 也算
+  const isMeetup = method.includes("面交") || method.includes("meetup") || pm.includes("meetup");
+  if (isMeetup) return "面交（不需收件資料）";
+
+  // 宅配/郵寄：地址可能在 ship 或 receiver
+  if (receiver?.address) return String(receiver.address);
+  if (ship?.address) return String(ship.address);
+  if (ship?.addr) return String(ship.addr);
+
+  // method 顯示（例如：郵寄 / 宅配）
+  if (methodRaw) return methodRaw;
+
+  return "尚未填寫";
+}
+
+function receiverFullText(receiver, ship, paymentMethod) {
+  const name  = String(receiver?.name  || ship?.name  || "").trim();
+  const phone = String(receiver?.phone || ship?.phone || "").trim();
+  const place = deliveryPlaceText(ship || {}, receiver || {}, paymentMethod);
+  const head  = [name, phone].filter(Boolean).join(" / ");
+  return (head ? head + "\n" : "") + place;
+}
 
   // ✅ 收件資料：就算 receiver 沒資料，也會從 ship.name/phone 補上
   function receiverFullText(receiver, ship) {
