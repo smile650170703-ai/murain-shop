@@ -316,7 +316,13 @@
   </div>
 
 <script>
- 
+  // ✅ 重要：如果有人用 /member 開，先跳到 /member.html，避免 LIFF endpoint 警告
+  (function enforceMemberHtml(){
+    const p = (location.pathname || "").replace(/\/+$/, "");
+    if (p === "/member") {
+      location.replace("/member.html" + (location.search || "") + (location.hash || ""));
+    }
+  })();
 
   const API_BASE    = "https://api.murain.tw";
   const MEMBER_API  = API_BASE + "/member/orders";
@@ -415,6 +421,66 @@
     return "st-pending";
   }
 
+// === 會員中心：付款狀態顯示（只影響前台顯示，不改後端狀態） ===
+function isCODorMeetup(o){
+  const pm = String(o && o.payment_method || "").toLowerCase();
+  if (pm === "cod_711" || pm === "cod_post" || pm === "meetup_cash") return true;
+  // 兼容：有些資料可能沒有 payment_method，改從 ship.type 判斷
+  try {
+    const ship = getShipFromOrder(o) || {};
+    const t = String(ship.type || "").toLowerCase();
+    if (t === "meetup" && !pm) return true;
+  } catch(e){}
+  return false;
+}
+
+function displayPayStatusForMember(o){
+  if (!o) return "-";
+  if (isCODorMeetup(o)) return "待付款";
+
+  const ps = String(o.pay_status || o.status || "").toLowerCase();
+  switch (ps) {
+    case "paid":
+    case "paid_ok":
+    case "pay_ok":
+      return "已付款";
+    case "unpaid":
+    case "pending":
+    case "submitted":
+      return "待付款";
+    case "deposit_hold":
+      return "訂金保留";
+    case "deposit_ok":
+      return "訂金已收";
+    case "shipped":
+      return "已出貨";
+    case "cancelled":
+    case "canceled":
+      return "已取消";
+    case "refunded":
+      return "已退款";
+    default:
+      return o.pay_status || o.status || "處理中";
+  }
+}
+
+function payStatusClassForMember(o){
+  if (isCODorMeetup(o)) return "st-unpaid";
+  const ps = String(o && (o.pay_status || o.status) || "").toLowerCase();
+  if (ps === "paid" || ps === "paid_ok" || ps === "pay_ok") return "st-paid";
+  if (ps === "deposit_hold" || ps === "deposit_ok") return "st-pending";
+  if (ps === "cancelled" || ps === "canceled" || ps === "refunded") return "st-unpaid";
+  if (ps === "pending" || ps === "submitted") return "st-pending";
+  return "st-unpaid";
+}
+
+function shipBadgeHTMLForMember(o){
+  const txt = shipBadgeText(o);
+  const cls = shipBadgeClass(o);
+  return `<span class="status-badge ${cls}">${txt}</span>`;
+}
+
+
   // ✅ 依照你 API 回傳的 ship.method / ship.store_name / ship.address 來判斷
   function deliveryPlaceText(ship, receiver) {
     const methodRaw = String(ship?.method || ship?.type || ship?.ship_type || "");
@@ -467,106 +533,96 @@
   }
 
   // 渲染訂單列表
-  function renderOrders() {
-    orderList.style.display   = "flex";
-    creditsList.style.display = "none";
-    emptyText.style.display   = "none";
-    orderList.innerHTML       = "";
+  function renderOrders(){
+  orderList.innerHTML = "";
 
-    let list = orders.slice();
+  // 一律先排序（新→舊）
+  let base = (orders || []).slice().sort((a,b)=>{
+    const ta = new Date(a.created_at || a.createdAt || a.created || 0).getTime();
+    const tb = new Date(b.created_at || b.createdAt || b.created || 0).getTime();
+    return tb - ta;
+  });
 
-    if (currentFilter === "history") {
-      const now = new Date();
-      const oneMonthAgo = new Date(now);
-      oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-
-      list = list.filter(o => {
-        if (initialOrderId && o.order_id === initialOrderId) return true;
-        const createdAt = o.created_at ? new Date(o.created_at) : null;
-        if (!createdAt || isNaN(createdAt.getTime())) return false;
-        return createdAt >= oneMonthAgo;
-      });
-    }
-    else if (currentFilter === "deposit") {
-      list = list.filter(o => {
-        const pm        = String(o.payment_method || "");
-        const payStatus = String(o.pay_status || "");
-        const status    = String(o.status || "");
-        const deposit   = Number(o.deposit_amount || 0) || 0;
-        const hasDeposit = deposit > 0;
-        const isDepositPm = pm.startsWith("deposit") || pm.startsWith("atm") || pm.includes("deposit");
-        const notFinished = status !== "shipped" && status !== "cancelled" && payStatus !== "failed";
-        return hasDeposit && isDepositPm && notFinished;
-      });
-    }
-
-    if (!list.length) {
-      emptyText.style.display = "block";
-      return;
-    }
-
-    for (const o of list) {
-      // 需要 debug 時可打開
-      // console.log("order sample", o);
-
-      const wrap = document.createElement("div");
-      wrap.className = "order-card";
-
-      if (initialOrderId && o.order_id === initialOrderId) {
-        wrap.classList.add("highlight");
-        if (!hasScrolledToInitialOrder) {
-          hasScrolledToInitialOrder = true;
-          setTimeout(() => {
-            wrap.scrollIntoView({ behavior: "smooth", block: "center" });
-          }, 150);
-        }
-      }
-
-      const statusCls = shipBadgeClass(o);
-      const payTxt    = shipBadgeText(o);
-
-      // ✅ 你的 API：收件資訊在 o.ship
-      const shipObj = o.ship || {};
-      const receiverObj = o.receiver || {}; // 目前多半沒有，但保留擴充
-
-      const receiverTxt = receiverFullText(receiverObj, shipObj).replace(/\n/g, "<br>");
-      const payMethodTxt = displayPaymentMethod(o.payment_method);
-
-      const depositAmt = Number(o.deposit_amount || 0) || 0;
-      const depositLine = depositAmt > 0
-        ? `<div><span class="info-label">訂金</span> NT$ ${depositAmt.toLocaleString("zh-TW")}</div>`
-        : "";
-
-      const total = Number(o.total_amount || 0);
-
-      wrap.innerHTML = `
-        <div class="card-header">
-          <div>
-            <div class="order-id">#${o.order_id}</div>
-            <div class="order-date">${formatDate(o.created_at)}</div>
-          </div>
-          <div class="status-badge ${statusCls}">${payTxt}</div>
-        </div>
-        
-        <div class="card-body">
-          <div class="info-group">
-            <div><span class="info-label">收件資料</span> ${receiverTxt}</div>
-            <div><span class="info-label">付款方式</span> ${payMethodTxt}</div>
-            ${depositLine}
-          </div>
-          
-          <div class="amount-display">
-            <div class="amount-label">總金額</div>
-            <div class="amount-val">NT$ ${total.toLocaleString("zh-TW")}</div>
-          </div>
-        </div>
-      `;
-      orderList.appendChild(wrap);
-    }
+  // 分頁籤：歷史/定金保留
+  if (currentFilter === "history") {
+    // ✅ 預設顯示近 90 天（避免太舊也避免「完全看不到訂單」）
+    const days = 90;
+    const since = new Date(Date.now() - days*24*60*60*1000);
+    base = base.filter(o => {
+      const t = new Date(o.created_at || o.createdAt || o.created || 0);
+      return !isNaN(t.getTime()) && t >= since;
+    });
+  } else if (currentFilter === "deposit") {
+    base = base.filter(o => {
+      const ps = String(o.pay_status || o.status || "").toLowerCase();
+      const pm = String(o.payment_method || "").toLowerCase();
+      return ps === "deposit_hold" || pm === "deposit_old" || ps === "deposit_ok";
+    });
   }
 
-  // 渲染購物金明細
-  function renderCredits() {
+  if (!base.length) {
+    orderList.innerHTML = `<div class="empty">目前沒有可顯示的訂單</div>`;
+    return;
+  }
+
+  base.forEach(o => {
+    const wrap = document.createElement("div");
+    wrap.className = "order-card";
+
+    const orderId = String(o.order_id || o.OrderID || o.id || "-");
+    const dateStr = formatDate(o.created_at || o.createdAt || o.created || "");
+    const pmLabel = displayPaymentMethod(o.payment_method || "");
+
+    // 金額：優先顯示折抵後 net_amount（若後端有給）
+    const amount = Number(
+      (o.net_amount !== undefined ? o.net_amount : (o.total_amount !== undefined ? o.total_amount : 0))
+    ) || 0;
+
+    const payTxt = displayPayStatusForMember(o);
+    const payCls = payStatusClassForMember(o);
+    const shipBadge = shipBadgeHTMLForMember(o);
+
+    // 額外：購物金提示（若有）
+    const creditUsed = Number(o.credit_used || (o.shipping_info && o.shipping_info.credit_used) || 0) || 0;
+    const creditHint = creditUsed > 0
+      ? `<div class="order-row"><span class="key">購物金折抵</span><span class="value">- NT$ ${creditUsed.toLocaleString("zh-TW")}</span></div>`
+      : "";
+
+    wrap.innerHTML = `
+      <div class="order-top">
+        <div class="order-id">訂單 ${orderId}</div>
+        <div class="status-wrap">
+          <span class="status-badge ${payCls}">${payTxt}</span>
+          ${shipBadge}
+        </div>
+      </div>
+      <div class="order-row">
+        <span class="key">下單時間</span>
+        <span class="value">${dateStr}</span>
+      </div>
+      <div class="order-row">
+        <span class="key">付款方式</span>
+        <span class="value">${pmLabel}</span>
+      </div>
+      ${creditHint}
+      <div class="order-row">
+        <span class="key">訂單金額</span>
+        <span class="value">NT$ ${amount.toLocaleString("zh-TW")}</span>
+      </div>
+      <div class="order-actions">
+        <button class="btn btn-outline" data-act="detail" data-order="${orderId}">查看明細</button>
+      </div>
+    `;
+
+    wrap.querySelector('[data-act="detail"]')?.addEventListener("click", ()=>{
+      openOrderDetail(orderId);
+    });
+
+    orderList.appendChild(wrap);
+  });
+}
+
+function renderCredits() {
     orderList.style.display   = "none";
     creditsList.style.display = "flex";
     emptyText.style.display   = "none";
