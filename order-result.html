@@ -198,6 +198,24 @@
   </div>
 
 <script>
+
+  // ✅ 付款成功回來後：如果之前是「線上付款/無卡分期 + 面交」就自動跳到面交預約頁
+  (function () {
+    try {
+      const nextUrl = sessionStorage.getItem("MEETUP_NEXT_URL") || "";
+      if (nextUrl) {
+        sessionStorage.removeItem("MEETUP_NEXT_URL");
+
+        // LIFF 內就用 openWindow，避免被 LINE 內建瀏覽器擋跳轉
+        if (typeof liff !== "undefined" && liff.isInClient && liff.isInClient()) {
+          liff.openWindow({ url: nextUrl, external: false });
+        } else {
+          location.href = nextUrl;
+        }
+      }
+    } catch (e) {}
+  })();
+
   const qs = new URLSearchParams(location.search);
   const orderId = qs.get('order_id') || '';
   const total = qs.get('total') || '';
@@ -243,14 +261,22 @@
     // 顯示倒數提示
     if(redirectMsg) redirectMsg.style.display = 'block';
     
-    // 設定 3 秒後自動跳轉
-    setTimeout(() => {
-      if (typeof liff !== 'undefined' && liff.isInClient()) {
-        liff.closeWindow();
-      } else {
-        location.href = lineUrl;
-      }
-    }, 3000); 
+    // 設定 3 秒後自動跳轉（但若有面交 next_url，就不要自動回 LINE）
+let hasMeetupNext = false;
+try { hasMeetupNext = !!sessionStorage.getItem("MEETUP_NEXT_URL"); } catch (e) {}
+
+if (!hasMeetupNext) {
+  setTimeout(() => {
+    if (typeof liff !== 'undefined' && liff.isInClient()) {
+      liff.closeWindow();
+    } else {
+      location.href = lineUrl;
+    }
+  }, 3000);
+} else {
+  // 有面交要跳轉時，不顯示「3 秒後自動返回」
+  if (redirectMsg) redirectMsg.style.display = 'none';
+} 
   }
 </script>
 
