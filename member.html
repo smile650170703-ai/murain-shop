@@ -136,12 +136,12 @@
     }
     .credit-label { font-size: 12px; color: #888; letter-spacing: 0.1em; margin-bottom: 4px; }
     .credit-amount {
-      font-family: var(--font-sans);
+      font-family: var(--font-serif);
       font-size: 32px;
       background: linear-gradient(135deg, #fff, #F3E5AB);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
-      font-weight: 700;
+      font-weight: 500;
       line-height: 1;
     }
     
@@ -222,8 +222,7 @@
     
     .amount-display { text-align: right; }
     .amount-label { font-size: 11px; color: #666; margin-bottom: 2px; letter-spacing: 0.1em; }
-    .amount-val { font-family: var(--font-sans);
-      font-weight: 700; font-size: 20px; color: var(--gold-light); }
+    .amount-val { font-family: var(--font-serif); font-size: 20px; color: var(--gold-light); }
 
     /* --- 紅利明細列表 (Credits) --- */
     .credits-list { display: flex; flex-direction: column; gap: 12px; }
@@ -238,7 +237,7 @@
     .c-reason { font-size: 14px; color: #eee; font-weight: 500; }
     .c-date { font-size: 11px; color: #666; }
     
-    .c-amount { font-family: var(--font-sans); font-size: 18px; font-weight: 700; text-align: right; }
+    .c-amount { font-family: var(--font-serif); font-size: 18px; font-weight: 600; text-align: right; }
     .c-amount.pos { color: var(--success); }
     .c-amount.neg { color: var(--danger); }
     .c-balance { font-size: 10px; color: #555; text-align: right; margin-top: 2px;}
@@ -376,6 +375,52 @@
     }
   }
 
+  
+  // ✅ 會員中心：只顯示「出貨狀態」（不顯示已收款/待確認）
+  function shipBadgeText(o) {
+    const ss = String(o?.ship_status || "");
+    const st = String(o?.status || "");
+    if (ss === "shipped" || st === "shipped") return "已出貨";
+    return "待出貨";
+  }
+
+  function shipBadgeClass(o) {
+    const ss = String(o?.ship_status || "");
+    const st = String(o?.status || "");
+    if (ss === "shipped" || st === "shipped") return "st-paid";
+    return "st-pending";
+  }
+
+  function deliveryPlaceText(ship, receiver) {
+    const type = String(ship?.type || ship?.ship_type || "").toLowerCase();
+
+    // 7-11 門市（以 ship 的門市欄位為主）
+    if (type.includes("711") || ship?.store_id || ship?.store_name) {
+      const sname = ship.store_name || "";
+      const sid = ship.store_id ? `（${ship.store_id}）` : "";
+      const saddr = ship.store_address ? ` ${ship.store_address}` : "";
+      return `7-11 ${sname}${sid}${saddr}`.trim();
+    }
+
+    // 宅配/郵寄：優先用 receiver.address（你的資料多半在 receiver）
+    if (receiver?.address) return String(receiver.address);
+    if (ship?.address) return String(ship.address);
+
+    // 面交
+    if (type.includes("meetup")) return "面交";
+
+    return "尚未填寫";
+  }
+
+  function receiverFullText(receiver, ship) {
+    const name  = String(receiver?.name || "").trim();
+    const phone = String(receiver?.phone || "").trim();
+    const place = deliveryPlaceText(ship || {}, receiver || {});
+    const head = [name, phone].filter(Boolean).join(" / ");
+    return (head ? head + "\n" : "") + place;
+  }
+
+
   /* --- 頁籤切換 --- */
   function updateTabsUI() {
     document.querySelectorAll(".tab").forEach(btn => {
@@ -437,9 +482,9 @@
         }
       }
 
-      const statusCls = getStatusClass(o.pay_status);
-      const payTxt    = displayPayStatus(o.pay_status);
-      const shipTxt   = (o.ship && o.ship.method) ? o.ship.method : "尚未配送";
+      const statusCls = shipBadgeClass(o);
+      const payTxt    = shipBadgeText(o);
+const shipTxt   = (o.ship && o.ship.method) ? o.ship.method : "尚未配送";
       const depositAmt = Number(o.deposit_amount || 0) || 0;
       const depositLine = depositAmt > 0
         ? `<div><span class="info-label">訂金</span> NT$ ${depositAmt.toLocaleString()}</div>`
