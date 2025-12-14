@@ -521,30 +521,37 @@ function receiverFullText(receiver, ship, paymentMethod) {
       });
     }
    else if (currentFilter === "deposit") {
+  // ✅ 定金保留訂單：只看半年內（跟 history 分開）
+  const now = new Date();
+  const sixMonthsAgo = new Date(now);
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
   list = list.filter(o => {
+    // 仍保留「從 Flex 帶 order_id 進來」時能看到那一筆
+    if (initialOrderId && o.order_id === initialOrderId) return true;
+
+    // 半年內
+    const createdAt = o.created_at ? new Date(o.created_at) : null;
+    if (!createdAt || isNaN(createdAt.getTime())) return false;
+    if (createdAt < sixMonthsAgo) return false;
+
+    // ✅ 只保留「匯款 - 定金」= atm_deposit
     const pm = String(o.payment_method || "").toLowerCase();
+    const isAtmDeposit = (pm === "atm_deposit");
+
+    // 排除已出貨/取消/失敗
+    const status    = String(o.status || "").toLowerCase();
     const payStatus = String(o.pay_status || "").toLowerCase();
-    const status = String(o.status || "").toLowerCase();
     const shipStatus = String(o.ship_status || "").toLowerCase();
-
-    const depositAmt = Number(o.deposit_amount || 0) || 0;
-    const last5 = String(o.deposit_last5 || "").trim();
-    const holdUntil = String(o.hold_until || "").trim();
-
-    const hasDepositInfo = depositAmt > 0 || !!last5 || !!holdUntil;
-
-    const looksDeposit =
-      pm.includes("deposit") || pm.startsWith("atm") ||
-      status === "deposit_hold" || status.includes("deposit") || status.includes("hold") ||
-      payStatus.includes("deposit") || payStatus === "deposit_hold";
 
     const notFinished =
       shipStatus !== "shipped" &&
       status !== "shipped" &&
       !status.includes("cancel") &&
+      !payStatus.includes("cancel") &&
       payStatus !== "failed";
 
-    return notFinished && (hasDepositInfo || looksDeposit);
+    return isAtmDeposit && notFinished;
   });
 }
 
