@@ -163,11 +163,27 @@
         dateInput.min = today;
 
         // 2. 初始化時間選擇器
-        const select = document.getElementById('timeSelect');
-        const startHour = 9;
-        const endHour = 16;
-        
-        // ✅ 預設選今天 + 下一個半小時（9:00-16:00範圍內）
+        // 2. 初始化時間選擇器
+const select = document.getElementById('timeSelect');
+const startHour = 9;
+const endHour = 16;
+
+for (let hour = startHour; hour <= endHour; hour++) {
+  const hourStr = hour.toString().padStart(2, '0');
+  const option1 = document.createElement('option');
+  option1.value = `${hourStr}:00`;
+  option1.text = `${hourStr}:00`;
+  select.appendChild(option1);
+
+  if (hour < endHour) {
+    const option2 = document.createElement('option');
+    option2.value = `${hourStr}:30`;
+    option2.text = `${hourStr}:30`;
+    select.appendChild(option2);
+  }
+}
+
+// ✅ 預設選今天 + 下一個半小時（要放在「選項產生完」之後）
 if (!dateInput.value) dateInput.value = today;
 
 (function presetTime() {
@@ -175,11 +191,9 @@ if (!dateInput.value) dateInput.value = today;
   let h = now.getHours();
   let m = now.getMinutes();
 
-  // 下一個半小時
   m = m < 30 ? 30 : 0;
   if (m === 0) h += 1;
 
-  // 限制 09:00 ~ 16:00（最後一格 16:00）
   if (h < 9) { h = 9; m = 0; }
   if (h > 16 || (h === 16 && m > 0)) { h = 16; m = 0; }
 
@@ -187,7 +201,6 @@ if (!dateInput.value) dateInput.value = today;
   const mm = String(m).padStart(2,'0');
   const val = `${hh}:${mm}`;
 
-  // 如果剛好沒有這個選項（保底），就選第一個有效選項
   if ([...select.options].some(o => o.value === val)) {
     select.value = val;
   } else {
@@ -195,48 +208,41 @@ if (!dateInput.value) dateInput.value = today;
     if (first) select.value = first.value;
   }
 })();
-
         // 3. 發送 LINE 功能
         function sendToLine() {
-            // --- 設定區 ---
-            // 請在此填入您的官方 LINE ID (包含 @)
-            // 如果不填寫，會開啟通用分享視窗讓客人自己選聯絡人
-            const YOUR_LINE_ID = "@cc0857";
-            // -------------
+  const YOUR_LINE_ID = "@cc0857";
 
-            const date = dateInput.value;
-            const time = select.value;
-            const orderNo = document.getElementById('orderNo').innerText;
-            
-            if (!date || !time) {
-                alert('請先選擇完整的「日期」與「時間」喔！');
-                return;
-            }
+  const date = dateInput.value;
+  const time = select.value;
+  const orderNo = document.getElementById('orderNo').innerText;
 
-            // 產生訊息內容
-            const meetPlace = (document.getElementById('meetPlaceText')?.innerText || '').trim();
-            const message = `你好，訂單：${orderNo}\n我確認於【${date} ${time}】前往面交${meetPlace ? `（地點：${meetPlace}）` : ''}，謝謝！`;
-            const encodedMessage = encodeURIComponent(message);
+  if (!date || !time) {
+    alert('請先選擇完整的「日期」與「時間」喔！');
+    return;
+  }
 
-            // 判斷開啟方式
-            let url = "";
-            if (YOUR_LINE_ID) {
-                // 如果有設定 ID，直接開啟與官方帳號的對話 (oaMessage)
-                // 注意：這通常需要手機上有安裝 LINE 且已加入好友
-                let url = "";
-if (YOUR_LINE_ID) {
-  // ✅ oaMessage 需要把 @ encode 成 %40
-  const oa = encodeURIComponent(
-    YOUR_LINE_ID.startsWith('@') ? YOUR_LINE_ID : ('@' + YOUR_LINE_ID)
-  );
-  url = `https://line.me/R/oaMessage/${oa}/?${encodedMessage}`;
-} else {
-  url = `https://line.me/R/msg/text/?${encodedMessage}`;
+  const meetPlace = (document.getElementById('meetPlaceText')?.innerText || '').trim();
+  const message =
+    `你好，訂單：${orderNo}\n` +
+    `我確認於【${date} ${time}】前往面交` +
+    `${meetPlace ? `（地點：${meetPlace}）` : ''}，謝謝！`;
+
+  const encodedMessage = encodeURIComponent(message);
+
+  // ✅ 組 LINE URL（oaMessage 需要把 @ encode）
+  let url = "";
+  if (YOUR_LINE_ID) {
+    const oa = encodeURIComponent(
+      YOUR_LINE_ID.startsWith('@') ? YOUR_LINE_ID : ('@' + YOUR_LINE_ID)
+    );
+    url = `https://line.me/R/oaMessage/${oa}/?${encodedMessage}`;
+  } else {
+    url = `https://line.me/R/msg/text/?${encodedMessage}`;
+  }
+
+  // ✅ LINE 內建瀏覽器常擋 window.open，用 location.href
+  location.href = url;
 }
-
-// ✅ 不要用 window.open（LINE 內建瀏覽器常會擋彈窗）改用 location.href
-location.href = url;
-        }
     </script>
 </body>
 </html>
