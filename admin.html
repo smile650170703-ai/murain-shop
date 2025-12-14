@@ -233,6 +233,13 @@ const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
 
 function money(n){ return 'NT$ ' + Number(n||0).toLocaleString(); }
+function calcAmounts(f){
+  const base   = Number(f?.total_amount ?? f?.total ?? 0) || 0;
+  const credit = Number(f?.credit_used ?? f?.CreditUsed ?? f?.credit ?? 0) || 0;
+  const netRaw = (f?.net_amount ?? f?.net ?? (base - credit));
+  const net    = Number(netRaw ?? base) || 0;
+  return { base, credit, net: Math.max(net, 0) };
+}
 // 訂單狀態英文代碼 → 中文
 function displayOrderStatus(st){
   if (!st) return '';
@@ -488,7 +495,8 @@ function updateSummary(){
 
   for (const rec of currentOrders){
     const f = rec.fields || rec || {};
-    sum += Number(f.total_amount || f.total || 0) || 0;
+    const a = calcAmounts(f);
+    sum += a.net;
     const st = f.status || '';
     if (st === 'submitted') countSubmitted++;
     else if (st === 'paid') countPaid++;
@@ -666,7 +674,9 @@ function renderOrderList(){
     const ship_b  = statusBadgeShip(f.ship_status);
     const method  = displayPaymentMethod(f.payment_method || '');
     const created = f.CreatedAt || (f.created_at || '');
-    const total   = money(f.total_amount || f.total || 0);
+    const a = calcAmounts(f);
+    const total   = money(a.net);
+    const creditTag = a.credit > 0 ? `<div class="tag-small">購物金折抵 ${money(a.credit)}</div>` : ``;
 
     const rowKey = f.order_id || rec.id || '';
 
@@ -679,7 +689,7 @@ function renderOrderList(){
           </div>
           <div style="text-align:right">
             <div class="ord-amount">${total}</div>
-            <div class="tag-small">${method}</div>
+            <div class="tag-small">${method}</div>${creditTag}
           </div>
         </div>
         <div class="ord-sub">${line2 || '&nbsp;'}</div>
@@ -752,7 +762,10 @@ function renderDetail(rec){
   })();
 
   const itemsText = f.items_text || '';
-  const total     = money(f.total_amount || f.total || 0);
+  const a = calcAmounts(f);
+  const totalBase = money(a.base);
+  const creditUse = money(a.credit);
+  const totalNet  = money(a.net);
 
   dEl.innerHTML = `
     <div class="detail-grid">
@@ -762,7 +775,9 @@ function renderDetail(rec){
 <div class="pill ${f.payment_method === 'cod_711' ? 'cod711' : ''}">
   付款方式：<span>${displayPaymentMethod(f.payment_method || '')}</span>
 </div>
-<div class="pill">應付金額：<span>${total}</span></div>
+<div class="pill">訂單金額：<span>${totalBase}</span></div>
+${a.credit>0 ? `<div class="pill">購物金折抵：<span>-${creditUse}</span></div>` : ``}
+<div class="pill">應付金額：<span>${totalNet}</span></div>
 <div class="pill">建立時間：<span>${f.CreatedAt || f.created_at || ''}</span></div>
 
 
@@ -1670,7 +1685,10 @@ function printCurrentOrder(){
   }
 
   const itemsText = f.items_text || '';
-  const total     = money(f.total_amount || f.total || 0);
+  const a = calcAmounts(f);
+  const totalBase = money(a.base);
+  const creditUse = money(a.credit);
+  const totalNet  = money(a.net);
   const orderId   = f.order_id || '';
 
   const html = `
@@ -1694,7 +1712,9 @@ function printCurrentOrder(){
     <tr><th>訂單編號</th><td>${orderId}</td></tr>
     <tr><th>建立時間</th><td>${f.CreatedAt || f.created_at || ''}</td></tr>
     <tr><th>付款方式</th><td>${f.payment_method || ''}</td></tr>
-    <tr><th>應付金額</th><td>${total}</td></tr>
+    <tr><th>訂單金額</th><td>${totalBase}</td></tr>
+${a.credit>0 ? `<tr><th>購物金折抵</th><td>-${creditUse}</td></tr>` : ``}
+<tr><th>應付金額</th><td>${totalNet}</td></tr>
     <tr><th>收件人</th><td>${ship.name || ''}</td></tr>
     <tr><th>電話</th><td>${ship.phone || ''}</td></tr>
     <tr><th>出貨方式</th><td>${shipType}</td></tr>
