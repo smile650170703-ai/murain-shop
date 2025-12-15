@@ -432,6 +432,35 @@ renderOrderList();
   }
 }
 
+ async function reloadCurrentView(){
+  // pending_online：重跑同一套「日期全抓 + 前端篩 pending」邏輯
+  if (currentFilter === 'pending_online'){
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm   = String(today.getMonth()+1).padStart(2,'0');
+    const dd   = String(today.getDate()).padStart(2,'0');
+
+    if ($('#date_from')) $('#date_from').value = '2024-01-01';
+    if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
+    if ($('#status'))    $('#status').value    = '';
+
+    await loadOrdersByDate();
+
+    currentOrders = (currentOrders || []).filter(rec=>{
+      const f = rec.fields || rec || {};
+      return String(f.pay_status||'').toLowerCase() === 'pending';
+    });
+
+    ORDERS_CACHE = currentOrders.map(r => r.fields || r || {});
+    renderOrderList();
+    $('#orderDetail').innerHTML = '<div class="muted">請從左邊點選一筆訂單</div>';
+    return;
+  }
+
+  // 其他 view：照舊用 loadOrders
+  await loadOrders(currentFilter || 'all');
+}
+
 /* ===== 依「日期 + status」載入訂單（原 admin_orders.html 縮小版） ===== */
 async function loadOrdersByDate(){
   const listEl = $('#orderList');
