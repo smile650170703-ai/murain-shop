@@ -154,7 +154,7 @@
     <div id="okBlock">
       <div class="success-icon">✓</div>
       <h1 class="title">感謝您的購買</h1>
-      <div class="subtitle">訂單已成立</div>
+      <div class="subtitle" id="statusSubtitle">訂單已成立</div>
 
       <div class="divider"></div>
 
@@ -209,20 +209,59 @@
   const errorBlock = document.getElementById('errorBlock');
 
   // 初始化顯示邏輯
-  if (orderId) {
-    // 正常訂單
-    orderIdText.textContent = '#' + orderId;
-    if (total) {
-      const n = Number(total) || 0;
-      amountText.textContent = 'NT$ ' + n.toLocaleString();
-    } else {
-      amountText.textContent = '待確認';
+  const status = (qs.get('status') || '').toUpperCase();  // SUCCESS / FAILED / PENDING / (空)
+const msg = (qs.get('message') || '').trim();
+const subtitleEl = document.getElementById('statusSubtitle');
+
+function setSubtitle(text) {
+  if (subtitleEl) subtitleEl.textContent = text;
+}
+
+// 初始化顯示邏輯
+if (orderId) {
+  // 顯示訂單編號
+  orderIdText.textContent = '#' + orderId;
+
+  // 顯示金額
+  if (total) {
+    const n = Number(total) || 0;
+    amountText.textContent = 'NT$ ' + n.toLocaleString();
+  } else {
+    amountText.textContent = '待確認';
+  }
+
+  // ✅ 依 status 統一顯示狀態
+  if (status === 'SUCCESS' || status === '1') {
+    setSubtitle('付款成功');
+  } else if (status === 'FAILED' || status === 'FAIL' || status === '0') {
+    setSubtitle('付款失敗');
+    // 可選：把 note 改成失敗提示（不改版型）
+    const note = okBlock.querySelector('.note-text');
+    if (note) {
+      note.innerHTML =
+        '● 付款未完成，訂單尚未成立付款狀態。<br>' +
+        '● 請返回官方 LINE 讓我們協助確認，或重新嘗試付款。' +
+        (msg ? ('<br>● 原因：' + msg) : '');
+    }
+  } else if (status === 'PENDING') {
+    setSubtitle('審核中');
+    const note = okBlock.querySelector('.note-text');
+    if (note) {
+      note.innerHTML =
+        '● 系統已收到您的申請，目前審核中。<br>' +
+        '● 審核結果會由我們通知您。<br>' +
+        '● 您也可以返回官方 LINE 詢問進度。';
     }
   } else {
-    // 無單號 (可能是金流跳轉回來，或重新整理)
-    okBlock.style.display = 'none';
-    errorBlock.style.display = 'block';
+    // 沒有 status：用於 COD/面交/匯款 → 訂單已成立
+    setSubtitle('訂單已成立');
   }
+
+} else {
+  // 無單號 (可能是金流跳轉回來，或重新整理)
+  okBlock.style.display = 'none';
+  errorBlock.style.display = 'block';
+}
 
   // 回到官方 LINE 按鈕
   const lineBtn = document.getElementById('backLineBtn');
