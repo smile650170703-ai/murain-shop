@@ -199,25 +199,38 @@
 
 <script>
 
-  // ✅ 付款成功回來後：如果之前是「線上付款/無卡分期 + 面交」就自動跳到面交預約頁
+  // ✅ 付款成功回來後：若是「線上付款/無卡分期 + 面交」才允許自動跳
 let didMeetupRedirect = false;
 
 (function () {
   try {
-    // 先讀 localStorage（最穩），再讀 sessionStorage
     const nextUrl =
       (localStorage.getItem("MEETUP_NEXT_URL") || "") ||
       (sessionStorage.getItem("MEETUP_NEXT_URL") || "");
 
+    const requireSuccess =
+      (localStorage.getItem("MEETUP_REQUIRE_SUCCESS") || "") ||
+      (sessionStorage.getItem("MEETUP_REQUIRE_SUCCESS") || "");
+
+    // PayUNI return 會帶 ?status=...
+    const qs = new URLSearchParams(location.search);
+    const statusRaw = (qs.get("status") || "").trim();
+
+    // ✅ 先用保守判斷：SUCCESS 才當成功（若你 PayUNI 文件是別的值，再把 regex 加上去）
+    const isSuccess = /^(SUCCESS)$/i.test(statusRaw);
+
+    // 清掉避免殘留
+    try { localStorage.removeItem("MEETUP_NEXT_URL"); } catch (e) {}
+    try { sessionStorage.removeItem("MEETUP_NEXT_URL"); } catch (e) {}
+    try { localStorage.removeItem("MEETUP_REQUIRE_SUCCESS"); } catch (e) {}
+    try { sessionStorage.removeItem("MEETUP_REQUIRE_SUCCESS"); } catch (e) {}
+
     if (nextUrl) {
-      didMeetupRedirect = true;
-
-      // 清掉避免重複
-      try { localStorage.removeItem("MEETUP_NEXT_URL"); } catch (e) {}
-      try { sessionStorage.removeItem("MEETUP_NEXT_URL"); } catch (e) {}
-
-      // 這頁沒有 LIFF SDK 也沒關係，直接跳
-      location.replace(nextUrl);
+      const canJump = (requireSuccess !== "1") || isSuccess;
+      if (canJump) {
+        didMeetupRedirect = true;
+        location.replace(nextUrl);
+      }
     }
   } catch (e) {}
 })();
