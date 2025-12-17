@@ -2136,44 +2136,76 @@ if (activeTab === 'ZEROCARD') {
       localStorage.removeItem('MURAIN_WEB_CART_TOKEN');
     } catch (e) {}
 
-    // PayUni
-    if (payment_method && payment_method.startsWith('paid_')) {
-      try {
-        const pr = await fetch(`${API}/payuni/start`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ order_id: j.order_id })
-        });
+    // 線上付款（paid_*）：依 payment_method 分流
+if (payment_method && payment_method.startsWith('paid_')) {
+  // ✅ AF：不要走 PayUni 刷卡
+  if (payment_method === 'paid_af') {
+    try {
+      // 你可以讓後端回傳 payment_url（建議），或做一個 /af/start
+      const ar = await fetch(`${API}/af/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: j.order_id })
+      });
+      const a = await ar.json();
+      console.log('af start resp', a);
 
-        const up = await pr.json();
-        console.log('payuni start resp', up);
-
-        if (!pr.ok || !up.ok) {
-          alert('線上刷卡啟動失敗：' + (up.error || up.message || ''));
-          return;
-        }
-
-        const f = document.createElement('form');
-        f.method = 'POST';
-        f.action = up.url;
-
-        ['MerID', 'Version', 'EncryptInfo', 'HashInfo'].forEach(k => {
-          const input = document.createElement('input');
-          input.type  = 'hidden';
-          input.name  = k;
-          input.value = up[k];
-          f.appendChild(input);
-        });
-
-        document.body.appendChild(f);
-        f.submit();
-        return;
-      } catch (e) {
-        console.error('payuni error', e);
-        alert('線上刷卡啟動失敗（網路或程式錯誤）');
+      if (!ar.ok || !a.ok || !a.payment_url) {
+        alert('AF 先享後付啟動失敗：' + (a.error || a.message || ''));
         return;
       }
+
+      // ✅ LIFF 建議外開（避免被內建瀏覽器/跳轉限制卡住）
+      if (window.liff && liff.openWindow) {
+        liff.openWindow({ url: a.payment_url, external: true });
+      } else {
+        location.href = a.payment_url;
+      }
+      return;
+    } catch (e) {
+      console.error('af error', e);
+      alert('AF 先享後付啟動失敗（網路或程式錯誤）');
+      return;
     }
+  }
+
+  // ✅ 其他 paid_*：維持原本 PayUni 流程
+  try {
+    const pr = await fetch(`${API}/payuni/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_id: j.order_id })
+    });
+
+    const up = await pr.json();
+    console.log('payuni start resp', up);
+
+    if (!pr.ok || !up.ok) {
+      alert('線上刷卡啟動失敗：' + (up.error || up.message || ''));
+      return;
+    }
+
+    const f = document.createElement('form');
+    f.method = 'POST';
+    f.action = up.url;
+
+    ['MerID', 'Version', 'EncryptInfo', 'HashInfo'].forEach(k => {
+      const input = document.createElement('input');
+      input.type  = 'hidden';
+      input.name  = k;
+      input.value = up[k];
+      f.appendChild(input);
+    });
+
+    document.body.appendChild(f);
+    f.submit();
+    return;
+  } catch (e) {
+    console.error('payuni error', e);
+    alert('線上刷卡啟動失敗（網路或程式錯誤）');
+    return;
+  }
+}
 
     // ZeroCard
     if (isZeroCard) {
