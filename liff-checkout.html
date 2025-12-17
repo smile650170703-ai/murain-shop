@@ -689,11 +689,13 @@
 
       <!-- 匯款全額 -->
       <div id="depNewFullPane">
-        <div class="row">
-          <div><label>姓名</label><input id="dep_new_full_name" required /></div>
-          <div><label>電話</label><input id="dep_new_full_phone" required /></div>
-        </div>
-        <label>Email</label><input id="dep_new_full_email" type="email" />
+        <div id="depNewFullBasic">
+  <div class="row">
+    <div><label>姓名</label><input id="dep_new_full_name" required /></div>
+    <div><label>電話</label><input id="dep_new_full_phone" required /></div>
+  </div>
+  <label>Email</label><input id="dep_new_full_email" type="email" />
+</div>
         <label>取貨方式</label>
         <select id="dep_new_full_method">
           <option value="711">7-11 取貨</option>
@@ -983,23 +985,33 @@ async function initLiffAndMember() {
 function applyMemberInfoToForm(info) {
   if (!info) return;
 
+  // 統一：支援 {member:{...}} 或 {...}
+  const m = (info.member && typeof info.member === 'object') ? info.member : info;
+
+  // 先更新購物金（你原本這行保留）
   updateCreditUIFromMember(info);
 
-  const name      = info.name  || "";
-  const phone     = info.phone || "";
-  const email     = info.email || "";
-  const storeId   = info.storeId   || "";
-  const storeName = info.storeName || "";
-  const storeAddr = info.storeAddr || "";
-  const shipZip   = info.shipZip  || "";
-  const shipAddr  = info.shipAddr || "";
+  const pick = (...keys) => {
+    for (const k of keys) {
+      const v = m && m[k];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+    }
+    return "";
+  };
+
+  const name      = pick("name", "Name", "display_name", "DisplayName");
+  const phone     = pick("phone", "Phone");
+  const email     = pick("email", "Email");
+  const storeId   = pick("storeId", "store_id", "StoreId", "StoreID");
+  const storeName = pick("storeName", "store_name", "StoreName");
+  const storeAddr = pick("storeAddr", "store_addr", "store_address", "StoreAddr");
+  const shipZip   = pick("shipZip", "zip", "ShipZip");
+  const shipAddr  = pick("shipAddr", "addr", "address", "ShipAddr");
 
   function fillIfEmpty(selector, val) {
     if (!val) return;
     const el = document.querySelector(selector);
-    if (el && !el.value) {
-      el.value = val;
-    }
+    if (el && !el.value) el.value = val;
   }
 
   [
@@ -1158,13 +1170,35 @@ if (codTypeRadios.length) {
   refreshCodType();
 }
 /* ===== DEPOSIT：切換 Pane ===== */
-$('#dep_new_full_method').addEventListener('change', () => {
-  const m = $('#dep_new_full_method').value;
-  $('#depNewFull711').hidden = (m !== '711');
+function updateDepNewFullShipUI() {
+  const m = $('#dep_new_full_method')?.value || '711';
+
+  // 區塊顯示
+  $('#depNewFull711').hidden  = (m !== '711');
   $('#depNewFullPost').hidden = (m !== 'post');
-  const meet = $('#depNewFullMeetup');
-  if (meet) meet.hidden = (m !== 'meetup');
-});
+  const meetBox = $('#depNewFullMeetup');
+  if (meetBox) meetBox.hidden = (m !== 'meetup');
+
+  // ✅ 基本聯絡欄位：遇到 meetup 就整塊隱藏 + disable
+  const basic = document.getElementById('depNewFullBasic');
+  if (basic) basic.hidden = (m === 'meetup');
+
+  ['dep_new_full_name','dep_new_full_phone','dep_new_full_email'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = (m === 'meetup');
+  });
+
+  // ✅ 面交聯絡欄位：非 meetup 就 disable（避免誤填/干擾）
+  ['dep_new_full_meet_name','dep_new_full_meet_phone','dep_new_full_meet_email',
+   'depnew_meetup_date','depnew_meetup_time'
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = (m !== 'meetup');
+  });
+}
+
+$('#dep_new_full_method')?.addEventListener('change', updateDepNewFullShipUI);
+updateDepNewFullShipUI(); // ✅ 初始化一定要跑一次
 
 const depOldMethod  = $('#dep_old_method');
 const depOldBox711  = $('#dep_old_box_711');
@@ -1199,26 +1233,26 @@ function refreshDepType() {
     depNewFullPane.hidden =  isDeposit;
   }
 
-  if (depOldDepositBox) depOldDepositBox.hidden = !isDeposit;
-  if (depOldAmount)     depOldAmount.required   = isDeposit;
-  if (depOldHoldUntil)  depOldHoldUntil.required= isDeposit;
-// ✅ A方案：匯款定金（保留）不支援購物金
-const creditInput = document.getElementById('credit_input');
-const creditMsg   = document.getElementById('credit_msg');
+  if (depOldAmount)     depOldAmount.required    = isDeposit;
+  if (depOldHoldUntil)  depOldHoldUntil.required = isDeposit;
 
-if (creditInput) {
-  if (v === 'old') {
-    creditInput.value = '';
-    creditInput.disabled = true;
-    CREDIT_USED = 0;
-    if (creditMsg) creditMsg.textContent = '匯款定金（保留）不支援購物金折抵，購物金將於尾款結清時使用。';
-    try { updateCreditAndTotal(); } catch {}
-  } else {
-    creditInput.disabled = false;
-    if (creditMsg && creditMsg.textContent.includes('匯款定金')) creditMsg.textContent = '';
-    try { updateCreditAndTotal(); } catch {}
+  // ✅ 定金（保留）不支援購物金
+  const creditInput = document.getElementById('credit_input');
+  const creditMsg   = document.getElementById('credit_msg');
+
+  if (creditInput) {
+    if (isDeposit) {
+      creditInput.value = '';
+      creditInput.disabled = true;
+      CREDIT_USED = 0;
+      if (creditMsg) creditMsg.textContent = '匯款定金（保留）不支援購物金折抵，購物金將於尾款結清時使用。';
+      try { updateCreditAndTotal(); } catch {}
+    } else {
+      creditInput.disabled = false;
+      if (creditMsg && creditMsg.textContent.includes('匯款定金')) creditMsg.textContent = '';
+      try { updateCreditAndTotal(); } catch {}
+    }
   }
-}
 }
 
 if (depTypeRadios.length) {
@@ -1286,9 +1320,15 @@ async function loadCart(){
 /* ===== 7-11 地圖 ===== */
 function open711(src) {
   saveCheckoutState();
+
+  // ✅ 把目前 Tab 帶出去，回來就不會跳回 COD
+  const kt = [...tabs].find(t => t.classList.contains('active'))?.dataset.pay || 'COD';
+
   const qs2 = new URLSearchParams(location.search);
   qs2.set('src', src);
+  qs2.set('mode', kt);     // ✅ 新增
   qs2.delete('customer');
+
   const url = `${API}/cvs/map?${qs2.toString()}`;
   window.location.href = url;
 }
@@ -1453,7 +1493,7 @@ function restoreCheckoutState() {
     const key = el.id || el.name;
     if (!key || !(key in state)) return;
 
-    if (el.type === 'radio' || el.type === 'checkbox') {
+     if (el.type === 'radio' || el.type === 'checkbox') {
       const map = state[key];
       if (map && typeof map === 'object') {
         el.checked = !!map[el.value];
@@ -1461,7 +1501,36 @@ function restoreCheckoutState() {
     } else {
       el.value = state[key];
     }
+
+    // ✅ 觸發事件，讓你綁的 change/input 真的跑起來
+    try {
+      el.dispatchEvent(new Event('input', { bubbles:true }));
+      el.dispatchEvent(new Event('change', { bubbles:true }));
+    } catch(e) {}
   });
+}
+
+   function syncUIAfterRestore(){
+  try { refreshCodType(); } catch(e) {}
+
+  try { updatePaidChannelBox(); } catch(e) {}
+  try { updatePaidShip(); } catch(e) {}
+
+  try { refreshDepType(); } catch(e) {}
+  try { updateDepOldShip(); } catch(e) {}
+     try { updateDepNewFullShipUI(); } catch(e) {}
+
+  // dep_new_full_method 你目前只有綁 change，沒有「初始化呼叫」
+  try {
+    const m = $('#dep_new_full_method')?.value;
+    $('#depNewFull711').hidden  = (m !== '711');
+    $('#depNewFullPost').hidden = (m !== 'post');
+    const meet = $('#depNewFullMeetup');
+    if (meet) meet.hidden = (m !== 'meetup');
+  } catch(e) {}
+
+  try { updateZcShip(); } catch(e) {}
+  try { calcZC(); } catch(e) {}
 }
 
 function clearCheckoutState() {
@@ -1483,6 +1552,93 @@ let SUBMIT_LOCK = false;
   const btn = document.getElementById('submitBtn');
   if (btn) btn.disabled = false;
 }
+   // --- stable stringify (用來做「同一組資料」的簽章，避免重複建單) ---
+function stableStringify(obj){
+  const seen = new WeakSet();
+  const norm = (v)=>{
+    if (v && typeof v === 'object') {
+      if (seen.has(v)) return null;
+      seen.add(v);
+      if (Array.isArray(v)) return v.map(norm);
+      const out = {};
+      Object.keys(v).sort().forEach(k=>{
+        const vv = v[k];
+        if (vv === undefined) return;
+        out[k] = norm(vv);
+      });
+      return out;
+    }
+    return v;
+  };
+  return JSON.stringify(norm(obj));
+}
+
+// --- 依 payment_method 啟動金流（不再重跑 /checkout） ---
+async function startPaymentFlow(orderId, payment_method, isZeroCard){
+  // paid_*
+  if (payment_method && payment_method.startsWith('paid_')) {
+
+    // AF
+    if (payment_method === 'paid_af') {
+      const ar = await fetch(`${API}/af/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order_id: orderId })
+      });
+      const a = await ar.json();
+      if (!ar.ok || !a.ok || !a.payment_url) {
+        throw new Error('AF 先享後付啟動失敗：' + (a.error || a.message || ''));
+      }
+      if (window.liff && liff.openWindow) {
+        liff.openWindow({ url: a.payment_url, external: true });
+      } else {
+        location.href = a.payment_url;
+      }
+      return;
+    }
+
+    // 其他 PayUni
+    const pr = await fetch(`${API}/payuni/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_id: orderId })
+    });
+    const up = await pr.json();
+    if (!pr.ok || !up.ok || !up.url) {
+      throw new Error('線上付款啟動失敗：' + (up.error || up.message || ''));
+    }
+
+    const f = document.createElement('form');
+    f.method = 'POST';
+    f.action = up.url;
+    ['MerID','Version','EncryptInfo','HashInfo'].forEach(k=>{
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = k;
+      input.value = up[k] || '';
+      f.appendChild(input);
+    });
+    document.body.appendChild(f);
+    f.submit();
+    return;
+  }
+
+  // zero_card_*
+  if (isZeroCard) {
+    const zr = await fetch(`${API}/zero-card/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order_id: orderId })
+    });
+    const z = await zr.json();
+    if (!zr.ok || !z.ok || !z.payment_url) {
+      throw new Error('中租無卡啟動失敗：' + (z.error || z.message || ''));
+    }
+    location.href = z.payment_url;
+    return;
+  }
+}
+
    /* ===== 送出 ===== */
 function required(...vals){
   return vals.every(v => v !== undefined && v !== null && String(v).trim().length > 0);
@@ -1492,6 +1648,7 @@ document.getElementById('submitBtn').addEventListener('click', async (e) => {
   if (SUBMIT_LOCK) return;
   SUBMIT_LOCK = true;
   $('#submitBtn').disabled = true;
+  let handoff = false; // ✅ 只要要跳轉/外開，就設為 true
 
   const subtotal = CART_TOTAL_RAW;
   if(!subtotal){ alert('金額為 0，請確認購物車內容'); return unlock(); }
@@ -1674,12 +1831,14 @@ if (!required(name, phone, email)) {
 }
 
     ship = {
-      type:'meetup',
-      name, phone, email,
-      meet_date: meetup.date,
-      meet_time: meetup.time,
-      meet_place: (meetup.place || '').trim()
-    };
+  type:'meetup',
+  name, phone, email,
+  meet_date: meetup.date,
+  meet_time: meetup.time,
+  meet_place: (meetup.place || '').trim(),
+  meetup_time: meetup.meetup_time,
+  meetup_place: meetup.meetup_place
+};
   } else {
     alert('請先選擇取貨方式');
     return unlock();
@@ -1843,12 +2002,30 @@ const zip  = $('#dep_new_full_post_zip').value.trim();
 
 } else if (activeTab === 'ZEROCARD') {
   // 無卡分期：zero_card_X
-  const months = $('#zc_months').value.trim(); // 3/6/9/12/18/24
+  const months = String($('#zc_months')?.value || '').trim(); // 3/6/9/12/18/24
+  if (!months) { alert('請選擇期數'); return unlock(); }
+
   payment_method = `zero_card_${months}`;
 
-  const shipMethod = $('#zc_ship_method').value; // post / meetup
+  const shipMethod = $('#zc_ship_method').value; // 711 / post / meetup
 
-  if (shipMethod === 'post') {
+  if (shipMethod === '711') {
+    const name  = $('#ship_name_zc').value.trim();
+    const phone = $('#ship_phone_zc').value.trim();
+    const email = $('#zc_email').value.trim();
+
+    const store_id   = $('#ship_store_id_zc').value.trim();
+    const store_name = $('#ship_store_name_zc').value.trim();
+    const store_addr = $('#ship_store_addr_zc').value.trim();
+
+    if (!required(name, phone, email, store_id, store_name, store_addr)) {
+      alert('請填完 7-11 收件資料（含 Email）並完成門市選擇');
+      return unlock();
+    }
+
+    ship = { type:'711', name, phone, email, store_id, store_name, store_addr };
+
+  } else if (shipMethod === 'post') {
     const name  = $('#zc_post_name').value.trim();
     const phone = $('#zc_post_phone').value.trim();
     const email = $('#zc_post_email').value.trim();
@@ -1856,9 +2033,10 @@ const zip  = $('#dep_new_full_post_zip').value.trim();
     const zip   = $('#zc_post_zip').value.trim();
 
     if (!required(name, phone, email, addr, zip)) {
-      alert('請填完郵寄收件資料（含 Email）');
+      alert('請填完郵寄收件資料（含 Email / 郵遞區號）');
       return unlock();
     }
+
     ship = { type:'post', name, phone, email, addr, zip };
 
   } else if (shipMethod === 'meetup') {
@@ -1867,7 +2045,7 @@ const zip  = $('#dep_new_full_post_zip').value.trim();
     const email = $('#zc_meet_email').value.trim();
 
     const meetup = getMeetupInfo('zc');
-    if (!meetup) return unlock(); // ✅ 關鍵：避免 null 噴錯
+    if (!meetup) return unlock();
 
     if (!required(name, phone, email)) {
       alert('請填完面交聯絡資料（含 Email）');
@@ -1883,11 +2061,11 @@ const zip  = $('#dep_new_full_post_zip').value.trim();
       meetup_time: meetup.meetup_time,
       meetup_place: meetup.meetup_place
     };
+
   } else {
     alert('請先選擇取貨方式');
     return unlock();
   }
-
 } else {
   alert('請先選擇付款方式');
   return unlock();
@@ -1896,6 +2074,41 @@ const zip  = $('#dep_new_full_post_zip').value.trim();
     alert('請先選擇付款方式，並填完必要欄位');
     return unlock();
   }
+
+  // ✅ 重點：同一個 cart + 同一組付款/收件/購物金資料，只允許建單一次
+// 之後重試只走「啟動金流」，不再重跑 /checkout 造成新 order_id
+const isZeroCard = payment_method.startsWith('zero_card_');
+
+const orderKey = `murain_order_${cartToken}_${payment_method}`;
+const sigKey   = `murain_order_sig_${cartToken}_${payment_method}`;
+
+// 用「付款方式 + 出貨資料 + 購物金」做簽章（資料沒變就視為同一單）
+const sig = stableStringify({
+  payment_method,
+  ship,
+  credit_used: creditUsed
+});
+
+let reusedOrderId = '';
+try {
+  const oldId  = localStorage.getItem(orderKey) || '';
+  const oldSig = localStorage.getItem(sigKey) || '';
+  if (oldId && oldSig === sig) reusedOrderId = oldId;
+} catch(e){}
+
+if (reusedOrderId) {
+  // 已建過單 → 直接啟動金流 / 無卡，不要再 /checkout
+  try {
+    await startPaymentFlow(reusedOrderId, payment_method, isZeroCard);
+    return; // 會跳走
+  } catch (e) {
+    console.error('startPaymentFlow reuse error', e);
+    // 啟動失敗就清掉，讓下次可以重新建單
+    try { localStorage.removeItem(orderKey); localStorage.removeItem(sigKey); } catch(_e){}
+    alert(e.message || '啟動付款失敗，請再試一次');
+    return unlock();
+  }
+}
 
   shipping_info.ship = ship;
   const isZeroCard = payment_method.startsWith('zero_card_');
@@ -1917,9 +2130,17 @@ const zip  = $('#dep_new_full_post_zip').value.trim();
     }
     // ✅ 已取消「面交自動跳轉」(後台再手動發面交預約卡)
     clearCheckoutState();
-    try {
-      localStorage.removeItem('MURAIN_WEB_CART_TOKEN');
-    } catch (e) {}
+   try {
+  localStorage.setItem(orderKey, j.order_id);
+  localStorage.setItem(sigKey, sig);
+} catch (e) {}
+try {
+  // 只有「非線上付款」才清 cart_token（線上付款可能需要回來重試）
+  if (!payment_method.startsWith('paid_') && !isZeroCard) {
+    localStorage.removeItem('murain_cart_token');
+  }
+  localStorage.removeItem('murain_checkout_state_v1');
+} catch (e) {}
 
     // 線上付款（paid_*）：依 payment_method 分流
 if (payment_method && payment_method.startsWith('paid_')) {
@@ -1947,7 +2168,6 @@ if (payment_method && payment_method.startsWith('paid_')) {
       } else {
         location.href = a.payment_url;
       }
-      unlock();
       return;
 
     } catch (e) {
@@ -1989,7 +2209,6 @@ if (payment_method && payment_method.startsWith('paid_')) {
 
     document.body.appendChild(f);
     f.submit();
-    unlock();
     return;
 
   } catch (e) {
@@ -2018,7 +2237,7 @@ if (payment_method && payment_method.startsWith('paid_')) {
         }
 
         location.href = z.payment_url;
-        return unlock();
+        return;
       } catch (e) {
         console.error('zero-card error', e);
         alert('中租無卡啟動失敗（網路或程式錯誤）');
@@ -2098,6 +2317,7 @@ const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total
   }
 
   restoreCheckoutState();
+  syncUIAfterRestore();   // ✅ 這行是重點：把各區塊顯示狀態同步回來
   applyStoreFromURL();
 
   if (initialMode) {
