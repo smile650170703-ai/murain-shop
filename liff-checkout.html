@@ -858,6 +858,31 @@
 </div>
 
  <script>
+
+   // ===============================
+// 安全用：關閉所有 required（只在送單前使用）
+// ===============================
+function _disableAllRequiredSafely() {
+  document
+    .querySelectorAll('input[required], select[required], textarea[required]')
+    .forEach(el => {
+      el.dataset._wasRequired = '1';
+      el.required = false;
+      el.disabled = true;
+    });
+}
+
+// ===============================
+// 安全用：只啟用指定欄位
+// ===============================
+function _enableFields(ids) {
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.disabled = false;
+    el.required = true;
+  });
+}
 /* ===== 設定 ===== */
 const API=(window.API_BASE||'https://api.murain.tw').replace(/\/$/,'');
 const RATE_TABLE={3:0,6:4.0,9:5.5,12:6.5,18:9.0,24:11.5};
@@ -1658,6 +1683,89 @@ if (creditUsed > 0) {
       return;
     }
   }
+
+  // ===== ZEROCARD：無卡分期 =====
+if (activeTab === 'ZEROCARD') {
+
+  const months = $('#zc_months').value;
+  payment_method = `zero_card_${months}`;
+
+  const shipMethod = $('#zc_ship_method').value;
+
+  if (shipMethod === '711') {
+    const name  = $('#ship_name_zc').value;
+    const phone = $('#ship_phone_zc').value;
+    const email = ($('#zc_email').value || '').trim();
+    const id    = $('#ship_store_id_zc').value;
+    const sname = $('#ship_store_name_zc').value;
+    const addr  = $('#ship_store_addr_zc').value;
+
+    if (![name, phone, email, id, sname, addr].every(required)) {
+      alert('請填完無卡分期 7-11 收件資料');
+      return;
+    }
+
+    ship = {
+      type: '711',
+      name,
+      phone,
+      email,
+      store: { id, name: sname, addr }
+    };
+
+  } else if (shipMethod === 'post') {
+
+    const name  = $('#zc_post_name').value;
+    const phone = $('#zc_post_phone').value;
+    const email = ($('#zc_post_email').value || '').trim();
+    const zip   = $('#zc_post_zip').value;
+    const addr  = $('#zc_post_addr').value;
+
+    if (![name, phone, email, addr].every(required)) {
+      alert('請填完無卡分期 郵寄資料');
+      return;
+    }
+
+    ship = {
+      type: 'post',
+      name,
+      phone,
+      email,
+      post: { zip, addr }
+    };
+
+  } else if (shipMethod === 'meetup') {
+
+    const name  = $('#zc_meet_name').value;
+    const phone = $('#zc_meet_phone').value;
+    const email = ($('#zc_meet_email').value || '').trim();
+
+    if (![name, phone, email].every(required)) {
+      alert('請填完無卡分期 面交聯絡資料');
+      return;
+    }
+
+    const mi = getMeetupInfo('zc');
+    if (!mi) return;
+
+    ship = {
+      type: 'meetup',
+      name,
+      phone,
+      email,
+
+      // 同時給兩套 key，避免後端或卡片讀不到
+      meet_place: mi.meetup_place,
+      meet_time: mi.meetup_time,
+      meetup_place: mi.meetup_place,
+      meetup_time: mi.meetup_time
+    };
+
+  } else {
+    alert('請選擇取貨方式');
+    return;
+  }
+}
 
   if(!payment_method || !ship){
     alert('請先選擇付款方式，並填完必要欄位');
