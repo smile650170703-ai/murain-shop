@@ -1349,7 +1349,42 @@ function updateCreditAndTotal() {
   if (after) after.value = money(pay);
   try { calcZC(); } catch (e) {}
 }
+function lockCreditUI(used, orderId) {
+  try {
+    // 你若有購物金 input，常見 id/name 我都兼容抓
+    const el =
+      document.querySelector("#creditUsed") ||
+      document.querySelector("#credit_used") ||
+      document.querySelector("input[name='credit_used']") ||
+      document.querySelector("input[data-role='credit_used']");
 
+    if (el) {
+      el.value = String(used || 0);
+      el.disabled = true;
+      el.setAttribute("readonly", "readonly");
+    }
+
+    // 你如果有顯示文字區塊，就更新提示（沒有也不會壞）
+    const hint =
+      document.querySelector("#creditLockHint") ||
+      document.querySelector("[data-credit-lock-hint]");
+
+    const msg = `本筆訂單購物金已鎖定（占用中），如需更改請取消此訂單後重下。${orderId ? "訂單：" + orderId : ""}`;
+
+    if (hint) {
+      hint.textContent = msg;
+      hint.style.display = "";
+    } else {
+      // 沒有提示容器就先不強制插 DOM，避免破版
+      console.log("[credit lock]", msg);
+    }
+
+    // 若你有總金額重算函式，這裡可以順便呼叫（有就用、沒有就跳過）
+    if (typeof updateCreditAndTotal === "function") updateCreditAndTotal();
+  } catch (e) {
+    console.log("lockCreditUI error", e);
+  }
+}
 // 綁定購物金輸入事件
 const creditInputEl = document.querySelector('#credit_input');
 if (creditInputEl) {
@@ -1978,10 +2013,36 @@ if (activeTab === 'ZEROCARD') {
       body: JSON.stringify(payload)
     });
     const j = await r.json();
-    if (!r.ok || !j.ok) {
-      const msg = j.message || j.error || '送出失敗，請再試一次';
-      throw new Error(msg);
-    }
+if (!r.ok || !j.ok) {
+  const msg = j.message || j.error || '送出失敗，請再試一次';
+  throw new Error(msg);
+}
+
+// ✅ 政策1：建單後鎖定購物金（後端若回 locked/reused，就以前端顯示也鎖）
+const serverCreditUsed = Math.max(0, Math.floor(Number(j.credit_used ?? shipping_info?.credit_used ?? 0) || 0));
+const serverNetAmount  = Math.max(0, Math.round(Number(j.net_amount ?? (subtotal - serverCreditUsed)) || 0));
+
+// 讓後面顯示 / result 頁金額用「後端算好的」避免不一致
+const payTotal = serverNetAmount;
+
+// ✅ 若後端表示這筆是沿用/鎖定，就把購物金 UI 鎖住
+if (j.locked || j.reused) {
+  // 1) 同步回 shipping_info（避免你後面又用舊值算）
+  if (shipping_info && typeof shipping_info === "object") {
+    shipping_info.credit_used = serverCreditUsed;
+  }
+
+  // 2) 鎖 UI（下面第2點我給你 helper）
+  lockCreditUI(serverCreditUsed, j.order_id);
+}
+
+// ✅ 注意：線上支付 / 零卡「不要先清掉 cart_token」
+// 不然 payuni/start 或 zero-card/start 失敗時，客人回不去重試
+const isOnlinePay = (payment_method && payment_method.startsWith("paid_")) || isZeroCard;
+if (!isOnlinePay) {
+  clearCheckoutState();
+  try { localStorage.removeItem('MURAIN_WEB_CART_TOKEN'); } catch (e) {}
+}
     // ✅ 已取消「面交自動跳轉」(後台再手動發面交預約卡)
     clearCheckoutState();
     try {
