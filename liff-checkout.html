@@ -1692,7 +1692,7 @@ if (creditUsed > 0) {
       return;
     }
   }
- // ===== DEPOSIT：ATM 匯款 / 匯款定金 =====
+// ===== DEPOSIT：ATM 匯款（全額）/ 匯款定金（保留）=====
   if (activeTab === 'DEPOSIT') {
 
     const depType = (document.querySelector('input[name="depType"]:checked')?.value || 'new_full');
@@ -1700,19 +1700,24 @@ if (creditUsed > 0) {
     // --- 匯款定金（保留） ---
     if (depType === 'old') {
 
-      // ⚠️ 這個 payment_method 名稱要跟你後端一致
-      // 你後端先前有出現過 deposit_old_no_credit，所以用 deposit_old 最保險
+      // ✅ 後端明確有針對 deposit_old 做規則（不可用購物金 / 不開放面交）
       payment_method = 'deposit_old';
+
+      // ✅ 前端先擋，避免送出去才被後端打回來
+      if (creditUsed > 0) {
+        alert('匯款定金（保留）不可使用購物金，請將購物金折抵改為 0 或留空。');
+        return;
+      }
 
       const shipMethod = ($('#dep_old_method')?.value || '711');
 
-      const name  = $('#dep_old_name').value;
-      const phone = $('#dep_old_phone').value;
-      const email = ($('#dep_old_email').value || '').trim();
+      const name  = ($('#dep_old_name')?.value || '').trim();
+      const phone = ($('#dep_old_phone')?.value || '').trim();
+      const email = ($('#dep_old_email')?.value || '').trim();
 
-      const last5 = ($('#dep_old_last5')?.value || '').trim();
-      const amtRaw = ($('#dep_old_amount')?.value || '').trim();
+      const last5     = ($('#dep_old_last5')?.value || '').trim();
       const holdUntil = ($('#dep_old_hold_until')?.value || '').trim();
+      const amtRaw    = ($('#dep_old_amount')?.value || '').trim();
 
       if (![name, phone, email, last5].every(required)) {
         alert('請填完匯款定金的姓名、電話、Email、帳號後五碼');
@@ -1723,7 +1728,7 @@ if (creditUsed > 0) {
         return;
       }
 
-      // 定金金額可選填，但若有填就要是數字
+      // 定金金額可留空；有填就必須是 >=0 數字
       let depAmount = 0;
       if (amtRaw) {
         depAmount = Number(amtRaw);
@@ -1734,9 +1739,9 @@ if (creditUsed > 0) {
       }
 
       if (shipMethod === '711') {
-        const id    = $('#dep_old_store_id').value;
-        const sname = $('#dep_old_store_name').value;
-        const addr  = $('#dep_old_store_addr').value;
+        const id    = ($('#dep_old_store_id')?.value || '').trim();
+        const sname = ($('#dep_old_store_name')?.value || '').trim();
+        const addr  = ($('#dep_old_store_addr')?.value || '').trim();
 
         if (![id, sname, addr].every(required)) {
           alert('請填完匯款定金的 7-11 門市資料');
@@ -1747,7 +1752,12 @@ if (creditUsed > 0) {
           type: '711',
           name, phone, email,
           store: { id, name: sname, addr },
-          deposit: { type: 'old', last5, amount: depAmount, hold_until: holdUntil }
+          deposit: {
+            type: 'old',
+            last5,
+            amount: depAmount,
+            hold_until: holdUntil
+          }
         };
 
       } else if (shipMethod === 'post') {
@@ -1763,7 +1773,12 @@ if (creditUsed > 0) {
           type: 'post',
           name, phone, email,
           post: { zip, addr },
-          deposit: { type: 'old', last5, amount: depAmount, hold_until: holdUntil }
+          deposit: {
+            type: 'old',
+            last5,
+            amount: depAmount,
+            hold_until: holdUntil
+          }
         };
 
       } else {
@@ -1775,17 +1790,15 @@ if (creditUsed > 0) {
     // --- 匯款全額 ---
     else {
 
-      // ⚠️ 這個 payment_method 名稱要跟你後端一致
-      // 若你後端用的是 deposit_new_full / atm_full，擇一改成一致即可
-      payment_method = 'atm_full';
+      // ✅ 讓後端 isDepositOnly 判斷為「非定金」，可使用購物金（符合你現在後端設計）
+      payment_method = 'deposit_new_full';
 
       const shipMethod = ($('#dep_new_full_method')?.value || '711');
 
       const name0  = ($('#dep_new_full_name')?.value || '').trim();
       const phone0 = ($('#dep_new_full_phone')?.value || '').trim();
       const email0 = ($('#dep_new_full_email')?.value || '').trim();
-
-      const last5 = ($('#dep_new_full_last5')?.value || '').trim();
+      const last5  = ($('#dep_new_full_last5')?.value || '').trim();
 
       if (![name0, phone0, email0, last5].every(required)) {
         alert('請填完匯款全額的姓名、電話、Email、帳號後五碼');
@@ -1793,9 +1806,9 @@ if (creditUsed > 0) {
       }
 
       if (shipMethod === '711') {
-        const id    = $('#dep_new_full_store_id').value;
-        const sname = $('#dep_new_full_store_name').value;
-        const addr  = $('#dep_new_full_store_addr').value;
+        const id    = ($('#dep_new_full_store_id')?.value || '').trim();
+        const sname = ($('#dep_new_full_store_name')?.value || '').trim();
+        const addr  = ($('#dep_new_full_store_addr')?.value || '').trim();
 
         if (![id, sname, addr].every(required)) {
           alert('請填完匯款全額的 7-11 門市資料');
@@ -1808,7 +1821,7 @@ if (creditUsed > 0) {
           phone: phone0,
           email: email0,
           store: { id, name: sname, addr },
-          deposit: { type: 'full', last5 }
+          deposit: { type: 'new_full', last5 }
         };
 
       } else if (shipMethod === 'post') {
@@ -1826,15 +1839,16 @@ if (creditUsed > 0) {
           phone: phone0,
           email: email0,
           post: { zip, addr },
-          deposit: { type: 'full', last5 }
+          deposit: { type: 'new_full', last5 }
         };
 
       } else if (shipMethod === 'meetup') {
-        // 你這裡的面交日期/時間 input id 前綴是 depnew_
+
+        // 你的面交日期/時間前綴是 depnew_
         const mi = getMeetupInfo('depnew');
         if (!mi) return;
 
-        // 你 UI 有 dep_new_full_meet_*，但上面也有 dep_new_full_*；這裡用「有填就用，沒填就沿用上面」
+        // meetup 欄位有填就用，沒填就沿用上面的姓名電話email
         const name  = ($('#dep_new_full_meet_name')?.value || name0).trim();
         const phone = ($('#dep_new_full_meet_phone')?.value || phone0).trim();
         const email = ($('#dep_new_full_meet_email')?.value || email0).trim();
@@ -1851,7 +1865,7 @@ if (creditUsed > 0) {
           meet_time: mi.meetup_time,
           meetup_place: mi.meetup_place,
           meetup_time: mi.meetup_time,
-          deposit: { type: 'full', last5 }
+          deposit: { type: 'new_full', last5 }
         };
 
       } else {
