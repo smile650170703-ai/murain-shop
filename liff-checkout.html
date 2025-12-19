@@ -970,11 +970,7 @@ async function initLiffAndMember() {
   await liff.init({ liffId: LIFF_ID });
 
   if (!liff.isLoggedIn() && liff.getOS() === 'web') {
-    try {
-      saveCheckoutState();
-    } catch (e) {
-      console.warn('saveCheckoutState before liff.login failed', e);
-    }
+    try { saveCheckoutState(); } catch (e) {}
     liff.login();
     return;
   }
@@ -982,6 +978,10 @@ async function initLiffAndMember() {
   const profile = await liff.getProfile();
   LINE_PROFILE = profile;
 
+  // ✅ 存起來：回購物車/重試時更穩
+  try { localStorage.setItem('murain_line_user_id', profile.userId); } catch (e) {}
+
+  // 1) 會員資料（名字/電話/地址）照舊用 member-info
   try {
     const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(profile.userId)}`);
     const j = await r.json();
@@ -991,6 +991,23 @@ async function initLiffAndMember() {
     }
   } catch (e) {
     console.log('member-info error', e);
+  }
+
+  // 2) ✅ 購物金餘額：改用 credit-balance（唯一真相）
+  try {
+    const r2 = await fetch(`${API}/member/credit-balance?user_id=${encodeURIComponent(profile.userId)}`);
+    const b = await r2.json();
+    if (b && b.ok) {
+      const c = Math.max(0, Math.floor(Number(b.credit || 0) || 0));
+
+      // 合併回 MEMBER_INFO，讓你其他地方也能用
+      MEMBER_INFO = Object.assign({}, MEMBER_INFO || {}, { credit: c });
+
+      // 更新 UI / 全域 AVAILABLE_CREDIT
+      updateCreditUIFromMember({ credit: c });
+    }
+  } catch (e) {
+    console.log('credit-balance error', e);
   }
 }
 // ========= 會員資料 → 各付款/出貨欄位預填 =========
@@ -1151,9 +1168,13 @@ function setTotal(v){
     const used = Math.max(0, Math.floor(Number(creditUsedFromPay || 0) || 0));
     CREDIT_USED = used;                  // 同步全域
     lockCreditUI(used, orderIdFromPay);  // ✅ 會鎖住 #credit_input
-    updateCreditAndTotal();              // 重新算折抵後金額
+    updateCreditAndTotal();      
+    // ✅ 再保險一次：確保 input 有值
+    const ci = document.getElementById('credit_input');
+    if (ci) ci.value = String(used);
   }
-}
+  }
+
 
 /* ===== Tabs ===== */
 const tabs=$$('#payTabs .tab');
@@ -1550,24 +1571,20 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
   const note = $('#note').value || '';
   const shipping_info = { note };
 
-   // 購物金驗證
+    // ===== 購物金驗證（以 AVAILABLE_CREDIT 為準）=====
   const creditInput = document.getElementById('credit_input');
+
   let creditUsed = 0;
-  if (creditInput && creditInput.value) {
-    creditUsed = Number(creditInput.value);
+  if (creditInput && creditInput.value !== '') {
+    creditUsed = Math.floor(Number(creditInput.value) || 0);
     if (!Number.isFinite(creditUsed) || creditUsed < 0) {
-      alert('購物金使用金額請填「0 以上的數字」，若不使用可留空。');
+      alert('購物金使用金額請填「0 以上的整數」，若不使用可留空。');
       return;
     }
   }
-  let maxCredit = 0;
-  if (MEMBER_INFO) {
-    if (typeof MEMBER_INFO.credit === 'number') {
-      maxCredit = MEMBER_INFO.credit;
-    } else if (MEMBER_INFO.member && typeof MEMBER_INFO.member.credit === 'number') {
-      maxCredit = MEMBER_INFO.member.credit;
-    }
-  }
+
+  const maxCredit = Math.max(0, Math.floor(Number(AVAILABLE_CREDIT || 0) || 0));
+
   if (creditUsed > maxCredit) {
     alert('購物金使用金額不可超過可用餘額（NT$ ' + maxCredit.toLocaleString() + '）。');
     return;
@@ -1577,10 +1594,13 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
     return;
   }
 
- //⓸ 所有檢查都通過之後，再寫進 shipping_info
-if (creditUsed > 0) {
-  shipping_info.credit_used = creditUsed;
-}
+  // ✅ 所有檢查通過才寫入（讓後端真的扣）
+  if (creditUsed > 0) {
+    shipping_info.credit_used = creditUsed;
+  } else {
+    // 保險：不要帶 0 過去
+    if (shipping_info.credit_used !== undefined) delete shipping_info.credit_used;
+  }
 
   // LIFF profile / LINE 綁定
   if (LINE_PROFILE && LINE_PROFILE.userId) {
