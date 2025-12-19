@@ -117,6 +117,12 @@
       <input id="line_user_id" placeholder="貼上客人的 LineUserId（從 LineMembers 複製）" />
       <button id="btn-send-link" class="ghost">從官方 LINE 發結帳卡片</button>
     </div>
+     <!-- ★ 新增：用 LineUserId 記住 / 載入這位客人的購物車（只影響 OP 頁面，不動後端） -->
+     <div class="row" style="margin-top:10px">
+       <button id="btn-load-cart" class="ghost">載入此客人購物車</button>
+       <button id="btn-clear-cartmap" class="ghost">清除此客人購物車記錄</button>
+     </div>
+     <div class="muted" id="cartmap_info" style="margin-top:4px"></div>
     <textarea
       id="line_msg"
       rows="4"
@@ -164,6 +170,57 @@
     CART = t||'';
     $('#cart_token').textContent = t||'尚未建立';
     $('#btn-clear').disabled = !OP;
+    try { rememberCartForUser(CART); } catch(e) {}
+  }
+
+  // ====== ★ 客人購物車記憶（只存在這台 OP 裝置的 localStorage） ======
+  const CART_MAP_KEY = 'OP_CART_MAP_V1';
+  function loadCartMap() {
+    try { return JSON.parse(localStorage.getItem(CART_MAP_KEY) || '{}'); } catch(e) { return {}; }
+  }
+  function saveCartMap(map) {
+    try { localStorage.setItem(CART_MAP_KEY, JSON.stringify(map || {})); } catch(e) {}
+  }
+  function getLineUserId() {
+    return ($('#line_user_id') && ($('#line_user_id').value || '').trim()) || '';
+  }
+  function setCartMapInfo(txt) {
+    const el = $('#cartmap_info');
+    if (el) el.textContent = txt || '';
+  }
+  function rememberCartForUser(cartToken) {
+    const uid = getLineUserId();
+    if (!uid || !cartToken) return;
+    const map = loadCartMap();
+    map[uid] = { cart_token: String(cartToken), updatedAt: Date.now() };
+    saveCartMap(map);
+    setCartMapInfo(`已記住此客人購物車：${String(cartToken)}`);
+  }
+  async function loadCartForUser() {
+    const uid = getLineUserId();
+    if (!uid) return alert('請先貼上/查到客人的 LineUserId');
+    const map = loadCartMap();
+    const rec = map[uid];
+    if (!rec || !rec.cart_token) return alert('這位客人目前沒有被記住的購物車（你可以先建立一台，再發連結）。');
+    setCartToken(rec.cart_token);
+    setCartMapInfo(`已載入此客人購物車：${rec.cart_token}`);
+    await refreshList();
+  }
+  function clearCartForUser() {
+    const uid = getLineUserId();
+    if (!uid) return alert('請先貼上/查到客人的 LineUserId');
+    const map = loadCartMap();
+    delete map[uid];
+    saveCartMap(map);
+    setCartMapInfo('已清除此客人購物車記錄');
+  }
+  function showCartHintIfExists() {
+    const uid = getLineUserId();
+    if (!uid) { setCartMapInfo(''); return; }
+    const map = loadCartMap();
+    const rec = map[uid];
+    if (rec && rec.cart_token) setCartMapInfo(`這位客人上次購物車：${rec.cart_token}（可按「載入此客人購物車」）`);
+    else setCartMapInfo('這位客人目前沒有記住的購物車。');
   }
 
   // ---------- actions ----------
@@ -182,6 +239,7 @@
     const res = await jfetch(API+'/cart/create', { method:'POST', body: JSON.stringify({ streamer_name: streamer||'未命名', customer_type }) });
     if(!res.ok) return alert('建立失敗：'+(res.error||''));
     setCartToken(res.cart_token);
+    try { showCartHintIfExists(); } catch(e) {}
     await refreshList();
   }
 
@@ -308,6 +366,7 @@
 
       // 自動帶入 LineUserId
       $('#line_user_id').value = m.lineUserId || '';
+      try { showCartHintIfExists(); } catch(e) {}
 
       // 顯示一下找到的是誰
       const infoEl = $('#line_search_info');
