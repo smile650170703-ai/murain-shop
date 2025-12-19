@@ -945,13 +945,11 @@ let MEMBER_INFO  = null;
 
 // 更新購物金 UI
 function updateCreditUIFromMember(info){
-  let credit = 0;
+   let credit = 0;
   if (info) {
-    if (typeof info.credit === "number") {
-      credit = info.credit;
-    } else if (info.member && typeof info.member.credit === "number") {
-      credit = info.member.credit;
-    }
+    const raw = (info.credit !== undefined) ? info.credit : (info.member ? info.member.credit : 0);
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) credit = Math.floor(n);
   }
 
   AVAILABLE_CREDIT = credit;
@@ -1148,15 +1146,12 @@ function setTotal(v){
   if (sub) sub.value = txt;
   if (tot) tot.value = txt;
   updateCreditAndTotal();
-   // ★ 回來時把 credit_used 填回去，並鎖住
+    // ★ 回來時把 credit_used 填回去，並鎖住
   if (lockCreditFromPay) {
-    const creditEl = $('#credit_used'); // 你的 input id 不是這個就改
-    if (creditEl) {
-      if (creditUsedFromPay > 0) creditEl.value = String(creditUsedFromPay);
-      updateCreditAndTotal();
-      creditEl.readOnly = true;
-      creditEl.disabled = true; // 不想灰掉就拿掉這行，只留 readOnly
-    }
+    const used = Math.max(0, Math.floor(Number(creditUsedFromPay || 0) || 0));
+    CREDIT_USED = used;                  // 同步全域
+    lockCreditUI(used, orderIdFromPay);  // ✅ 會鎖住 #credit_input
+    updateCreditAndTotal();              // 重新算折抵後金額
   }
 }
 
@@ -2077,11 +2072,25 @@ if (!isOnlinePay) {
     // PayUni
     if (payment_method && payment_method.startsWith('paid_')) {
       try {
-        const pr = await fetch(`${API}/payuni/start`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ order_id: j.order_id })
-        });
+        const payMode =
+  (payment_method === 'paid_aftee_direct') ? 'aftee_direct' :
+  (payment_method === 'paid_linepay')      ? 'linepay' :
+  (payment_method.startsWith('paid_card_inst_')) ? 'card_inst' :
+  'card_once';
+
+const instMonths = payment_method.startsWith('paid_card_inst_')
+  ? Number(payment_method.split('_').pop() || 3)
+  : null;
+
+const pr = await fetch(`${API}/payuni/start`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    order_id: j.order_id,
+    mode: payMode,
+    inst_months: instMonths
+  })
+});
 
         const up = await pr.json();
         console.log('payuni start resp', up);
