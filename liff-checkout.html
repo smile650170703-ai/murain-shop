@@ -945,22 +945,37 @@ let MEMBER_INFO  = null;
 
 // 更新購物金 UI
 function updateCreditUIFromMember(info){
-   let credit = 0;
-  if (info) {
-    const raw = (info.credit !== undefined) ? info.credit : (info.member ? info.member.credit : 0);
-    const n = Number(raw);
-    if (Number.isFinite(n) && n > 0) credit = Math.floor(n);
+  // 兼容不同 API 回傳欄位（避免你後端改欄位就又歸零）
+  const pick = (obj, path) => {
+    try {
+      return path.split('.').reduce((a,k)=> (a && a[k] !== undefined) ? a[k] : undefined, obj);
+    } catch (e) { return undefined; }
+  };
+
+  const candidates = [
+    pick(info, 'credit'),
+    pick(info, 'credit_balance'),
+    pick(info, 'balance'),
+    pick(info, 'available_credit'),
+    pick(info, 'member.credit'),
+    pick(info, 'member.StoreCredit'),
+    pick(info, 'member.store_credit'),
+    pick(info, 'data.credit'),
+    pick(info, 'data.balance'),
+  ];
+
+  let credit = 0;
+  for (const v of candidates) {
+    const n = Number(v);
+    if (Number.isFinite(n)) { credit = Math.max(0, Math.floor(n)); break; }
   }
 
   AVAILABLE_CREDIT = credit;
 
-  // 更新「可用餘額：NT$ xxx」
   const el = document.getElementById('credit_available');
-  if (el) {
-    el.textContent = "可用餘額：NT$ " + credit.toLocaleString();
-  }
+  if (el) el.textContent = "可用餘額：NT$ " + credit.toLocaleString();
 
-  // 讓「折抵後實際付款金額」一起重新計算
+  // 讓折抵後金額同步刷新
   updateCreditAndTotal();
 }
 
