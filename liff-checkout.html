@@ -1117,6 +1117,25 @@ if (!cartToken) {
     console.warn('localStorage write error', e);
   }
 }
+   /* ===== PayReturn/PayFail 回來用的參數（加在 cartToken 這段後面） ===== */
+const from = qs.get('from') || '';
+const statusFromPay = qs.get('status') || '';
+const orderIdFromPay = qs.get('order_id') || '';
+
+const creditUsedFromPay = Math.max(0, Number(qs.get('credit_used') || 0) || 0);
+const lockCreditFromPay =
+  (qs.get('lock_credit') === '1') ||
+  (from === 'payreturn') ||
+  (from === 'payfail') ||
+  (from === 'paynotify_fail');
+
+// 讓「回購物車」也能找回會員資料：優先用 URL 的 user_id，沒有就用 localStorage
+let lineUserIdFromPay = qs.get('user_id') || '';
+if (!lineUserIdFromPay) {
+  try { lineUserIdFromPay = localStorage.getItem('murain_line_user_id') || ''; } catch (e) {}
+} else {
+  try { localStorage.setItem('murain_line_user_id', lineUserIdFromPay); } catch (e) {}
+}
 
 const initialMode=(qs.get('mode')||'').toUpperCase();
 const tailOf      = qs.get('tail_of') || '';
@@ -1652,7 +1671,7 @@ if (creditUsed > 0) {
   payment_method = 'paid_linepay';
 } else if (channel === 'af') {
   // 你之前說 AFTEE 要用 aftee_direct 的 mode
-  payment_method = 'paid_af'; // AFTEE 先享後付（PayUNI Mode: aftee_direct）
+  payment_method = 'paid_aftee_direct'; // AFTEE 先享後付（PayUNI Mode: aftee_direct）
 } else {
   payment_method = '';
 }
