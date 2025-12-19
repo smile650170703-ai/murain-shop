@@ -1003,6 +1003,22 @@ async function initLiffAndMember() {
     if (j && j.ok) {
       MEMBER_INFO = j;
       applyMemberInfoToForm(j);
+      // ✅ 補抓「帳本即時計算」的購物金餘額（避免 member-info 沒回或欄位名不同）
+      try {
+        const rb = await fetch(`${API}/member/credit-balance?user_id=${encodeURIComponent(profile.userId)}`);
+        const jb = await rb.json();
+        if (jb && jb.ok) {
+          // 常見回傳：{ ok:true, balance:123 } 或 { ok:true, credit:123 }
+          const bal = Number(jb.balance ?? jb.credit ?? jb.total ?? 0);
+          if (Number.isFinite(bal)) {
+            // 讓「UI 顯示」跟「送單驗證 maxCredit」都吃到同一份值
+            MEMBER_INFO.credit = bal;
+            updateCreditUIFromMember(MEMBER_INFO);
+          }
+        }
+      } catch (e) {
+        console.log('credit-balance error', e);
+      }
     }
   } catch (e) {
     console.log('member-info error', e);
