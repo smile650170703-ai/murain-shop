@@ -516,8 +516,37 @@ if (isMeetup) {
 function receiverFullText(receiver, ship, paymentMethod) {
   const name  = String(receiver?.name  || ship?.name  || "").trim();
   const phone = String(receiver?.phone || ship?.phone || "").trim();
-  const place = deliveryPlaceText(ship || {}, receiver || {}, paymentMethod);
   const head  = [name, phone].filter(Boolean).join(" / ");
+
+  const pm = String(paymentMethod || "").toLowerCase();
+  const methodRaw = String(ship?.method || ship?.type || ship?.ship_type || "");
+  const method = methodRaw.toLowerCase();
+
+  const isMeetup = method.includes("面交") || method.includes("meetup") || pm.includes("meetup");
+
+  // ✅ 面交：拆成兩行（時間/地點）
+  if (isMeetup) {
+    const t = String(
+      ship?.meetup_time || ship?.meet_time || ship?.meetupTime || ship?.meetTime || ""
+    ).trim();
+
+    const p = String(
+      ship?.meetup_place || ship?.meet_place || ship?.meetupPlace || ship?.meetPlace || ""
+    ).trim();
+
+    const lines = [];
+    if (head) lines.push(head);
+    if (t) lines.push(`面交時間：${t}`);
+    if (p) lines.push(`面交地點：${p}`);
+
+    // 都沒資料時，至少顯示「面交」
+    if (!t && !p) lines.push("面交");
+
+    return lines.join("\n");
+  }
+
+  // 其他配送方式照舊
+  const place = deliveryPlaceText(ship || {}, receiver || {}, paymentMethod);
   return (head ? head + "\n" : "") + place;
 }
 
