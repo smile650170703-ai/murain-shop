@@ -986,7 +986,30 @@ async function initLiffAndMember() {
     return;
   }
 
-  const profile = await liff.getProfile();
+  let profile = null;
+  let uidForApi = (typeof lineUserIdFromPay === 'string' && lineUserIdFromPay) ? lineUserIdFromPay : '';
+
+  try {
+    if (liff.isLoggedIn()) {
+      profile = await liff.getProfile();
+      LINE_PROFILE = profile;
+
+      // ✅ 存起來：回購物車/重試時更穩
+      try { localStorage.setItem('murain_line_user_id', profile.userId); } catch (e) {}
+
+      uidForApi = profile.userId || uidForApi;
+    }
+  } catch (e) {
+    console.log('getProfile failed, fallback to user_id/localStorage', e);
+  }
+
+  // 最後保險：再用 localStorage 補一次
+  if (!uidForApi) {
+    try { uidForApi = localStorage.getItem('murain_line_user_id') || ''; } catch (e) {}
+  }
+
+  // 真的沒有 user id 就只能放棄（畫面會是 0）
+  if (!uidForApi) return;
   LINE_PROFILE = profile;
 
   // ✅ 存起來：回購物車/重試時更穩
@@ -994,7 +1017,7 @@ async function initLiffAndMember() {
 
   // 1) 會員資料（名字/電話/地址）用 member-info（照舊）
   try {
-    const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(profile.userId)}`);
+    const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(uidForApi)}`);
     const j = await r.json();
     if (j && j.ok) {
       MEMBER_INFO = j;
@@ -1006,7 +1029,7 @@ async function initLiffAndMember() {
 
   // 2) ✅ 購物金餘額：改用 credit-balance（唯一真相）
   try {
-    const r2 = await fetch(`${API}/member/credit-balance?user_id=${encodeURIComponent(profile.userId)}`);
+    const r2 = await fetch(`${API}/member/credit-balance?user_id=${encodeURIComponent(uidForApi)}`);
     const b = await r2.json();
     if (b && b.ok) {
       // 常見回傳：{ ok:true, balance:123 } 或 { ok:true, credit:123 }
