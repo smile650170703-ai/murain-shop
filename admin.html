@@ -127,6 +127,7 @@
     <div class="toolbar-left">
       <div class="filter-group">
         <button class="filter-btn active" data-filter="all">全部訂單</button>
+       <button class="filter-btn" data-filter="all_no_fail">全部訂單（不含作廢/補回）</button>
         <button class="filter-btn" data-filter="pending_online">✅線上付款待確認</button>
         <button class="filter-btn" data-filter="ready_to_ship"
           style="display:none;">待出貨列印</button>
@@ -467,6 +468,23 @@ renderOrderList();
     $('#orderDetail').innerHTML = '<div class="muted">請從左邊點選一筆訂單</div>';
     return;
   }
+
+  // all_no_fail：先載入全部，再前端排除 failed/cancelled
+if (currentFilter === 'all_no_fail') {
+  await loadOrders('all');
+  currentFilter = 'all_no_fail';
+
+  currentOrders = (currentOrders || []).filter(rec => {
+    const f = rec.fields || rec || {};
+    const ps = String(f.pay_status || '').toLowerCase();
+return ps !== 'cancelled';
+  });
+
+  ORDERS_CACHE = currentOrders.map(r => r.fields || r || {});
+  renderOrderList();
+  $('#orderDetail').innerHTML = '<div class="muted">請從左邊點選一筆訂單</div>';
+  return;
+}
 
   // 其他 view：照舊用 loadOrders
   await loadOrders(currentFilter || 'all');
@@ -1850,10 +1868,33 @@ document.addEventListener('DOMContentLoaded', async ()=>{
             msgEl.textContent = '僅顯示「付款狀態＝待確認(pay_status = pending)」的訂單。';
           }
         }
-      } else {
-        // 其他三顆維持原本的 filter 行為（完全不動）
-        await loadOrders(filter);
-      }
+      } else if (filter === 'all_no_fail') {
+  const msgEl = $('#msg');
+  if (msgEl) msgEl.textContent = '';
+
+  // 1) 先照「全部訂單」原本邏輯載入（不動後端）
+  await loadOrders('all');
+
+  // 2) 因為 loadOrders('all') 會把 currentFilter 改成 all，這裡把它切回來
+  currentFilter = 'all_no_fail';
+
+  // 3) 前端再排除：失敗/作廢 + 取消(補回庫存)
+  currentOrders = (currentOrders || []).filter(rec => {
+    const f = rec.fields || rec || {};
+    const ps = String(f.pay_status || '').toLowerCase();
+return ps !== 'cancelled';
+  });
+
+  ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+  renderOrderList();
+
+  if (msgEl) {
+    msgEl.textContent = '僅顯示「排除 pay_status=failed / cancelled」的訂單（不含作廢/補回庫存）。';
+  }
+} else {
+  // 其他按鈕維持原本行為（完全不動）
+  await loadOrders(filter);
+}
     });
   });
 
