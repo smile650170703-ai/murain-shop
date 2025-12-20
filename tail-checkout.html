@@ -238,6 +238,18 @@
     <div id="tailAmountView" class="money-big">NT$ 0</div>
   </div>
 
+  <!-- ✅ 3-1. 購物金折抵（共用，不影響任何付款流程） -->
+  <div class="card">
+    <div class="card-header">
+      購物金折抵
+      <span class="badge">可選</span>
+    </div>
+
+    <label>本次折抵金額</label>
+    <input id="creditUsed" type="number" min="0" step="1" value="0" inputmode="numeric" placeholder="0" />
+    <div class="hint">* 線上付款 / 無卡分期 需至少支付 1 元（折抵不可 ≥ 尾款）。</div>
+  </div>
+
   <!-- 4. 付款方式 -->
   <div class="card">
     <div class="card-header">付款方式</div>
@@ -367,6 +379,11 @@
       $("#fieldTotal").value   = money(j.total_amount || 0);
       $("#fieldDeposit").value = money(j.deposit_amount || 0);
       $("#tailAmountView").textContent = money(j.tail_amount || 0);
+      
+// ✅（可選但安全）限制購物金輸入不超過尾款
+const cuEl = document.getElementById("creditUsed");
+if (cuEl) cuEl.max = String(Math.max(0, Math.round(Number(j.tail_amount||0)||0)));
+      
       $("#fieldHoldUntil").value = (j.shipping_info && j.shipping_info.hold_until) || (j.hold_until || "");
       $("#fieldItems").value = j.items_text || "";
 
@@ -391,79 +408,128 @@
   }
 
   async function submitTail(){
-    if(!tailInfo) return alert("資料尚未載入");
-    const tailAmount = Number(tailInfo.tail_amount||0);
-    if(tailAmount <= 0 && !confirm("尾款金額為 0，是否繼續？")) return;
+  if(!tailInfo) return alert("資料尚未載入");
 
-    let payment_method = "";
-    const extra = {};
+  const tailAmount = Math.round(Number(tailInfo.tail_amount || 0) || 0);
+  if(tailAmount <= 0 && !confirm("尾款金額為 0，是否繼續？")) return;
 
-    if(activePay === "COD") payment_method = "cod_711";
-    else if(activePay === "PAID") {
-      payment_method = (paidChannel==="card_inst") ? `paid_card_inst_${$("#instMonths").value}` : `paid_${paidChannel}`;
-    }
-    else if(activePay === "ATM") {
-      const last5 = ($("#atmLast5").value||"").trim();
-      if(!/^\d{5}$/.test(last5)) return alert("請輸入 5 位數帳號後五碼");
-      payment_method = "atm_full_tail";
-      extra.atm_last5 = last5;
-    }
-    else if(activePay === "ZEROCARD") {
-      payment_method = `zero_card_${$("#zcMonths").value}`;
-    }
+  // ✅ 讀取本次折抵（若頁面還沒加 input，就當 0）
+  const cuEl = document.getElementById("creditUsed");
+  let credit_used = cuEl ? Math.floor(Math.max(0, Number(cuEl.value || 0) || 0)) : 0;
 
-    if(!payment_method) return alert("請選擇付款方式");
+  // ✅ 從 shipping_info 抓 line_user_id（後端扣購物金用）
+  let line_user_id = "";
+  try{
+    const si = tailInfo.shipping_info || {};
+    const shipInfo = (typeof si === "string") ? JSON.parse(si) : si;
+    const line = shipInfo.line || shipInfo.line_profile || {};
+    line_user_id = String(
+      line.user_id || line.userId || line.LINE_USER_ID || shipInfo.line_user_id || ""
+    ).trim();
+  }catch(e){ line_user_id = ""; }
 
-    try{
-      $("#submitBtn").disabled = true;
-      const payload = {
-        parent_order_id: tailInfo.parent_order_id,
-        items_json: tailInfo.items_text || "",
-        tail_amount: tailInfo.tail_amount || 0,
-        payment_method,
-        shipping_info: tailInfo.shipping_info || {}
-      };
-      if(extra.atm_last5) payload.atm_last5 = extra.atm_last5;
-
-      const r = await fetch(`${API}/tail/checkout`, {
-        method:"POST", headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify(payload)
-      });
-      const j = await r.json();
-      if(!r.ok || !j.ok) throw new Error(j.message||j.error);
-
-      const newOrderId = j.order_id;
-
-      // Redirects
-      if(payment_method.startsWith("paid_")){
-        const pr = await fetch(`${API}/payuni/start`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({order_id:newOrderId}) });
-        const up = await pr.json();
-        if(!up.ok) throw new Error(up.error);
-        
-        const f = document.createElement("form"); f.method="POST"; f.action=up.url;
-        ["MerID","Version","EncryptInfo","HashInfo"].forEach(k=>{
-           const i=document.createElement("input"); i.type="hidden"; i.name=k; i.value=up[k]; f.appendChild(i);
-        });
-        document.body.appendChild(f); f.submit();
-        return;
-      }
-
-      if(payment_method.startsWith("zero_card_")){
-        const zr = await fetch(`${API}/zero-card/start`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({order_id:newOrderId}) });
-        const zj = await zr.json();
-        if(!zj.ok) throw new Error(zj.error);
-        location.href = zj.payment_url;
-        return;
-      }
-
-      alert("尾款訂單已建立！");
-      location.href = `/order-result.html?order_id=${encodeURIComponent(newOrderId)}&from=tail`;
-
-    }catch(e){
-      alert(e.message || "發生錯誤");
-      $("#submitBtn").disabled = false;
-    }
+  // ✅ 線上支付 / 零卡：必須至少付 1 元（避免 0 元金流）
+  // （COD/ATM 你要允許全折抵也可以；這裡只擋線上金流）
+  const willPayOnline = (activePay === "PAID" || activePay === "ZEROCARD");
+  if (willPayOnline && tailAmount > 0 && credit_used >= tailAmount) {
+    return alert("線上支付需至少支付 1 元（購物金折抵不能 >= 尾款金額）");
   }
+
+  let payment_method = "";
+  const extra = {};
+
+  if(activePay === "COD") payment_method = "cod_711";
+  else if(activePay === "PAID") {
+    payment_method = (paidChannel==="card_inst")
+      ? `paid_card_inst_${$("#instMonths").value}`
+      : `paid_${paidChannel}`;
+  }
+  else if(activePay === "ATM") {
+    const last5 = ($("#atmLast5").value||"").trim();
+    if(!/^\d{5}$/.test(last5)) return alert("請輸入 5 位數帳號後五碼");
+    payment_method = "atm_full_tail";
+    extra.atm_last5 = last5;
+  }
+  else if(activePay === "ZEROCARD") {
+    payment_method = `zero_card_${$("#zcMonths").value}`;
+  }
+
+  if(!payment_method) return alert("請選擇付款方式");
+
+  try{
+    $("#submitBtn").disabled = true;
+
+    // ✅ items_json 加上「原訂單」前綴（後端可用來防重複建單）
+    const prefix = `【原訂單 ${tailInfo.parent_order_id}】\n`;
+    const baseItems = String(tailInfo.items_text || "");
+    const items_json = baseItems.startsWith(prefix) ? baseItems : (prefix + baseItems);
+
+    const payload = {
+      parent_order_id: tailInfo.parent_order_id,
+      items_json,
+      tail_amount: tailAmount,
+      payment_method,
+      shipping_info: tailInfo.shipping_info || {},
+
+      // ✅ 新增：尾款折抵購物金
+      credit_used,
+      line_user_id
+    };
+    if(extra.atm_last5) payload.atm_last5 = extra.atm_last5;
+
+    const r = await fetch(`${API}/tail/checkout`, {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if(!r.ok || !j.ok) throw new Error(j.message || j.error);
+
+    const newOrderId = j.order_id;
+
+    // Redirects
+    if(payment_method.startsWith("paid_")){
+      const pr = await fetch(`${API}/payuni/start`, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ order_id: newOrderId })
+      });
+      const up = await pr.json();
+      if(!up.ok) throw new Error(up.error);
+
+      const f = document.createElement("form");
+      f.method="POST";
+      f.action=up.url;
+      ["MerID","Version","EncryptInfo","HashInfo"].forEach(k=>{
+        const i=document.createElement("input");
+        i.type="hidden"; i.name=k; i.value=up[k];
+        f.appendChild(i);
+      });
+      document.body.appendChild(f);
+      f.submit();
+      return;
+    }
+
+    if(payment_method.startsWith("zero_card_")){
+      const zr = await fetch(`${API}/zero-card/start`, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ order_id: newOrderId })
+      });
+      const zj = await zr.json();
+      if(!zj.ok) throw new Error(zj.error);
+      location.href = zj.payment_url;
+      return;
+    }
+
+    alert("尾款訂單已建立！");
+    location.href = `/order-result.html?order_id=${encodeURIComponent(newOrderId)}&from=tail`;
+
+  }catch(e){
+    alert(e.message || "發生錯誤");
+    $("#submitBtn").disabled = false;
+  }
+}
 
   document.addEventListener("DOMContentLoaded", ()=>{
     initTabs();
