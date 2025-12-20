@@ -1651,22 +1651,27 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
 
   // LIFF profile / LINE 綁定
   if (LINE_PROFILE && LINE_PROFILE.userId) {
-    shipping_info.line = {
-      user_id: LINE_PROFILE.userId,
-      display_name: LINE_PROFILE.displayName || ""
-    };
-  } else {
-    const uidInput = document.getElementById('line_user_id');
-    const nameInput = document.getElementById('line_display_name');
-    const uid = uidInput ? uidInput.value : '';
-    const name = nameInput ? nameInput.value : '';
-    if (uid) {
-      shipping_info.line = {
-        user_id: uid,
-        display_name: name
-      };
-    }
+  shipping_info.line = {
+    user_id: LINE_PROFILE.userId,
+    display_name: LINE_PROFILE.displayName || ""
+  };
+} else {
+  // ✅ 最小修正：用 payfail/payreturn 帶回來的 user_id（或 localStorage）當備援
+  let uid = (typeof lineUserIdFromPay === "string" ? lineUserIdFromPay : "") || "";
+  uid = String(uid).trim();
+
+  if (!uid) {
+    try { uid = String(localStorage.getItem("murain_line_user_id") || "").trim(); } catch (e) {}
   }
+
+  // display_name 沒拿到也沒關係，給空字串即可
+  const dn =
+    (MEMBER_INFO && (MEMBER_INFO.display_name || MEMBER_INFO.name || MEMBER_INFO.member?.name)) || "";
+
+  if (uid) {
+    shipping_info.line = { user_id: uid, display_name: String(dn || "") };
+  }
+}
 
   if (!shipping_info.line || !shipping_info.line.user_id) {
     alert('請先在 LINE 官方帳號中開啟這個結帳頁，完成 LINE 會員綁定後再送出訂單');
