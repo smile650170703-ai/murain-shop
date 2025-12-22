@@ -445,6 +445,145 @@ function copyLineMessage() {
   alert('已複製 LINE 訊息');
 }
 
+    // ====== 購物車管理（Admin）======
+  function escHtml(s){
+    return String(s||"").replace(/[&<>"']/g, (c)=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  }
+
+  function getAdminKey(){
+    return ($('#admin_key') && ($('#admin_key').value || '').trim()) || '';
+  }
+
+  function setCartAdminMsg(txt){
+    const el = $('#cart_admin_msg');
+    if (el) el.textContent = txt || '';
+  }
+
+  function showCartAdminItemsBox(on){
+    const box = $('#cart_admin_items_box');
+    if (!box) return;
+    box.classList.toggle('hidden', !on);
+  }
+
+  let ADMIN_SELECTED_CART = '';
+
+  async function cartAdminSearch(){
+    if (!OP) return alert('請先登入 OP Key');
+    const ak = getAdminKey();
+    if (!ak) return alert('請輸入 Admin Key');
+    const kw = ($('#cart_admin_kw').value || '').trim();
+    if (!kw) return alert('請輸入名字或 LineUserId');
+
+    setCartAdminMsg('搜尋中...');
+    showCartAdminItemsBox(false);
+    ADMIN_SELECTED_CART = '';
+    const out = $('#cart_admin_result');
+    if (out) out.innerHTML = '';
+
+    const url = API + '/admin/cart/search?kw=' + encodeURIComponent(kw) + '&admin_key=' + encodeURIComponent(ak);
+    const res = await jfetch(url, { method:'GET' });
+
+    if (!res || res.ok !== true){
+      setCartAdminMsg('搜尋失敗：' + (res && (res.error || res.message) || 'unknown'));
+      return;
+    }
+
+    const carts = res.carts || [];
+    setCartAdminMsg(`找到 ${carts.length} 台購物車`);
+
+    if (!out) return;
+
+    if (!carts.length){
+      out.innerHTML = `<div class="muted">沒有找到購物車</div>`;
+      return;
+    }
+
+    out.innerHTML = carts.map(c=>{
+      const token = escHtml(c.cart_token || '');
+      const name  = escHtml(c.customer_name || '');
+      const uid   = escHtml(c.line_user_id || '');
+      const st    = escHtml(c.status || '');
+      const up    = escHtml(c.updated_at || '');
+      const cnt   = Number(c.item_count || 0) || 0;
+
+      return `
+        <div style="padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <div style="min-width:260px;">
+              <div style="font-weight:800;">
+                ${name || '(未填名字)'} <span class="muted">(${cnt} 件)</span>
+              </div>
+              <div class="muted" style="margin-top:2px;">
+                status: <b>${st || '-'}</b> ｜ updated: ${up || '-'}
+              </div>
+              <div class="muted mono" style="margin-top:6px;word-break:break-all;">
+                cart_token: ${token}<br/>
+                line_user_id: ${uid || '-'}
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:flex-start;">
+              <button class="ghost btn-cart-admin-view" data-token="${token}" style="max-width:140px;">看明細</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // 綁定「看明細」按鈕
+    out.querySelectorAll('.btn-cart-admin-view').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const token = btn.dataset.token || '';
+        if (!token) return;
+
+        const ak2 = getAdminKey();
+        if (!ak2) return alert('請輸入 Admin Key');
+
+        setCartAdminMsg('載入明細中...');
+        showCartAdminItemsBox(false);
+
+        const url2 = API + '/admin/cart/items?cart_token=' + encodeURIComponent(token) + '&admin_key=' + encodeURIComponent(ak2);
+        const r2 = await jfetch(url2, { method:'GET' });
+
+        if (!r2 || r2.ok !== true){
+          setCartAdminMsg('讀取明細失敗：' + (r2 && (r2.error || r2.message) || 'unknown'));
+          return;
+        }
+
+        ADMIN_SELECTED_CART = token;
+        $('#cart_admin_token').textContent = token;
+        $('#cart_admin_items').value = JSON.stringify(r2.items || [], null, 2);
+        showCartAdminItemsBox(true);
+        setCartAdminMsg('');
+      });
+    });
+  }
+
+  async function cartAdminExpire(){
+    if (!OP) return alert('請先登入 OP Key');
+    const ak = getAdminKey();
+    if (!ak) return alert('請輸入 Admin Key');
+    if (!ADMIN_SELECTED_CART) return alert('請先「看明細」選一台購物車');
+
+    if (!confirm(`確定清除此購物車？\n${ADMIN_SELECTED_CART}\n\n會刪除 CartItems + 標記 expired（不影響庫存）`)) return;
+
+    setCartAdminMsg('清除中...');
+
+    const url = API + '/admin/cart/expire?admin_key=' + encodeURIComponent(ak);
+    const r = await jfetch(url, {
+      method:'POST',
+      body: JSON.stringify({ cart_token: ADMIN_SELECTED_CART })
+    });
+
+    if (!r || r.ok !== true){
+      setCartAdminMsg('清除失敗：' + (r && (r.error || r.message) || 'unknown'));
+      return;
+    }
+
+    setCartAdminMsg(`已清除：items_deleted=${r.items_deleted || 0}（cart=${ADMIN_SELECTED_CART}）`);
+    showCartAdminItemsBox(false);
+    ADMIN_SELECTED_CART = '';
+  }
+
 
   // ---------- quick-price ----------
   const quick = { '#btn-50': -50, '#btn-100': -100, '#btn-999': 999 };
@@ -489,6 +628,25 @@ function copyLineMessage() {
     if (btnSendLink) {
       btnSendLink.addEventListener('click', sendCheckoutLinkByLine);
     }
+
+    // ======（這裡開始貼：購物車管理 Admin 事件）======
+    const adminKeyInput = $('#admin_key');
+    if (adminKeyInput) {
+      // 記住 Admin Key（存在本機，不寫死在程式碼）
+      const savedAk = localStorage.getItem('ADMIN_KEY') || '';
+      if (savedAk) adminKeyInput.value = savedAk;
+      adminKeyInput.addEventListener('change', ()=> {
+        localStorage.setItem('ADMIN_KEY', adminKeyInput.value || '');
+      });
+    }
+
+    const btnCartAdminSearch = $('#btn-cart-admin-search');
+    if (btnCartAdminSearch) btnCartAdminSearch.addEventListener('click', cartAdminSearch);
+
+    const btnCartAdminExpire = $('#btn-cart-admin-expire');
+    if (btnCartAdminExpire) btnCartAdminExpire.addEventListener('click', cartAdminExpire);
+    // ======（這裡結束貼上）======
+   
      Object.keys(quick).forEach(sel=>{
       const v = quick[sel];
       document.querySelector(sel).addEventListener('click', ()=>applyQuick(v));
