@@ -1741,9 +1741,11 @@ const YUFU_RATE_TABLE = {
 
 function calcYUFU(){
   const months = Number(document.getElementById('yufu_months')?.value || 0);
-  const base   = Math.max(0, Math.round((subtotal || 0) - (CREDIT_USED || 0))); // 用折抵後金額試算
-  const rate   = Number(YUFU_RATE_TABLE[months] ?? 0);
 
+  // ✅ 用全域購物車金額（折抵後）試算
+  const base   = Math.max(0, Math.round((CART_TOTAL_RAW || 0) - (CREDIT_USED || 0)));
+
+  const rate   = Number(YUFU_RATE_TABLE[months] ?? 0);
   const total  = Math.max(0, Math.round(base * (1 + rate/100)));
   const perMon = months ? Math.ceil(total / months) : 0;
 
@@ -1772,7 +1774,6 @@ function updateYufuShip(){
 // 事件
 document.getElementById('yufu_months')?.addEventListener('change', calcYUFU);
 document.getElementById('yufu_ship_method')?.addEventListener('change', updateYufuShip);
-document.getElementById('mapYUFU')?.addEventListener('click', () => open711('yufu'));
 
 /* ===== 購物車載入 ===== */
 async function loadCart(){
@@ -1815,7 +1816,14 @@ if (!Array.isArray(j.items)) {
 function open711(src) {
   saveCheckoutState();
   const qs2 = new URLSearchParams(location.search);
+   // ✅ 後端白名單不含 yufu：用 paid 借道，但用 store_src 記住要回填到 yufu 欄位
+  const realSrc = (String(src).toLowerCase() === 'yufu') ? 'paid' : src;
   qs2.set('src', src);
+  if (String(src).toLowerCase() === 'yufu') {
+    qs2.set('store_src', 'yufu');   // ✅ 讓 applyStoreFromURL / message switch case 命中 yufu
+  } else {
+    qs2.delete('store_src');
+  }
   qs2.delete('customer');
   const url = `${API}/cvs/map?${qs2.toString()}`;
   window.location.href = url;
@@ -2871,6 +2879,7 @@ const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total
     setMeetupMinDates();
 
   updateZcShip();
+  calcYUFU();
 
   await loadCart();
   applyStoreFromURL();
