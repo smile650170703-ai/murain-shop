@@ -217,6 +217,11 @@
   function getLineUserId() {
     return ($('#line_user_id') && ($('#line_user_id').value || '').trim()) || '';
   }
+  function getCustomerName() {
+  // 你目前唯一有「名字輸入」的欄位就是 #line_search_name
+  // 用它當 customer_name（有查會員成功時，我們第 3 步會自動把它改成正確名字）
+  return ($('#line_search_name') && ($('#line_search_name').value || '').trim()) || '';
+}
   function setCartMapInfo(txt) {
     const el = $('#cartmap_info');
     if (el) el.textContent = txt || '';
@@ -269,7 +274,17 @@
   async function createCart() {
     const streamer = ($('#streamer').value||'').trim();
     const customer_type = $('#customer_type').value || 'live';
-    const res = await jfetch(API+'/cart/create', { method:'POST', body: JSON.stringify({ streamer_name: streamer||'未命名', customer_type }) });
+    const payload = {
+  streamer_name: streamer || '未命名',
+  customer_type,
+  line_user_id: getLineUserId(),
+  customer_name: getCustomerName()
+};
+
+const res = await jfetch(API+'/cart/create', {
+  method:'POST',
+  body: JSON.stringify(payload)
+});
     if(!res.ok) return alert('建立失敗：'+(res.error||''));
     setCartToken(res.cart_token);
     try { showCartHintIfExists(); } catch(e) {}
@@ -281,7 +296,13 @@
     const sku = ($('#sku').value||'').trim();
     const qty = parseInt($('#qty').value||'1',10)||1;
     const price = ($('#override_price').value||'').trim();
-    const body = { cart_token: CART, sku, qty };
+    const body = { 
+  cart_token: CART,
+  sku,
+  qty,
+  line_user_id: getLineUserId(),
+  customer_name: getCustomerName()
+};
     if(price) { body.price = parseInt(price,10)||0; body.op_key = OP; }
     const res = await jfetch(API+'/cart/add', { method:'POST', body: JSON.stringify(body) });
     if(!res.ok) return alert('加入失敗：'+(res.error||''));
@@ -401,6 +422,8 @@
 
       // 自動帶入 LineUserId
       $('#line_user_id').value = m.lineUserId || '';
+      // ✅ 把查到的名字回填，讓 createCart() 能直接拿來當 customer_name
+$('#line_search_name').value = (m.displayName || m.name || q || '').trim();
       try { showCartHintIfExists(); } catch(e) {}
 
       // 顯示一下找到的是誰
