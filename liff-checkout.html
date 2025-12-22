@@ -1106,6 +1106,7 @@ async function initLiffAndMember() {
   try {
     const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(uidForApi)}`);
     const j = await r.json();
+    console.log("member-info 回來長這樣:", j); // ✅ 放這
     if (j && j.ok) {
   j._from = 'member-info';
   MEMBER_INFO = j;
@@ -1153,7 +1154,7 @@ function applyMemberInfoToForm(info) {
   if (!info) return;
 
   const src = info.member || info.data || info;   // ✅ 兼容常見包法
-  updateCreditUIFromMember(src);
+  updateCreditUIFromMember(Object.assign({_from: info._from || 'member-info'}, src));
 
   const name      = src.name  || "";
   const phone     = src.phone || "";
@@ -1487,7 +1488,7 @@ async function loadCart(){
   try {
     const r = await fetch(`${API}/cart/${cartToken}`);
     const j = await r.json();
-    console.log("member-info 回來長這樣:", j);
+    
 
     if (!r.ok || !j || j.ok === false) {
   throw new Error(j?.error || j?.message || 'cart_api_error');
@@ -2436,16 +2437,13 @@ const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total
 
 // ===== 頁面初始化 =====
 (async () => {
+  restoreCheckoutState(); // ✅ 先還原舊狀態（避免後面被洗掉）
+
   if (window.liff) {
-    try {
-      await initLiffAndMember();
-    } catch (e) {
-      console.log('LIFF init error (ignore on web)', e);
-    }
+    try { await initLiffAndMember(); } catch (e) {}
   }
 
-  restoreCheckoutState();
-  applyDepOldHoldLimit(); // ✅ 加這行
+  applyDepOldHoldLimit();
   applyStoreFromURL();
 
   if (initialMode) {
