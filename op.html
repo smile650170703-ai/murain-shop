@@ -111,6 +111,7 @@
       <button id="btn-search-line" class="ghost">查詢會員</button>
     </div>
     <div class="muted" id="line_search_info" style="margin-top:4px"></div>
+    <div class="muted" id="cartmap_info" style="margin-top:4px"></div>
 
     <!-- 新增：貼客人的 LineUserId + 一鍵發卡片 -->
     <div class="row" style="margin-top:10px">
@@ -133,44 +134,55 @@
     </div>
     <div class="row" style="margin-top:10px">
       <button class="ghost" id="btn-clear">清空購物車（需 OP）</button>
+      </div>
       <!-- ====== 購物車管理（搜尋 / 查看 / 清除） ====== -->
-<hr style="border:none;border-top:1px dashed #e5e7eb;margin:16px 0;" />
+<section id="cartAdminBlock" style="margin-top:18px;">
+  <div style="display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap;">
 
-<h2 style="font-size:18px;margin:0 0 10px;">🧹 購物車管理（搜尋客人 → 看明細 → 清除）</h2>
-<div class="muted" style="margin:-6px 0 10px;">
-  只會清 CartItems + 標記 CartToken=expired，不會影響庫存（因為購物車本來不扣庫存）。
-</div>
+    <div style="min-width:280px; flex:0 0 320px;">
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+        <div style="flex:1;">
+          <div style="font-size:12px; opacity:.8; margin-bottom:6px;">Admin Key</div>
+          <input id="adminKey" placeholder="Admin Key" style="width:100%; padding:10px;" />
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:12px; opacity:.8; margin-bottom:6px;">OP Key（加購/移除/清空用）</div>
+          <input id="opKey" type="password" placeholder="OP Key" style="width:100%; padding:10px;" />
+        </div>
+      </div>
 
-<div class="row">
-  <div style="flex:1">
-    <label class="muted">密碼</label>
-    <input id="admin_key" class="mono" type="password" placeholder="密碼" />
-  </div>
-  <div style="flex:2">
-    <label class="muted">搜尋</label>
-    <input id="cart_admin_kw" placeholder="王小明 / Uxxxxxxxx" />
-  </div>
-  <div style="align-self:end; flex:1">
-    <button id="btn-cart-admin-search" class="ghost">搜尋購物車</button>
-  </div>
-</div>
+      <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
+        <button id="btnListOpen">搜尋未結單購物車</button>
+        <button id="btnClearCart">清空購物車（需OP）</button>
+      </div>
 
-<div class="muted" id="cart_admin_msg" style="margin-top:6px"></div>
-<div id="cart_admin_result" style="margin-top:10px"></div>
-
-<div id="cart_admin_items_box" class="hidden" style="margin-top:12px">
-  <div class="muted">目前選擇 cart_token：</div>
-  <div class="mono" id="cart_admin_token" style="margin:4px 0 8px;"></div>
-
-  <textarea id="cart_admin_items" rows="6" class="mono" readonly></textarea>
-
-  <div class="row" style="margin-top:10px">
-    <button id="btn-cart-admin-expire" style="background:#b91c1c;">清除此購物車（expired + 刪 CartItems）</button>
+      <div style="margin-top:12px; font-size:12px; opacity:.8;">未結單購物車</div>
+      <div id="openCartList" style="margin-top:8px;"></div>
     </div>
+
+    <div style="flex:1; min-width:360px;">
+      <div style="font-size:12px; opacity:.8;">目前選擇 cart_token</div>
+      <input id="selectedCartToken" readonly style="width:100%; padding:10px; margin-top:6px;" />
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;">
+        <input id="addSku" placeholder="SKU" style="width:140px; padding:10px;" />
+        <input id="addQty" type="number" value="1" min="1" placeholder="Qty" style="width:100px; padding:10px;" />
+        <input id="addPrice" type="number" placeholder="Price(可留空)" style="width:140px; padding:10px;" />
+        <button id="btnAddItem">加購</button>
+      </div>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+        <input id="rmSku" placeholder="要移除的 SKU" style="width:220px; padding:10px;" />
+        <button id="btnRemoveItem">移除</button>
+        <button id="btnReloadCart">重新載入</button>
+      </div>
+
+      <div style="margin-top:12px; font-size:12px; opacity:.8;">購物車內容</div>
+      <textarea id="cartJsonView" style="width:100%; height:220px; padding:10px; margin-top:6px;"></textarea>
+    </div>
+
   </div>
-
-</div>
-
+</section>
 <script>
 (async function () {
   const API = window.API_BASE;
@@ -467,6 +479,208 @@ function copyLineMessage() {
     return String(s||"").replace(/[&<>"']/g, (c)=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
   }
 
+  // ====== cartAdminBlock（你新 UI 那區）實作：未結單清單 / 選取 / 加購 / 移除 / 清空 / 重載 ======
+  function v(id){ const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; }
+  function setV(id, val){ const el = document.getElementById(id); if (el) el.value = val ?? ''; }
+  function showOpenCartHtml(html){ const el = document.getElementById('openCartList'); if (el) el.innerHTML = html || ''; }
+
+  function getAdminKeyUI(){ return v('adminKey'); }   // ✅ 你的 UI id 是 adminKey
+  function getOpKeyUI(){ return v('opKey') || OP || ''; } // ✅ 你的 UI id 是 opKey（也允許沿用你已登入的 OP）
+  function getSelectedCartUI(){ return v('selectedCartToken') || CART || ''; }
+
+  async function safeJsonFetch(url, opt){
+    const r = await fetch(url, opt || {});
+    const txt = await r.text();
+    let j = null;
+    try { j = JSON.parse(txt); } catch { j = { ok:false, raw:txt }; }
+    return { ok: r.ok, status: r.status, json: j };
+  }
+
+  function renderOpenCarts(carts){
+    const list = (carts || []).map(c=>{
+      const token = escHtml(c.cart_token || c.cartToken || '');
+      const name  = escHtml(c.customer_name || c.customerName || '');
+      const uid   = escHtml(c.line_user_id || c.lineUserId || '');
+      const cnt   = Number(c.item_count || c.itemCount || 0) || 0;
+      const up    = escHtml(c.updated_at || c.updatedAt || '');
+      const st    = escHtml(c.status || '');
+
+      return `
+        <div style="padding:10px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <div style="min-width:260px;">
+              <div style="font-weight:800;">
+                ${name || '(未填名字)'} <span class="muted">(${cnt} 件)</span>
+              </div>
+              <div class="muted" style="margin-top:2px;">
+                status: <b>${st || '-'}</b> ｜ updated: ${up || '-'}
+              </div>
+              <div class="muted mono" style="margin-top:6px;word-break:break-all;">
+                cart_token: ${token}<br/>
+                line_user_id: ${uid || '-'}
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:flex-start;">
+              <button class="ghost btnPickCart" data-token="${token}" style="max-width:140px;">選取</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    showOpenCartHtml(list || `<div class="muted">沒有資料</div>`);
+
+    // 綁定「選取」
+    const root = document.getElementById('openCartList');
+    if (root) {
+      root.querySelectorAll('.btnPickCart').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const token = (btn.dataset.token || '').trim();
+          if (!token) return;
+          await adminSelectCart(token);
+        });
+      });
+    }
+  }
+
+  async function adminSelectCart(token){
+    // ✅ 讓整頁都切到這台 cart（包含你上面原本的 items 清單/結帳連結）
+    setCartToken(token);
+    setV('selectedCartToken', token);
+    await adminReloadCart();
+  }
+
+  async function adminReloadCart(){
+    const token = getSelectedCartUI();
+    if (!token) return alert('請先選一台購物車');
+
+    // 用你既有 /cart/:token 直接載（不需 admin_key）
+    const { ok, json } = await safeJsonFetch(API + '/cart/' + encodeURIComponent(token), { method:'GET' });
+    if (!ok || !json || json.ok === false) {
+      console.log('reload cart fail', ok, json);
+      return alert('重新載入失敗：' + (json && (json.error || json.message) || 'unknown'));
+    }
+    setV('cartJsonView', JSON.stringify(json, null, 2));
+
+    // 順便把上面清單刷新
+    try { await refreshList(); } catch(e){}
+  }
+
+  async function adminClearCart(){
+    const token = getSelectedCartUI();
+    if (!token) return alert('請先選一台購物車');
+
+    const opk = getOpKeyUI();
+    if (!opk) return alert('請輸入 OP Key（右邊那格）');
+
+    if (!confirm('確定清空這台購物車？\n' + token)) return;
+
+    const { ok, json } = await safeJsonFetch(API + '/cart/clear', {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({ cart_token: token, op_key: opk })
+    });
+
+    if (!ok || !json || json.ok !== true) {
+      console.log('clear fail', ok, json);
+      return alert('清空失敗：' + (json && (json.error || json.message) || 'unknown'));
+    }
+
+    await adminReloadCart();
+  }
+
+  async function adminAddItem(){
+    const token = getSelectedCartUI();
+    if (!token) return alert('請先選一台購物車');
+
+    const opk = getOpKeyUI();
+    if (!opk) return alert('請輸入 OP Key（右邊那格）');
+
+    const sku = v('addSku');
+    const qty = Math.max(1, parseInt(v('addQty') || '1', 10) || 1);
+    const priceRaw = v('addPrice');
+
+    if (!sku) return alert('請填 SKU');
+
+    const body = { cart_token: token, sku, qty, op_key: opk };
+    if (priceRaw !== '') body.price = Math.max(0, parseInt(priceRaw, 10) || 0);
+
+    const { ok, json } = await safeJsonFetch(API + '/cart/add', {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify(body)
+    });
+
+    if (!ok || !json || json.ok !== true) {
+      console.log('add fail', ok, json);
+      return alert('加購失敗：' + (json && (json.error || json.message) || 'unknown'));
+    }
+
+    setV('addSku',''); // 清一下
+    await adminReloadCart();
+  }
+
+  async function adminRemoveItem(){
+    const token = getSelectedCartUI();
+    if (!token) return alert('請先選一台購物車');
+
+    const opk = getOpKeyUI();
+    if (!opk) return alert('請輸入 OP Key（右邊那格）');
+
+    const sku = v('rmSku');
+    if (!sku) return alert('請填要移除的 SKU');
+
+    const { ok, json } = await safeJsonFetch(API + '/cart/remove', {
+      method:'POST',
+      headers:{'content-type':'application/json'},
+      body: JSON.stringify({ cart_token: token, sku, op_key: opk })
+    });
+
+    if (!ok || !json || json.ok !== true) {
+      console.log('remove fail', ok, json);
+      return alert('移除失敗：' + (json && (json.error || json.message) || 'unknown'));
+    }
+
+    setV('rmSku','');
+    await adminReloadCart();
+  }
+
+  async function adminListOpenCarts(){
+    const ak = getAdminKeyUI();
+    if (!ak) return alert('請輸入 Admin Key');
+
+    // ① 先嘗試你可能已經有的 /admin/cart/open（如果後端沒做，會 404）
+    let r = await safeJsonFetch(API + '/admin/cart/open?admin_key=' + encodeURIComponent(ak), { method:'GET' });
+
+    // ② 如果沒有這支，就退而求其次：用 search（但需要 kw）
+    if (!r.ok) {
+      const kw =
+        (document.getElementById('line_user_id') && v('line_user_id')) ||
+        (document.getElementById('line_search_name') && v('line_search_name')) ||
+        '';
+
+      if (!kw) {
+        showOpenCartHtml(`<div class="muted">後端未提供「列出全部未結單」端點（/admin/cart/open）。<br/>你也沒有輸入關鍵字可用 search。</div>`);
+        return;
+      }
+
+      r = await safeJsonFetch(
+        API + '/admin/cart/search?kw=' + encodeURIComponent(kw) + '&admin_key=' + encodeURIComponent(ak),
+        { method:'GET' }
+      );
+    }
+
+    if (!r.ok || !r.json || r.json.ok !== true) {
+      console.log('list open carts fail', r);
+      showOpenCartHtml(`<div class="muted">讀取失敗：${escHtml((r.json && (r.json.error || r.json.message)) || 'unknown')}</div>`);
+      return;
+    }
+
+    // 只顯示有商品的
+    const carts = (r.json.carts || []).filter(c => (Number(c.item_count || 0) || 0) > 0);
+    renderOpenCarts(carts);
+  }
+
   function getAdminKey(){
     return ($('#admin_key') && ($('#admin_key').value || '').trim()) || '';
   }
@@ -610,13 +824,6 @@ setCartAdminMsg(`找到 ${carts.length} 台購物車（只顯示有商品）`);
     $('#override_price').value = String(Math.max(0, cur + v));
   }
 
-  // ★ 新增：載入/清除「此客人購物車」按鈕事件（你原本缺這段）
-    const btnLoadCart = $('#btn-load-cart');
-    if (btnLoadCart) btnLoadCart.addEventListener('click', loadCartForUser);
-
-    const btnClearCartMap = $('#btn-clear-cartmap');
-    if (btnClearCartMap) btnClearCartMap.addEventListener('click', clearCartForUser);
-
     // ★ 新增：手動貼上 LineUserId 時，即時提示是否有記住的購物車
     const lineUserInput = $('#line_user_id');
     if (lineUserInput) {
@@ -645,9 +852,25 @@ setCartAdminMsg(`找到 ${carts.length} 台購物車（只顯示有商品）`);
     if (btnSendLink) {
       btnSendLink.addEventListener('click', sendCheckoutLinkByLine);
     }
+     // ====== 綁定你新 UI：cartAdminBlock ======
+    const _btnListOpen = document.getElementById('btnListOpen');
+    if (_btnListOpen) _btnListOpen.addEventListener('click', adminListOpenCarts);
+
+    const _btnClearCart2 = document.getElementById('btnClearCart');
+    if (_btnClearCart2) _btnClearCart2.addEventListener('click', adminClearCart);
+
+    const _btnAddItem2 = document.getElementById('btnAddItem');
+    if (_btnAddItem2) _btnAddItem2.addEventListener('click', adminAddItem);
+
+    const _btnRemoveItem2 = document.getElementById('btnRemoveItem');
+    if (_btnRemoveItem2) _btnRemoveItem2.addEventListener('click', adminRemoveItem);
+
+    const _btnReloadCart2 = document.getElementById('btnReloadCart');
+    if (_btnReloadCart2) _btnReloadCart2.addEventListener('click', adminReloadCart);
+
 
     // ======（這裡開始貼：購物車管理 Admin 事件）======
-    const adminKeyInput = $('#admin_key');
+    const adminKeyInput = $('#adminKey');
     if (adminKeyInput) {
       // 記住 Admin Key（存在本機，不寫死在程式碼）
       const savedAk = localStorage.getItem('ADMIN_KEY') || '';
@@ -657,11 +880,6 @@ setCartAdminMsg(`找到 ${carts.length} 台購物車（只顯示有商品）`);
       });
     }
 
-    const btnCartAdminSearch = $('#btn-cart-admin-search');
-    if (btnCartAdminSearch) btnCartAdminSearch.addEventListener('click', cartAdminSearch);
-
-    const btnCartAdminExpire = $('#btn-cart-admin-expire');
-    if (btnCartAdminExpire) btnCartAdminExpire.addEventListener('click', cartAdminExpire);
     // ======（這裡結束貼上）======
    
      Object.keys(quick).forEach(sel=>{
@@ -674,5 +892,7 @@ setCartAdminMsg(`找到 ${carts.length} 台購物車（只顯示有商品）`);
   });
 })();
 </script>
+    </div> <!-- #card-list -->
+</div> <!-- .wrap -->
 </body>
 </html>
