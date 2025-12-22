@@ -1039,10 +1039,10 @@ function updateCreditUIFromMember(info){
     if (Number.isFinite(n)) { credit = Math.max(0, Math.floor(n)); break; }
   }
 
-  // ✅ 防止「晚回來的資料」把正確餘額覆蓋成 0（造成閃一下又消失）
-  if (credit === 0 && AVAILABLE_CREDIT > 0) {
-    return; // 直接跳過，不更新 UI
-  }
+  // ✅ 只防「member-info」那種缺欄位造成的 0；credit-balance 回來的 0 要能真的生效
+if (credit === 0 && AVAILABLE_CREDIT > 0 && info && info._from === 'member-info') {
+  return;
+}
 
   AVAILABLE_CREDIT = credit;
 
@@ -1099,9 +1099,10 @@ async function initLiffAndMember() {
     const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(uidForApi)}`);
     const j = await r.json();
     if (j && j.ok) {
-      MEMBER_INFO = j;
-      applyMemberInfoToForm(j); // 會順便跑一次 updateCreditUIFromMember，但有防閃保護
-    }
+  j._from = 'member-info';
+  MEMBER_INFO = j;
+  applyMemberInfoToForm(j);
+}
   } catch (e) {
     console.log('member-info error', e);
   }
@@ -1457,9 +1458,12 @@ async function loadCart(){
     const r = await fetch(`${API}/cart/${cartToken}`);
     const j = await r.json();
 
-    if (!r.ok || !j.items) {
-      throw new Error('cart_api_error');
-    }
+    if (!r.ok || !j || j.ok === false) {
+  throw new Error(j?.error || j?.message || 'cart_api_error');
+}
+if (!Array.isArray(j.items)) {
+  throw new Error('cart_items_missing');
+}
 
     const items = j.items || [];
     const total = Number(j.total_amount || 0);
