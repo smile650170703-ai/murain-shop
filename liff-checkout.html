@@ -908,6 +908,7 @@ const RATE_TABLE={3:0,6:4.0,9:5.5,12:6.5,18:9.0,24:11.5};
 /* ===== 面交（收件資料）設定 ===== */
 const MEETUP_PLACE = '台南市佳里區義民街339號';
 const MEETUP_TIME_RANGE_HINT = '週一～週五 10:00～16:00';
+   const MEETUP_WINDOW_DAYS = 7; // ✅ 只允許 7 天內
 
 function isMeetupWeekday(dateStr) {
   if (!dateStr) return false;
@@ -931,25 +932,73 @@ function getMeetupInfo(prefix) {
     alert("面交日期僅開放週一～週五，請重新選擇。");
     return null;
   }
+  // ✅ 再保險：必須在 date input 的 min/max 範圍內（7 天內）
+if (dateEl && ((dateEl.min && dateStr < dateEl.min) || (dateEl.max && dateStr > dateEl.max))) {
+  alert(`面交日期僅限 ${MEETUP_WINDOW_DAYS} 天內（不含六日），請重新選擇。`);
+  return null;
+}
   return {
     meetup_place: MEETUP_PLACE,
     meetup_time: dateStr + " " + timeStr
   };
 }
 
+function _nextWeekday(d){
+  // 0=Sun, 6=Sat
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() + 1);
+  }
+  return d;
+}
+
 function setMeetupMinDates() {
   try {
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth()+1).padStart(2,'0');
-    const dd = String(today.getDate()).padStart(2,'0');
-    const min = `${yyyy}-${mm}-${dd}`;
+    const base = new Date();
+    base.setHours(0,0,0,0);
+
+    // ✅ min：今天起算，但若今天是六日 → 跳到下個週一
+    const minD = _nextWeekday(new Date(base));
+
+    // ✅ max：min 往後 7 天（仍會用週一～週五驗證擋掉六日）
+    const maxD = new Date(minD);
+    maxD.setDate(maxD.getDate() + MEETUP_WINDOW_DAYS);
+
+    const min = ymdLocal(minD);
+    const max = ymdLocal(maxD);
+
     ["cod","paid","depnew","zc"].forEach(p => {
       const el = document.getElementById(p + "_meetup_date");
-      if (el) el.min = min;
+      if (!el) return;
+
+      el.min = min;
+      el.max = max;
+
+      // 若已選的值不合法就清掉
+      const v = (el.value || "").slice(0,10);
+      if (v && (v < min || v > max || !isMeetupWeekday(v))) {
+        el.value = "";
+      }
+
+      // ✅ 使用者改日期時，立刻擋掉六日/超出 7 天
+      el.addEventListener("change", () => {
+        const vv = (el.value || "").slice(0,10);
+        if (!vv) return;
+
+        if (vv < el.min || vv > el.max) {
+          alert(`面交日期僅限 ${MEETUP_WINDOW_DAYS} 天內（不含六日），請重新選擇。`);
+          el.value = "";
+          return;
+        }
+        if (!isMeetupWeekday(vv)) {
+          alert("面交日期僅開放週一～週五（不含六日），請重新選擇。");
+          el.value = "";
+          return;
+        }
+      });
     });
   } catch (e) {}
 }
+
 
 let CART_TOTAL_RAW = 0;   // 真實金額（數字）
  let AVAILABLE_CREDIT = 0; // 會員可用購物金
@@ -1331,6 +1380,11 @@ function applyDepOldHoldLimit(){
 
 // 頁面載入就套用一次
 applyDepOldHoldLimit();
+
+   // ✅ 使用者手動改日期時也立刻套用限制（避免選到超過 30 天）
+if (depOldHoldUntil) {
+  depOldHoldUntil.addEventListener('change', applyDepOldHoldLimit);
+}
 
 // 切換到「匯款定金」時也再套用一次
 if (depTypeRadios.length) {
@@ -2342,6 +2396,7 @@ const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total
   }
 
   restoreCheckoutState();
+  applyDepOldHoldLimit(); // ✅ 加這行
   applyStoreFromURL();
 
   if (initialMode) {
