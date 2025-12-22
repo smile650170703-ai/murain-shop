@@ -1115,24 +1115,38 @@ async function initLiffAndMember() {
     console.log('member-info error', e);
   }
 
-  // 2) ✅ 購物金餘額：改用 credit-balance（唯一真相）
-  try {
-    const r2 = await fetch(`${API}/member/credit-balance?user_id=${encodeURIComponent(uidForApi)}`);
-    const b = await r2.json();
-    if (b && b.ok) {
-      // 常見回傳：{ ok:true, balance:123 } 或 { ok:true, credit:123 }
-      const bal = Number(b.balance ?? b.credit ?? b.total ?? 0);
-      const c = Math.max(0, Math.floor(bal || 0));
+  // 2) ✅ 購物金餘額：用 credit-balance（唯一真相）
+try {
+  const b = await jfetch(`${API}/member/credit-balance?line_user_id=${encodeURIComponent(uidForApi)}`);
 
-      // 合併回 MEMBER_INFO，讓送單驗證也吃到同一份值
-      MEMBER_INFO = Object.assign({}, MEMBER_INFO || {}, { credit: c });
-
-      // 更新 UI / 全域 AVAILABLE_CREDIT
-      updateCreditUIFromMember({ credit: c, _from: "credit-balance" });
-    }
-  } catch (e) {
-    console.log('credit-balance error', e);
+  if (!b || !b.ok) {
+    console.log("credit-balance not ok", b);
+    return;
   }
+
+  // 防呆：避免回傳缺欄位時把 UI 覆蓋成 0
+  const hasAny =
+    (b.balance !== undefined) ||
+    (b.credit  !== undefined) ||
+    (b.total   !== undefined);
+
+  if (!hasAny) {
+    console.log("credit-balance missing fields, skip update", b);
+    return;
+  }
+
+  const balRaw = Number(b.balance ?? b.credit ?? b.total);
+  const c = Math.max(0, Math.floor(Number.isFinite(balRaw) ? balRaw : 0));
+
+  // 合併回 MEMBER_INFO
+  MEMBER_INFO = Object.assign({}, MEMBER_INFO || {}, { credit: c });
+
+  // 更新 UI / 全域 AVAILABLE_CREDIT
+  updateCreditUIFromMember({ credit: c, _from: "credit-balance" });
+
+} catch (e) {
+  console.log("credit-balance error", e);
+}
 }
 // ========= 會員資料 → 各付款/出貨欄位預填 =========
 function applyMemberInfoToForm(info) {
