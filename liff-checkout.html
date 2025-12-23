@@ -1851,9 +1851,12 @@ function open711(src) {
 function applyStoreFromURL(){
   const qs2 = new URLSearchParams(location.search);
   const src = (qs2.get('store_src') || '').toLowerCase();
-  const id   = qs2.get('store_id') || qs2.get('cvs_code') || qs2.get('CVSStoreID') || '';
-const name = qs2.get('store_name') || qs2.get('cvs_name') || qs2.get('CVSStoreName') || '';
-const addr = qs2.get('store_addr') || qs2.get('cvs_addr') || qs2.get('CVSAddress') || '';
+  const id =
+  qs2.get('store_id') || qs2.get('cvs_code') || qs2.get('CVSStoreID') || qs2.get('STOREID') || '';
+const name =
+  qs2.get('store_name') || qs2.get('cvs_name') || qs2.get('CVSStoreName') || qs2.get('STORENAME') || '';
+const addr =
+  qs2.get('store_addr') || qs2.get('cvs_addr') || qs2.get('CVSAddress') || qs2.get('STOREADDRESS') || '';
   if (!src || !id) return;
 
   const fill = (a,b,c)=>{ setFieldValue(a,id); setFieldValue(b,name); setFieldValue(c,addr); };
@@ -1884,7 +1887,7 @@ let maxUse;
 if (!CREDIT_READY) {
   maxUse = Math.max(0, CART_TOTAL_RAW); // 先只用「訂單金額」當上限
 } else {
-  maxUse = Math.min(AVAILABLE_CREDIT, CART_TOTAL_RAW);
+  maxUse = CREDIT_READY ? Math.min(AVAILABLE_CREDIT, CART_TOTAL_RAW) : Math.max(CART_TOTAL_RAW, 0);
 }
 if (used > maxUse) used = maxUse;
 
@@ -1892,9 +1895,8 @@ if (used > maxUse) used = maxUse;
 
   if (input) {
   // ✅ CREDIT_READY 前不要覆寫 input（避免剛 restore 的 500 被改成 0）
-  if (CREDIT_READY && input.value !== '') {
-    input.value = String(used);
-  }
+  if (input && CREDIT_READY) {
+  if (input.value !== '') input.value = String(used);
 }
 
   if (msgEl) {
@@ -2034,6 +2036,9 @@ function saveCheckoutState() {
       state[key] = el.value;
     }
   });
+
+  state.__activeTab = ([...document.querySelectorAll('#payTabs .tab')]
+  .find(t => t.classList.contains('active'))?.dataset.pay) || '';
   try {
     localStorage.setItem(CHECKOUT_STATE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -2897,11 +2902,18 @@ const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total
   applyDepOldHoldLimit();
   applyStoreFromURL();
 
-  if (initialMode) {
-    document.querySelector(`.tab[data-pay="${initialMode}"]`)?.click();
-  } else {
-    document.querySelector('.tab[data-pay="COD"]')?.click();
+  // ✅ 優先用「上次離開前的 tab」，沒有才用 URL mode
+let restoredMode = '';
+try {
+  const raw = localStorage.getItem('murain_checkout_state_v1') || '';
+  if (raw) {
+    const st = JSON.parse(raw);
+    restoredMode = String(st.__activeTab || '').toUpperCase();
   }
+} catch(e){}
+
+const modeToOpen = restoredMode || initialMode || 'COD';
+document.querySelector(`.tab[data-pay="${modeToOpen}"]`)?.click();
   function bindRadioPillFallback(){
   const pills = document.querySelectorAll('.radio-pill');
   const sync = () => {
