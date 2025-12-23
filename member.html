@@ -388,6 +388,13 @@
       zero_card_18: "零卡分 18 期",
       zero_card_24: "零卡分 24 期",
 
+      yufu_inst_3: "裕富 3 期",
+      yufu_inst_6: "裕富 6 期",
+      yufu_inst_9: "裕富 9 期",
+      yufu_inst_12: "裕富 12 期",
+      yufu_inst_24: "裕富 24 期",
+      yufu_inst_36: "裕富 36 期",
+
       atm_full: "全額匯款",
       atm_deposit: "定金匯款",
       deposit_new_full_meetup: "匯款全額 - 面交",
@@ -419,18 +426,72 @@ function isBankDepositPM(pm) {
   );
 }
 
+  function getMeetupTime(ship) {
+  return String(
+    ship?.meetup_time ||
+    ship?.meet_time ||
+    ship?.meetupTime ||
+    ship?.meetTime ||
+    ship?.meetup?.time ||
+    ""
+  ).trim();
+}
+
+function getMeetupPlace(ship) {
+  return String(
+    ship?.meetup_place ||
+    ship?.meet_place ||
+    ship?.meetupPlace ||
+    ship?.meetPlace ||
+    ship?.meetup?.place ||
+    ""
+  ).trim();
+}
+
+function isMeetupOrder(ship, paymentMethod) {
+  const methodRaw = String(ship?.method || ship?.type || ship?.ship_type || "");
+  const method = methodRaw.toLowerCase();
+  const pm = String(paymentMethod || "").toLowerCase();
+
+  const t = getMeetupTime(ship);
+  const p = getMeetupPlace(ship);
+
+  return (
+    method.includes("面交") ||
+    method.includes("meetup") ||
+    pm.includes("meetup") ||
+    !!t || !!p
+  );
+}
+
   // ✅ 會員中心：只顯示「出貨狀態」，加上「取消訂單」
 function shipBadgeText(o) {
   const ss = String(o?.ship_status || "").toLowerCase();
   const st = String(o?.status || "").toLowerCase();
   const ps = String(o?.pay_status || "").toLowerCase();
+  const pm = String(o?.payment_method || "").toLowerCase();
 
-  // 取消/失敗（你後端常見會用 cancelled 或 pay_status=failed）
+  // ✅ 裕富：先顯示審核狀態（你後端若用 pay_status 表示審核，就在這裡判斷）
+  if (pm.startsWith("yufu_")) {
+    // 常見：submitted / pending / review / applying / processing
+    if (ps.includes("submit") || ps.includes("pend") || ps.includes("review") || ps.includes("apply") || ps.includes("process")) {
+      return "裕富審核中";
+    }
+    if (ps.includes("reject") || ps.includes("deny") || ps.includes("fail")) {
+      return "裕富審核未過";
+    }
+    // 其他狀態再往下走（例如已核准）
+  }
+
+  // 取消/失敗
   if (st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel") || ps === "failed") {
     return "取消訂單";
   }
 
+  // 已出貨
   if (ss === "shipped" || st === "shipped") return "已出貨";
+
+  // 其他
   return "已確認待出貨中";
 }
 
@@ -438,13 +499,22 @@ function shipBadgeClass(o) {
   const ss = String(o?.ship_status || "").toLowerCase();
   const st = String(o?.status || "").toLowerCase();
   const ps = String(o?.pay_status || "").toLowerCase();
+  const pm = String(o?.payment_method || "").toLowerCase();
 
-  if (st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel") || ps === "failed") {
-    return "st-unpaid"; // 紅色
+  if (pm.startsWith("yufu_")) {
+    if (ps.includes("submit") || ps.includes("pend") || ps.includes("review") || ps.includes("apply") || ps.includes("process")) {
+      return "st-pending"; // 灰色
+    }
+    if (ps.includes("reject") || ps.includes("deny") || ps.includes("fail")) {
+      return "st-unpaid"; // 紅色
+    }
   }
 
-  if (ss === "shipped" || st === "shipped") return "st-paid"; // 綠色
-  return "st-pending"; // 灰色
+  if (st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel") || ps === "failed") {
+    return "st-unpaid";
+  }
+  if (ss === "shipped" || st === "shipped") return "st-paid";
+  return "st-pending";
 }
   // ✅ 依照你 API 回傳的 ship.method / ship.store_name / ship.address 來判斷
   function deliveryPlaceText(ship, receiver, paymentMethod) {
@@ -468,27 +538,17 @@ function shipBadgeClass(o) {
   }
 
   // ✅ 面交：顯示客人自己預定的時間/地點（支援 meet_* 與 meetup_*）
-const hasMeetInfo =
-  !!String(ship?.meetup_time || ship?.meet_time || ship?.meetupTime || ship?.meetTime || "").trim() ||
-  !!String(ship?.meetup_place || ship?.meet_place || ship?.meetupPlace || ship?.meetPlace || "").trim();
-
-const isMeetup =
-  method.includes("面交") || method.includes("meetup") || pm.includes("meetup") || hasMeetInfo;
+const isMeetup = isMeetupOrder(ship, paymentMethod);
 if (isMeetup) {
-  const t = String(
-    ship?.meetup_time || ship?.meet_time || ship?.meetupTime || ship?.meetTime || ""
-  ).trim();
+  const t = getMeetupTime(ship);
+  const p = getMeetupPlace(ship);
 
-  const p = String(
-    ship?.meetup_place || ship?.meet_place || ship?.meetupPlace || ship?.meetPlace || ""
-  ).trim();
-
-  // 有資料就組成：面交 2025-12-24 14:00 @ 台南市...
   if (t && p) return `面交 ${t} @ ${p}`;
   if (t)      return `面交 ${t}`;
   if (p)      return `面交 @ ${p}`;
   return "面交";
 }
+
 
   // 宅配/郵寄：地址可能在 ship 或 receiver
   if (receiver?.address) return String(receiver.address);
@@ -519,42 +579,19 @@ if (isMeetup) {
   return "尚未填寫";
 }
 
-function receiverFullText(receiver, ship, paymentMethod) {
-  const name  = String(receiver?.name  || ship?.name  || "").trim();
-  const phone = String(receiver?.phone || ship?.phone || "").trim();
-  const head  = [name, phone].filter(Boolean).join(" / ");
+const isMeetup = isMeetupOrder(ship, paymentMethod);
 
-  const pm = String(paymentMethod || "").toLowerCase();
-  const methodRaw = String(ship?.method || ship?.type || ship?.ship_type || "");
-  const method = methodRaw.toLowerCase();
+if (isMeetup) {
+  const t = getMeetupTime(ship);
+  const p = getMeetupPlace(ship);
 
-  const hasMeetInfo =
-  !!String(ship?.meetup_time || ship?.meet_time || ship?.meetupTime || ship?.meetTime || "").trim() ||
-  !!String(ship?.meetup_place || ship?.meet_place || ship?.meetupPlace || ship?.meetPlace || "").trim();
-
-const isMeetup =
-  method.includes("面交") || method.includes("meetup") || pm.includes("meetup") || hasMeetInfo;
-
-  // ✅ 面交：拆成兩行（時間/地點）
-  if (isMeetup) {
-    const t = String(
-      ship?.meetup_time || ship?.meet_time || ship?.meetupTime || ship?.meetTime || ""
-    ).trim();
-
-    const p = String(
-      ship?.meetup_place || ship?.meet_place || ship?.meetupPlace || ship?.meetPlace || ""
-    ).trim();
-
-    const lines = [];
-    if (head) lines.push(head);
-    if (t) lines.push(`面交時間：${t}`);
-    if (p) lines.push(`面交地點：${p}`);
-
-    // 都沒資料時，至少顯示「面交」
-    if (!t && !p) lines.push("面交");
-
-    return lines.join("\n");
-  }
+  const lines = [];
+  if (head) lines.push(head);
+  if (t) lines.push(`面交時間：${t}`);
+  if (p) lines.push(`面交地點：${p}`);
+  if (!t && !p) lines.push("面交");
+  return lines.join("\n");
+}
 
   // 其他配送方式照舊
   const place = deliveryPlaceText(ship || {}, receiver || {}, paymentMethod);
@@ -656,7 +693,7 @@ const receiverObj = o.receiver || {}; // 目前多半沒有，但保留擴充
 
 const pmLower = String(o.payment_method || "").toLowerCase();
 const mLower  = String(shipObj?.method || shipObj?.type || shipObj?.ship_type || "").toLowerCase();
-const isMeetup = pmLower.includes("meetup") || mLower.includes("meetup") || mLower.includes("面交");
+const isMeetup = isMeetupOrder(shipObj, o.payment_method);
 const receiverLabel = isMeetup ? "面交資訊" : "收件資料";
 
 const receiverTxt = receiverFullText(receiverObj, shipObj, o.payment_method).replace(/\n/g, "<br>");
