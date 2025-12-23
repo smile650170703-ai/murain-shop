@@ -640,11 +640,26 @@ function receiverFullText(receiver, ship, paymentMethod) {
       oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
 
       list = list.filter(o => {
-        if (initialOrderId && o.order_id === initialOrderId) return true;
-        const createdAt = o.created_at ? new Date(o.created_at) : null;
-        if (!createdAt || isNaN(createdAt.getTime())) return false;
-        return createdAt >= oneMonthAgo;
-      });
+  // 仍保留「從 Flex / URL 帶 order_id 進來」時能看到那一筆
+  if (initialOrderId && o.order_id === initialOrderId) return true;
+
+  // ✅ 新增：自動隱藏「付款失敗 / 已取消」
+  const st = String(o.status || "").toLowerCase();
+  const ps = String(o.pay_status || "").toLowerCase();
+  const ss = String(o.ship_status || "").toLowerCase();
+
+  const isCancelled =
+    st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel");
+  const isFailed =
+    ps === "failed" || ps.includes("fail");
+
+  if (isCancelled || isFailed) return false;
+
+  // 原本的：只看近一個月
+  const createdAt = o.created_at ? new Date(o.created_at) : null;
+  if (!createdAt || isNaN(createdAt.getTime())) return false;
+  return createdAt >= oneMonthAgo;
+});
     }
    else if (currentFilter === "deposit") {
   // ✅ 定金保留訂單：只看半年內（跟 history 分開）
