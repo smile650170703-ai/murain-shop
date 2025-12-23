@@ -471,18 +471,6 @@ function shipBadgeText(o) {
   const ps = String(o?.pay_status || "").toLowerCase();
   const pm = String(o?.payment_method || "").toLowerCase();
 
-  // ✅ 裕富：先顯示審核狀態（你後端若用 pay_status 表示審核，就在這裡判斷）
-  if (pm.startsWith("yufu_")) {
-    // 常見：submitted / pending / review / applying / processing
-    if (ps.includes("submit") || ps.includes("pend") || ps.includes("review") || ps.includes("apply") || ps.includes("process")) {
-      return "裕富審核中";
-    }
-    if (ps.includes("reject") || ps.includes("deny") || ps.includes("fail")) {
-      return "裕富審核未過";
-    }
-    // 其他狀態再往下走（例如已核准）
-  }
-
   // 取消/失敗
   if (st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel") || ps === "failed") {
     return "取消訂單";
@@ -491,7 +479,13 @@ function shipBadgeText(o) {
   // 已出貨
   if (ss === "shipped" || st === "shipped") return "已出貨";
 
-  // 其他
+  // ✅ 裕富：未出貨/未取消時，先用「不是已付款」來判斷是否審核中
+  if (pm.startsWith("yufu_")) {
+    const looksApproved =
+      ps.includes("paid") || ps.includes("success") || ps.includes("ok") || ps === "paid_ok";
+    if (!looksApproved) return "裕富審核中";
+  }
+
   return "已確認待出貨中";
 }
 
@@ -501,19 +495,17 @@ function shipBadgeClass(o) {
   const ps = String(o?.pay_status || "").toLowerCase();
   const pm = String(o?.payment_method || "").toLowerCase();
 
-  if (pm.startsWith("yufu_")) {
-    if (ps.includes("submit") || ps.includes("pend") || ps.includes("review") || ps.includes("apply") || ps.includes("process")) {
-      return "st-pending"; // 灰色
-    }
-    if (ps.includes("reject") || ps.includes("deny") || ps.includes("fail")) {
-      return "st-unpaid"; // 紅色
-    }
-  }
-
   if (st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel") || ps === "failed") {
     return "st-unpaid";
   }
   if (ss === "shipped" || st === "shipped") return "st-paid";
+
+  if (pm.startsWith("yufu_")) {
+    const looksApproved =
+      ps.includes("paid") || ps.includes("success") || ps.includes("ok") || ps === "paid_ok";
+    return looksApproved ? "st-pending" : "st-pending"; // 你要也可以改審核中用灰
+  }
+
   return "st-pending";
 }
   // ✅ 依照你 API 回傳的 ship.method / ship.store_name / ship.address 來判斷
@@ -579,19 +571,26 @@ if (isMeetup) {
   return "尚未填寫";
 }
 
-const isMeetup = isMeetupOrder(ship, paymentMethod);
+function receiverFullText(receiver, ship, paymentMethod) {
+  const name  = String(receiver?.name  || ship?.name  || "").trim();
+  const phone = String(receiver?.phone || ship?.phone || "").trim();
+  const head  = [name, phone].filter(Boolean).join(" / ");
 
-if (isMeetup) {
-  const t = getMeetupTime(ship);
-  const p = getMeetupPlace(ship);
+  const isMeetup = isMeetupOrder(ship, paymentMethod);
 
-  const lines = [];
-  if (head) lines.push(head);
-  if (t) lines.push(`面交時間：${t}`);
-  if (p) lines.push(`面交地點：${p}`);
-  if (!t && !p) lines.push("面交");
-  return lines.join("\n");
-}
+  // ✅ 面交：拆成兩行（時間/地點）
+  if (isMeetup) {
+    const t = getMeetupTime(ship);
+    const p = getMeetupPlace(ship);
+
+    const lines = [];
+    if (head) lines.push(head);
+    if (t) lines.push(`面交時間：${t}`);
+    if (p) lines.push(`面交地點：${p}`);
+    if (!t && !p) lines.push("面交");
+
+    return lines.join("\n");
+  }
 
   // 其他配送方式照舊
   const place = deliveryPlaceText(ship || {}, receiver || {}, paymentMethod);
@@ -704,19 +703,8 @@ const receiverTxt = receiverFullText(receiverObj, shipObj, o.payment_method).rep
         ? `<div><span class="info-label">訂金</span> NT$ ${depositAmt.toLocaleString("zh-TW")}</div>`
         : "";
 
-      const meetupTime =
-  shipObj?.meetup_time ||
-  shipObj?.meet_time ||
-  shipObj?.meetupTime ||
-  shipObj?.meetup?.time ||
-  "";
-
-const meetupPlace =
-  shipObj?.meetup_place ||
-  shipObj?.meet_place ||
-  shipObj?.meetupPlace ||
-  shipObj?.meetup?.place ||
-  "";
+      const meetupTime  = getMeetupTime(shipObj);
+const meetupPlace = getMeetupPlace(shipObj);
 
 const meetupLine = isMeetup
   ? `
