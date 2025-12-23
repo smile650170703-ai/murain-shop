@@ -87,6 +87,24 @@
       border-color: var(--gold-primary);
       color: var(--gold-primary);
     }
+    /* 取消定位按鈕（只在有 order_id 時出現） */
+.clear-focus-btn{
+  position: absolute;
+  top: 0; right: 40px;              /* 讓它在↻左邊 */
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+.clear-focus-btn:active{
+  border-color: var(--gold-primary);
+  color: var(--gold-primary);
+}
 
     /* --- 數位會員卡 (Premium Card) --- */
     .member-card {
@@ -271,6 +289,7 @@
       <div class="brand-title">XUYUAN</div>
       <div class="page-title">會員中心</div>
       <button class="refresh-btn" id="reloadBtn" title="重新整理">↻</button>
+      <button class="clear-focus-btn" id="clearFocusBtn" title="取消定位" style="display:none;">✕</button>
     </div>
 
     <!-- 2. 數位會員卡 -->
@@ -331,7 +350,7 @@
   let currentFilter = "history";
 
   const urlParams = new URLSearchParams(window.location.search || "");
-  const initialOrderId = urlParams.get("order_id") || "";
+  let focusOrderId = urlParams.get("order_id") || "";
   let hasScrolledToInitialOrder = false;
 
   // DOM Elements
@@ -344,6 +363,7 @@
   const creditsList = document.getElementById("creditsList");
   const emptyText   = document.getElementById("emptyText");
   const creditValue = document.getElementById("creditValue");
+  const clearFocusBtn = document.getElementById("clearFocusBtn");
 
   document.getElementById("reloadBtn").addEventListener("click", () => {
     if (currentUserId) {
@@ -355,7 +375,31 @@
     } else {
       initLiff();
     }
+  })
+    // ✅ 有從 LINE 帶 order_id 才顯示「取消定位」
+if (clearFocusBtn) {
+  if (focusOrderId) clearFocusBtn.style.display = "flex";
+
+  clearFocusBtn.addEventListener("click", () => {
+    // 1) 清掉特例狀態
+    focusOrderId = "";
+    hasScrolledToInitialOrder = true; // 防止又被滾動
+
+    // 2) 清掉網址上的 order_id（不重整頁面）
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.delete("order_id");
+      history.replaceState({}, "", u.toString());
+    } catch (e) {}
+
+    // 3) 立刻重畫目前頁籤
+    if (currentFilter === "credits") renderCredits();
+    else renderOrders();
+
+    // 4) 自己隱藏按鈕
+    clearFocusBtn.style.display = "none";
   });
+};
 
   /* --- 工具函式 --- */
   function formatDate(s) {
@@ -639,23 +683,20 @@ function receiverFullText(receiver, ship, paymentMethod) {
       const oneMonthAgo = new Date(now);
       oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
 
-      list = list.filter(o => {
-  // 仍保留「從 Flex / URL 帶 order_id 進來」時能看到那一筆
-  if (initialOrderId && o.order_id === initialOrderId) return true;
+  list = list.filter(o => {
+  // ✅ 特例：從 LINE 帶 order_id 進來，永遠保留那筆
+  if (focusOrderId && o.order_id === focusOrderId) return true;
 
-  // ✅ 新增：自動隱藏「付款失敗 / 已取消」
+  // ✅ 隱藏：付款失敗 / 已取消
   const st = String(o.status || "").toLowerCase();
   const ps = String(o.pay_status || "").toLowerCase();
   const ss = String(o.ship_status || "").toLowerCase();
+  const isBad =
+    st.includes("cancel") || ss.includes("cancel") ||
+    ps.includes("cancel") || ps === "failed" || ps.includes("failed");
+  if (isBad) return false;
 
-  const isCancelled =
-    st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel");
-  const isFailed =
-    ps === "failed" || ps.includes("fail");
-
-  if (isCancelled || isFailed) return false;
-
-  // 原本的：只看近一個月
+  // ✅ 只留近 1 個月
   const createdAt = o.created_at ? new Date(o.created_at) : null;
   if (!createdAt || isNaN(createdAt.getTime())) return false;
   return createdAt >= oneMonthAgo;
@@ -669,7 +710,7 @@ function receiverFullText(receiver, ship, paymentMethod) {
 
   list = list.filter(o => {
     // 仍保留「從 Flex 帶 order_id 進來」時能看到那一筆
-    if (initialOrderId && o.order_id === initialOrderId) return true;
+    if (focusOrderId && o.order_id === focusOrderId) return true;
 
     // 半年內
     const createdAt = o.created_at ? new Date(o.created_at) : null;
@@ -708,7 +749,7 @@ const isDeposit = isBankDepositPM(pm);
       const wrap = document.createElement("div");
       wrap.className = "order-card";
 
-      if (initialOrderId && o.order_id === initialOrderId) {
+      if (focusOrderId && o.order_id === focusOrderId) {
         wrap.classList.add("highlight");
         if (!hasScrolledToInitialOrder) {
           hasScrolledToInitialOrder = true;
