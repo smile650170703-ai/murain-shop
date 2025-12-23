@@ -1880,24 +1880,23 @@ function updateCreditAndTotal() {
   if (input && input.value !== '') {
     used = Math.floor(Number(input.value) || 0);
   }
-  if (used < 0) used = 0;
+  if (!Number.isFinite(used) || used < 0) used = 0;
 
   // ✅ 餘額尚未載入完成時：先不要用 AVAILABLE_CREDIT 夾掉使用額，避免 500 被洗成 0
-let maxUse;
-if (!CREDIT_READY) {
-  maxUse = Math.max(0, CART_TOTAL_RAW); // 先只用「訂單金額」當上限
-} else {
-  maxUse = CREDIT_READY ? Math.min(AVAILABLE_CREDIT, CART_TOTAL_RAW) : Math.max(CART_TOTAL_RAW, 0);
-}
-if (used > maxUse) used = maxUse;
+  let maxUse;
+  if (!CREDIT_READY) {
+    maxUse = Math.max(0, CART_TOTAL_RAW);
+  } else {
+    maxUse = Math.min(Math.max(0, AVAILABLE_CREDIT), Math.max(0, CART_TOTAL_RAW));
+  }
+  if (used > maxUse) used = maxUse;
 
   CREDIT_USED = used;
 
-  if (input) {
   // ✅ CREDIT_READY 前不要覆寫 input（避免剛 restore 的 500 被改成 0）
   if (input && CREDIT_READY) {
-  if (input.value !== '') input.value = String(used);
-}
+    if (input.value !== '') input.value = String(used);
+  }
 
   if (msgEl) {
     if (CART_TOTAL_RAW <= 0) {
@@ -1911,8 +1910,9 @@ if (used > maxUse) used = maxUse;
     }
   }
 
-  const pay = Math.max(CART_TOTAL_RAW - CREDIT_USED, 0);
+  const pay = Math.max((CART_TOTAL_RAW || 0) - (CREDIT_USED || 0), 0);
   if (after) after.value = money(pay);
+
   try { calcZC(); } catch (e) {}
   try { calcYUFU(); } catch (e) {}
 }
