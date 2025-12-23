@@ -456,12 +456,32 @@ function isMeetupOrder(ship, paymentMethod) {
   const t = getMeetupTime(ship);
   const p = getMeetupPlace(ship);
 
-  return (
+  // ① 明確面交關鍵字 / 已有面交時間地點
+  if (
     method.includes("面交") ||
     method.includes("meetup") ||
     pm.includes("meetup") ||
     !!t || !!p
-  );
+  ) return true;
+
+  // ② ✅ 線上支付但看起來像面交：只有聯絡人，沒有地址/門市/物流方式
+  const hasTarget =
+    !!ship?.address || !!ship?.addr ||
+    !!ship?.store_id || !!ship?.store_name || !!ship?.store_address ||
+    method.length > 0;
+
+  const hasContact = !!String(ship?.name || "").trim() || !!String(ship?.phone || "").trim();
+
+  const looksOnlinePay =
+    pm.startsWith("paid_") ||
+    pm.startsWith("zero_card_") ||
+    pm.startsWith("yufu_") ||        // ✅ 裕富也算線上
+    pm.includes("linepay") ||
+    pm === "atm_full";
+
+  if (!hasTarget && hasContact && looksOnlinePay) return true;
+
+  return false;
 }
 
   // ✅ 會員中心：只顯示「出貨狀態」，加上「取消訂單」
