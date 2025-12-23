@@ -1274,6 +1274,7 @@ function setMeetupMinDates() {
 let CART_TOTAL_RAW = 0;   // 真實金額（數字）
  let AVAILABLE_CREDIT = 0; // 會員可用購物金
 let CREDIT_USED = 0;      // 本次實際有折抵的購物金
+   let CREDIT_READY = false; // ✅ 購物金餘額是否已載入完成
 
 // ===== LIFF 設定 =====
 const LIFF_ID = "2008430261-KLwoQjm4";
@@ -1393,6 +1394,8 @@ try {
 
   // 更新 UI / 全域 AVAILABLE_CREDIT
   updateCreditUIFromMember({ credit: c, _from: "credit-balance" });
+  CREDIT_READY = true;
+updateCreditAndTotal(); // ✅ 讓 500 在「餘額已知」後再重新計算一次
 
 } catch (e) {
   console.log("credit-balance error", e);
@@ -1474,28 +1477,31 @@ function applyMemberInfoToForm(info) {
   ].forEach(sel => fillIfEmpty(sel, email));
 
   [
-    '#cod_store_id',
-    '#ship_store_id_paid',
-    '#dep_old_store_id',
-    '#dep_new_full_store_id',
-    '#ship_store_id_zc'
-  ].forEach(sel => fillIfEmpty(sel, storeId));
+  '#cod_store_id',
+  '#ship_store_id_paid',
+  '#dep_old_store_id',
+  '#dep_new_full_store_id',
+  '#ship_store_id_zc',
+  '#ship_store_id_yufu' // ✅ 裕富
+].forEach(sel => fillIfEmpty(sel, storeId));
 
   [
-    '#cod_store_name',
-    '#ship_store_name_paid',
-    '#dep_old_store_name',
-    '#dep_new_full_store_name',
-    '#ship_store_name_zc'
-  ].forEach(sel => fillIfEmpty(sel, storeName));
+  '#cod_store_name',
+  '#ship_store_name_paid',
+  '#dep_old_store_name',
+  '#dep_new_full_store_name',
+  '#ship_store_name_zc',
+  '#ship_store_name_yufu' // ✅ 裕富
+].forEach(sel => fillIfEmpty(sel, storeName));
 
   [
-    '#cod_store_addr',
-    '#ship_store_addr_paid',
-    '#dep_old_store_addr',
-    '#dep_new_full_store_addr',
-    '#ship_store_addr_zc'
-  ].forEach(sel => fillIfEmpty(sel, storeAddr));
+  '#cod_store_addr',
+  '#ship_store_addr_paid',
+  '#dep_old_store_addr',
+  '#dep_new_full_store_addr',
+  '#ship_store_addr_zc',
+  '#ship_store_addr_yufu' // ✅ 裕富
+].forEach(sel => fillIfEmpty(sel, storeAddr));
 
   [
     '#paid_post_zip',
@@ -1873,16 +1879,23 @@ function updateCreditAndTotal() {
   }
   if (used < 0) used = 0;
 
-  const maxUse = Math.min(AVAILABLE_CREDIT, CART_TOTAL_RAW);
-  if (used > maxUse) used = maxUse;
+  // ✅ 餘額尚未載入完成時：先不要用 AVAILABLE_CREDIT 夾掉使用額，避免 500 被洗成 0
+let maxUse;
+if (!CREDIT_READY) {
+  maxUse = Math.max(0, CART_TOTAL_RAW); // 先只用「訂單金額」當上限
+} else {
+  maxUse = Math.min(AVAILABLE_CREDIT, CART_TOTAL_RAW);
+}
+if (used > maxUse) used = maxUse;
 
   CREDIT_USED = used;
 
   if (input) {
-    if (input.value !== '') {
-      input.value = String(used);
-    }
+  // ✅ CREDIT_READY 前不要覆寫 input（避免剛 restore 的 500 被改成 0）
+  if (CREDIT_READY && input.value !== '') {
+    input.value = String(used);
   }
+}
 
   if (msgEl) {
     if (CART_TOTAL_RAW <= 0) {
