@@ -1953,7 +1953,12 @@ function open711(src) {
 }
 function applyStoreFromURL(){
   const qs2 = new URLSearchParams(location.search);
-  const src = (qs2.get('store_src') || '').toLowerCase();
+  let src = (qs2.get('store_src') || '').toLowerCase();
+
+  // ✅ 若後端沒保留 store_src，就用 sessionStorage 的備援
+  if (!src) {
+    try { src = (sessionStorage.getItem('murain_store_src') || '').toLowerCase(); } catch(e){}
+  }
   const id =
   qs2.get('store_id') || qs2.get('cvs_code') || qs2.get('CVSStoreID') || qs2.get('STOREID') || '';
 const name =
@@ -2111,7 +2116,13 @@ function normalizeStorePayload(ev){
 window.addEventListener('message', (ev)=>{
   const p = normalizeStorePayload(ev);
   if (!p || !p.ok) return;
-  const src = (p.src || '').toLowerCase();
+   let src = (p.src || '').toLowerCase();
+
+  // ✅ 若這次其實是 yufu 開的地圖，但回來的 src 變 paid → 轉回 yufu
+  try {
+    const real = (sessionStorage.getItem('murain_store_src') || '').toLowerCase();
+    if (real === 'yufu' && src === 'paid') src = 'yufu';
+  } catch(e){}
   const fill = (a,b,c)=>{ setFieldValue(a, p.id); setFieldValue(b, p.name); setFieldValue(c, p.addr); };
   switch (src) {
     case 'cod':        fill('#cod_store_id', '#cod_store_name', '#cod_store_addr'); break;
