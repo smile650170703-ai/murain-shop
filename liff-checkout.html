@@ -154,22 +154,38 @@
 
     textarea { min-height: 80px; resize: vertical; line-height: 1.6; }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    /* 三欄用（例如裕富 7-11 那排：收件人/電話/Email） */
+.row3 { 
+  display: grid; 
+  grid-template-columns: repeat(3, 1fr); 
+  gap: 16px; 
+}
+
+/* 手機時自動變單欄 */
+@media (max-width: 520px){
+  .row3 { grid-template-columns: 1fr; }
+}
 
     /* ========================================= */
     /* === 核心修改：改為 Grid 網格狀付款選單 === */
     /* ========================================= */
     .tabs {
-      display: grid;
-      /* 手機上預設 3 列 (類似九宮格/計算機) */
-      grid-template-columns: repeat(3, 1fr); 
-      gap: 12px;
-      margin-bottom: 32px;
-      
-      /* 移除舊有的底部線條與捲動 */
-      border-bottom: none;
-      padding-bottom: 0;
-      overflow: visible;
-    }
+  display: grid;
+  /* 手機上預設 3 列 (類似九宮格/計算機) */
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 32px;
+
+  /* 移除舊有的底部線條與捲動 */
+  border-bottom: none;
+  padding-bottom: 0;
+  overflow: visible;
+}
+
+/* 當螢幕非常小 (iPhone SE 等) 時，改為 2 列以防文字擠壓 */
+@media (max-width: 360px) {
+  .tabs { grid-template-columns: repeat(2, 1fr); }
+}
 
     .tab {
       /* 按鈕本體 */
@@ -597,6 +613,11 @@
         <input id="cod_store_addr" required />
         <button class="btn-secondary" id="mapCOD">開啟 7-11 地圖</button>
       </div>
+      <!-- ✅ 只給 7-11 貨到付款看的同意勾 -->
+<label class="agree" id="cod711AgreeWrap" style="display:none;">
+  <input id="cod711_agree" type="checkbox" />
+  我已閱讀並同意：7-11 貨到付款請務必取貨，若棄標/拒收可能限制後續下單或貨到付款權限。
+</label>
       <div id="codMeetHint" class="hint" hidden style="margin-top:10px; color:#666;">* 現場核對資料，請攜帶手機。</div>
 
       <div class="meetup-box" id="cod_meetup_box" hidden>
@@ -1017,7 +1038,7 @@
   <!-- 7-11 -->
   <div id="yufuShip711" class="box" style="display:none;">
     <div class="warning-text">0元包裹需填寫真實姓名。</div>
-    <div class="row">
+    <div class="row3">
       <div class="field">
         <label>收件人</label>
         <input id="ship_name_yufu" type="text" placeholder="收件人姓名" />
@@ -1364,12 +1385,11 @@ let MEMBER_INFO  = null;
 function updateCreditUIFromMember(info){
   // 兼容不同欄位名：credit / balance / member.credit...
   const candidates = [
-    info?.credit,
-    info?.balance,
-    info?.member?.credit,
-    info?.member?.balance,
-    info?.total
-  ];
+  info?.credit,
+  info?.balance,
+  info?.member?.credit,
+  info?.member?.balance
+];
 
   let credit = 0;
   for (const v of candidates) {
@@ -1584,17 +1604,21 @@ function applyMemberInfoToForm(info) {
 
   [
     '#paid_post_zip',
-    '#dep_old_post_zip',
-    '#dep_new_full_post_zip',
-    '#zc_post_zip'
-  ].forEach(sel => fillIfEmpty(sel, shipZip));
+  '#dep_old_post_zip',
+  '#dep_new_full_post_zip',
+  '#zc_post_zip',
+  '#yufu_post_zip',
+  '#yufu_paper_zip'
+].forEach(sel => fillIfEmpty(sel, shipZip));
 
   [
     '#paid_post_addr',
-    '#dep_old_post_addr',
-    '#dep_new_full_post_addr',
-    '#zc_post_addr'
-  ].forEach(sel => fillIfEmpty(sel, shipAddr));
+  '#dep_old_post_addr',
+  '#dep_new_full_post_addr',
+  '#zc_post_addr',
+  '#yufu_post_addr',
+  '#yufu_paper_addr'
+].forEach(sel => fillIfEmpty(sel, shipAddr));
 }
 
 /* ===== 工具 ===== */
@@ -3040,6 +3064,7 @@ document.querySelector(`.tab[data-pay="${modeToOpen}"]`)?.click();
   updatePaidChannelBox();
   updatePaidShip();
   refreshDepType();
+  bindRadioPillFallback();
     setMeetupMinDates();
 
   updateZcShip();
@@ -3080,6 +3105,56 @@ window.addEventListener('pageshow', function () {
 
 // 你原本如果有 init，就在 init 最後呼叫；沒有就直接呼叫
 setupYufuPhoneOwner();
+
+   // ✅ 7-11 貨到付款：需要勾選同意才可送出
+(function setupCOD711AgreeGuard(){
+  const wrap  = document.getElementById("cod711AgreeWrap");
+  const agree = document.getElementById("cod711_agree");
+  const btn   = document.getElementById("submitBtn");
+
+  if (!wrap || !agree || !btn) return;
+
+  function getCodType(){
+    const r = document.querySelector('input[name="codType"]:checked');
+    return r ? r.value : "";
+  }
+
+  function isPaneCODActive(){
+    const pane = document.getElementById("paneCOD");
+    // paneCOD 只要不是 hidden 就視為正在 COD 分頁
+    return pane && !pane.hidden;
+  }
+
+  function refresh(){
+    const cod711 = isPaneCODActive() && getCodType() === "711";
+    wrap.style.display = cod711 ? "" : "none";
+    if (!cod711) agree.checked = false; // 切走就清掉
+  }
+
+  // 付款選項變動就更新顯示
+  document.addEventListener("change", (e) => {
+    if (e.target && (e.target.name === "codType")) refresh();
+  });
+
+  // 若你切 tab 是用按鈕控制 hidden，這裡用 click 也補抓一次
+  document.addEventListener("click", (e) => {
+    if (e.target && e.target.closest && e.target.closest("#payTabs")) refresh();
+  });
+
+  // 🔒 送出前強制檢查（用 capture 先攔截，避免你原本 handler 先跑）
+  btn.addEventListener("click", (e) => {
+    refresh();
+    const need = isPaneCODActive() && getCodType() === "711";
+    if (need && !agree.checked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      alert("請先勾選同意：7-11 貨到付款取貨提醒，才能送出訂單。");
+      return;
+    }
+  }, true);
+
+  refresh();
+})();
 </script>
 </body>
 </html>
