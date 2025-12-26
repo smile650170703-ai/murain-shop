@@ -700,28 +700,37 @@ function isMeetupOrder(ship, paymentMethod) {
   return false;
 }
 
-  // ✅ 會員中心：只顯示「出貨狀態」，加上「取消訂單」
+  // ✅ 會員中心：狀態徽章（出貨 + 付款）
 function shipBadgeText(o) {
   const ss = String(o?.ship_status || "").toLowerCase();
   const st = String(o?.status || "").toLowerCase();
   const ps = String(o?.pay_status || "").toLowerCase();
   const pm = String(o?.payment_method || "").toLowerCase();
 
-  // 取消/失敗
-  if (st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel") || ps === "failed") {
+  // 1) 取消/失敗（最高優先）
+  if (st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel")) {
     return "取消訂單";
   }
-
-  // 已出貨
-  if (ss === "shipped" || st === "shipped") return "已出貨";
-
-  // ✅ 裕富：未出貨/未取消時，先用「不是已付款」來判斷是否審核中
-  if (pm.startsWith("yufu_")) {
-    const looksApproved =
-      ps.includes("paid") || ps.includes("success") || ps.includes("ok") || ps === "paid_ok";
-    if (!looksApproved) return "裕富審核中";
+  if (ps === "failed" || ps.includes("failed")) {
+    return "付款失敗";
   }
 
+  // 2) 已出貨（最高優先）
+  if (ss === "shipped" || st === "shipped") return "已出貨";
+
+  // 3) ✅ 7-11 貨到付款：不看 pay_status，固定顯示「已確認待出貨中」
+  if (pm === "cod_711") return "已確認待出貨中";
+
+  // 4) 裕富：paid_ok 才算通過，否則審核中
+  if (pm.startsWith("yufu_")) {
+    return ps === "paid_ok" ? "已付款待出貨中" : "裕富審核中";
+  }
+
+  // 5) 其他付款狀態：依 pay_status 正常判定
+  if (ps === "paid_ok") return "已付款待出貨中";
+  if (ps === "pending") return "待付款 / 待確認";
+
+  // 6) 沒帶 pay_status 的保底（避免空白）
   return "已確認待出貨中";
 }
 
@@ -731,16 +740,19 @@ function shipBadgeClass(o) {
   const ps = String(o?.pay_status || "").toLowerCase();
   const pm = String(o?.payment_method || "").toLowerCase();
 
-  if (st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel") || ps === "failed") {
+  // 1) 取消/失敗 → 紅
+  if (st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel") || ps === "failed" || ps.includes("failed")) {
     return "st-unpaid";
   }
+
+  // 2) 已出貨 → 綠
   if (ss === "shipped" || st === "shipped") return "st-paid";
 
-  if (pm.startsWith("yufu_")) {
-    const looksApproved =
-      ps.includes("paid") || ps.includes("success") || ps.includes("ok") || ps === "paid_ok";
-    return looksApproved ? "st-pending" : "st-pending"; // 你要也可以改審核中用灰
-  }
+  // 3) ✅ 7-11 貨到付款：固定灰（待出貨）
+  if (pm === "cod_711") return "st-pending";
+
+  // 4) 已付款 → 綠；其餘 pending/審核 → 灰
+  if (ps === "paid_ok") return "st-paid";
 
   return "st-pending";
 }
