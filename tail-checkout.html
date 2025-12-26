@@ -259,6 +259,7 @@
       <div style="font-size:10px;color:#666;">( 總金額 - 已付訂金 )</div>
     </div>
     <div id="tailAmountView" class="money-big">NT$ 0</div>
+    <div id="tailBreakdown" style="font-size:11px;color:#666;text-align:right;margin-top:6px;"></div>
   </div>
 
   <!-- ✅ 3-1. 購物金折抵（共用，不影響任何付款流程） -->
@@ -353,6 +354,52 @@
 
   let creditBalance = 0;
 
+  function getTailAmount(){
+  return Math.max(0, Math.round(Number(tailInfo?.tail_amount || 0) || 0));
+}
+
+function getCreditUsedInput(){
+  const cuEl = document.getElementById("creditUsed");
+  return cuEl ? Math.floor(Math.max(0, Number(cuEl.value || 0) || 0)) : 0;
+}
+
+// ✅ 同步：依付款方式限制可折抵上限（線上付款要至少付 1 元）
+function calcCreditMaxByPay(tailAmount){
+  // COD / ATM：可折到 0
+  if (activePay !== "PAID") return Math.min(creditBalance, tailAmount);
+
+  // 線上付款：至少要付 1 元（尾款 > 0 才需要）
+  if (tailAmount <= 0) return 0;
+  return Math.min(creditBalance, Math.max(0, tailAmount - 1));
+}
+
+function updateTailAmountUI(){
+  const tailAmount = getTailAmount();
+  const cuEl = document.getElementById("creditUsed");
+
+  // 依付款方式更新 max 並 clamp
+  const maxCredit = calcCreditMaxByPay(tailAmount);
+  if (cuEl){
+    cuEl.max = String(maxCredit);
+    let v = getCreditUsedInput();
+    if (v > maxCredit){
+      v = maxCredit;
+      cuEl.value = String(v);
+    }
+  }
+
+  const creditUsed = getCreditUsedInput();
+  const payable = Math.max(0, tailAmount - creditUsed);
+
+  // ✅ 大字：顯示折抵後需支付
+  const big = document.getElementById("tailAmountView");
+  if (big) big.textContent = money(payable);
+
+  // ✅ 小字：顯示原尾款/折抵
+  const bd = document.getElementById("tailBreakdown");
+  if (bd) bd.textContent = `原尾款 ${money(tailAmount)}｜本次折抵 ${money(creditUsed)}`;
+}
+
 function extractLineUserIdFromShipping(si){
   try{
     const shipInfo = (typeof si === "string") ? JSON.parse(si) : (si || {});
@@ -382,12 +429,8 @@ function applyCreditUI(balance, tailAmount){
   const t = document.getElementById("creditAvailText");
   if(t) t.textContent = `可用餘額：${money(creditBalance)}`;
 
-  const cuEl = document.getElementById("creditUsed");
-  if(cuEl){
-    const max = Math.max(0, Math.min(creditBalance, Math.round(Number(tailAmount) || 0)));
-    cuEl.max = String(max);
-    if (Number(cuEl.value || 0) > max) cuEl.value = String(max);
-  }
+  // ✅ max / clamp 交給 updateTailAmountUI()（它會依 activePay 做正確規則）
+  updateTailAmountUI();
 }
 
   function initTabs(){
@@ -399,6 +442,7 @@ function applyCreditUI(balance, tailAmount){
         activePay = tab.dataset.pay;
         document.querySelectorAll(".pay-pane").forEach(p=>p.classList.remove("active"));
         $("#pane"+activePay).classList.add("active");
+        updateTailAmountUI();
       });
     });
 
@@ -427,11 +471,8 @@ function applyCreditUI(balance, tailAmount){
       $("#fieldTotal").value   = money(j.total_amount || 0);
       $("#fieldDeposit").value = money(j.deposit_amount || 0);
       $("#tailAmountView").textContent = money(j.tail_amount || 0);
+      updateTailAmountUI();
       
-      // ✅（可選但安全）限制購物金輸入不超過尾款
-      const cuEl = document.getElementById("creditUsed");
-      if (cuEl) cuEl.max = String(Math.max(0, Math.round(Number(j.tail_amount||0)||0)));
-
       // ✅ shipping_info 可能是 object 或 JSON 字串：統一轉成物件
 let shipInfoObj = {};
 try {
@@ -498,11 +539,12 @@ const store = ship.store || {};
     ).trim();
   }catch(e){ line_user_id = ""; }
 
-  // ✅ 線上支付：必須至少付 1 元（避免 0 元金流）
-  // （COD/ATM 你要允許全折抵也可以；這裡只擋線上金流）
-  const willPayOnline = (activePay === "PAID");
-  if (willPayOnline && tailAmount > 0 && credit_used >= tailAmount) {
-    return alert("線上支付需至少支付 1 元（購物金折抵不能 >= 尾款金額）");
+    const payable = Math.max(0, tailAmount - credit_used);
+    payload.pay_amount = payable; // 給後端金流用
+
+  // ✅ 線上付款：折抵後一定要 >= 1 元（避免 0 元也去走金流）
+  if (activePay === "PAID" && payable < 1) {
+    return alert("線上付款需至少支付 1 元（折抵後需支付金額不能為 0）");
   }
 
   let payment_method = "";
@@ -533,15 +575,14 @@ const store = ship.store || {};
 
     const payload = {
       parent_order_id: tailInfo.parent_order_id,
-      items_json,
-      tail_amount: tailAmount,
-      payment_method,
-      shipping_info: tailInfo.shipping_info || {},
-
-      // ✅ 新增：尾款折抵購物金
-      credit_used,
-      line_user_id
-    };
+  items_json,
+  tail_amount: tailAmount,      // 原尾款（給你紀錄用）
+  pay_amount: payable,          // ✅ 建議：實際需支付（給金流用）
+  payment_method,
+  shipping_info: tailInfo.shipping_info || {},
+  credit_used,
+  line_user_id
+};
     if(extra.atm_last5) payload.atm_last5 = extra.atm_last5;
 
     const r = await fetch(`${API}/tail/checkout`, {
@@ -589,6 +630,9 @@ const store = ship.store || {};
   document.addEventListener("DOMContentLoaded", ()=>{
     initTabs();
     loadTailInfo();
+    // ✅ 任何時候改購物金，都同步更新尾款顯示
+  document.getElementById("creditUsed")?.addEventListener("input", updateTailAmountUI);
+document.getElementById("creditUsed")?.addEventListener("change", updateTailAmountUI);
     $("#submitBtn").addEventListener("click", submitTail);
     
     const btnCopy = $("#btnCopyAtm");
