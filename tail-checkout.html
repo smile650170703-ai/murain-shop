@@ -271,7 +271,7 @@
     <label>本次折抵金額</label>
     <input id="creditUsed" type="number" min="0" step="1" value="0" inputmode="numeric" placeholder="0" />
     <div class="hint" id="creditAvailText">可用餘額：讀取中...</div>
-    <div class="hint">* 線上付款 / 無卡分期 需至少支付 1 元（折抵不可 ≥ 尾款）。</div>
+    <div class="hint">* 線上付款需至少支付 1 元（折抵不可 ≥ 尾款）。</div>
   </div>
 
   <!-- 4. 付款方式 -->
@@ -322,10 +322,16 @@
           <button type="button" class="btn-secondary btn-sm" id="btnCopyAtm">複製</button>
         </div>
       </div>
-      
+
       <label>您的帳號後五碼 *</label>
       <input id="atmLast5" type="text" maxlength="5" inputmode="numeric" placeholder="12345" />
-    </div>
+    </div> <!-- /paneATM -->
+
+  </div> <!-- /付款方式 card -->
+
+  <button id="submitBtn" class="btn-primary">送出尾款結帳</button>
+  <div class="muted">如有問題請聯繫客服</div>
+</div> <!-- /wrap -->
 
 <script>
 (function(){
@@ -426,20 +432,29 @@ function applyCreditUI(balance, tailAmount){
       const cuEl = document.getElementById("creditUsed");
       if (cuEl) cuEl.max = String(Math.max(0, Math.round(Number(j.tail_amount||0)||0)));
 
-      // ✅ 讀取並顯示可用購物金
-const uid = extractLineUserIdFromShipping(j.shipping_info);
+      // ✅ shipping_info 可能是 object 或 JSON 字串：統一轉成物件
+let shipInfoObj = {};
+try {
+  shipInfoObj = (typeof j.shipping_info === "string") ? JSON.parse(j.shipping_info) : (j.shipping_info || {});
+} catch(e) {
+  shipInfoObj = {};
+}
+
+// ✅ 讀取並顯示可用購物金（用 shipInfoObj，不要 parse 兩次）
+const uid = extractLineUserIdFromShipping(shipInfoObj);
 if (uid) {
   const bal = await fetchCreditBalance(uid);
   applyCreditUI(bal, j.tail_amount || 0);
 } else {
   applyCreditUI(0, j.tail_amount || 0);
 }
-      
-      $("#fieldHoldUntil").value = (j.shipping_info && j.shipping_info.hold_until) || (j.hold_until || "");
-      $("#fieldItems").value = j.items_text || "";
 
-      const ship = (j.shipping_info && j.shipping_info.ship) || {};
-      const store = ship.store || {};
+// 保留期限（你可能放在 shipping_info.hold_until 或 j.hold_until）
+$("#fieldHoldUntil").value = shipInfoObj.hold_until || j.hold_until || "";
+
+// 收件資訊
+const ship = shipInfoObj.ship || {};
+const store = ship.store || {};
       
       if($("#shipName")) $("#shipName").textContent = ship.name ? `姓名: ${ship.name}` : "";
       if($("#shipPhone")) $("#shipPhone").textContent = ship.phone ? `電話: ${ship.phone}` : "";
@@ -559,18 +574,6 @@ if (uid) {
       });
       document.body.appendChild(f);
       f.submit();
-      return;
-    }
-
-    if(payment_method.startsWith("zero_card_")){
-      const zr = await fetch(`${API}/zero-card/start`, {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ order_id: newOrderId })
-      });
-      const zj = await zr.json();
-      if(!zj.ok) throw new Error(zj.error);
-      location.href = zj.payment_url;
       return;
     }
 
