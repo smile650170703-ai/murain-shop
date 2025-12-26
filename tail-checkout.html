@@ -270,6 +270,7 @@
 
     <label>本次折抵金額</label>
     <input id="creditUsed" type="number" min="0" step="1" value="0" inputmode="numeric" placeholder="0" />
+    <div class="hint" id="creditAvailText">可用餘額：讀取中...</div>
     <div class="hint">* 線上付款 / 無卡分期 需至少支付 1 元（折抵不可 ≥ 尾款）。</div>
   </div>
 
@@ -281,7 +282,6 @@
       <button type="button" class="pill active" data-pay="COD">7-11 貨到付款</button>
       <button type="button" class="pill" data-pay="PAID">線上付款<span class="small">Card / LINE Pay</span></button>
       <button type="button" class="pill" data-pay="ATM">ATM 匯款</button>
-      <button type="button" class="pill" data-pay="ZEROCARD">無卡分期</button>
     </div>
 
     <!-- COD -->
@@ -327,26 +327,6 @@
       <input id="atmLast5" type="text" maxlength="5" inputmode="numeric" placeholder="12345" />
     </div>
 
-    <!-- ZEROCARD -->
-    <div class="pay-pane" id="paneZEROCARD">
-      <label>分期期數</label>
-      <select id="zcMonths">
-        <option value="3">3 期 (0 利率)</option>
-        <option value="6">6 期</option>
-        <option value="9">9 期</option>
-        <option value="12">12 期</option>
-        <option value="18">18 期</option>
-        <option value="24">24 期</option>
-      </select>
-      <div class="hint">* 實際每期金額以中租審核為準。</div>
-    </div>
-
-    <button id="submitBtn" class="btn-primary">確認送出尾款</button>
-    <div class="muted">安全加密結帳系統</div>
-  </div>
-
-</div>
-
 <script>
 (function(){
   const API = window.API_BASE || "https://api.murain.tw";
@@ -364,6 +344,45 @@
   }
 
   function money(n){ return "NT$ " + (Number(n)||0).toLocaleString("zh-TW"); }
+
+  let creditBalance = 0;
+
+function extractLineUserIdFromShipping(si){
+  try{
+    const shipInfo = (typeof si === "string") ? JSON.parse(si) : (si || {});
+    const line = shipInfo.line || shipInfo.line_profile || {};
+    return String(
+      line.user_id || line.userId || line.LINE_USER_ID || shipInfo.line_user_id || ""
+    ).trim();
+  }catch(e){
+    return "";
+  }
+}
+
+async function fetchCreditBalance(lineUserId){
+  try{
+    const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(lineUserId)}`);
+    const j = await r.json();
+    if(r.ok && j && j.ok){
+      return Number(j.credit || 0) || 0;
+    }
+  }catch(e){}
+  return 0;
+}
+
+function applyCreditUI(balance, tailAmount){
+  creditBalance = Math.max(0, Math.round(Number(balance) || 0));
+
+  const t = document.getElementById("creditAvailText");
+  if(t) t.textContent = `可用餘額：${money(creditBalance)}`;
+
+  const cuEl = document.getElementById("creditUsed");
+  if(cuEl){
+    const max = Math.max(0, Math.min(creditBalance, Math.round(Number(tailAmount) || 0)));
+    cuEl.max = String(max);
+    if (Number(cuEl.value || 0) > max) cuEl.value = String(max);
+  }
+}
 
   function initTabs(){
     const tabs = document.querySelectorAll(".pill");
@@ -406,6 +425,15 @@
       // ✅（可選但安全）限制購物金輸入不超過尾款
       const cuEl = document.getElementById("creditUsed");
       if (cuEl) cuEl.max = String(Math.max(0, Math.round(Number(j.tail_amount||0)||0)));
+
+      // ✅ 讀取並顯示可用購物金
+const uid = extractLineUserIdFromShipping(j.shipping_info);
+if (uid) {
+  const bal = await fetchCreditBalance(uid);
+  applyCreditUI(bal, j.tail_amount || 0);
+} else {
+  applyCreditUI(0, j.tail_amount || 0);
+}
       
       $("#fieldHoldUntil").value = (j.shipping_info && j.shipping_info.hold_until) || (j.hold_until || "");
       $("#fieldItems").value = j.items_text || "";
@@ -440,6 +468,10 @@
   const cuEl = document.getElementById("creditUsed");
   let credit_used = cuEl ? Math.floor(Math.max(0, Number(cuEl.value || 0) || 0)) : 0;
 
+    if (credit_used > creditBalance) {
+  return alert("購物金餘額不足");
+}
+
   // ✅ 從 shipping_info 抓 line_user_id（後端扣購物金用）
   let line_user_id = "";
   try{
@@ -451,9 +483,9 @@
     ).trim();
   }catch(e){ line_user_id = ""; }
 
-  // ✅ 線上支付 / 零卡：必須至少付 1 元（避免 0 元金流）
+  // ✅ 線上支付：必須至少付 1 元（避免 0 元金流）
   // （COD/ATM 你要允許全折抵也可以；這裡只擋線上金流）
-  const willPayOnline = (activePay === "PAID" || activePay === "ZEROCARD");
+  const willPayOnline = (activePay === "PAID");
   if (willPayOnline && tailAmount > 0 && credit_used >= tailAmount) {
     return alert("線上支付需至少支付 1 元（購物金折抵不能 >= 尾款金額）");
   }
@@ -472,9 +504,6 @@
     if(!/^\d{5}$/.test(last5)) return alert("請輸入 5 位數帳號後五碼");
     payment_method = "atm_full_tail";
     extra.atm_last5 = last5;
-  }
-  else if(activePay === "ZEROCARD") {
-    payment_method = `zero_card_${$("#zcMonths").value}`;
   }
 
   if(!payment_method) return alert("請選擇付款方式");
