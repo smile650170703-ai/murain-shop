@@ -2176,7 +2176,11 @@ function getPendingPay(token){
 
 function clearPendingPay(token){
   if (!token) return;
-  try{ localStorage.removeItem(_pendingKey(token)); }catch(e){}
+  // ✅ 正確 key：與 markCartPendingPay / getPendingPay 完全一致
+  try { localStorage.removeItem(_pendingKey(token)); } catch(e){}
+
+  // ✅ 相容舊版錯誤 key（你之前用過的）
+  try { localStorage.removeItem(`murain_pending_pay_${token}`); } catch(e){}
 }
 
   // ✅ 防重複結單（前端鎖）：同一個 cart_token 成功結單後，Back/重整直接擋掉
@@ -3163,10 +3167,34 @@ const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total
   const qs = new URLSearchParams(location.search);
   if (qs.get("force") === "1") return false;
 
+    // ✅ pending 過久就視為失效（避免殘留造成無限續付）
+// 你要更短/更長都行；我先給 2 小時很保守
+const MAX_PENDING_MS = 2 * 60 * 60 * 1000;
+if (info.at && (Date.now() - Number(info.at) > MAX_PENDING_MS)) {
+  clearPendingPay(token);
+  return false; // 回到正常流程，允許重新送單
+}
+
   const btn = document.getElementById("submitBtn");
   if (btn) btn.disabled = true;
 
   try {
+    // ✅ (建議) 先跟後端確認這筆單現在狀態，避免本機殘留造成無限續付
+    // 你若沒有 /order/status 這種端點，就先註解這段也行，但最好補上
+    try {
+      const sr = await fetch(`${API}/order/status?order_id=${encodeURIComponent(info.order_id)}`);
+      if (sr.ok) {
+        const s = await sr.json();
+        // 若後端說這筆已完成/已取消/已失敗 → 清掉 pending，回到正常流程
+        const st = String(s.status || s.pay_status || "").toLowerCase();
+        if (["paid_ok","paid","success","cancelled","canceled","failed"].includes(st)) {
+          clearPendingPay(token); // ✅ 你要有這個清除函式（下面有）
+          if (btn) btn.disabled = false;
+          return false;
+        }
+      }
+    } catch(e){ /* 後端查不到就略過 */ }
+
     const pm = String(info.payment_method || "");
 
     // 1) PayUni（線上付款）
@@ -3215,16 +3243,17 @@ const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total
       return true;
     }
 
-    // 3) 其他：維持舊行為
+    // 3) 其他：導結果頁
     const url = `/order-result.html?order_id=${encodeURIComponent(info.order_id)}`;
     location.replace(url);
     return true;
 
   } catch (e) {
-    alert('重新啟動付款失敗：' + (e.message || ''));
-    if (btn) btn.disabled = false;
-    return true; // 有 pending 就不要讓他繼續建新單
-  }
+  alert('重新啟動付款失敗：' + (e.message || ''));
+  clearPendingPay(token);          // ✅ 清掉壞掉的 pending
+  if (btn) btn.disabled = false;
+  return false;                    // ✅ 允許走正常流程重新送
+}
 }
 
   if (cartToken && (await guardPendingPay(cartToken))) return;
