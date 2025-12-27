@@ -3156,49 +3156,74 @@ const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total
 
 // ===== 頁面初始化 =====
 (async () => {
-  restoreCheckoutState(); // ✅ 先還原舊狀態（避免後面被洗掉）
-   // ✅ 先擋：這個 cart_token 若已成功結單，就不要再讓它送第二次
+  restoreCheckoutState();
+
+  // ✅ 先擋：已結單就不必再做任何事
   if (cartToken && guardAlreadyCheckedOut(cartToken)) return;
 
-  async function guardPendingPay(token){
+  // ✅ 7-11 地圖回填（要在 loadCart 前）
+  applyStoreFromURL();
+
+  // ✅ pending pay 防重複（如果你有寫這個 async guard，就要 await）
+  if (cartToken) {
+    const blocked = await guardPendingPay(cartToken);
+    if (blocked) return;
+  }
+
+  // ✅ UI 初始狀態先套一次（避免一進來顯示錯）
+  try { updatePaidChannelBox(); } catch(e){}
+  try { updatePaidShip(); } catch(e){}
+  try { updateZcShip(); } catch(e){}
+  try { updateYufuShip(); } catch(e){}
+  try { calcYUFU(); } catch(e){}
+  try { setMeetupMinDates(); } catch(e){}
+
+  // ✅ 再載入會員/購物車
+  try { await initLiffAndMember(); } catch(e){}
+  try { await loadCart(); } catch(e){}
+})();
+
+ async function guardPendingPay(token){
   const info = getPendingPay(token);
   if (!info || !info.order_id) return false;
 
   const qs = new URLSearchParams(location.search);
   if (qs.get("force") === "1") return false;
 
-    // ✅ pending 過久就視為失效（避免殘留造成無限續付）
-// 你要更短/更長都行；我先給 2 小時很保守
-const MAX_PENDING_MS = 2 * 60 * 60 * 1000;
-if (info.at && (Date.now() - Number(info.at) > MAX_PENDING_MS)) {
-  clearPendingPay(token);
-  return false; // 回到正常流程，允許重新送單
-}
+  // ✅ 同一個頁面 session 只允許自動重送一次（避免連續自動 submit）
+  const onceKey = `pending_auto_once:${token}:${info.order_id}`;
+  if (sessionStorage.getItem(onceKey) === "1") return false;
+
+  // ✅ pending 過久就視為失效
+  const MAX_PENDING_MS = 2 * 60 * 60 * 1000;
+  if (info.at && (Date.now() - Number(info.at) > MAX_PENDING_MS)) {
+    clearPendingPay(token);
+    return false;
+  }
 
   const btn = document.getElementById("submitBtn");
   if (btn) btn.disabled = true;
 
   try {
-    // ✅ (建議) 先跟後端確認這筆單現在狀態，避免本機殘留造成無限續付
-    // 你若沒有 /order/status 這種端點，就先註解這段也行，但最好補上
+    // ✅ (建議) 先跟後端確認狀態，避免本機殘留造成無限續付
     try {
       const sr = await fetch(`${API}/order/status?order_id=${encodeURIComponent(info.order_id)}`);
       if (sr.ok) {
         const s = await sr.json();
-        // 若後端說這筆已完成/已取消/已失敗 → 清掉 pending，回到正常流程
-        const st = String(s.status || s.pay_status || "").toLowerCase();
+        const st = String(s.pay_status || s.status || "").toLowerCase();
         if (["paid_ok","paid","success","cancelled","canceled","failed"].includes(st)) {
-          clearPendingPay(token); // ✅ 你要有這個清除函式（下面有）
-          if (btn) btn.disabled = false;
+          clearPendingPay(token);
           return false;
         }
       }
-    } catch(e){ /* 後端查不到就略過 */ }
+    } catch(e){}
 
     const pm = String(info.payment_method || "");
 
     // 1) PayUni（線上付款）
     if (pm.startsWith("paid_")) {
+      sessionStorage.setItem(onceKey, "1"); // ✅ 在送出前就先鎖一次
+
       const payMode =
         (pm === 'paid_aftee_direct') ? 'upp' :
         (pm === 'paid_linepay') ? 'upp' :
@@ -3230,30 +3255,18 @@ if (info.at && (Date.now() - Number(info.at) > MAX_PENDING_MS)) {
       return true;
     }
 
-    // 2) ZeroCard（中租無卡）
-    if (pm.startsWith("zero_card_")) {
-      const zr = await fetch(`${API}/zero-card/start`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ order_id: info.order_id })
-      });
-      const z = await zr.json();
-      if (!zr.ok || !z.ok) throw new Error(z.error || z.message || 'zero-card start failed');
-      location.href = z.payment_url;
-      return true;
-    }
-
-    // 3) 其他：導結果頁
-    const url = `/order-result.html?order_id=${encodeURIComponent(info.order_id)}`;
-    location.replace(url);
-    return true;
+    // ✅ 其他付款方式你後面要接續：zero_card / yufu / etc.
+    // 沒命中就回正常流程
+    return false;
 
   } catch (e) {
-  alert('重新啟動付款失敗：' + (e.message || ''));
-  clearPendingPay(token);          // ✅ 清掉壞掉的 pending
-  if (btn) btn.disabled = false;
-  return false;                    // ✅ 允許走正常流程重新送
-}
+    // ✅ 失敗時一定要解鎖按鈕，不然會卡死
+    console.error("[guardPendingPay] resume failed:", e);
+    // 這裡不要 clearPendingPay，避免真的在「跳轉中」被你清掉
+    return false;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
   if (cartToken && (await guardPendingPay(cartToken))) return;
