@@ -1026,6 +1026,7 @@
   <div class="warning-text">
     實際核准與期數，以裕富分期審核結果（簡訊）為準。
   </div>
+    <div id="yufu_rate_note" class="note" style="margin-top:10px;"></div>
 
   <!-- 寄送方式 -->
   <div class="field">
@@ -1731,6 +1732,11 @@ function refreshCodType() {
   if (box711) box711.hidden = (v !== '711');
   if (meetHint) meetHint.hidden = (v !== 'meetup');
   if (meetBox) meetBox.hidden = (v !== 'meetup');
+  // ✅ 顯示/隱藏 7-11 貨到付款同意勾選
+  const agreeWrap = document.getElementById('cod711AgreeWrap');
+  const agreeBox  = document.getElementById('cod711_agree');
+  if (agreeWrap) agreeWrap.style.display = (v === '711') ? 'flex' : 'none';
+  if (v !== '711' && agreeBox) agreeBox.checked = false;
 }
 
 if (codTypeRadios.length) {
@@ -2146,6 +2152,76 @@ window.addEventListener('message', (ev)=>{
 /* checkout 狀態暫存 */
 const CHECKOUT_STATE_KEY = 'murain_checkout_state_v1';
 
+  function _pendingKey(token){ return `murain_pending_pay_cart_${token}`; }
+
+function markCartPendingPay(token, orderId, paymentMethod){
+  if (!token || !orderId) return;
+  try{
+    localStorage.setItem(_pendingKey(token), JSON.stringify({
+      order_id: String(orderId),
+      payment_method: String(paymentMethod || ''),
+      at: Date.now()
+    }));
+  }catch(e){}
+}
+
+function getPendingPay(token){
+  if (!token) return null;
+  try{
+    const raw = localStorage.getItem(_pendingKey(token));
+    if (!raw) return null;
+    return JSON.parse(raw);
+  }catch(e){ return null; }
+}
+
+function clearPendingPay(token){
+  if (!token) return;
+  try{ localStorage.removeItem(_pendingKey(token)); }catch(e){}
+}
+
+  // ✅ 防重複結單（前端鎖）：同一個 cart_token 成功結單後，Back/重整直接擋掉
+function _coKey(token){ return `murain_checked_out_cart_${token}`; }
+
+function markCartCheckedOut(token, orderId, netAmount){
+  if (!token || !orderId) return;
+  try{
+    localStorage.setItem(_coKey(token), JSON.stringify({
+      order_id: String(orderId),
+      net_amount: Number(netAmount || 0) || 0,
+      at: Date.now()
+    }));
+  }catch(e){}
+}
+
+function getCheckedOutInfo(token){
+  if (!token) return null;
+  try{
+    const raw = localStorage.getItem(_coKey(token));
+    if (!raw) return null;
+    return JSON.parse(raw);
+  }catch(e){ return null; }
+}
+
+// ✅ 若這個 cart_token 之前已成功結單 → 直接導去結果頁（或至少禁用送出）
+function guardAlreadyCheckedOut(token){
+  const info = getCheckedOutInfo(token);
+  if (!info || !info.order_id) return false;
+
+  // 你若想給「強制重開」機制，可用 ?force=1 略過
+  const qs = new URLSearchParams(location.search);
+  if (qs.get("force") === "1") return false;
+
+  const btn = document.getElementById("submitBtn");
+  if (btn) btn.disabled = true;
+
+  alert(`此購物車已完成結單（訂單：${info.order_id}）。將帶你前往訂單頁。`);
+
+  // 多數 order-result 其實只需要 order_id，total 可不帶
+  const url = `/order-result.html?order_id=${encodeURIComponent(info.order_id)}`;
+  try { location.replace(url); } catch(e){ location.href = url; }
+  return true;
+}
+
 function saveCheckoutState() {
   const state = {};
   document.querySelectorAll('input, select, textarea').forEach(el => {
@@ -2227,6 +2303,15 @@ document.getElementById('submitBtn').addEventListener('click',async(e)=>{
 
   const note = $('#note').value || '';
   const shipping_info = { note };
+
+  // ✅ 若使用者有輸入購物金，但餘額還沒載入完成，先阻止送出避免被當成 0
+if (!CREDIT_READY) {
+  const v = (document.getElementById('credit_input')?.value || '').trim();
+  if (v !== '') {
+    alert('購物金餘額載入中，請稍候 1 秒再送出（避免被判定為 0）。');
+    return;
+  }
+}
 
     // ===== 購物金驗證（以 AVAILABLE_CREDIT 為準）=====
   const creditInput = document.getElementById('credit_input');
@@ -2908,10 +2993,24 @@ if (j.locked || j.reused) {
 // ✅ 注意：線上支付 / 零卡「不要先清掉 cart_token」
 // 不然 payuni/start 或 zero-card/start 失敗時，客人回不去重試
 const isOnlinePay = (payment_method && payment_method.startsWith("paid_")) || isZeroCard;
+    // ✅ 線上付款 / 零卡：先記錄 pending（避免失敗後再按一次又建新單）
+if (isOnlinePay) {
+  markCartPendingPay(cartToken, j.order_id, payment_method);
+}
+
 if (!isOnlinePay) {
+  clearPendingPay(cartToken);
+  // ✅ 離線結單（含：COD / 匯款 / 面交 / 裕富）→ 成功後就鎖住這個 cart_token
+  const serverCreditUsed = Math.max(0, Math.floor(Number(j.credit_used ?? shipping_info?.credit_used ?? 0) || 0));
+  const serverNetAmount  = Math.max(0, Math.round(Number(j.net_amount ?? (subtotal - serverCreditUsed)) || 0));
+  markCartCheckedOut(cartToken, j.order_id, serverNetAmount);
+
+  // ✅ 清狀態 + 清 cart token（避免返回又載入同一台購物車再結一次）
   clearCheckoutState();
   try { localStorage.removeItem('MURAIN_WEB_CART_TOKEN'); } catch (e) {}
+  try { localStorage.removeItem('murain_cart_token'); } catch (e) {}
 }
+
     // PayUni
     if (payment_method && payment_method.startsWith('paid_')) {
       try {
@@ -3054,6 +3153,81 @@ const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total
 // ===== 頁面初始化 =====
 (async () => {
   restoreCheckoutState(); // ✅ 先還原舊狀態（避免後面被洗掉）
+   // ✅ 先擋：這個 cart_token 若已成功結單，就不要再讓它送第二次
+  if (cartToken && guardAlreadyCheckedOut(cartToken)) return;
+
+  async function guardPendingPay(token){
+  const info = getPendingPay(token);
+  if (!info || !info.order_id) return false;
+
+  const qs = new URLSearchParams(location.search);
+  if (qs.get("force") === "1") return false;
+
+  const btn = document.getElementById("submitBtn");
+  if (btn) btn.disabled = true;
+
+  try {
+    const pm = String(info.payment_method || "");
+
+    // 1) PayUni（線上付款）
+    if (pm.startsWith("paid_")) {
+      const payMode =
+        (pm === 'paid_aftee_direct') ? 'upp' :
+        (pm === 'paid_linepay') ? 'upp' :
+        (pm.startsWith('paid_card_inst_')) ? 'card_inst' :
+        'card_once';
+
+      const instMonths = pm.startsWith('paid_card_inst_')
+        ? Number(pm.split('_').pop() || 3)
+        : null;
+
+      const pr = await fetch(`${API}/payuni/start`, {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ order_id: info.order_id, mode: payMode, inst_months: instMonths })
+      });
+      const up = await pr.json();
+      if (!pr.ok || !up.ok) throw new Error(up.error || up.message || 'payuni start failed');
+
+      const f = document.createElement('form');
+      f.method = 'POST';
+      f.action = up.url;
+      ['MerID','Version','EncryptInfo','HashInfo'].forEach(k=>{
+        const i=document.createElement('input');
+        i.type='hidden'; i.name=k; i.value=up[k];
+        f.appendChild(i);
+      });
+      document.body.appendChild(f);
+      f.submit();
+      return true;
+    }
+
+    // 2) ZeroCard（中租無卡）
+    if (pm.startsWith("zero_card_")) {
+      const zr = await fetch(`${API}/zero-card/start`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ order_id: info.order_id })
+      });
+      const z = await zr.json();
+      if (!zr.ok || !z.ok) throw new Error(z.error || z.message || 'zero-card start failed');
+      location.href = z.payment_url;
+      return true;
+    }
+
+    // 3) 其他：維持舊行為
+    const url = `/order-result.html?order_id=${encodeURIComponent(info.order_id)}`;
+    location.replace(url);
+    return true;
+
+  } catch (e) {
+    alert('重新啟動付款失敗：' + (e.message || ''));
+    if (btn) btn.disabled = false;
+    return true; // 有 pending 就不要讓他繼續建新單
+  }
+}
+
+  if (cartToken && (await guardPendingPay(cartToken))) return;
 
   // ✅ 立刻刷新「依照 radio/select 決定顯示哪些區塊」的 UI
   try { refreshCodType(); } catch(e){}
@@ -3109,6 +3283,7 @@ document.querySelector(`.tab[data-pay="${modeToOpen}"]`)?.click();
   updatePaidShip();
   refreshDepType();
   bindRadioPillFallback();
+  setupYufuPhoneOwner();
     setMeetupMinDates();
 
   updateZcShip();
@@ -3125,30 +3300,29 @@ window.addEventListener('pageshow', function () {
 });
    function setupYufuPhoneOwner() {
   const radios = document.querySelectorAll('input[name="yufu_phone_owner"]');
-  const box = document.getElementById('yufuPaperAddrBox');
+  const box  = document.getElementById('yufuPaperAddrBox');
   const hint = document.getElementById('yufuPhoneOwnerHint');
 
-  const paperName = document.getElementById('yufu_paper_name');
-  const paperAddr = document.getElementById('yufu_paper_addr');
+  const paperName  = document.getElementById('yufu_paper_name');
+  const paperPhone = document.getElementById('yufu_paper_phone');
+  const paperAddr  = document.getElementById('yufu_paper_addr');
 
   function apply() {
-    const v = (document.querySelector('input[name="yufu_phone_owner"]:checked') || {}).value || 'yes';
+    const v = document.querySelector('input[name="yufu_phone_owner"]:checked')?.value || 'yes';
     const needPaper = (v === 'no');
 
-    if (box) box.hidden = !needPaper;
+    if (box)  box.hidden  = !needPaper;
     if (hint) hint.hidden = !needPaper;
 
-    // 只有「否」才要求填掛號地址
-    if (paperName) paperName.required = needPaper;
-    if (paperAddr) paperAddr.required = needPaper;
+    // 你送出時驗證是：paperName + paperPhone + paperAddr
+    if (paperName)  paperName.required  = needPaper;
+    if (paperPhone) paperPhone.required = needPaper;
+    if (paperAddr)  paperAddr.required  = needPaper;
   }
 
   radios.forEach(r => r.addEventListener('change', apply));
   apply();
 }
-
-// 你原本如果有 init，就在 init 最後呼叫；沒有就直接呼叫
-setupYufuPhoneOwner();
 
    // ✅ 7-11 貨到付款：需要勾選同意才可送出
 (function setupCOD711AgreeGuard(){
