@@ -2044,6 +2044,10 @@ const addr =
     case 'dep_new_f': fill('#dep_new_full_store_id', '#dep_new_full_store_name', '#dep_new_full_store_addr'); break;
     case 'zc':        fill('#ship_store_id_zc', '#ship_store_name_zc', '#ship_store_addr_zc'); break;
   }
+    // ✅ 帶回門市後，順便切到正確付款頁籤，避免你以為沒帶回
+  const tabMap = { cod:'COD', paid:'PAID', yufu:'YUFU', dep_old:'DEPOSIT', dep_new_f:'DEPOSIT', zc:'ZEROCARD' };
+  const kt = tabMap[src];
+  if (kt) document.querySelector(`#payTabs .tab[data-pay="${kt}"]`)?.click();
 }
 // ===== 購物金折抵計算 =====
 function updateCreditAndTotal() {
@@ -2293,7 +2297,7 @@ function saveCheckoutState() {
   });
 
   state.__activeTab = ([...document.querySelectorAll('#payTabs .tab')]
-  .find(t => t.classList.contains('active'))?.dataset.pay) || '';
+  .find(t => t.classList.contains('active'))?.dataset?.pay) || '';
   try {
     localStorage.setItem(CHECKOUT_STATE_KEY, JSON.stringify(state));
   } catch (e) {
@@ -2303,33 +2307,39 @@ function saveCheckoutState() {
 
 function restoreCheckoutState() {
   let raw = null;
-  try {
-    raw = localStorage.getItem(CHECKOUT_STATE_KEY);
-  } catch (e) {
-    console.warn('restoreCheckoutState getItem failed', e);
-  }
+  try { raw = localStorage.getItem(CHECKOUT_STATE_KEY); } catch (e) {}
   if (!raw) return;
 
   let state;
-  try {
-    state = JSON.parse(raw);
-  } catch {
-    return;
-  }
+  try { state = JSON.parse(raw); } catch { return; }
 
+  // 1) 先回填所有欄位
   document.querySelectorAll('input, select, textarea').forEach(el => {
     const key = el.id || el.name;
     if (!key || !(key in state)) return;
 
     if (el.type === 'radio' || el.type === 'checkbox') {
       const map = state[key];
-      if (map && typeof map === 'object') {
-        el.checked = !!map[el.value];
-      }
+      if (map && typeof map === 'object') el.checked = !!map[el.value];
     } else {
       el.value = state[key];
     }
   });
+
+  // 2) ✅ 把頁籤切回去（避免回來看起來變 COD）
+  const kt = String(state.__activeTab || '').toUpperCase().trim();
+  if (kt) {
+    const tab = document.querySelector(`#payTabs .tab[data-pay="${kt}"]`);
+    if (tab) tab.click(); // 你原本 tabs click 已經會處理 hidden 切換 :contentReference[oaicite:6]{index=6}
+  }
+
+  // 3) ✅ 再跑一次 UI 顯示切換（門市/寄送區塊才會正確顯示）
+  try { updatePaidChannelBox(); } catch(e){}
+  try { updatePaidShip(); } catch(e){}
+  try { updateZcShip(); } catch(e){}
+  try { updateYufuShip(); } catch(e){}
+  try { calcYUFU(); } catch(e){}
+  try { refreshCodType(); } catch(e){} // 你檔案裡有 :contentReference[oaicite:7]{index=7}
 }
 
 function clearCheckoutState() {
