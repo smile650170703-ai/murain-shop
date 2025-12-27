@@ -1286,6 +1286,8 @@ const MEETUP_PLACE = '台南市佳里區義民街339號';
 const MEETUP_TIME_RANGE_HINT = '週一～週五 10:00～16:00';
    const MEETUP_WINDOW_DAYS = 7; // ✅ 只允許 7 天內
 
+  let _meetupMinInited = false;
+
 function isMeetupWeekday(dateStr) {
   // ✅ 不用 new Date("YYYY-MM-DD...")，避免 LINE/手機瀏覽器解析失敗
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || "").trim());
@@ -1351,7 +1353,7 @@ function _nextWeekday(d){
 
 function setMeetupMinDates() {
   if (_meetupMinInited) return;
-_meetupMinInited = true;
+  _meetupMinInited = true;
   try {
     const base = new Date();
     base.setHours(0,0,0,0);
@@ -1398,7 +1400,6 @@ const maxD = _addWeekdays(minD, MEETUP_WINDOW_DAYS - 1);
     });
   } catch (e) {}
 }
-  let _meetupMinInited = false;
 
 
 let CART_TOTAL_RAW = 0;   // 真實金額（數字）
@@ -1661,52 +1662,47 @@ function applyMemberInfoToForm(info) {
   const txt = await r.text();
   try { return JSON.parse(txt); } catch { return { ok:false, raw:txt }; }
 }
-const qs = new URLSearchParams(location.search);
 
-// ✅ 先拿一般 query 的 cart_token
-let cartToken = qs.get('cart_token') || '';
+// ✅ 兼容 LIFF：把 liff.state 內的 ?a=b 參數「合併」回 qs
+function getQS() {
+  const outer = new URLSearchParams(location.search || "");
 
-// ✅ 再支援 LIFF deep link：LINE 常把原 query 放進 liff.state
-if (!cartToken) {
-  const stRaw = qs.get('liff.state') || '';
-  if (stRaw) {
+  // LIFF 會把你原本的 ?cart_token=... 包進 liff.state
+  const st = outer.get("liff.state") || outer.get("liffState") || "";
+  if (st) {
     try {
-      // liff.state 可能長這樣：
-      // "cart_token=xxx&mode=COD"
-      // 或 "/liff-checkout.html?cart_token=xxx&mode=COD"
-      let s = String(stRaw || '');
+      const decoded = decodeURIComponent(st);
+      const inner = new URLSearchParams(decoded.startsWith("?") ? decoded.slice(1) : decoded);
 
-      // 去掉 hash
-      if (s.includes('#')) s = s.split('#')[0];
-
-      // 若帶路徑，取 ? 後面的 query
-      if (s.includes('?')) s = s.split('?')[1];
-
-      // 去掉開頭 ?
-      if (s.startsWith('?')) s = s.slice(1);
-
-      const st = new URLSearchParams(s);
-      cartToken = st.get('cart_token') || '';
+      // inner 的 key 若 outer 沒有，就補進 outer（避免覆蓋你本來就有的參數）
+      for (const [k, v] of inner.entries()) {
+        if (!outer.has(k)) outer.set(k, v);
+      }
     } catch (e) {
-      console.warn('parse liff.state failed', e);
+      console.warn("parse liff.state failed", e);
     }
   }
+
+  return outer;
 }
 
-// ✅ 沒有就用 localStorage；有就寫回 localStorage（維持你原本行為）
+const qs = getQS();
+let cartToken = qs.get("cart_token") || "";
+
 if (!cartToken) {
   try {
-    cartToken = localStorage.getItem('murain_cart_token') || '';
+    cartToken = localStorage.getItem("murain_cart_token") || "";
   } catch (e) {
-    console.warn('localStorage read error', e);
+    console.warn("localStorage read error", e);
   }
 } else {
   try {
-    localStorage.setItem('murain_cart_token', cartToken);
+    localStorage.setItem("murain_cart_token", cartToken);
   } catch (e) {
-    console.warn('localStorage write error', e);
+    console.warn("localStorage write error", e);
   }
 }
+
    /* ===== PayReturn/PayFail 回來用的參數（加在 cartToken 這段後面） ===== */
 const from = qs.get('from') || '';
 const statusFromPay = qs.get('status') || '';
@@ -3074,11 +3070,13 @@ if (!isOnlinePay) {
   try { sessionStorage.removeItem('murain_cart_token'); } catch (e) {}
 
   // 2) 清 URL 參數 cart_token（避免返回/重整又回到舊車）
-  try {
-    const u = new URL(location.href);
-    u.searchParams.delete('cart_token');
-    history.replaceState(null, '', u.toString());
-  } catch (e) {}
+try {
+  const u = new URL(location.href);
+  u.searchParams.delete("cart_token");
+  // （可選）如果你希望結帳完重整也不要再帶原參數，可一起清掉
+  // u.searchParams.delete("liff.state");
+  history.replaceState(null, "", u.toString());
+} catch (e) {}
 
   // 3) 同頁面也把變數清空，避免後面流程再引用舊 token
   cartToken = '';
