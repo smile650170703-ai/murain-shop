@@ -1287,10 +1287,21 @@ const MEETUP_TIME_RANGE_HINT = '週一～週五 10:00～16:00';
    const MEETUP_WINDOW_DAYS = 7; // ✅ 只允許 7 天內
 
 function isMeetupWeekday(dateStr) {
-  if (!dateStr) return false;
-  const d = new Date(dateStr + "T00:00:00");
+  // ✅ 不用 new Date("YYYY-MM-DD...")，避免 LINE/手機瀏覽器解析失敗
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || "").trim());
+  if (!m) return false;
+
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1; // 0-based
+  const d0 = Number(m[3]);
+
+  const d = new Date(y, mo, d0); // ✅ 用年月日組合，最穩
   if (isNaN(d.getTime())) return false;
-  const day = d.getDay(); // 0 Sun ... 6 Sat
+
+  // 防呆：避免 2025-02-31 這種被自動進位
+  if (d.getFullYear() !== y || d.getMonth() !== mo || d.getDate() !== d0) return false;
+
+  const day = d.getDay(); // 0 Sun .. 6 Sat
   return day >= 1 && day <= 5;
 }
 
