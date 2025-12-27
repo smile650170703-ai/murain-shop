@@ -1284,20 +1284,18 @@ const RATE_TABLE={3:0,6:4.0,9:5.5,12:6.5,18:9.0,24:11.5};
 /* ===== 面交（收件資料）設定 ===== */
 const MEETUP_PLACE = '台南市佳里區義民街339號';
 const MEETUP_TIME_RANGE_HINT = '週一～週五 10:00～16:00';
-   const MEETUP_WINDOW_DAYS = 7; // ✅ 只允許 7 天內
-
-  let _meetupMinInited = false;
+const MEETUP_WINDOW_DAYS = 7; // ✅ 只允許 7 個可面交平日（不含六日）
 
 function isMeetupWeekday(dateStr) {
-  // ✅ 不用 new Date("YYYY-MM-DD...")，避免 LINE/手機瀏覽器解析失敗
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || "").trim());
   if (!m) return false;
 
-  const y = Number(m[1]);
+  const y  = Number(m[1]);
   const mo = Number(m[2]) - 1; // 0-based
   const d0 = Number(m[3]);
 
-  const d = new Date(y, mo, d0); // ✅ 用年月日組合，最穩
+  // ✅ 用 new Date(y, m, d) 避免手機/LINE 解析 YYYY-MM-DDT00:00:00 失敗
+  const d = new Date(y, mo, d0);
   if (isNaN(d.getTime())) return false;
 
   // 防呆：避免 2025-02-31 這種被自動進位
@@ -1307,40 +1305,13 @@ function isMeetupWeekday(dateStr) {
   return day >= 1 && day <= 5;
 }
 
-function getMeetupInfo(prefix) {
-  const dateEl = document.getElementById(prefix + "_meetup_date");
-  const timeEl = document.getElementById(prefix + "_meetup_time");
-  const dateStr = (dateEl && dateEl.value) ? String(dateEl.value).trim() : "";
-  const timeStr = (timeEl && timeEl.value) ? String(timeEl.value).trim() : "";
-
-  if (!dateStr || !timeStr) {
-    alert("請選擇面交日期與時間（" + MEETUP_TIME_RANGE_HINT + "）");
-    return null;
-  }
-  if (!isMeetupWeekday(dateStr)) {
-    alert("面交日期僅開放週一～週五，請重新選擇。");
-    return null;
-  }
-  // ✅ 再保險：必須在 date input 的 min/max 範圍內（7 天內）
-if (dateEl && ((dateEl.min && dateStr < dateEl.min) || (dateEl.max && dateStr > dateEl.max))) {
-  alert(`面交日期僅限 ${MEETUP_WINDOW_DAYS} 天內（不含六日），請重新選擇。`);
-  return null;
-}
-  return {
-    meetup_place: MEETUP_PLACE,
-    meetup_time: dateStr + " " + timeStr
-  };
-}
-
-function _nextWeekday(d){
-  // 0=Sun, 6=Sat
-  while (d.getDay() === 0 || d.getDay() === 6) {
-    d.setDate(d.getDate() + 1);
-  }
+function _nextWeekday(d) {
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
   return d;
 }
 
-  function _addWeekdays(date, addDays) {
+// ✅ 往後加「平日」(不含六日)；addDays=0 代表不往後加
+function _addWeekdays(date, addDays) {
   const d = new Date(date);
   let n = Number(addDays || 0) || 0;
   while (n > 0) {
@@ -1351,24 +1322,50 @@ function _nextWeekday(d){
   return d;
 }
 
+function getMeetupInfo(prefix) {
+  const dateEl = document.getElementById(prefix + "_meetup_date");
+  const timeEl = document.getElementById(prefix + "_meetup_time");
+
+  const dateStr = (dateEl && dateEl.value) ? String(dateEl.value).trim() : "";
+  const timeStr = (timeEl && timeEl.value) ? String(timeEl.value).trim() : "";
+
+  if (!dateStr || !timeStr) {
+    alert("請選擇面交日期與時間（" + MEETUP_TIME_RANGE_HINT + "）");
+    return null;
+  }
+
+  if (!isMeetupWeekday(dateStr)) {
+    alert("面交日期僅開放週一～週五（不含六日），請重新選擇。");
+    return null;
+  }
+
+  // ✅ 再保險：必須在 date input 的 min/max 範圍內
+  if (dateEl && ((dateEl.min && dateStr < dateEl.min) || (dateEl.max && dateStr > dateEl.max))) {
+    alert(`面交日期僅限 ${MEETUP_WINDOW_DAYS} 天內（不含六日），請重新選擇。`);
+    return null;
+  }
+
+  return {
+    meetup_place: MEETUP_PLACE,
+    meetup_time: dateStr + " " + timeStr
+  };
+}
+
 function setMeetupMinDates() {
-  if (_meetupMinInited) return;
-  _meetupMinInited = true;
   try {
     const base = new Date();
-    base.setHours(0,0,0,0);
+    base.setHours(0, 0, 0, 0);
 
     // ✅ min：今天起算，但若今天是六日 → 跳到下個週一
     const minD = _nextWeekday(new Date(base));
 
-    // ✅ max：往後數「MEETUP_WINDOW_DAYS 個平日」(不含六日)
-// 例：7 = 含 min 在內共 7 個可面交日，所以只要再加 6 個平日
-const maxD = _addWeekdays(minD, MEETUP_WINDOW_DAYS - 1);
+    // ✅ max：往後數「MEETUP_WINDOW_DAYS 個平日」(含 min 當第 1 天)
+    const maxD = _addWeekdays(minD, MEETUP_WINDOW_DAYS - 1);
 
     const min = ymdLocal(minD);
     const max = ymdLocal(maxD);
 
-    ["cod","paid","depnew","zc","yufu"].forEach(p => {
+    ["cod", "paid", "depnew", "zc", "yufu"].forEach(p => {
       const el = document.getElementById(p + "_meetup_date");
       if (!el) return;
 
@@ -1376,14 +1373,16 @@ const maxD = _addWeekdays(minD, MEETUP_WINDOW_DAYS - 1);
       el.max = max;
 
       // 若已選的值不合法就清掉
-      const v = (el.value || "").slice(0,10);
-      if (v && (v < min || v > max || !isMeetupWeekday(v))) {
-        el.value = "";
-      }
+      const v = (el.value || "").slice(0, 10);
+      if (v && (v < min || v > max || !isMeetupWeekday(v))) el.value = "";
 
-      // ✅ 使用者改日期時，立刻擋掉六日/超出 7 天
+      // ✅ 防重複綁定（避免你一直跳提示）
+      if (el.dataset.meetupBound === "1") return;
+      el.dataset.meetupBound = "1";
+
+      // ✅ 使用者改日期時，立刻擋掉六日/超出範圍
       el.addEventListener("change", () => {
-        const vv = (el.value || "").slice(0,10);
+        const vv = (el.value || "").slice(0, 10);
         if (!vv) return;
 
         if (vv < el.min || vv > el.max) {
