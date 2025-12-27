@@ -2004,11 +2004,7 @@ if (cartToken) qs2.set("cart_token", cartToken); // ✅ 保險補上
   if (activeTab) qs2.set('mode', activeTab);
   else qs2.delete('mode');
 
-  // ✅ 後端白名單不含 yufu：用 paid 借道
-  const realSrc = (String(src).toLowerCase() === 'yufu') ? 'paid' : src;
-
-  // ✅ src 給後端用（白名單）
-  qs2.set('src', realSrc);
+  qs2.set('src', String(src).toLowerCase());
 
   // ✅ store_src 給前端回填用（知道要回填到哪一組欄位）
   qs2.set('store_src', String(src).toLowerCase());
@@ -2036,19 +2032,28 @@ const addr =
 
   const fill = (a,b,c)=>{ setFieldValue(a,id); setFieldValue(b,name); setFieldValue(c,addr); };
 
-  switch (src) {
-    case 'cod':       fill('#cod_store_id', '#cod_store_name', '#cod_store_addr'); break;
-    case 'paid':      fill('#ship_store_id_paid', '#ship_store_name_paid', '#ship_store_addr_paid'); break;
-    case 'yufu':      fill('#ship_store_id_yufu', '#ship_store_name_yufu', '#ship_store_addr_yufu'); break;
-    case 'dep_old':   fill('#dep_old_store_id', '#dep_old_store_name', '#dep_old_store_addr'); break;
-    case 'dep_new_f': fill('#dep_new_full_store_id', '#dep_new_full_store_name', '#dep_new_full_store_addr'); break;
-    case 'zc':        fill('#ship_store_id_zc', '#ship_store_name_zc', '#ship_store_addr_zc'); break;
+   // ✅ 選一次門市 → 全分頁同步同一家
+  const targets = [
+    ['#cod_store_id',               '#cod_store_name',               '#cod_store_addr'],
+    ['#ship_store_id_paid',         '#ship_store_name_paid',         '#ship_store_addr_paid'],
+    ['#ship_store_id_yufu',         '#ship_store_name_yufu',         '#ship_store_addr_yufu'],
+    ['#dep_old_store_id',           '#dep_old_store_name',           '#dep_old_store_addr'],
+    ['#dep_new_full_store_id',      '#dep_new_full_store_name',      '#dep_new_full_store_addr'],
+    // 如果你有「dep_new_p」那組（沒有就放著也不會壞）
+    ['#dep_new_partial_store_id',   '#dep_new_partial_store_name',   '#dep_new_partial_store_addr'],
+    ['#ship_store_id_zc',           '#ship_store_name_zc',           '#ship_store_addr_zc'],
+  ];
+
+  targets.forEach(([a,b,c]) => fill(a,b,c));
+     // ✅ 回來切回你剛剛的分頁（mode 優先）
+  const mode = (qs2.get('mode') || '').toUpperCase().trim();
+  if (mode) {
+    document.querySelector(`#payTabs .tab[data-pay="${mode}"]`)?.click();
+  } else {
+    const tabMap = { cod:'COD', paid:'PAID', yufu:'YUFU', dep_old:'DEPOSIT', dep_new_f:'DEPOSIT', zc:'ZEROCARD' };
+    const kt = tabMap[src];
+    if (kt) document.querySelector(`#payTabs .tab[data-pay="${kt}"]`)?.click();
   }
-    // ✅ 帶回門市後，順便切到正確付款頁籤，避免你以為沒帶回
-  const tabMap = { cod:'COD', paid:'PAID', yufu:'YUFU', dep_old:'DEPOSIT', dep_new_f:'DEPOSIT', zc:'ZEROCARD' };
-  const kt = tabMap[src];
-  if (kt) document.querySelector(`#payTabs .tab[data-pay="${kt}"]`)?.click();
-}
 // ===== 購物金折抵計算 =====
 function updateCreditAndTotal() {
   const input = document.querySelector('#credit_input');
