@@ -2015,37 +2015,39 @@ if (cartToken) qs2.set("cart_token", cartToken); // ✅ 保險補上
   window.location.href = url;
 }
 function applyStoreFromURL(){
-  const qs2 = new URLSearchParams(location.search);
+  // ✅ 用 getQS() 才吃得到 LIFF 的 liff.state 內參數
+  const qs2 = getQS();
   let src = (qs2.get('store_src') || '').toLowerCase();
 
   // ✅ 若後端沒保留 store_src，就用 sessionStorage 的備援
   if (!src) {
     try { src = (sessionStorage.getItem('murain_store_src') || '').toLowerCase(); } catch(e){}
   }
+
   const id =
-  qs2.get('store_id') || qs2.get('cvs_code') || qs2.get('CVSStoreID') || qs2.get('STOREID') || '';
-const name =
-  qs2.get('store_name') || qs2.get('cvs_name') || qs2.get('CVSStoreName') || qs2.get('STORENAME') || '';
-const addr =
-  qs2.get('store_addr') || qs2.get('cvs_addr') || qs2.get('CVSAddress') || qs2.get('STOREADDRESS') || '';
+    qs2.get('store_id') || qs2.get('cvs_code') || qs2.get('CVSStoreID') || qs2.get('STOREID') || '';
+  const name =
+    qs2.get('store_name') || qs2.get('cvs_name') || qs2.get('CVSStoreName') || qs2.get('STORENAME') || '';
+  const addr =
+    qs2.get('store_addr') || qs2.get('cvs_addr') || qs2.get('CVSAddress') || qs2.get('STOREADDRESS') || '';
+
   if (!src || !id) return;
 
   const fill = (a,b,c)=>{ setFieldValue(a,id); setFieldValue(b,name); setFieldValue(c,addr); };
 
-   // ✅ 選一次門市 → 全分頁同步同一家
+  // ✅ 選一次門市 → 全分頁同步同一家
   const targets = [
     ['#cod_store_id',               '#cod_store_name',               '#cod_store_addr'],
     ['#ship_store_id_paid',         '#ship_store_name_paid',         '#ship_store_addr_paid'],
     ['#ship_store_id_yufu',         '#ship_store_name_yufu',         '#ship_store_addr_yufu'],
     ['#dep_old_store_id',           '#dep_old_store_name',           '#dep_old_store_addr'],
     ['#dep_new_full_store_id',      '#dep_new_full_store_name',      '#dep_new_full_store_addr'],
-    // 如果你有「dep_new_p」那組（沒有就放著也不會壞）
     ['#dep_new_partial_store_id',   '#dep_new_partial_store_name',   '#dep_new_partial_store_addr'],
     ['#ship_store_id_zc',           '#ship_store_name_zc',           '#ship_store_addr_zc'],
   ];
-
   targets.forEach(([a,b,c]) => fill(a,b,c));
-     // ✅ 回來切回你剛剛的分頁（mode 優先）
+
+  // ✅ 回來切回你剛剛的分頁（mode 優先）
   const mode = (qs2.get('mode') || '').toUpperCase().trim();
   if (mode) {
     document.querySelector(`#payTabs .tab[data-pay="${mode}"]`)?.click();
@@ -2054,6 +2056,16 @@ const addr =
     const kt = tabMap[src];
     if (kt) document.querySelector(`#payTabs .tab[data-pay="${kt}"]`)?.click();
   }
+
+  // ✅ ✅ 核心：回填完「立刻存起來」→ 下一次開結帳就不會跳回舊門市
+  try { saveCheckoutState(); } catch(e){}
+
+  // ✅ 可選但強烈建議：把 URL 的 store_* 清掉，避免重整時又重覆套用舊參數
+  try {
+    const clean = new URLSearchParams(location.search);
+    ['store_id','store_name','store_addr','store_src','cvs_code','cvs_name','cvs_addr','CVSStoreID','CVSStoreName','CVSAddress','STOREID','STORENAME','STOREADDRESS'].forEach(k=>clean.delete(k));
+    history.replaceState({}, '', location.pathname + (clean.toString() ? `?${clean.toString()}` : ''));
+  } catch(e){}
 }
 // ===== 購物金折抵計算 =====
 function updateCreditAndTotal() {
@@ -2193,13 +2205,14 @@ function normalizeStorePayload(ev){
 window.addEventListener('message', (ev)=>{
   const p = normalizeStorePayload(ev);
   if (!p || !p.ok) return;
-   let src = (p.src || '').toLowerCase();
 
-  // ✅ 若這次其實是 yufu 開的地圖，但回來的 src 變 paid → 轉回 yufu
+  let src = (p.src || '').toLowerCase();
+
   try {
     const real = (sessionStorage.getItem('murain_store_src') || '').toLowerCase();
     if (real === 'yufu' && src === 'paid') src = 'yufu';
   } catch(e){}
+
   const fill = (a,b,c)=>{ setFieldValue(a, p.id); setFieldValue(b, p.name); setFieldValue(c, p.addr); };
 
   const targets = [
@@ -2208,19 +2221,18 @@ window.addEventListener('message', (ev)=>{
     ['#ship_store_id_yufu',         '#ship_store_name_yufu',         '#ship_store_addr_yufu'],
     ['#dep_old_store_id',           '#dep_old_store_name',           '#dep_old_store_addr'],
     ['#dep_new_full_store_id',      '#dep_new_full_store_name',      '#dep_new_full_store_addr'],
-    // 有就同步，沒有不會壞（setFieldValue 找不到會直接 return false）
     ['#dep_new_partial_store_id',   '#dep_new_partial_store_name',   '#dep_new_partial_store_addr'],
     ['#ship_store_id_zc',           '#ship_store_name_zc',           '#ship_store_addr_zc'],
   ];
 
   targets.forEach(([a,b,c]) => fill(a,b,c));
+  try { saveCheckoutState(); } catch(e){}  // ✅ 就加這行
 
   // ✅ 回來切回你剛剛的分頁（mode 優先）
-  const mode = (new URLSearchParams(location.search).get('mode') || '').toUpperCase().trim();
+  const mode = (getQS().get('mode') || '').toUpperCase().trim(); // ✅ 建議一起改
   if (mode) {
     document.querySelector(`#payTabs .tab[data-pay="${mode}"]`)?.click();
   }
-
 });
 
 /* checkout 狀態暫存 */
