@@ -3154,21 +3154,47 @@ const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total
   });
 })();
 
-// ===== 頁面初始化與核心邏輯 =====
+// ===== 頁面初始化 =====
+(async () => {
+  restoreCheckoutState();
 
-// 1. 定義 guardPendingPay (檢查是否有未完成的線上付款)
-async function guardPendingPay(token){
+  // ✅ 先擋：已結單就不必再做任何事
+  if (cartToken && guardAlreadyCheckedOut(cartToken)) return;
+
+  // ✅ 7-11 地圖回填（要在 loadCart 前）
+  applyStoreFromURL();
+
+  // ✅ pending pay 防重複（如果你有寫這個 async guard，就要 await）
+  if (cartToken) {
+    const blocked = await guardPendingPay(cartToken);
+    if (blocked) return;
+  }
+
+  // ✅ UI 初始狀態先套一次（避免一進來顯示錯）
+  try { updatePaidChannelBox(); } catch(e){}
+  try { updatePaidShip(); } catch(e){}
+  try { updateZcShip(); } catch(e){}
+  try { updateYufuShip(); } catch(e){}
+  try { calcYUFU(); } catch(e){}
+  try { setMeetupMinDates(); } catch(e){}
+
+  // ✅ 再載入會員/購物車
+  try { await initLiffAndMember(); } catch(e){}
+  try { await loadCart(); } catch(e){}
+})();
+
+ async function guardPendingPay(token){
   const info = getPendingPay(token);
   if (!info || !info.order_id) return false;
 
   const qs = new URLSearchParams(location.search);
   if (qs.get("force") === "1") return false;
 
-  // ✅ 同一個頁面 session 只允許自動重送一次
+  // ✅ 同一個頁面 session 只允許自動重送一次（避免連續自動 submit）
   const onceKey = `pending_auto_once:${token}:${info.order_id}`;
   if (sessionStorage.getItem(onceKey) === "1") return false;
 
-  // ✅ pending 過久就視為失效 (2小時)
+  // ✅ pending 過久就視為失效
   const MAX_PENDING_MS = 2 * 60 * 60 * 1000;
   if (info.at && (Date.now() - Number(info.at) > MAX_PENDING_MS)) {
     clearPendingPay(token);
@@ -3179,7 +3205,7 @@ async function guardPendingPay(token){
   if (btn) btn.disabled = true;
 
   try {
-    // 先跟後端確認狀態
+    // ✅ (建議) 先跟後端確認狀態，避免本機殘留造成無限續付
     try {
       const sr = await fetch(`${API}/order/status?order_id=${encodeURIComponent(info.order_id)}`);
       if (sr.ok) {
@@ -3196,7 +3222,7 @@ async function guardPendingPay(token){
 
     // 1) PayUni（線上付款）
     if (pm.startsWith("paid_")) {
-      sessionStorage.setItem(onceKey, "1"); // 鎖定避免無限迴圈
+      sessionStorage.setItem(onceKey, "1"); // ✅ 在送出前就先鎖一次
 
       const payMode =
         (pm === 'paid_aftee_direct') ? 'upp' :
@@ -3226,101 +3252,54 @@ async function guardPendingPay(token){
       });
       document.body.appendChild(f);
       f.submit();
-      return true; // 正在跳轉中，阻擋後續執行
+      return true;
     }
-    
-    // 中租與裕富若無跳轉需求，則回傳 false 讓使用者留在頁面
+
+    // ✅ 其他付款方式你後面要接續：zero_card / yufu / etc.
+    // 沒命中就回正常流程
     return false;
 
   } catch (e) {
+    // ✅ 失敗時一定要解鎖按鈕，不然會卡死
     console.error("[guardPendingPay] resume failed:", e);
+    // 這裡不要 clearPendingPay，避免真的在「跳轉中」被你清掉
     return false;
   } finally {
     if (btn) btn.disabled = false;
   }
 }
-
-// 2. 統一的主啟動程式 (Main Entry Point)
-(async () => {
-  // A. 恢復上一次填寫的狀態
-  restoreCheckoutState();
-
-  // B. 檢查是否已經結單 (已結單則導向結果頁)
-  if (cartToken && guardAlreadyCheckedOut(cartToken)) return;
-
-  // C. 處理 7-11 地圖回傳資料 (若有)
-  applyStoreFromURL();
-
-  // D. 檢查是否有未完成的付款 (若正在跳轉則停止載入)
-  if (cartToken) {
-    const blocked = await guardPendingPay(cartToken);
-    if (blocked) return; 
-  }
-
-  // E. 介面初始化 (根據選項顯示/隱藏對應欄位)
-  try { refreshCodType(); } catch(e){}
-  try { updatePaidChannelBox(); } catch(e){}
-  try { updatePaidShip(); } catch(e){}
-  try { updateDepOldShip(); } catch(e){}
-  try { updateZcShip(); } catch(e){}
-  try { updateYufuShip(); } catch(e){}
-  
-  // F. LIFF 初始化與會員資料
-  if (window.liff) {
-    try { await initLiffAndMember(); } catch (e) {}
-  }
-
-  // G. 設定日期限制與 Radio 樣式
-  applyDepOldHoldLimit();
-  setMeetupMinDates();
-  
-  // H. 恢復 Tab 分頁
-  let restoredMode = '';
-  try {
-    const raw = localStorage.getItem('murain_checkout_state_v1') || '';
-    if (raw) {
-      const st = JSON.parse(raw);
-      restoredMode = String(st.__activeTab || '').toUpperCase();
-    }
-  } catch(e){}
-  const modeToOpen = restoredMode || initialMode || 'COD';
-  document.querySelector(`.tab[data-pay="${modeToOpen}"]`)?.click();
-
-  // I. 綁定事件
-  function bindRadioPillFallback(){
-    const pills = document.querySelectorAll('.radio-pill');
-    const sync = () => {
-      pills.forEach(p => {
-        const input = p.querySelector('input[type="radio"], input[type="checkbox"]');
-        if (!input) return;
-        p.classList.toggle('is-checked', !!input.checked);
-      });
-    };
-    pills.forEach(p => {
-      const input = p.querySelector('input[type="radio"], input[type="checkbox"]');
-      if (!input) return;
-      input.addEventListener('change', sync);
-    });
-    sync();
-  }
-  bindRadioPillFallback();
-  setupYufuPhoneOwner();
-  calcYUFU();
-
-  // J. ★最重要的：載入購物車 (因為前面語法修正了，這裡才會執行)
-  await loadCart();
-  
-  // K. 再次確認地圖回填 (以防載入購物車後欄位被重置)
-  applyStoreFromURL();
-})();
-
-// 3. 輔助功能：iOS 返回時解鎖按鈕
+   // ✅ 防止 iOS/Safari 上一頁返回（BFCache）按鈕維持 disabled
 window.addEventListener('pageshow', function () {
   const btn = document.getElementById('submitBtn');
   if (btn) btn.disabled = false;
 });
+   function setupYufuPhoneOwner() {
+  const radios = document.querySelectorAll('input[name="yufu_phone_owner"]');
+  const box  = document.getElementById('yufuPaperAddrBox');
+  const hint = document.getElementById('yufuPhoneOwnerHint');
 
-// 4. 輔助功能：7-11 貨到付款同意勾選邏輯
+  const paperName  = document.getElementById('yufu_paper_name');
+  const paperPhone = document.getElementById('yufu_paper_phone');
+  const paperAddr  = document.getElementById('yufu_paper_addr');
+
+  function apply() {
+    const v = document.querySelector('input[name="yufu_phone_owner"]:checked')?.value || 'yes';
+    const needPaper = (v === 'no');
+
+    if (box)  box.hidden  = !needPaper;
+    if (hint) hint.hidden = !needPaper;
+
+    // 你送出時驗證是：paperName + paperPhone + paperAddr
+    if (paperName)  paperName.required  = needPaper;
+    if (paperPhone) paperPhone.required = needPaper;
+    if (paperAddr)  paperAddr.required  = needPaper;
+  }
+
+  radios.forEach(r => r.addEventListener('change', apply));
+  apply();
+}
+
+   // ✅ 7-11 貨到付款：需要勾選同意才可送出
 (function setupCOD711AgreeGuard(){
   const wrap  = document.getElementById("cod711AgreeWrap");
   const agree = document.getElementById("cod711_agree");
@@ -3335,23 +3314,27 @@ window.addEventListener('pageshow', function () {
 
   function isPaneCODActive(){
     const pane = document.getElementById("paneCOD");
+    // paneCOD 只要不是 hidden 就視為正在 COD 分頁
     return pane && !pane.hidden;
   }
 
   function refresh(){
     const cod711 = isPaneCODActive() && getCodType() === "711";
     wrap.style.display = cod711 ? "" : "none";
-    if (!cod711) agree.checked = false;
+    if (!cod711) agree.checked = false; // 切走就清掉
   }
 
+  // 付款選項變動就更新顯示
   document.addEventListener("change", (e) => {
     if (e.target && (e.target.name === "codType")) refresh();
   });
+
+  // 若你切 tab 是用按鈕控制 hidden，這裡用 click 也補抓一次
   document.addEventListener("click", (e) => {
     if (e.target && e.target.closest && e.target.closest("#payTabs")) refresh();
   });
 
-  // 送出前攔截
+  // 🔒 送出前強制檢查（用 capture 先攔截，避免你原本 handler 先跑）
   btn.addEventListener("click", (e) => {
     refresh();
     const need = isPaneCODActive() && getCodType() === "711";
