@@ -3046,137 +3046,160 @@ if (j.locked || j.reused) {
 
 // ✅ 注意：線上支付 / 零卡「不要先清掉 cart_token」
 // 不然 payuni/start 或 zero-card/start 失敗時，客人回不去重試
-const isOnlinePay = (payment_method && payment_method.startsWith("paid_")) || isZeroCard;
-    // ✅ 線上付款 / 零卡：先記錄 pending（避免失敗後再按一次又建新單）
+
+// ===== 線上/離線判斷 =====
+const isZeroCard  = String(payment_method || "").startsWith("zero_card_");
+const isPaid      = String(payment_method || "").startsWith("paid_");
+const isOnlinePay = isPaid || isZeroCard;
+
+// ✅ 線上付款 / 零卡：先記錄 pending（若你有這個 helper 就用，沒有也不會炸）
 if (isOnlinePay) {
-  markCartPendingPay(cartToken, j.order_id, payment_method);
+  try {
+    if (typeof markCartPendingPay === "function") {
+      markCartPendingPay(cartToken, j.order_id, payment_method);
+    }
+  } catch (e) {}
 }
 
+// ✅ 1) PayUni（線上付款）— 必須在離線分支外
+if (isPaid) {
+  try {
+    const payMode =
+      (payment_method === "paid_aftee_direct") ? "upp" :
+      (payment_method === "paid_linepay")      ? "upp" :
+      (payment_method.startsWith("paid_card_inst_")) ? "card_inst" :
+      "card_once";
+
+    const instMonths = payment_method.startsWith("paid_card_inst_")
+      ? Number(payment_method.split("_").pop() || 3)
+      : null;
+
+    const pr = await fetch(`${API}/payuni/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        order_id: j.order_id,
+        mode: payMode,
+        inst_months: instMonths
+      })
+    });
+
+    const up = await pr.json().catch(() => ({}));
+
+    if (!pr.ok || !up.ok) {
+      alert("線上刷卡啟動失敗：" + (up.error || up.message || "請稍後再試"));
+      return;
+    }
+
+    // ✅ 用 POST form 跳轉 PayUni
+    const f = document.createElement("form");
+    f.method = "POST";
+    f.action = up.url;
+
+    ["MerID", "Version", "EncryptInfo", "HashInfo"].forEach(k => {
+      const input = document.createElement("input");
+      input.type  = "hidden";
+      input.name  = k;
+      input.value = up[k] || "";
+      f.appendChild(input);
+    });
+
+    document.body.appendChild(f);
+    f.submit();
+    return; // ✅ 線上一定要 return，避免跑到離線清 token / result
+  } catch (e) {
+    console.error("payuni error", e);
+    alert("線上刷卡啟動失敗（網路或程式錯誤）");
+    return;
+  }
+}
+
+// ✅ 2) ZeroCard — 必須在離線分支外
+if (isZeroCard) {
+  try {
+    const zr = await fetch(`${API}/zero-card/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ order_id: j.order_id })
+    });
+
+    const z = await zr.json().catch(() => ({}));
+
+    if (!zr.ok || !z.ok) {
+      alert("中租無卡啟動失敗：" + (z.error || z.message || "請稍後再試"));
+      return;
+    }
+
+    location.href = z.payment_url;
+    return; // ✅ 零卡也一定要 return
+  } catch (e) {
+    console.error("zero-card error", e);
+    alert("中租無卡啟動失敗（網路或程式錯誤）");
+    return;
+  }
+}
+
+// ✅ 3) 只有離線才做：清 pending、鎖 cart、清 token、導 result
 if (!isOnlinePay) {
-  clearPendingPay(cartToken);
-  // ✅ 離線結單（含：COD / 匯款 / 面交 / 裕富）→ 成功後就鎖住這個 cart_token
+  try {
+    if (typeof clearPendingPay === "function") clearPendingPay(cartToken);
+  } catch (e) {}
+
+  // ✅ 用後端 net_amount 優先，避免前後端金額不一致
   const serverCreditUsed = Math.max(0, Math.floor(Number(j.credit_used ?? shipping_info?.credit_used ?? 0) || 0));
   const serverNetAmount  = Math.max(0, Math.round(Number(j.net_amount ?? (subtotal - serverCreditUsed)) || 0));
-  markCartCheckedOut(cartToken, j.order_id, serverNetAmount);
 
-  // ✅ A方案：清狀態 + 清 cart_token（local+session）+ 移除 URL 的 cart_token
-  clearCheckoutState();
-
-  // 1) 清 storage（避免打開又讀到舊 cart）
-  try { localStorage.removeItem('MURAIN_WEB_CART_TOKEN'); } catch (e) {}
-  try { localStorage.removeItem('murain_cart_token'); } catch (e) {}
-  try { sessionStorage.removeItem('MURAIN_WEB_CART_TOKEN'); } catch (e) {}
-  try { sessionStorage.removeItem('murain_cart_token'); } catch (e) {}
-
-  // 2) 清 URL 參數 cart_token（避免返回/重整又回到舊車）
-try {
-  const u = new URL(location.href);
-  u.searchParams.delete("cart_token");
-  // （可選）如果你希望結帳完重整也不要再帶原參數，可一起清掉
-  // u.searchParams.delete("liff.state");
-  history.replaceState(null, "", u.toString());
-} catch (e) {}
-
-  // 3) 同頁面也把變數清空，避免後面流程再引用舊 token
-  cartToken = '';
-
-    // PayUni
-    if (payment_method && payment_method.startsWith('paid_')) {
-      try {
-        const payMode =
-  (payment_method === 'paid_aftee_direct') ? 'upp' :
-  (payment_method === 'paid_linepay')       ? 'upp' :
-  (payment_method.startsWith('paid_card_inst_')) ? 'card_inst' :
-  'card_once';
-
-const instMonths = payment_method.startsWith('paid_card_inst_')
-  ? Number(payment_method.split('_').pop() || 3)
-  : null;
-
-const pr = await fetch(`${API}/payuni/start`, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    order_id: j.order_id,
-    mode: payMode,
-    inst_months: instMonths
-  })
-});
-
-        const up = await pr.json();
-        console.log('payuni start resp', up);
-
-        if (!pr.ok || !up.ok) {
-          alert('線上刷卡啟動失敗：' + (up.error || up.message || ''));
-          return;
-        }
-
-        const f = document.createElement('form');
-        f.method = 'POST';
-        f.action = up.url;
-
-        ['MerID', 'Version', 'EncryptInfo', 'HashInfo'].forEach(k => {
-          const input = document.createElement('input');
-          input.type  = 'hidden';
-          input.name  = k;
-          input.value = up[k];
-          f.appendChild(input);
-        });
-
-        document.body.appendChild(f);
-        f.submit();
-        return;
-      } catch (e) {
-        console.error('payuni error', e);
-        alert('線上刷卡啟動失敗（網路或程式錯誤）');
-        return;
-      }
+  try {
+    if (typeof markCartCheckedOut === "function") {
+      markCartCheckedOut(cartToken, j.order_id, serverNetAmount);
     }
+  } catch (e) {}
 
-    // ZeroCard
-    if (isZeroCard) {
-      try {
-        const zr = await fetch(`${API}/zero-card/start`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ order_id: j.order_id })
-        });
+  try { if (typeof clearCheckoutState === "function") clearCheckoutState(); } catch (e) {}
 
-        const z = await zr.json();
-        console.log('zero-card start resp', z);
+  // 清 storage（避免打開又讀到舊 cart）
+  try { localStorage.removeItem("MURAIN_WEB_CART_TOKEN"); } catch (e) {}
+  try { localStorage.removeItem("murain_cart_token"); } catch (e) {}
+  try { sessionStorage.removeItem("MURAIN_WEB_CART_TOKEN"); } catch (e) {}
+  try { sessionStorage.removeItem("murain_cart_token"); } catch (e) {}
 
-        if (!zr.ok || !z.ok) {
-          alert('中租無卡啟動失敗：' + (z.error || z.message || ''));
-          return;
-        }
+  // 清 URL 參數 cart_token（避免返回/重整又回到舊車）
+  try {
+    const u = new URL(location.href);
+    u.searchParams.delete("cart_token");
+    history.replaceState(null, "", u.toString());
+  } catch (e) {}
 
-        location.href = z.payment_url;
-        return;
-      } catch (e) {
-        console.error('zero-card error', e);
-        alert('中租無卡啟動失敗（網路或程式錯誤）');
-        return;
-      }
-    }
+  // 同頁變數也清空
+  cartToken = "";
+}
 
-    const finalTotal = Number.isFinite(Number(j.net_amount)) ? Number(j.net_amount) : Math.max(subtotal - creditUsed, 0);
+// ✅ 最後：只有離線才會走到這裡（線上都已 return）
+const finalTotal = Number.isFinite(Number(j.net_amount))
+  ? Number(j.net_amount)
+  : Math.max(subtotal - (Number(shipping_info?.credit_used || 0) || 0), 0);
+
 const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total=${encodeURIComponent(finalTotal)}`;
-    try{
-      location.href = url;
-    }catch(e){
-      alert(`下單成功！訂單編號：${j.order_id}`);
-    }
 
-  }catch(e){
-    console.error(e);
-    alert(e.message || '送出失敗，請再試一次');
-  }finally{
-    $('#submitBtn').disabled = false;
-  }
+try {
+  location.href = url;
+} catch (e) {
+  alert(`下單成功！訂單編號：${j.order_id}`);
+}
+
+} catch (e) {
+  console.error(e);
+  alert(e.message || "送出失敗，請再試一次");
+} finally {
+  try { $("#submitBtn").disabled = false; } catch (e) {}
+}
 });
 
-   async function copyToClipboard(text) {
-  const t = String(text || '').trim();
+// ===============================
+// ✅ copyToClipboard + 綁定「複製匯款帳號」按鈕
+// ===============================
+async function copyToClipboard(text) {
+  const t = String(text || "").trim();
   if (!t) return false;
 
   try {
@@ -3188,15 +3211,15 @@ const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total
 
   // fallback（LINE 內建瀏覽器/部分手機更穩）
   try {
-    const ta = document.createElement('textarea');
+    const ta = document.createElement("textarea");
     ta.value = t;
-    ta.setAttribute('readonly', '');
-    ta.style.position = 'fixed';
-    ta.style.opacity = '0';
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
     document.body.appendChild(ta);
     ta.select();
     ta.setSelectionRange(0, ta.value.length);
-    const ok = document.execCommand('copy');
+    const ok = document.execCommand("copy");
     document.body.removeChild(ta);
     return ok;
   } catch (e) {
@@ -3204,17 +3227,17 @@ const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total
   }
 }
 
-(function bindCopyBankAccount(){
-  const btn = document.getElementById('copyBankAccount');
-  const el  = document.getElementById('bankAccount');
+(function bindCopyBankAccount() {
+  const btn = document.getElementById("copyBankAccount");
+  const el  = document.getElementById("bankAccount");
   if (!btn || !el) return;
 
-  btn.addEventListener('click', async () => {
-    const raw = el.textContent || el.value || '';
+  btn.addEventListener("click", async () => {
+    const raw = el.textContent || el.value || "";
     const ok = await copyToClipboard(raw);
 
     const old = btn.textContent;
-    btn.textContent = ok ? '已複製 ✓' : '複製失敗';
+    btn.textContent = ok ? "已複製 ✓" : "複製失敗";
     setTimeout(() => (btn.textContent = old), 1200);
   });
 })();
