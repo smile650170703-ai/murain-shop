@@ -3009,11 +3009,24 @@ if (!isOnlinePay) {
   const serverNetAmount  = Math.max(0, Math.round(Number(j.net_amount ?? (subtotal - serverCreditUsed)) || 0));
   markCartCheckedOut(cartToken, j.order_id, serverNetAmount);
 
-  // ✅ 清狀態 + 清 cart token（避免返回又載入同一台購物車再結一次）
+  // ✅ A方案：清狀態 + 清 cart_token（local+session）+ 移除 URL 的 cart_token
   clearCheckoutState();
+
+  // 1) 清 storage（避免打開又讀到舊 cart）
   try { localStorage.removeItem('MURAIN_WEB_CART_TOKEN'); } catch (e) {}
   try { localStorage.removeItem('murain_cart_token'); } catch (e) {}
-}
+  try { sessionStorage.removeItem('MURAIN_WEB_CART_TOKEN'); } catch (e) {}
+  try { sessionStorage.removeItem('murain_cart_token'); } catch (e) {}
+
+  // 2) 清 URL 參數 cart_token（避免返回/重整又回到舊車）
+  try {
+    const u = new URL(location.href);
+    u.searchParams.delete('cart_token');
+    history.replaceState(null, '', u.toString());
+  } catch (e) {}
+
+  // 3) 同頁面也把變數清空，避免後面流程再引用舊 token
+  cartToken = '';
 
     // PayUni
     if (payment_method && payment_method.startsWith('paid_')) {
