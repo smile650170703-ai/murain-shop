@@ -1338,7 +1338,20 @@ function _nextWeekday(d){
   return d;
 }
 
+  function _addWeekdays(date, addDays) {
+  const d = new Date(date);
+  let n = Number(addDays || 0) || 0;
+  while (n > 0) {
+    d.setDate(d.getDate() + 1);
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) n--; // 只扣週一～週五
+  }
+  return d;
+}
+
 function setMeetupMinDates() {
+  if (_meetupMinInited) return;
+_meetupMinInited = true;
   try {
     const base = new Date();
     base.setHours(0,0,0,0);
@@ -1346,9 +1359,9 @@ function setMeetupMinDates() {
     // ✅ min：今天起算，但若今天是六日 → 跳到下個週一
     const minD = _nextWeekday(new Date(base));
 
-    // ✅ max：min 往後 7 天（仍會用週一～週五驗證擋掉六日）
-    const maxD = new Date(minD);
-    maxD.setDate(maxD.getDate() + MEETUP_WINDOW_DAYS);
+    // ✅ max：往後數「MEETUP_WINDOW_DAYS 個平日」(不含六日)
+// 例：7 = 含 min 在內共 7 個可面交日，所以只要再加 6 個平日
+const maxD = _addWeekdays(minD, MEETUP_WINDOW_DAYS - 1);
 
     const min = ymdLocal(minD);
     const max = ymdLocal(maxD);
@@ -1385,6 +1398,7 @@ function setMeetupMinDates() {
     });
   } catch (e) {}
 }
+  let _meetupMinInited = false;
 
 
 let CART_TOTAL_RAW = 0;   // 真實金額（數字）
@@ -1648,8 +1662,38 @@ function applyMemberInfoToForm(info) {
   try { return JSON.parse(txt); } catch { return { ok:false, raw:txt }; }
 }
 const qs = new URLSearchParams(location.search);
+
+// ✅ 先拿一般 query 的 cart_token
 let cartToken = qs.get('cart_token') || '';
 
+// ✅ 再支援 LIFF deep link：LINE 常把原 query 放進 liff.state
+if (!cartToken) {
+  const stRaw = qs.get('liff.state') || '';
+  if (stRaw) {
+    try {
+      // liff.state 可能長這樣：
+      // "cart_token=xxx&mode=COD"
+      // 或 "/liff-checkout.html?cart_token=xxx&mode=COD"
+      let s = String(stRaw || '');
+
+      // 去掉 hash
+      if (s.includes('#')) s = s.split('#')[0];
+
+      // 若帶路徑，取 ? 後面的 query
+      if (s.includes('?')) s = s.split('?')[1];
+
+      // 去掉開頭 ?
+      if (s.startsWith('?')) s = s.slice(1);
+
+      const st = new URLSearchParams(s);
+      cartToken = st.get('cart_token') || '';
+    } catch (e) {
+      console.warn('parse liff.state failed', e);
+    }
+  }
+}
+
+// ✅ 沒有就用 localStorage；有就寫回 localStorage（維持你原本行為）
 if (!cartToken) {
   try {
     cartToken = localStorage.getItem('murain_cart_token') || '';
