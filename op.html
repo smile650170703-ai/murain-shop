@@ -361,16 +361,36 @@ function buildCheckoutUrl() {
   return `https://liff.line.me/${LIFF_ID}?url=${encodeURIComponent(endpoint)}`;
 }
 
-  // 原本「複製結帳連結」按鈕
-  function linkCheckout() {
-    if (!guardCart()) return;
+  // 原本「複製結帳連結」按鈕（更穩：clipboard 優先）
+async function linkCheckout() {
+  if (!guardCart()) return;
 
-    const url = buildCheckoutUrl();
-    $('#link_out').value = url;
-    $('#link_out').select();
+  const url = buildCheckoutUrl();
+  const out = $('#link_out');
+  if (out) out.value = url;
+
+  // ✅ 優先用 clipboard
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(url);
+      alert('已複製結帳連結');
+      return;
+    }
+  } catch (e) {}
+
+  // fallback：選取 + execCommand
+  try {
+    if (out) {
+      out.focus();
+      out.select();
+      out.setSelectionRange(0, out.value.length);
+    }
     document.execCommand('copy');
     alert('已複製結帳連結');
+  } catch (e) {
+    alert('複製失敗，請手動長按複製連結');
   }
+}
 
 
   // ★ 新增：呼叫後端，請官方 LINE 幫你發 Flex 卡片
@@ -454,8 +474,8 @@ $('#line_search_name').value = (m.displayName || m.name || q || '').trim();
     }
   }
 
-// 新增：複製一整段要貼給客人的 LINE 訊息
-function copyLineMessage() {
+// 新增：複製一整段要貼給客人的 LINE 訊息（更穩：先用 clipboard，失敗再 fallback）
+async function copyLineMessage() {
   if (!guardCart()) return;
 
   const url = buildCheckoutUrl();
@@ -471,14 +491,41 @@ function copyLineMessage() {
 
   const msg = msgLines.join('\n');
 
-  const ta = $('#line_msg');
+  const ta = $('#line_msg') || $('#link_out');
   if (ta) ta.value = msg;
 
-  // 直接複製到剪貼簿
-  (ta || $('#link_out')).value = msg;
-  (ta || $('#link_out')).select();
-  document.execCommand('copy');
-  alert('已複製 LINE 訊息');
+  // ✅ 優先：Clipboard API（HTTPS + 新版瀏覽器最穩）
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(msg);
+      alert('已複製 LINE 訊息');
+      return;
+    }
+  } catch (e) {}
+
+  // ✅ fallback：選取 + execCommand（LINE 內建瀏覽器/部分手機）
+  try {
+    if (ta) {
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+    } else {
+      // 如果沒有 textarea/input，就臨時建一個
+      const tmp = document.createElement('textarea');
+      tmp.value = msg;
+      tmp.style.position = 'fixed';
+      tmp.style.opacity = '0';
+      document.body.appendChild(tmp);
+      tmp.select();
+      tmp.setSelectionRange(0, tmp.value.length);
+    }
+
+    const ok = document.execCommand('copy');
+    if (!ok) throw new Error('execCommand copy failed');
+    alert('已複製 LINE 訊息');
+  } catch (e) {
+    alert('複製失敗，請手動長按複製訊息');
+  }
 }
 
     // ====== 購物車管理（Admin）======
