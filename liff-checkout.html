@@ -3042,7 +3042,7 @@ shipping_info.deposit_agree_at = new Date().toISOString();
       }
     }
   }
-  // ===== ZEROCARD：無卡分期 =====
+// ===== ZEROCARD：無卡分期 =====
 if (activeTab === 'ZEROCARD') {
 
   const months = $('#zc_months').value;
@@ -3123,9 +3123,13 @@ if (activeTab === 'ZEROCARD') {
     alert('請選擇取貨方式');
     return;
   }
+
+  // ✅ 保險：一定把 ship 塞回 shipping_info
+  shipping_info.ship = ship;
 }
 
-  // ===== YUFU：裕富分期（新增） =====
+
+// ===== YUFU：裕富分期（新增） =====
 if (activeTab === 'YUFU') {
 
   const months = $('#yufu_months').value;
@@ -3191,25 +3195,29 @@ if (activeTab === 'YUFU') {
     return;
   }
 
-  // 申請資料（必填）
+  // ✅ 保險：一定把 ship 塞回 shipping_info
+  shipping_info.ship = ship;
+
+  // ===== 申請資料（必填）=====
   const aName  = ($('#yufu_apply_name').value || '').trim();
   const aId    = ($('#yufu_apply_id').value || '').trim();
   const aPhone = ($('#yufu_apply_phone').value || '').trim();
   const aEmail = ($('#yufu_apply_email').value || '').trim();
+
   // ✅ 新增：電話是否本人名下 + 掛號地址（條件）
-const phoneOwner = (document.querySelector('input[name="yufu_phone_owner"]:checked')?.value || 'yes');
+  const phoneOwner = (document.querySelector('input[name="yufu_phone_owner"]:checked')?.value || 'yes');
 
-const paperName = ($('#yufu_paper_name')?.value || '').trim();
-const paperPhone = ($('#yufu_paper_phone')?.value || '').trim();
-const paperZip = ($('#yufu_paper_zip')?.value || '').trim();
-const paperAddr = ($('#yufu_paper_addr')?.value || '').trim();
+  const paperName  = ($('#yufu_paper_name')?.value || '').trim();
+  const paperPhone = ($('#yufu_paper_phone')?.value || '').trim();
+  const paperZip   = ($('#yufu_paper_zip')?.value || '').trim();
+  const paperAddr  = ($('#yufu_paper_addr')?.value || '').trim();
 
-if (phoneOwner === 'no') {
-  if (![paperName, paperPhone, paperAddr].every(required)) {
-    alert('電話非本人名下時，請填寫掛號寄送地址（收件人姓名、掛號地址）。');
-    return;
+  if (phoneOwner === 'no') {
+    if (![paperName, paperPhone, paperAddr].every(required)) {
+      alert('電話非本人名下時，請填寫掛號寄送地址（收件人姓名、掛號地址）。');
+      return;
+    }
   }
-}
 
   const agree1 = !!document.getElementById('yufu_agree_privacy')?.checked;
   const agree2 = !!document.getElementById('yufu_agree_rate')?.checked;
@@ -3223,12 +3231,16 @@ if (phoneOwner === 'no') {
     return;
   }
 
-  // 寫入後端要看的純文字（你已新增 installment_apply_text 欄位）
-  const m = Number(months || 0);
-  const rate = Number(YUFU_RATE_TABLE?.[m] ?? 0);
-  const base = Math.max(0, Math.round((subtotal || 0) - (Number(shipping_info?.credit_used || creditUsed || 0) || 0)));
-  const total = Math.max(0, Math.round(base * (1 + rate/100)));
-  const perMon = m ? Math.ceil(total / m) : 0;
+  // ===== 寫入後端要看的純文字/結構化 =====
+  const m = Number(months || 0) || 0;
+  const rate = Number(YUFU_RATE_TABLE?.[m] ?? 0) || 0;
+
+  // ✅ base 用「折抵後金額」來試算（跟你原本意思一致）
+  const used = Number(shipping_info?.credit_used ?? (typeof creditUsed !== 'undefined' ? creditUsed : 0) ?? 0) || 0;
+  const sub  = Number(typeof subtotal !== 'undefined' ? subtotal : 0) || 0;
+  const base = Math.max(0, Math.round(sub - used));
+  const total = Math.max(0, Math.round(base * (1 + rate / 100)));
+  const perMon = (m > 0) ? Math.ceil(total / m) : 0;
 
   shipping_info.installment_apply_text =
 `【裕富分期申請資料】
@@ -3246,220 +3258,26 @@ ${phoneOwner === 'no'
      + (paperAddr || ''))
   : ''}`;
 
-  // 也一起存結構化（未來你若要做 InstallmentApplications 表會更好接）
   shipping_info.installment_apply = {
-  provider: 'yufu',
-  months: m,
-  rate_percent: rate,
-  base_amount: base,
-  monthly_est: perMon,
-  applicant: {
-    name: aName,
-    id: aId,
-    phone: aPhone,
-    email: aEmail,
-    phone_owner: phoneOwner
-  },
-  paper_addr: (phoneOwner === 'no')
-    ? { name: paperName, phone: paperPhone, zip: paperZip, addr: paperAddr }
-    : null
-};
-
-  if(!payment_method || !ship){
-    alert('請先選擇付款方式，並填完必要欄位');
-    return;
-  }
-
-  shipping_info.ship = ship;
-
-  try{
-    $('#submitBtn').disabled = true;
-
-    console.log('[CHECKOUT] payment_method=', payment_method);
-
-    const payload = { cart_token: cartToken, payment_method, shipping_info };
-    console.log("[CHECKOUT payload]", JSON.stringify(payload, null, 2));
-console.log("[CHECKOUT credit]", { AVAILABLE_CREDIT, CREDIT_USED, input: document.getElementById("credit_input")?.value });
-
-    const r = await fetch(`${API}/checkout`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
-    });
-    const j = await r.json();
-if (!r.ok || !j.ok) {
-  const msg = j.message || j.error || '送出失敗，請再試一次';
-  throw new Error(msg);
+    provider: 'yufu',
+    months: m,
+    rate_percent: rate,
+    base_amount: base,
+    monthly_est: perMon,
+    applicant: {
+      name: aName,
+      id: aId,
+      phone: aPhone,
+      email: aEmail,
+      phone_owner: phoneOwner
+    },
+    paper_addr: (phoneOwner === 'no')
+      ? { name: paperName, phone: paperPhone, zip: paperZip, addr: paperAddr }
+      : null
+  };
 }
 
-// ✅ 政策1：建單後鎖定購物金（後端若回 locked/reused，就以前端顯示也鎖）
-const serverCreditUsed = Math.max(0, Math.floor(Number(j.credit_used ?? shipping_info?.credit_used ?? 0) || 0));
-const serverNetAmount  = Math.max(0, Math.round(Number(j.net_amount ?? (subtotal - serverCreditUsed)) || 0));
 
-// 讓後面顯示 / result 頁金額用「後端算好的」避免不一致
-const payTotal = serverNetAmount;
-
-// ✅ 若後端表示這筆是沿用/鎖定，就把購物金 UI 鎖住
-if (j.locked || j.reused) {
-  // 1) 同步回 shipping_info（避免你後面又用舊值算）
-  if (shipping_info && typeof shipping_info === "object") {
-    shipping_info.credit_used = serverCreditUsed;
-  }
-
-  // 2) 鎖 UI（下面第2點我給你 helper）
-  lockCreditUI(serverCreditUsed, j.order_id);
-}
-
-// ✅ 注意：線上支付 / 零卡「不要先清掉 cart_token」
-// 不然 payuni/start 或 zero-card/start 失敗時，客人回不去重試
-
-// ===== 線上/離線判斷 =====
-const isZeroCard  = String(payment_method || "").startsWith("zero_card_");
-const isPaid      = String(payment_method || "").startsWith("paid_");
-const isOnlinePay = isPaid || isZeroCard;
-
-// ✅ 線上付款 / 零卡：先記錄 pending（若你有這個 helper 就用，沒有也不會炸）
-if (isOnlinePay) {
-  try {
-    if (typeof markCartPendingPay === "function") {
-      markCartPendingPay(cartToken, j.order_id, payment_method);
-    }
-  } catch (e) {}
-}
-
-// ✅ 1) PayUni（線上付款）— 必須在離線分支外
-if (isPaid) {
-  try {
-    const payMode =
-      (payment_method === "paid_aftee_direct") ? "upp" :
-      (payment_method === "paid_linepay")      ? "upp" :
-      (payment_method.startsWith("paid_card_inst_")) ? "card_inst" :
-      "card_once";
-
-    const instMonths = payment_method.startsWith("paid_card_inst_")
-      ? Number(payment_method.split("_").pop() || 3)
-      : null;
-
-    const pr = await fetch(`${API}/payuni/start`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        order_id: j.order_id,
-        mode: payMode,
-        inst_months: instMonths
-      })
-    });
-
-    const up = await pr.json().catch(() => ({}));
-
-    if (!pr.ok || !up.ok) {
-      alert("線上刷卡啟動失敗：" + (up.error || up.message || "請稍後再試"));
-      return;
-    }
-
-    // ✅ 用 POST form 跳轉 PayUni
-    const f = document.createElement("form");
-    f.method = "POST";
-    f.action = up.url;
-
-    ["MerID", "Version", "EncryptInfo", "HashInfo"].forEach(k => {
-      const input = document.createElement("input");
-      input.type  = "hidden";
-      input.name  = k;
-      input.value = up[k] || "";
-      f.appendChild(input);
-    });
-
-    document.body.appendChild(f);
-    f.submit();
-    return; // ✅ 線上一定要 return，避免跑到離線清 token / result
-  } catch (e) {
-    console.error("payuni error", e);
-    alert("線上刷卡啟動失敗（網路或程式錯誤）");
-    return;
-  }
-}
-
-// ✅ 2) ZeroCard — 必須在離線分支外
-if (isZeroCard) {
-  try {
-    const zr = await fetch(`${API}/zero-card/start`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ order_id: j.order_id })
-    });
-
-    const z = await zr.json().catch(() => ({}));
-
-    if (!zr.ok || !z.ok) {
-      alert("中租無卡啟動失敗：" + (z.error || z.message || "請稍後再試"));
-      return;
-    }
-
-    location.href = z.payment_url;
-    return; // ✅ 零卡也一定要 return
-  } catch (e) {
-    console.error("zero-card error", e);
-    alert("中租無卡啟動失敗（網路或程式錯誤）");
-    return;
-  }
-}
-
-// ✅ 3) 只有離線才做：清 pending、鎖 cart、清 token、導 result
-if (!isOnlinePay) {
-  try {
-    if (typeof clearPendingPay === "function") clearPendingPay(cartToken);
-  } catch (e) {}
-
-  // ✅ 用後端 net_amount 優先，避免前後端金額不一致
-  const serverCreditUsed = Math.max(0, Math.floor(Number(j.credit_used ?? shipping_info?.credit_used ?? 0) || 0));
-  const serverNetAmount  = Math.max(0, Math.round(Number(j.net_amount ?? (subtotal - serverCreditUsed)) || 0));
-
-  try {
-    if (typeof markCartCheckedOut === "function") {
-      markCartCheckedOut(cartToken, j.order_id, serverNetAmount);
-    }
-  } catch (e) {}
-
-  try { if (typeof clearCheckoutState === "function") clearCheckoutState(); } catch (e) {}
-
-  // 清 storage（避免打開又讀到舊 cart）
-  try { localStorage.removeItem("MURAIN_WEB_CART_TOKEN"); } catch (e) {}
-  try { localStorage.removeItem("murain_cart_token"); } catch (e) {}
-  try { sessionStorage.removeItem("MURAIN_WEB_CART_TOKEN"); } catch (e) {}
-  try { sessionStorage.removeItem("murain_cart_token"); } catch (e) {}
-
-  // 清 URL 參數 cart_token（避免返回/重整又回到舊車）
-  try {
-    const u = new URL(location.href);
-    u.searchParams.delete("cart_token");
-    history.replaceState(null, "", u.toString());
-  } catch (e) {}
-
-  // 同頁變數也清空
-  cartToken = "";
-}
-
-// ✅ 最後：只有離線才會走到這裡（線上都已 return）
-const finalTotal = Number.isFinite(Number(j.net_amount))
-  ? Number(j.net_amount)
-  : Math.max(subtotal - (Number(shipping_info?.credit_used || 0) || 0), 0);
-
-const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total=${encodeURIComponent(finalTotal)}`;
-
-try {
-  location.href = url;
-} catch (e) {
-  alert(`下單成功！訂單編號：${j.order_id}`);
-}
-
-} catch (e) {
-  console.error(e);
-  alert(e.message || "送出失敗，請再試一次");
-} finally {
-  try { $("#submitBtn").disabled = false; } catch (e) {}
-}
-}); // ✅ 關掉 addEventListener('click', async(e)=>{ ... });
 // ===============================
 // ✅ copyToClipboard + 綁定「複製匯款帳號」按鈕
 // ===============================
