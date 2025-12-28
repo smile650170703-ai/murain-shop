@@ -2062,6 +2062,86 @@ function updateYufuShip(){
 document.getElementById('yufu_months')?.addEventListener('change', calcYUFU);
 document.getElementById('yufu_ship_method')?.addEventListener('change', updateYufuShip);
 
+  // ✅ C3) 補完：把 pm 套到「非 PAID」的 UI（COD / DEPOSIT / ZEROCARD / YUFU）
+(function preselectNonPaidFromPM(){
+  const pm = String(window.__prefill_payment_method || "").trim();
+  if (!pm) return;
+
+  const p = pm.toLowerCase();
+
+  // 小工具：點 Tab
+  const clickTab = (key) => {
+    try {
+      const tab = Array.from(document.querySelectorAll('#payTabs .tab'))
+        .find(t => String(t.dataset.pay || '').toUpperCase() === String(key || '').toUpperCase());
+      if (tab) tab.click();
+    } catch (e) {}
+  };
+
+  // 小工具：設 select + 觸發 change
+  const setSelect = (id, val) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.value = String(val);
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  // 小工具：設 radio + 觸發 change
+  const setRadio = (name, val) => {
+    const el = document.querySelector(`input[name="${name}"][value="${val}"]`);
+    if (!el) return;
+    el.checked = true;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+
+  // --- COD（含面交現金） ---
+  if (p.includes('cod') || p.includes('meetup')) {
+    clickTab('COD');
+    // 你的 codType 是 711 / meetup（檔案內就是這樣）
+    setRadio('codType', p.includes('meetup') ? 'meetup' : '711');
+    try { refreshCodType(); } catch(e) {}
+    delete window.__prefill_payment_method;
+    return;
+  }
+
+  // --- DEPOSIT（匯款定金/全額匯款） ---
+  if (p.includes('deposit') || p.startsWith('dep')) {
+    clickTab('DEPOSIT');
+    // 你的 depType 是 old / new_full（檔案內就是這樣）
+    setRadio('depType', (p === 'deposit_old') ? 'old' : 'new_full');
+    try { refreshDepType(); } catch(e) {}
+    try { applyDepOldHoldLimit(); } catch(e) {}
+    delete window.__prefill_payment_method;
+    return;
+  }
+
+  // --- ZEROCARD（無卡分期：zero_card_3/6/9/12...） ---
+  if (p.includes('zero') || p.includes('zerocard')) {
+    clickTab('ZEROCARD');
+    const m = p.match(/(\d+)\s*$/) || p.match(/zero_card_(\d+)/);
+    const months = m ? (m[1] || m[0]) : '';
+    if (months) setSelect('zc_months', months);
+    try { calcZC(); } catch(e) {}
+    try { updateZcShip(); } catch(e) {}
+    delete window.__prefill_payment_method;
+    return;
+  }
+
+  // --- YUFU（裕富分期：yufu_inst_3/6/9/12/24/36...） ---
+  if (p.includes('yufu')) {
+    clickTab('YUFU');
+    const m = p.match(/(\d+)\s*$/) || p.match(/yufu_inst_(\d+)/);
+    const months = m ? (m[1] || m[0]) : '';
+    if (months) setSelect('yufu_months', months);
+    try { calcYUFU(); } catch(e) {}
+    try { updateYufuShip(); } catch(e) {}
+    delete window.__prefill_payment_method;
+    return;
+  }
+
+  // paid_ 不在這裡處理：交給你原本 C2（preselectPaidChannel）
+})();
+
 /* ===== 購物車載入 ===== */
 async function loadCart(){
   if (!cartToken) {
