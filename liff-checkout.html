@@ -1821,7 +1821,8 @@ tabs.forEach(t=>t.addEventListener('click',()=>{
   else if (p.includes("deposit") || p.startsWith("dep")) key = "DEPOSIT";
   else if (p.includes("cod")) key = "COD";
 
-  const tab = Array.from(tabs).find(t => String(t.dataset.pay || "").toUpperCase() === key);
+  const list = (typeof tabs !== "undefined" && tabs) ? tabs : document.querySelectorAll("[data-pay]");
+const tab = Array.from(list).find(t => String(t.dataset.pay || "").toUpperCase() === key);
   if (tab) tab.click();
 })();
 
@@ -3238,7 +3239,12 @@ if (phoneOwner === 'no') {
 本人門號：${aPhone}
 Email：${aEmail}
 電話是否本人名下：${phoneOwner === 'yes' ? '是' : '否'}
-${phoneOwner === 'no' ? `掛號寄送：${paperName}，${paperPhone ? paperPhone + '，' : ''}${paperZip ? paperZip + '，' : ''}${paperAddr}` : ''}`;
+${phoneOwner === 'no'
+  ? ('掛號寄送：' + paperName + '，'
+     + (paperPhone ? (paperPhone + '，') : '')
+     + (paperZip ? (paperZip + '，') : '')
+     + (paperAddr || ''))
+  : ''}`;
 
   // 也一起存結構化（未來你若要做 InstallmentApplications 表會更好接）
   shipping_info.installment_apply = {
@@ -3453,7 +3459,8 @@ try {
 } finally {
   try { $("#submitBtn").disabled = false; } catch (e) {}
 }
-}
+}  // ← 這個多半是關 try/catch 外層（例如 click handler）
+}  // ✅ 再補這個：把最外層 function / addEventListener 的 { 關掉
 // ===============================
 // ✅ copyToClipboard + 綁定「複製匯款帳號」按鈕
 // ===============================
@@ -3503,35 +3510,39 @@ async function copyToClipboard(text) {
 
 // ===== 頁面初始化 =====
 (async () => {
-  if (!cartToken) {
-  restoreCheckoutState();
-}
+  // ✅ 先恢復上次狀態（有 token 時才有意義）
+  try { restoreCheckoutState(); } catch (e) {}
+
+  // ✅ 沒 token 就不要繼續跑，避免後面一堆 guard / loadCart 變成空跑
+  if (!cartToken) return;
 
   // ✅ 先擋：已結單就不必再做任何事
-  if (cartToken && guardAlreadyCheckedOut(cartToken)) return;
+  try {
+    if (guardAlreadyCheckedOut(cartToken)) return;
+  } catch (e) {}
 
   // ✅ 7-11 地圖回填（要在 loadCart 前）
-  applyStoreFromURL();
+  try { applyStoreFromURL(); } catch (e) {}
 
   // ✅【修正】7-11 回來後補回購物金輸入
-try {
-  const savedCredit = sessionStorage.getItem('murain_credit_used');
-  if (savedCredit !== null) {
-    const creditInput = document.getElementById('credit_input'); // ✅ 正確 id
-    if (creditInput) {
-      creditInput.value = savedCredit;
-      creditInput.dispatchEvent(new Event('input', { bubbles:true }));
+  try {
+    const savedCredit = sessionStorage.getItem("murain_credit_used");
+    if (savedCredit !== null) {
+      const creditInput = document.getElementById("credit_input");
+      if (creditInput) {
+        creditInput.value = savedCredit;
+        creditInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
     }
-  }
-} catch(e) {}
+  } catch (e) {}
 
-  // ✅ pending pay 防重複（如果你有寫這個 async guard，就要 await）
-  if (cartToken) {
+  // ✅ pending pay 防重複
+  try {
     const blocked = await guardPendingPay(cartToken);
     if (blocked) return;
-  }
+  } catch (e) {}
 
-  // ✅ UI 初始狀態先套一次（避免一進來顯示錯）
+  // ✅ UI 初始狀態先套一次
   try { updatePaidChannelBox(); } catch(e){}
   try { updatePaidShip(); } catch(e){}
   try { updateZcShip(); } catch(e){}
@@ -3540,9 +3551,9 @@ try {
   try { setMeetupMinDates(); } catch(e){}
   try { setupYufuPhoneOwner(); } catch(e){}
 
-  // ✅ 再載入會員/購物車
-  try { await initLiffAndMember(); } catch(e){}
-  try { await loadCart(); } catch(e){}
+  // ✅ 再載入會員/購物車（這兩個你先不要吞錯，至少印出來，才知道哪裡失敗）
+  try { await initLiffAndMember(); } catch(e){ console.error("initLiffAndMember failed:", e); }
+  try { await loadCart(); } catch(e){ console.error("loadCart failed:", e); }
 })();
 
  async function guardPendingPay(token){
@@ -3700,7 +3711,7 @@ window.addEventListener('pageshow', function () {
   }, true);
 
   refresh();
-})(); // ✅ 這行一定要在 </script> 前
+})();
 </script>
 
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js"></script>
