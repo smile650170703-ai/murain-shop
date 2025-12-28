@@ -1685,7 +1685,60 @@ function getQS() {
   return outer;
 }
 
+  // ===== Retry prefill (pm + ship_b64) — only prefill, no flow change =====
+function b64urlDecodeToString(b64url) {
+  try {
+    const b64 = String(b64url || "")
+      .replace(/-/g, "+")
+      .replace(/_/g, "/")
+      .padEnd(Math.ceil(String(b64url || "").length / 4) * 4, "=");
+    const jsonStr = decodeURIComponent(escape(atob(b64)));
+    return jsonStr;
+  } catch (e) {
+    console.log("b64url decode error", e);
+    return "";
+  }
+}
+
+function applyRetryPrefillFromQS(qs) {
+  qs = qs || getQS(); // ✅ 外面有傳就用外面的，沒有才自己抓
+
+  // ✅ 付款方式預選
+  const pm = String(qs.get("pm") || "").trim();
+  if (pm) {
+    try { window.__prefill_payment_method = pm; } catch (e) {}
+  }
+
+  // ✅ 收件資訊回填
+  const shipB64 = String(qs.get("ship_b64") || "").trim();
+  if (shipB64) {
+    const raw = b64urlDecodeToString(shipB64);
+    if (raw) {
+      try {
+        const shipInfo = JSON.parse(raw);
+        const ship = shipInfo.ship || shipInfo.shipping || {};
+        const store = ship.store || ship.cvs || {};
+
+        if (ship.name && document.querySelector("#name"))  document.querySelector("#name").value = ship.name;
+        if (ship.phone && document.querySelector("#phone")) document.querySelector("#phone").value = ship.phone;
+        if (ship.email && document.querySelector("#email")) document.querySelector("#email").value = ship.email;
+        if (ship.addr && document.querySelector("#addr"))   document.querySelector("#addr").value = ship.addr;
+
+        if (store.store_id && document.querySelector("#store_id")) document.querySelector("#store_id").value = store.store_id;
+        if (store.store_name && document.querySelector("#store_name")) document.querySelector("#store_name").value = store.store_name;
+        if (store.store_addr && document.querySelector("#store_addr")) document.querySelector("#store_addr").value = store.store_addr;
+
+        window.__prefill_shipping_info = shipInfo;
+      } catch (e) {
+        console.log("ship_b64 parse error", e);
+      }
+    }
+  }
+}
+
 const qs = getQS();
+applyRetryPrefillFromQS(qs);
+
 let cartToken = qs.get("cart_token") || "";
 
 if (!cartToken) {
@@ -1755,6 +1808,22 @@ tabs.forEach(t=>t.addEventListener('click',()=>{
   ['COD','PAID','DEPOSIT','ZEROCARD','YUFU'].forEach(x=>$('#pane'+x).hidden=(x!==kt));
 }));
 
+// ✅ C1) 用 pm 切到正確 Tab（只切 Tab，不動其他）
+(function preselectPayTab(){
+  const pm = String(window.__prefill_payment_method || "").trim();
+  if (!pm) return;
+
+  const p = pm.toLowerCase();
+  let key = "PAID";
+  if (p.includes("zero") || p.includes("zerocard")) key = "ZEROCARD";
+  else if (p.includes("yufu")) key = "YUFU";
+  else if (p.includes("deposit") || p.startsWith("dep")) key = "DEPOSIT";
+  else if (p.includes("cod")) key = "COD";
+
+  const tab = Array.from(tabs).find(t => String(t.dataset.pay || "").toUpperCase() === key);
+  if (tab) tab.click();
+})();
+
 /* ===== PAID ===== */
 function updatePaidChannelBox(){
   const ch = $('#paid_channel').value;
@@ -1762,6 +1831,47 @@ function updatePaidChannelBox(){
 }
 $('#paid_channel').addEventListener('change', updatePaidChannelBox);
 $('#paid_ship_method').addEventListener('change', updatePaidShip);
+
+  // ✅ C2) 若 pm 是 paid_...，同步 #paid_channel / #inst_months（只做一次）
+(function preselectPaidChannel(){
+  const pm = String(window.__prefill_payment_method || "").trim();
+  if (!pm) return;
+
+  const p = pm.toLowerCase();
+  if (!p.startsWith("paid_")) return;
+
+  const paidChannel = document.getElementById("paid_channel");
+  if (!paidChannel) return;
+
+  let channel = "";
+  let months  = "";
+
+  if (p === "paid_card_once") channel = "card_once";
+  else if (p === "paid_linepay") channel = "linepay";
+  else if (p === "paid_aftee_direct") channel = "af";
+  else {
+    const m = p.match(/^paid_card_inst_(\d+)$/);
+    if (m) { channel = "card_inst"; months = m[1]; }
+  }
+
+  if (channel) {
+    paidChannel.value = channel;
+    paidChannel.dispatchEvent(new Event("change", { bubbles: true }));
+    // 你的 updatePaidChannelBox 會把 cardInstBox 顯示/隱藏
+    if (typeof updatePaidChannelBox === "function") updatePaidChannelBox();
+  }
+
+  if (channel === "card_inst" && months) {
+    const inst = document.getElementById("inst_months");
+    if (inst) {
+      inst.value = months;
+      inst.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+
+  // ✅ 全部套完再清掉，避免後面流程又被覆蓋
+  delete window.__prefill_payment_method;
+})();
 
 function updatePaidShip(){
   const m = $('#paid_ship_method').value;
