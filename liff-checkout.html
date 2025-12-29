@@ -2330,6 +2330,8 @@ function applyStoreFromURL(){
     qs2.get('store_addr') || qs2.get('cvs_addr') || qs2.get('CVSAddress') || qs2.get('STOREADDRESS') || '';
 
   if (!src || !id) return;
+   // ✅ 把這次選到的門市，獨立存成「最後一次門市」
+  saveLastStore(src, id, name, addr);
 
   const fill = (a,b,c)=>{ setFieldValue(a,id); setFieldValue(b,name); setFieldValue(c,addr); };
 
@@ -2538,6 +2540,44 @@ try { sessionStorage.setItem('murain_skip_restore_once','1'); } catch(e){}
 
 /* checkout 狀態暫存 */
 const CHECKOUT_STATE_KEY = 'murain_checkout_state_v1';
+  /* 最後一次 7-11 門市暫存（獨立於 checkoutState，避免 CART_LOADED=false 時存不到） */
+const LAST_STORE_KEY = 'murain_last_store_v1';
+
+function saveLastStore(src, id, name, addr) {
+  try {
+    if (!id) return;
+    localStorage.setItem(LAST_STORE_KEY, JSON.stringify({
+      src: String(src || ''),
+      id: String(id || ''),
+      name: String(name || ''),
+      addr: String(addr || ''),
+      at: Date.now()
+    }));
+  } catch (e) {}
+}
+
+function applyLastStoreIfAny() {
+  try {
+    const raw = localStorage.getItem(LAST_STORE_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw);
+    if (!s || !s.id) return;
+
+    const fill = (a,b,c)=>{ setFieldValue(a, s.id); setFieldValue(b, s.name || ''); setFieldValue(c, s.addr || ''); };
+
+    // ✅ 全分頁同步同一家（跟 applyStoreFromURL 相同 targets）
+    const targets = [
+      ['#cod_store_id',               '#cod_store_name',               '#cod_store_addr'],
+      ['#ship_store_id_paid',         '#ship_store_name_paid',         '#ship_store_addr_paid'],
+      ['#ship_store_id_yufu',         '#ship_store_name_yufu',         '#ship_store_addr_yufu'],
+      ['#dep_old_store_id',           '#dep_old_store_name',           '#dep_old_store_addr'],
+      ['#dep_new_full_store_id',      '#dep_new_full_store_name',      '#dep_new_full_store_addr'],
+      ['#dep_new_partial_store_id',   '#dep_new_partial_store_name',   '#dep_new_partial_store_addr'],
+      ['#ship_store_id_zc',           '#ship_store_name_zc',           '#ship_store_addr_zc'],
+    ];
+    targets.forEach(([a,b,c]) => fill(a,b,c));
+  } catch (e) {}
+}
 
   function _pendingKey(token){ return `murain_pending_pay_cart_${token}`; }
 
@@ -3511,6 +3551,7 @@ async function copyToClipboard(text) {
 
     // 1) 先恢復表單狀態（但你有 murain_skip_restore_once 的保護）
     try { restoreCheckoutState(); } catch(e){}
+    try { applyLastStoreIfAny(); } catch(e){}
 
     // 2) 綁購物金「隨打隨存」+ 回填（一定要做，才不會跳 7-11 回來變 0）
     try { attachCreditPersist(); } catch(e){}
