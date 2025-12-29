@@ -1844,6 +1844,44 @@ function creditKey(token){
   return `murain_credit_used:${String(token).trim()}`;
 }
 
+  // ✅ A) 綁定：隨打隨存（session + local）
+function attachCreditPersist(){
+  const el = document.getElementById("credit_input");
+  if (!el) return false;
+
+  // 避免重複綁定（loadCart 重繪時會換 DOM）
+  if (el.dataset.boundCreditPersist === "1") return true;
+  el.dataset.boundCreditPersist = "1";
+
+  el.addEventListener("input", () => {
+    const v = String(el.value || "");
+    try { sessionStorage.setItem(creditKey(cartToken), v); } catch(e){}
+    try { localStorage.setItem(creditKey(cartToken), v); } catch(e){}
+  });
+
+  return true;
+}
+
+// ✅ B) 回填：優先 token key，其次舊 key
+function restoreCreditInput(){
+  try {
+    const key = creditKey(cartToken);
+    const saved =
+      (sessionStorage.getItem(key) ?? localStorage.getItem(key) ??
+       sessionStorage.getItem("murain_credit_used") ?? localStorage.getItem("murain_credit_used"));
+
+    if (saved === null) return;
+
+    const el = document.getElementById("credit_input");
+    if (!el) return;
+
+    if (String(el.value || "").trim() !== String(saved).trim()) {
+      el.value = saved;
+      el.dispatchEvent(new Event("input", { bubbles:true }));
+    }
+  } catch(e){}
+}
+
 /* ===== PayReturn/PayFail 回來用的參數 ===== */
 const from = qs.get('from') || '';
 const statusFromPay = qs.get('status') || '';
@@ -3490,19 +3528,6 @@ async function copyToClipboard(text) {
   });
 })();
 
-// ✅ 7-11 回來後：讓購物金輸入不會變 0（隨打隨存）
-(function bindCreditInputPersist(){
-  const creditInput = document.getElementById("credit_input");
-  if (!creditInput) return;
-
-  const token = cartToken;   // ✅ 把當下的 token 固定住
-  if (!token) return;
-
-  creditInput.addEventListener("input", () => {
-    try { sessionStorage.setItem(creditKey(token), String(creditInput.value || "")); } catch(e){}
-  });
-})();
-
 // ===== 頁面初始化 =====
 (async () => {
   try { if (typeof restoreCheckoutState === "function") restoreCheckoutState(); } catch (e) {}
@@ -3511,19 +3536,13 @@ async function copyToClipboard(text) {
 
   try { if (typeof guardAlreadyCheckedOut === "function" && guardAlreadyCheckedOut(cartToken)) return; } catch (e) {}
 
+  // ✅ 先綁一次（如果 input 已存在）
+  try { if (typeof attachCreditPersist === "function") attachCreditPersist(); } catch(e){}
+
   try { if (typeof applyStoreFromURL === "function") applyStoreFromURL(); } catch (e) {}
 
-  // ✅ 7-11 回來後補回購物金輸入
-  try {
-    const savedCredit = sessionStorage.getItem(creditKey(cartToken));
-    if (savedCredit !== null) {
-      const creditInput = document.getElementById("credit_input");
-      if (creditInput) {
-        creditInput.value = savedCredit;
-        creditInput.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-    }
-  } catch (e) {}
+  // ✅ ① 選完門市回來：立刻補回
+  try { if (typeof restoreCreditInput === "function") restoreCreditInput(); } catch(e){}
 
   // ✅ pending pay 防重複（會自動續付 / 或擋掉）
   try {
@@ -3540,34 +3559,19 @@ async function copyToClipboard(text) {
   try { if (typeof setMeetupMinDates === "function") setMeetupMinDates(); } catch(e){}
   try { setupYufuPhoneOwner(); } catch(e){}
 
-  // ✅ 載入會員/購物車（不要吞錯，至少印出來）
+  // ✅ 載入會員（不要吞錯，至少印出來）
   try { if (typeof initLiffAndMember === "function") await initLiffAndMember(); } catch(e){ console.error("initLiffAndMember failed:", e); }
 
-// ✅ 再補回一次（避免 initLiffAndMember 內部把 input 重設成 0）
-try {
-  const savedCredit = sessionStorage.getItem(creditKey(cartToken)) ?? sessionStorage.getItem("murain_credit_used");
-  if (savedCredit !== null) {
-    const creditInput = document.getElementById("credit_input");
-    if (creditInput && String(creditInput.value || "").trim() !== String(savedCredit).trim()) {
-      creditInput.value = savedCredit;
-      creditInput.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-  }
-} catch(e){}
+  // ✅ ② 防止 initLiffAndMember 把 input 變 0（可能重繪）
+  try { if (typeof attachCreditPersist === "function") attachCreditPersist(); } catch(e){}
+  try { if (typeof restoreCreditInput === "function") restoreCreditInput(); } catch(e){}
 
-try { if (typeof loadCart === "function") await loadCart(); } catch(e){ console.error("loadCart failed:", e); }
+  // ✅ 載入購物車
+  try { if (typeof loadCart === "function") await loadCart(); } catch(e){ console.error("loadCart failed:", e); }
 
-// ✅ ✅ ✅ 最後再補一次（避免 loadCart/重繪把 0 蓋回去）
-try {
-  const savedCredit = sessionStorage.getItem(creditKey(cartToken)) ?? sessionStorage.getItem("murain_credit_used");
-  if (savedCredit !== null) {
-    const creditInput = document.getElementById("credit_input");
-    if (creditInput && String(creditInput.value || "").trim() !== String(savedCredit).trim()) {
-      creditInput.value = savedCredit;
-      creditInput.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-  }
-} catch(e){}
+  // ✅ ③ 最關鍵：loadCart 可能重繪 input → 重新綁 + 再補回一次
+  try { if (typeof attachCreditPersist === "function") attachCreditPersist(); } catch(e){}
+  try { if (typeof restoreCreditInput === "function") restoreCreditInput(); } catch(e){}
 })();
 
 // ===== pending pay：避免重複付款 / 自動續付（只處理 paid_，其餘照常）=====
