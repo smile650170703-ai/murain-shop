@@ -1737,31 +1737,114 @@ function applyRetryPrefillFromQS(qs) {
   }
 }
 
+  function _extractCartTokenFromWrappedURL() {
+  const qs = new URLSearchParams(location.search);
+
+  // A) 直接有 cart_token（一般瀏覽器）
+  let t = (qs.get("cart_token") || "").trim();
+  if (t) return t;
+
+  // B) LINE 常見：?url=<encoded https://...?...cart_token=...>
+  const wrapped = qs.get("url");
+  if (wrapped) {
+    try {
+      const u = new URL(decodeURIComponent(wrapped), location.origin);
+      t = (u.searchParams.get("cart_token") || "").trim();
+      if (t) return t;
+    } catch (e) {}
+  }
+
+  // C) LINE LIFF：?liff.state=<encoded ?url=... 或 ?cart_token=...>
+  const st = qs.get("liff.state");
+  if (st) {
+    try {
+      const decoded = decodeURIComponent(st);
+      const u1 = new URL(decoded.startsWith("?") ? (location.origin + decoded) : decoded, location.origin);
+
+      t = (u1.searchParams.get("cart_token") || "").trim();
+      if (t) return t;
+
+      const wrapped2 = u1.searchParams.get("url");
+      if (wrapped2) {
+        const u2 = new URL(decodeURIComponent(wrapped2), location.origin);
+        t = (u2.searchParams.get("cart_token") || "").trim();
+        if (t) return t;
+      }
+    } catch (e) {}
+  }
+
+  return "";
+}
 const qs = getQS();
 applyRetryPrefillFromQS(qs);
 
-let cartToken = qs.get("cart_token") || "";
+function _extractCartTokenFromWrappedURL() {
+  const q = new URLSearchParams(location.search);
 
-if (!cartToken) {
-  try {
-    cartToken = localStorage.getItem("murain_cart_token") || "";
-  } catch (e) {
-    console.warn("localStorage read error", e);
+  // A) 直接有 cart_token（一般瀏覽器）
+  let t = (q.get("cart_token") || "").trim();
+  if (t) return t;
+
+  // B) LINE 常見：?url=<encoded https://...?...cart_token=...>
+  const wrapped = q.get("url");
+  if (wrapped) {
+    try {
+      const u = new URL(decodeURIComponent(wrapped), location.origin);
+      t = (u.searchParams.get("cart_token") || "").trim();
+      if (t) return t;
+    } catch (e) {}
   }
-} else {
-  try {
-    localStorage.setItem("murain_cart_token", cartToken);
-  } catch (e) {
-    console.warn("localStorage write error", e);
+
+  // C) LINE LIFF：?liff.state=<encoded ?url=... 或 ?cart_token=...>
+  const st = q.get("liff.state");
+  if (st) {
+    try {
+      const decoded = decodeURIComponent(st);
+      const u1 = new URL(decoded.startsWith("?") ? (location.origin + decoded) : decoded, location.origin);
+
+      t = (u1.searchParams.get("cart_token") || "").trim();
+      if (t) return t;
+
+      const wrapped2 = u1.searchParams.get("url");
+      if (wrapped2) {
+        const u2 = new URL(decodeURIComponent(wrapped2), location.origin);
+        t = (u2.searchParams.get("cart_token") || "").trim();
+        if (t) return t;
+      }
+    } catch (e) {}
   }
+
+  return "";
 }
-  // ✅ 必補：購物金 Key 綁定 cartToken，避免不同單互相干擾
+
+// 1) 先從 LINE 包裝/網址取 token
+let cartToken = _extractCartTokenFromWrappedURL();
+
+// 2) 再 fallback：localStorage（只當網址沒有時）
+if (!cartToken) {
+  try { cartToken = (localStorage.getItem("murain_cart_token") || "").trim(); } catch (e) {}
+}
+
+// 3) 有 token 就存起來 & 正規化 URL（刪 url / liff.state）
+if (cartToken) {
+  try { localStorage.setItem("murain_cart_token", cartToken); } catch (e) {}
+
+  try {
+    const u = new URL(location.href);
+    u.searchParams.set("cart_token", cartToken);
+    u.searchParams.delete("url");
+    u.searchParams.delete("liff.state");
+    history.replaceState(null, "", u.toString());
+  } catch (e) {}
+}
+
+// ✅ 必補：購物金 Key 綁定 cartToken
 function creditKey(token){
   if (!token) return 'murain_credit_used_fallback';
   return `murain_credit_used:${String(token).trim()}`;
 }
 
-   /* ===== PayReturn/PayFail 回來用的參數（加在 cartToken 這段後面） ===== */
+/* ===== PayReturn/PayFail 回來用的參數 ===== */
 const from = qs.get('from') || '';
 const statusFromPay = qs.get('status') || '';
 const orderIdFromPay = qs.get('order_id') || '';
