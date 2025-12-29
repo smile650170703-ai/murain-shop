@@ -1737,44 +1737,6 @@ function applyRetryPrefillFromQS(qs) {
   }
 }
 
-  function _extractCartTokenFromWrappedURL() {
-  const qs = new URLSearchParams(location.search);
-
-  // A) 直接有 cart_token（一般瀏覽器）
-  let t = (qs.get("cart_token") || "").trim();
-  if (t) return t;
-
-  // B) LINE 常見：?url=<encoded https://...?...cart_token=...>
-  const wrapped = qs.get("url");
-  if (wrapped) {
-    try {
-      const u = new URL(decodeURIComponent(wrapped), location.origin);
-      t = (u.searchParams.get("cart_token") || "").trim();
-      if (t) return t;
-    } catch (e) {}
-  }
-
-  // C) LINE LIFF：?liff.state=<encoded ?url=... 或 ?cart_token=...>
-  const st = qs.get("liff.state");
-  if (st) {
-    try {
-      const decoded = decodeURIComponent(st);
-      const u1 = new URL(decoded.startsWith("?") ? (location.origin + decoded) : decoded, location.origin);
-
-      t = (u1.searchParams.get("cart_token") || "").trim();
-      if (t) return t;
-
-      const wrapped2 = u1.searchParams.get("url");
-      if (wrapped2) {
-        const u2 = new URL(decodeURIComponent(wrapped2), location.origin);
-        t = (u2.searchParams.get("cart_token") || "").trim();
-        if (t) return t;
-      }
-    } catch (e) {}
-  }
-
-  return "";
-}
 const qs = getQS();
 applyRetryPrefillFromQS(qs);
 
@@ -2314,11 +2276,13 @@ function open711(src) {
   saveCheckoutState();
   // ✅【新增】記住使用者輸入的購物金（7-11 跳轉前）
   try {
-    const ci = document.getElementById('credit_input');
-    if (ci && ci.value !== '') {
-      sessionStorage.setItem('murain_credit_used', String(ci.value));
-    }
-  } catch(e) {}
+  const ci = document.getElementById('credit_input');
+  if (ci) {
+    const v = String(ci.value || "");
+    sessionStorage.setItem(creditKey(cartToken), v);
+    localStorage.setItem(creditKey(cartToken), v);
+  }
+} catch(e) {}
 
   
   // ✅ 加這段：給 message listener / applyStoreFromURL 當備援
@@ -3528,50 +3492,52 @@ async function copyToClipboard(text) {
   });
 })();
 
-// ===== 頁面初始化 =====
+// ===== 頁面初始化（唯一入口）=====
 (async () => {
-  try { if (typeof restoreCheckoutState === "function") restoreCheckoutState(); } catch (e) {}
+  // ✅ 防止重複跑（你之前遇到「閃一下又不見」很常就是重複 init）
+  if (window.__checkout_inited) return;
+  window.__checkout_inited = true;
 
-  if (!cartToken) return;
-
-  try { if (typeof guardAlreadyCheckedOut === "function" && guardAlreadyCheckedOut(cartToken)) return; } catch (e) {}
-
-  // ✅ 先綁一次（如果 input 已存在）
-  try { if (typeof attachCreditPersist === "function") attachCreditPersist(); } catch(e){}
-
-  try { if (typeof applyStoreFromURL === "function") applyStoreFromURL(); } catch (e) {}
-
-  // ✅ ① 選完門市回來：立刻補回
-  try { if (typeof restoreCreditInput === "function") restoreCreditInput(); } catch(e){}
-
-  // ✅ pending pay 防重複（會自動續付 / 或擋掉）
   try {
-    const blocked = await guardPendingPay(cartToken);
-    if (blocked) return;
-  } catch (e) {}
+    // 0) UI 初始狀態（避免一開始顯示錯的區塊）
+    try { updatePaidChannelBox(); } catch(e){}
+    try { updatePaidShip(); } catch(e){}
+    try { updateZcShip(); } catch(e){}
+    try { updateYufuShip(); } catch(e){}
+    try { refreshCodType(); } catch(e){}
+    try { refreshDepType(); } catch(e){}
+    try { setMeetupMinDates(); } catch(e){}
 
-  // ✅ UI 初始狀態先套一次（不存在就略過）
-  try { if (typeof updatePaidChannelBox === "function") updatePaidChannelBox(); } catch(e){}
-  try { if (typeof updatePaidShip === "function") updatePaidShip(); } catch(e){}
-  try { if (typeof updateZcShip === "function") updateZcShip(); } catch(e){}
-  try { if (typeof updateYufuShip === "function") updateYufuShip(); } catch(e){}
-  try { if (typeof calcYUFU === "function") calcYUFU(); } catch(e){}
-  try { if (typeof setMeetupMinDates === "function") setMeetupMinDates(); } catch(e){}
-  try { setupYufuPhoneOwner(); } catch(e){}
+    // 1) 先恢復表單狀態（但你有 murain_skip_restore_once 的保護）
+    try { restoreCheckoutState(); } catch(e){}
 
-  // ✅ 載入會員（不要吞錯，至少印出來）
-  try { if (typeof initLiffAndMember === "function") await initLiffAndMember(); } catch(e){ console.error("initLiffAndMember failed:", e); }
+    // 2) 綁購物金「隨打隨存」+ 回填（一定要做，才不會跳 7-11 回來變 0）
+    try { attachCreditPersist(); } catch(e){}
+    try { restoreCreditInput(); } catch(e){}
 
-  // ✅ ② 防止 initLiffAndMember 把 input 變 0（可能重繪）
-  try { if (typeof attachCreditPersist === "function") attachCreditPersist(); } catch(e){}
-  try { if (typeof restoreCreditInput === "function") restoreCreditInput(); } catch(e){}
+    // 3) 先做 7-11 回填（必須在 loadCart 前，因為你會 saveCheckoutState）
+    try { applyStoreFromURL(); } catch(e){}
 
-  // ✅ 載入購物車
-  try { if (typeof loadCart === "function") await loadCart(); } catch(e){ console.error("loadCart failed:", e); }
+    // 4) 沒 token 就停（避免空跑然後把狀態存成空的）
+    if (!cartToken) return;
 
-  // ✅ ③ 最關鍵：loadCart 可能重繪 input → 重新綁 + 再補回一次
-  try { if (typeof attachCreditPersist === "function") attachCreditPersist(); } catch(e){}
-  try { if (typeof restoreCreditInput === "function") restoreCreditInput(); } catch(e){}
+    // 5) 已結單就直接擋
+    try { if (guardAlreadyCheckedOut(cartToken)) return; } catch(e){}
+
+    // 6) 先載入購物車（把 items/total 固定下來）
+    await loadCart();
+
+    // 7) 再初始化 LIFF + 會員資料 + 購物金餘額
+    await initLiffAndMember();
+
+    // 8) 統一重算一次（確保折抵後金額/分期試算穩定）
+    try { updateCreditAndTotal(); } catch(e){}
+    try { calcZC(); } catch(e){}
+    try { calcYUFU(); } catch(e){}
+
+  } catch (e) {
+    console.error("init failed", e);
+  }
 })();
 
 // ===== pending pay：避免重複付款 / 自動續付（只處理 paid_，其餘照常）=====
