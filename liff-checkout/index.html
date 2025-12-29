@@ -3440,50 +3440,80 @@ async function copyToClipboard(text) {
   try { if (typeof loadCart === "function") await loadCart(); } catch(e){ console.error("loadCart failed:", e); }
 })();
 
-function guardPendingPay(token){
+// ===== pending pay：避免重複付款 / 自動續付（只處理 paid_，其餘照常）=====
+async function guardPendingPay(token){
+  const btn = document.getElementById("submitBtn");
+
   try {
     const info = (typeof getPendingPay === "function") ? getPendingPay(token) : null;
     if (!info || !info.order_id) return false;
 
-    const qs = getQS(); // ✅ LIFF 合併 liff.state 參數
+    // ✅ LIFF 也吃得到 liff.state：force=1 直接略過
+    const qs = getQS();
     if (qs.get("force") === "1") return false;
 
     const onceKey = `pending_auto_once:${token}:${info.order_id}`;
     if (sessionStorage.getItem(onceKey) === "1") return false;
 
+    // ✅ 超過 2 小時就視為過期，不再自動續付
     const MAX_PENDING_MS = 2 * 60 * 60 * 1000;
     if (info.at && (Date.now() - Number(info.at) > MAX_PENDING_MS)) {
-      try { if (typeof clearPendingPay === "function") clearPendingPay(token); } catch(e){}
+      try { clearPendingPay(token); } catch(e){}
       return false;
     }
 
-    const btn = document.getElementById("submitBtn");
-    if (btn) btn.disabled = true;
+    // ✅ 先問後端狀態，避免本機殘留造成一直跳
+    try {
+      const sr = await fetch(`${API}/order/status?order_id=${encodeURIComponent(info.order_id)}`);
+      if (sr.ok) {
+        const s = await sr.json().catch(()=>({}));
+        const st = String(s.pay_status || s.status || "").toLowerCase();
+        if (["paid_ok","paid","success","cancelled","canceled","failed"].includes(st)) {
+          try { clearPendingPay(token); } catch(e){}
+          return false;
+        }
+      }
+    } catch(e){}
 
+    const pm = String(info.payment_method || "");
+
+    // ✅ 只對 paid_ 自動續付（避免其他付款也亂跳造成「閃一下」）
+    if (!pm.startsWith("paid_")) return false;
+
+    if (btn) btn.disabled = true;
     sessionStorage.setItem(onceKey, "1");
 
-    // ✅ 若你的 pendingPay 有紀錄下一步網址就直接導
-    if (info.next_url) {
-      try { location.replace(info.next_url); } catch(e){ location.href = info.next_url; }
-      return true;
-    }
+    const payMode =
+      (pm === "paid_aftee_direct") ? "upp" :
+      (pm === "paid_linepay")      ? "upp" :
+      (pm.startsWith("paid_card_inst_")) ? "card_inst" :
+      "card_once";
 
-    // ✅ 沒 next_url 就走：用原訂單的支付方式恢復（通常是 /payuni/start 或你的 resume endpoint）
-    const up = {
-      cart_token: token,
-      order_id: info.order_id || "",
-      payment_method: info.payment_method || "",
-      force: "1"
-    };
+    const instMonths = pm.startsWith("paid_card_inst_")
+      ? Number(pm.split("_").pop() || 3)
+      : null;
 
-    const f = document.createElement('form');
-    f.method = 'POST';
-    f.action = (info.resume_url || '/pay/resume'); // 你的檔案如果有固定 resume 路徑就會用到
-    Object.keys(up).forEach(k=>{
-      const i = document.createElement('input');
-      i.type='hidden'; i.name=k; i.value=up[k] || '';
-      f.appendChild(i);
+    const pr = await fetch(`${API}/payuni/start`, {
+      method: "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({ order_id: info.order_id, mode: payMode, inst_months: instMonths })
     });
+
+    const up = await pr.json().catch(()=>({}));
+    if (!pr.ok || !up.ok) throw new Error(up.error || up.message || "payuni start failed");
+
+    const f = document.createElement("form");
+    f.method = "POST";
+    f.action = up.url;
+
+    ["MerID", "Version", "EncryptInfo", "HashInfo"].forEach(k => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = k;
+      input.value = up[k] || "";
+      f.appendChild(input);
+    });
+
     document.body.appendChild(f);
     f.submit();
     return true;
@@ -3492,7 +3522,6 @@ function guardPendingPay(token){
     console.error("[guardPendingPay] resume failed:", e);
     return false;
   } finally {
-    const btn = document.getElementById("submitBtn");
     if (btn) btn.disabled = false;
   }
 }
