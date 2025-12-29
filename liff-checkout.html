@@ -2507,9 +2507,19 @@ function guardAlreadyCheckedOut(token){
   const info = getCheckedOutInfo(token);
   if (!info || !info.order_id) return false;
 
-  // ✅ 只提示，不自動跳走（避免商品閃一下就不見）
-  console.warn(`此購物車曾結單：${info.order_id}（前端不再強制導頁，交給後端 /checkout 擋重複）`);
-  return false;
+  // 你若想給「強制重開」機制，可用 ?force=1 略過
+  const qs = new URLSearchParams(location.search);
+  if (qs.get("force") === "1") return false;
+
+  const btn = document.getElementById("submitBtn");
+  if (btn) btn.disabled = true;
+
+  alert(`此購物車已完成結單（訂單：${info.order_id}）。將帶你前往訂單頁。`);
+
+  // 多數 order-result 其實只需要 order_id，total 可不帶
+  const url = `/order-result.html?order_id=${encodeURIComponent(info.order_id)}`;
+  try { location.replace(url); } catch(e){ location.href = url; }
+  return true;
 }
 
 function saveCheckoutState() {
