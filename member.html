@@ -567,36 +567,37 @@
   if (st.includes("cancel") || ps.includes("cancel") || ss.includes("cancel")) return "已取消";
   if (ps === "failed") return "付款失敗";
 
-  // 2) 定金流程（比一般 pending 更優先）
-  if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return "核對中";
-  if (ps === "deposit_ok") return "核對中";
+  // 2) 定金流程
+  if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return "待匯定金";
+  if (ps === "deposit_ok") return "待付尾款";
 
-  // 3) 物流狀態
+  // 3) 中租 / 裕富（分期）審核中：要放在 pending 前面
+  const looksInstallment =
+    pm.startsWith("zero_card_") || pm.startsWith("yufu_") ||
+    pm.includes("zerocard") || pm.includes("yufu");
+
+  const reviewingToken = (st + " " + ps).toLowerCase();
+  const isReviewing =
+    ps === "submitted" || ps === "reviewing" || ps === "auditing" ||
+    reviewingToken.includes("review") || reviewingToken.includes("audit") ||
+    reviewingToken.includes("check") || reviewingToken.includes("verify") ||
+    reviewingToken.includes("approve");
+
+  if (looksInstallment && isReviewing) return "審核中";
+
+  // 4) 物流狀態
   if (ss === "shipped" || st === "shipped") return "已出貨";
   if (ss === "arrived") return "已送達";
   if (ss === "picked_up" || st === "picked_up") return "已取貨";
   if (ss === "returned") return "已退回";
 
-  // 4) 已付款
+  // 5) 已付款（你想顯示「待出貨中」就放這裡）
   if (ps === "paid_ok" || ps === "paid") return "待出貨中";
 
-    // 4) 中租 / 裕富：審核中（分期）
-// ✅ 這段要放在 pending 之前，避免被當成待付款或處理中
-const pm = String(o?.payment_method || "").toLowerCase();
-const looksInstallment = pm.startsWith("zero_card_") || pm.startsWith("yufu_") || pm.includes("zerocard") || pm.includes("yufu");
-
-// 你後端可能會用的審核狀態字（先用 includes 做容錯）
-const isReviewing =
-  ps === "submitted" || ps === "reviewing" || ps === "auditing" ||
-  ps.includes("review") || ps.includes("audit") ||
-  st.includes("review") || st.includes("audit");
-
-if (looksInstallment && isReviewing) return "審核中";
-
-  // 5) 待付款 / COD 例外
+  // 6) 待付款 / COD 例外
   if (ps === "pending") {
-    if (pm.includes("cod")) return "待出貨中";
-    return "核對中";
+    if (pm.includes("cod")) return "訂單確認中";
+    return "核對中"; // 你想用「核對中」就留；想回「待付款」改這行即可
   }
 
   return "處理中";
