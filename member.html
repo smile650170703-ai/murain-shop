@@ -502,19 +502,23 @@
   }
 
   function isDepositHoldOrder(o) {
-    const st = String(o?.status || o?.order_status || o?.orderStatus || "").toLowerCase();
-    const ps = String(o?.pay_status || "").toLowerCase();
-    const ss = String(o?.ship_status || "").toLowerCase();
-    // ✅ 以「狀態=deposit_hold」作為定金保留判斷（避免把已付款的匯款單也排除）
-    if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return true;
+  const st = String(o?.status || o?.order_status || o?.orderStatus || "").toLowerCase();
+  const ps = String(o?.pay_status || "").toLowerCase();
+  const ss = String(o?.ship_status || "").toLowerCase();
 
-    // 兼容：如果後端有另外塞在 ship 內（shipping_info）
-    const ship = o?.ship || {};
-    const shipFlag = String(ship?.deposit_status || ship?.deposit || "").toLowerCase();
-    if (shipFlag.includes("deposit_hold")) return true;
+  // ✅ 定金相關旗標：舊的 deposit_hold + 後端實際在用的 deposit_ok
+  const flags = ["deposit_hold", "deposit_ok"];
+  const hit = (v) => flags.some(f => String(v || "").toLowerCase().includes(f));
 
-    return false;
-  }
+  if (hit(st) || hit(ps) || hit(ss)) return true;
+
+  // 兼容：如果後端塞在 ship（shipping_info）內
+  const ship = o?.ship || {};
+  const shipFlag = String(ship?.deposit_status || ship?.deposit || "").toLowerCase();
+  if (hit(shipFlag)) return true;
+
+  return false;
+}
 
   function isBankDepositPM(pm) {
     //（保留：若你未來要用 payment_method 判斷匯款類型）
@@ -567,6 +571,9 @@
 
     // 3. 付款與處理狀態
     if (ps === "paid_ok" || ps === "paid") return "已付款";
+    // 定金流程
+if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return "待匯定金";
+if (ps === "deposit_ok") return "待付尾款";
     if (ps === "pending") {
       const pm = String(o?.payment_method || "").toLowerCase();
       if (pm.includes("cod")) return "訂單確認中"; 
