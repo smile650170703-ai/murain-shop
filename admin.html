@@ -1,897 +1,2251 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>訂單後台</title>
+<style>
+  *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
+  body{margin:0;background:#020617;color:#e2e8f0}
+  .wrap{max-width:1200px;margin:0 auto;padding:16px}
+  h1{margin:0 0 6px;font-size:24px}
+
+  /* 新版上方工具列（含快速 filter + 日期/狀態 + 匯出） */
+  .toolbar-main{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+  .toolbar-left{flex:1;display:flex;flex-direction:column;gap:6px}
+  .filter-group{display:flex;flex-wrap:wrap;gap:6px}
+  .filter-btn{padding:7px 12px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:rgba(15,23,42,.9);color:#e5e7eb;font-size:13px;cursor:pointer}
+  .filter-btn.active{background:#22d3ee;color:#0f172a;border-color:#22d3ee;box-shadow:0 8px 20px rgba(34,211,238,.35)}
+  .small-btn{padding:6px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:transparent;color:#e5e7eb;font-size:12px;cursor:pointer}
+
+  .filter-row{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;align-items:flex-end;margin-top:2px}
+  .filter-row .field{min-width:140px;flex:0 0 auto}
+  .filter-row label{display:block;font-size:11px;margin:0 0 2px;color:#94a3b8}
+  .filter-row input,
+  .filter-row select{width:100%;padding:5px 8px;border-radius:999px;border:1px solid rgba(148,163,184,.6);background:#020617;color:#e2e8f0;font-size:12px}
+
+  .summary-row{font-size:12px;color:#cbd5f5;display:flex;flex-wrap:wrap;gap:10px;margin-top:2px}
+  .summary-row span{white-space:nowrap}
+  #msg{font-size:12px;color:#94a3b8;margin-top:2px}
+
+  .layout{display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr);gap:12px}
+  @media (max-width:900px){.layout{grid-template-columns:1fr;}}
+
+  .card{background:rgba(15,23,42,.95);border-radius:16px;border:1px solid rgba(148,163,184,.3);padding:10px;min-height:120px}
+  #orderList{max-height:calc(100vh - 190px);overflow:auto}
+
+  .order-row{padding:8px 10px;border-radius:12px;cursor:pointer;border:1px solid transparent;margin-bottom:6px;background:rgba(15,23,42,.95)}
+  .order-row:hover{border-color:rgba(148,163,184,.8);background:rgba(15,23,42,1)}
+  .order-row.active{border-color:#22d3ee;background:rgba(15,23,42,1);box-shadow:0 8px 20px rgba(34,211,238,.25)}
+
+  .ord-top{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:13px}
+  .ord-id{font-weight:600}
+  .ord-amount{font-weight:600}
+  .ord-sub{font-size:12px;color:#94a3b8;margin-top:3px}
+  .badges{display:flex;flex-wrap:wrap;gap:4px;font-size:11px;margin-top:4px}
+  .badge{padding:2px 7px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:rgba(15,23,42,1)}
+  .badge.green{border-color:#22c55e;color:#bbf7d0;background:rgba(22,163,74,.2)}
+  .badge.yellow{border-color:#eab308;color:#facc15;background:rgba(234,179,8,.15)}
+  .badge.red{border-color:#f97373;color:#fecaca;background:rgba(220,38,38,.2)}
+  .badge.blue{border-color:#38bdf8;color:#bae6fd;background:rgba(56,189,248,.2)}
+  .muted{font-size:13px;color:#94a3b8}
+ .credit-red { color:#ff4d4f; font-weight:800; }
+
+  .detail-grid{display:grid;grid-template-columns:1.1fr 0.9fr;gap:10px}
+  @media (max-width:900px){.detail-grid{grid-template-columns:1fr}}
+
+  label{display:block;font-size:12px;margin:6px 0 3px;color:#cbd5f5}
+  input,select,textarea{width:100%;padding:8px 9px;border-radius:10px;border:1px solid rgba(148,163,184,.6);background:#020617;color:#e2e8f0;font-size:13px}
+  textarea{min-height:70px;resize:vertical}
+  input:focus,select:focus,textarea:focus{outline:2px solid #38bdf8;outline-offset:1px;border-color:#38bdf8}
+  .row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .mt-2{margin-top:8px}
+  .mt-3{margin-top:12px}
+  .mt-4{margin-top:16px}
+  .btn-primary{margin-top:8px;padding:10px 14px;border-radius:999px;border:none;background:#22d3ee;color:#0f172a;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 10px 30px rgba(34,211,238,.35)}
+  .btn-secondary{margin-top:8px;padding:8px 12px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:transparent;color:#e5e7eb;font-size:13px;cursor:pointer}
+  .section-title{font-size:13px;font-weight:600;color:#e5e7eb;margin-top:4px;margin-bottom:2px}
+  .pill{display:inline-block;padding:3px 7px;border-radius:999px;background:rgba(15,23,42,1);border:1px solid rgba(148,163,184,.6);font-size:11px;color:#cbd5f5;margin-right:4px;margin-top:2px}
+  .pill.cod711 {
+  background: #7f1d1d;      /* 深紅底 */
+  border-color: #fecaca;    /* 淡紅邊框 */
+  color: #fee2e2;           /* 字體偏粉 */
+}
+.pill.cod711 span {
+  color: #fee2e2;
+}
+ .tag-small{font-size:11px;color:#94a3b8}
+ /* ★ 購物金折抵顯示紅色（列表 + 右側 pill 共用） */
+.credit-red { color:#f87171; font-weight:700; }
+
+.tag-small.credit-red { color:#f87171; font-weight:700; }
+
+.pill.credit-red{
+  border-color:#fca5a5;
+  background:rgba(239,68,68,.12);
+  color:#fecaca;
+}
+.pill.credit-red span{ color:#fecaca; }
+ /* ★ 只把賣貨便累積那一行改成紅色 */
+#d_vendor_stats {
+  color:#fecaca;   /* 你也可以換成 #f87171 或 red */
+}
+  .label-inline{display:flex;align-items:center;gap:5px;font-size:12px;margin-top:4px}
+  .label-inline input[type="checkbox"]{width:auto}
+  .error{color:#fecaca;font-size:13px;margin-top:4px}
+ /* 上方「今日尾款提醒」旁的快捷操作列 */
+  .top-order-actions{
+    margin-top:6px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+  }
+  .top-order-actions > button{
+    margin-top:0; /* 不要再往下推一格，看起來才會平整 */
+  }
+.ro-field.ro-sm{ height: 38px; }
+
+/* ===== 唯讀顯示欄位 ===== */
+.ro-field{
+  height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.10);
+  color: rgba(255,255,255,.92);
+  position: relative;
+  box-shadow: inset 3px 0 0 rgba(212,175,55,.45); /* 左側金色提示條 */
+}
+
+.ro-field::after{
+  content: "🔒";
+  position: absolute;
+  right: 10px;
+  opacity: .55;
+  font-size: 14px;
+}
+
+.ro-field.ro-empty{
+  color: rgba(255,255,255,.55);
+  font-style: italic;
+}
+
+/* 如果你仍有用 readonly/disabled input，也讓它好看 */
+input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:disabled{
+  opacity: 1 !important;
+  color: rgba(255,255,255,.92) !important;
+  background: rgba(255,255,255,.04) !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  cursor: not-allowed;
+}
+ #orderDetail #btnSaveAndShip,
+  #orderDetail #btnConfirmPayOk,
+  #orderDetail #btnMarkZcFail,
+  #orderDetail #btnPrintOrder,
+  #orderDetail #btnSendTailLink,
+  #orderDetail #btnCancelOrder,
+  #orderDetail #btnMeetupNotify,
+  #orderDetail #btnDepositPayAndNotice,
+  #orderDetail #btnSaveDetailOnly {
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>訂單後台</h1>
+  <div class="muted" style="margin-bottom:4px;">
+    上方 4 顆是快速分類；下方可以依「日期＋狀態」載入並匯出 Excel。
+  </div>
+
+  <div class="toolbar-main">
+    <div class="toolbar-left">
+      <div class="filter-group">
+        <button class="filter-btn active" data-filter="all">全部訂單</button>
+       <button class="filter-btn" data-filter="all_no_fail">全部訂單（不含作廢/補回）</button>
+        <button class="filter-btn" data-filter="pending_online">✅線上付款待確認</button>
+        <button class="filter-btn" data-filter="ready_to_ship"
+          style="display:none;">待出貨列印</button>
+        <!-- <button class="filter-btn" data-filter="deposit">ATM / 訂金</button> -->
+      </div>
+
+      <div class="filter-row">
+        <div class="field">
+          <label>起始日期（date_from，含）</label>
+          <input id="date_from" type="date" />
+        </div>
+        <div class="field">
+          <label>結束日期（date_to，含）</label>
+          <input id="date_to" type="date" />
+        </div>
+        <div class="field">
+          <label>狀態（status）</label>
+          <select id="status">
+            <option value="">全部</option>
+            <option value="submitted">submitted（已送出）</option>
+            <option value="paid">paid（已付款）</option>
+            <option value="shipped">shipped（已出貨）</option>
+            <option value="cancelled">cancelled（取消）</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="small-btn" id="btnLoadByDate" type="button">依日期載入</button>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="small-btn" id="btnQuickPaid" type="button">⭐待出貨訂單</button>
+        </div>
+       <div class="field">
+          <label>&nbsp;</label>
+          <button class="small-btn" id="btnRemindToday" type="button">已收定金未出貨</button>
+        </div>
+        <div class="field">
+          <label>&nbsp;</label>
+          <!-- ★ 新增：列印多筆熱感出貨單 -->
+          <button class="small-btn" id="btnPrintSlipsRange" type="button">⭐列印出貨單</button>
+        </div>
+       <!-- ★ 新增：出貨明細／賣貨便 -->
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="small-btn" id="btnExportShip" type="button" disabled>
+            ⭐下載「賣貨便」檔
+          </button>
+        </div>
+
+        <!-- ★ 新增：0 元包裹明細 -->
+        <div class="field">
+          <label>&nbsp;</label>
+          <button class="small-btn" id="btnExportZero" type="button" disabled>
+            ⭐下載「0 元包裹」檔
+          </button>
+        </div>
+      </div>
+
+      <div id="summary" class="summary-row"></div>
+      <!-- ★ 上方：目前選中訂單的快捷操作按鈕 -->
+      <div class="top-order-actions">
+        <button class="btn-primary" id="btnSaveAndShipTop" type="button">
+          📦 儲存+已出貨+發LINE
+        </button>
+        <button class="btn-secondary" id="btnConfirmPayOkTop" type="button">
+          ✅ 收款/審核通過+發LINE
+        </button>
+        <button class="btn-secondary" id="btnMarkZcFailTop" type="button">
+          ❌ 分期審核未通過+發LINE＋「回原訂單重新結帳」
+        </button>
+       <button class="btn-secondary" id="btnMeetupCashDoneTop" type="button">
+  🤝 完成面交收款（已收款＋出貨完成）
+        </button>
+        <button class="btn-secondary" id="btnSendTailLinkTop" type="button">
+          💰發尾款結帳連結+發LINE
+        </button>
+        <button class="btn-secondary" id="btnSaveDetailOnlyTop" type="button">
+          💾 儲存資料
+        </button>
+      </div>
+
+      <div id="msg"></div>
+    </div>
+
+    <div>
+      <span id="opLabel" class="tag-small"></span>
+      <button id="btnCancelOrderTop" class="small-btn" type="button">
+        🚫 取消訂單（補回庫存）
+      </button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="card" id="orderList">
+      <div class="muted">載入中…</div>
+    </div>
+
+    <div class="card" id="orderDetail">
+      <div class="muted">請從左邊點選一筆訂單</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
+const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
+
+let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
+let currentFilter = 'all';
+let currentOrders = [];
+let currentRecord = null;
+let ORDERS_CACHE = []; // ← 匯出用，存純欄位物件
+
+const $  = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+
+function money(n){ return 'NT$ ' + Number(n||0).toLocaleString(); }
+function calcAmounts(f){
+  const base   = Number(f?.total_amount ?? f?.total ?? 0) || 0;
+  const credit = Number(f?.credit_used ?? f?.CreditUsed ?? f?.credit ?? 0) || 0;
+  const netRaw = (f?.net_amount ?? f?.net ?? (base - credit));
+  const net    = Number(netRaw ?? base) || 0;
+  return { base, credit, net: Math.max(net, 0) };
+}
+// 訂單狀態英文代碼 → 中文
+function displayOrderStatus(st){
+  if (!st) return '';
+  if (st === 'submitted') return '已送出（未付款）';
+  if (st === 'paid')      return '已付款（待出貨）';
+  if (st === 'shipped')   return '已出貨';
+  if (st === 'cancelled') return '已取消';
+  return st; // 其他未知狀態就直接顯示原碼
+}
+
+ // 後台 /admin 上方日期區塊用：組 date_from / date_to query
+function getDateParamsForAdmin() {
+  const fromEl = $('#date_from');
+  const toEl   = $('#date_to');
+
+  const from = fromEl ? fromEl.value : '';
+  const to   = toEl ? toEl.value   : '';
+
+  const parts = [];
+  if (from) parts.push('date_from=' + encodeURIComponent(from));
+  if (to)   parts.push('date_to='   + encodeURIComponent(to));
+
+  return parts.length ? '&' + parts.join('&') : '';
+}
+
+function displayPayStatus(ps){
+  switch (ps) {
+    case 'unpaid':  return '未收款';
+    case 'pending': return '待確認';
+    case 'paid_ok': return '已收款';
+    // ★ 新增：訂金已收
+    case 'deposit_ok': return '訂金已收';
+    // ★ 新增：取消
+    case 'cancelled': return '已取消';
+    case 'failed':  return '失敗 / 作廢';
+    default:        return ps || '';
+  }
+}
+function parseShippingInfo(fields){
+  try{
+    return JSON.parse(fields.shipping_info || '{}') || {};
+  }catch(e){
+    return {};
+  }
+}
+// 付款方式代碼 → 中文名稱（列表＋右側 pill 共用）
+function displayPaymentMethod(code){
+  switch (code) {
+    case 'cod_711':
+      return '7-11 貨到付款';
+    case 'cod_post':
+      return '郵局貨到付款';
+
+    // 線上刷卡
+    case 'paid_card_once':
+      return '線上付款－信用卡一次付清';
+    case 'paid_card_inst_3':
+      return '線上付款－信用卡 3 期';
+    case 'paid_card_inst_6':
+      return '線上付款－信用卡 6 期';
+    case 'paid_card_inst_9':
+      return '線上付款－信用卡 9 期';
+    case 'meetup_cash':
+      return '面交付現';
+    case 'deposit_new_full_meetup':
+      return '匯款全額 - 面交';
+
+    // AFTEE / LINE PAY
+    case 'paid_af':
+      return 'AF先享後付';
+    case 'paid_linepay':
+      return 'LINE PAY';
+
+    // 中租 / 零卡分期
+    case 'zero_card_3':
+      return '中租分期 3 期';
+    case 'zero_card_6':
+      return '中租分期 6 期';
+    case 'zero_card_9':
+      return '中租分期 9 期';
+    case 'zero_card_12':
+      return '中租分期 12 期';
+    case 'zero_card_18':
+      return '中租分期 18 期';
+    case 'zero_card_24':
+      return '中租分期 24 期';
+
+    // 裕富分期
+    case 'yufu_inst_3':
+      return '裕富 3 期';
+    case 'yufu_inst_6':
+      return '裕富 6 期';
+    case 'yufu_inst_9':
+      return '裕富 9 期';
+    case 'yufu_inst_12':
+      return '裕富 12 期';
+    case 'yufu_inst_24':
+      return '裕富 24 期';
+    case 'yufu_inst_36':
+      return '裕富 36 期';
+    case 'paid_aftee_direct':
+      return 'AF 先享後付';
+
+    // ATM / 匯款（訂金 / 尾款）
+    case 'deposit_new_partial':
+      return '訂金匯款';
+    case 'deposit_new_full':
+      return '全額匯款';
+    case 'deposit_old_partial':
+      return '訂金匯款';
+    case 'deposit_old_full':
+      return '全額匯款';
+     // ★ 新增：新客全額匯款（7-11 / 郵寄）兩種代碼，顯示同一個中文
+    case 'deposit_new_full_711':
+    case 'deposit_new_full_post':
+      return '全額匯款';
+
+    // 🔧 新增這兩個，對應你現在實際用的代碼
+case 'deposit_new':
+  return '訂金匯款';
+case 'deposit_old':
+  return '訂金匯款';
+
+    case 'atm_full':
+      return '全額匯款';
+    case 'atm_deposit':
+      return '訂金匯款';
+
+    default:
+      return code || '';
+  }
+}
+
+
+function toDatetimeLocal(v){
+  if(!v) return '';
+  const d = new Date(v);
+  if(isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2,'0');
+  return d.getFullYear() + '-' +
+    pad(d.getMonth()+1) + '-' +
+    pad(d.getDate()) + 'T' +
+    pad(d.getHours()) + ':' +
+    pad(d.getMinutes());
+}
+
+// CSV 欄位 escape（沿用原 admin_orders）
+function escapeCSV(v){
+  if (v == null) return '';
+  const s = String(v);
+  if (/[",\n]/.test(s)){
+    return '"' + s.replace(/"/g,'""') + '"';
+  }
+  return s;
+}
+
+/* ===== OP_KEY 驗證 ===== */
+async function ensureOpKey(){
+  $('#opLabel').textContent = OP_KEY ? '已登入後台' : '尚未登入';
+  while(!OP_KEY){
+    const k = prompt('請輸入管理密碼 (OP_KEY)');
+    if(!k){ alert('沒有密碼就無法進入後台喔'); continue; }
+    try{
+      const r = await fetch(`${API}/op/auth`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ op_key:k })
+      });
+      const j = await r.json();
+      if(!r.ok || !j.ok){
+        alert('密碼錯誤，請再試一次');
+        continue;
+      }
+      OP_KEY = k;
+      localStorage.setItem(STORAGE_KEY, OP_KEY);
+      $('#opLabel').textContent = '已登入後台';
+      break;
+    }catch(e){
+      console.error(e);
+      alert('驗證失敗，請稍後再試');
+    }
+  }
+}
+
+/* ===== 依「快速分類 filter」載入訂單（原 admin.html） ===== */
+async function loadOrders(filter='all'){
+  currentFilter = filter;
+  const listEl = $('#orderList');
+  listEl.innerHTML = '<div class="muted">載入中…</div>';
+  $('#msg').textContent = '';
+
+  try{
+    const r = await fetch(
+      `${API}/admin/orders?filter=${encodeURIComponent(filter)}&op_key=${encodeURIComponent(OP_KEY)}`
+    );
+    const j = await r.json();
+    if(!r.ok || !j.ok){
+      throw new Error(j.error || 'load_failed');
+    }
+    currentOrders = j.orders || j.records || [];
+ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {}); // ← 新增
+renderOrderList();
+  }catch(e){
+    console.error(e);
+    listEl.innerHTML = '<div class="error">載入失敗：' + (e.message || e) + '</div>';
+    currentOrders = [];
+    updateSummary();
+  }
+}
+
+ async function reloadCurrentView(){
+  // pending_online：重跑同一套「日期全抓 + 前端篩 pending」邏輯
+  if (currentFilter === 'pending_online'){
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm   = String(today.getMonth()+1).padStart(2,'0');
+    const dd   = String(today.getDate()).padStart(2,'0');
+
+    if ($('#date_from')) $('#date_from').value = '2024-01-01';
+    if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
+    if ($('#status'))    $('#status').value    = '';
+
+    await loadOrdersByDate();
+
+    currentOrders = (currentOrders || []).filter(rec=>{
+      const f = rec.fields || rec || {};
+      return String(f.pay_status||'').toLowerCase() === 'pending';
+    });
+
+    ORDERS_CACHE = currentOrders.map(r => r.fields || r || {});
+    renderOrderList();
+    $('#orderDetail').innerHTML = '<div class="muted">請從左邊點選一筆訂單</div>';
+    return;
+  }
+
+  // all_no_fail：先載入全部，再前端排除 failed/cancelled
+if (currentFilter === 'all_no_fail') {
+  await loadOrders('all');
+  currentFilter = 'all_no_fail';
+
+  currentOrders = (currentOrders || []).filter(rec => {
+  const f = rec.fields || rec || {};
+  const ps = String(f.pay_status || '').toLowerCase();
+  return ps !== 'failed' && ps !== 'cancelled';
+});
+
+  ORDERS_CACHE = currentOrders.map(r => r.fields || r || {});
+  renderOrderList();
+  $('#orderDetail').innerHTML = '<div class="muted">請從左邊點選一筆訂單</div>';
+  return;
+}
+
+  // 其他 view：照舊用 loadOrders
+  await loadOrders(currentFilter || 'all');
+}
+
+/* ===== 依「日期 + status」載入訂單（原 admin_orders.html 縮小版） ===== */
+async function loadOrdersByDate(){
+  const listEl = $('#orderList');
+  const msgEl  = $('#msg');
+  listEl.innerHTML = '<div class="muted">載入中…</div>';
+  msgEl.textContent = '';
+
+  try{
+    const params = new URLSearchParams();
+    params.set('op_key', OP_KEY);
+    const df = $('#date_from').value;
+    const dt = $('#date_to').value;
+    const st = $('#status').value;
+    if (df) params.set('date_from', df);
+    if (dt) params.set('date_to', dt);
+    if (st) params.set('status', st);
+
+    const r = await fetch(`${API}/admin/orders?` + params.toString());
+    const j = await r.json();
+    if (!r.ok || !j.ok){
+      throw new Error(j.error || 'load_failed');
+    }
+    currentOrders = j.orders || j.records || [];
+ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {}); // ← 新增
+renderOrderList();
+msgEl.textContent = currentOrders.length ? '' : '查無符合條件的訂單。';
+
+  }catch(e){
+    console.error(e);
+    listEl.innerHTML = '<div class="error">載入失敗：' + (e.message || e) + '</div>';
+    currentOrders = [];
+    updateSummary();
+  }
+}
+
+// 快速：只看待出貨（paid）
+async function quickPaid(){
+  const sel = $('#status');
+  if (sel) sel.value = 'paid';
+  await loadOrdersByDate();
+}
+
+// 更新下方 summary + 匯出按鈕狀態
+function updateSummary(){
+  const sumEl         = $('#summary');
+  const btnExport     = $('#exportBtn');       // 可能不存在：允許為 null
+  const btnExportShip = $('#btnExportShip');
+  const btnExportZero = $('#btnExportZero');
+  if (!sumEl) return;
+
+  // 沒有任何訂單時：清空 summary，三顆匯出按鈕都變灰色
+  if (!currentOrders.length){
+    sumEl.textContent = '';
+    if (btnExport) btnExport.disabled = true;
+    if (btnExportShip) btnExportShip.disabled = true;
+    if (btnExportZero) btnExportZero.disabled = true;
+    return;
+  }
+
+  // 計算合計金額 & 各狀態筆數
+  let sum = 0;
+  let countSubmitted = 0, countPaid = 0, countShipped = 0, countCancelled = 0;
+
+  for (const rec of currentOrders){
+    const f = rec.fields || rec || {};
+    const a = calcAmounts(f);
+    sum += a.net;
+    const st = f.status || '';
+    if (st === 'submitted') countSubmitted++;
+    else if (st === 'paid') countPaid++;
+    else if (st === 'shipped') countShipped++;
+    else if (st === 'cancelled') countCancelled++;
+  }
+
+  const sumText = 'NT$ ' + (Number(sum)||0).toLocaleString('zh-TW',{minimumFractionDigits:0});
+  sumEl.innerHTML =
+    '<span>筆數：' + currentOrders.length +
+    '（已送出: ' + countSubmitted +
+    ' / 已付款: ' + countPaid +
+    ' / 已出貨: ' + countShipped +
+    ' / 已取消: ' + countCancelled + '）</span>' +
+    '<span>合計金額：' + sumText + '</span>';
+
+  // 有訂單時：三顆匯出按鈕都可以用
+  if (btnExport) btnExport.disabled = false;
+  if (btnExportShip) btnExportShip.disabled = false;
+  if (btnExportZero) btnExportZero.disabled = false;
+}
+
+// 上方匯出按鈕：依目前的日期 / 狀態條件，叫後端 /admin/export-view
+function exportCSV(){
+  if (!OP_KEY){
+    alert('尚未登入後台，請重新整理頁面再試一次。');
+    return;
+  }
+
+  const params = new URLSearchParams();
+
+  // ★ 新版用 key，不是 op_key
+  params.set('key', OP_KEY);
+
+  // ★ 這顆是「出貨明細」匯出，所以 kind = orders
+  params.set('kind', 'orders');
+
+  // ★ 匯出 Excel（CSV）
+  params.set('format', 'csv');
+
+  const dfEl = $('#date_from');
+  const dtEl = $('#date_to');
+  const stEl = $('#status');
+
+  const df = dfEl ? dfEl.value : '';
+  const dt = dtEl ? dtEl.value : '';
+  const st = stEl ? stEl.value : '';
+
+  // 有填的才帶出去
+  if (df) params.set('date_from', df);
+  if (dt) params.set('date_to', dt);
+  if (st && st !== 'all') params.set('status', st);
+
+  // ★ 換成新的路由 /admin/export-view
+  const url = `${API}/admin/export-view?` + params.toString();
+
+  // 開新視窗／直接下載 CSV
+  window.open(url, '_blank');
+}
+
+
+// ★ 新增：出貨明細／賣貨便（跟匯出中心同一顆 API：kind=ship）
+function exportShipReport(){
+  if (!OP_KEY){
+    alert('尚未登入後台，請重新整理頁面再試一次。');
+    return;
+  }
+
+  const df = $('#date_from') ? $('#date_from').value : '';
+  const dt = $('#date_to')   ? $('#date_to').value   : '';
+
+  const params = new URLSearchParams();
+  // 注意這裡用的是 key，不是 op_key（跟匯出中心一樣）
+  params.set('key', OP_KEY);
+  params.set('kind', 'ship');  // ← 匯出中心那顆「出貨明細／賣貨便」的 kind
+
+  if (df) params.set('date_from', df);
+  if (dt) params.set('date_to', dt);
+
+  const url = `${API}/admin/export-view?` + params.toString();
+  window.open(url, '_blank');
+}
+
+// ★ 新增：0 元包裹明細（kind=zero）
+function exportZeroReport(){
+  if (!OP_KEY){
+    alert('尚未登入後台，請重新整理頁面再試一次。');
+    return;
+  }
+
+  const df = $('#date_from') ? $('#date_from').value : '';
+  const dt = $('#date_to')   ? $('#date_to').value   : '';
+
+  const params = new URLSearchParams();
+  params.set('key', OP_KEY);
+  params.set('kind', 'zero'); // ← 匯出中心那顆「0 元包裹明細」的 kind
+
+  if (df) params.set('date_from', df);
+  if (dt) params.set('date_to', dt);
+
+  const url = `${API}/admin/export-view?` + params.toString();
+  window.open(url, '_blank');
+}
+
+
+
+
+ function statusBadgePay(pay){
+  if (!pay) return '';
+  let cls  = 'badge';
+  let text = pay;
+
+  if (pay === 'paid_ok') {
+    cls  += ' green';
+    text  = '已收款';
+  } else if (pay === 'deposit_ok') {
+    // 訂金已收
+    cls  += ' green';
+    text  = '訂金已收';
+  } else if (pay === 'pending') {
+    cls  += ' yellow';
+    text  = '待確認';
+  } else if (pay === 'unpaid') {
+    text  = '未收款';
+  } else if (pay === 'cancelled') {
+    // 付款狀態 = cancelled
+    cls  += ' red';
+    text  = '取消訂單（補回庫存）';
+  } else if (pay === 'failed') {
+    cls  += ' red';
+    text  = '失敗 / 作廢';
+  }
+
+  return `<span class="${cls}">${text}</span>`;
+}
+
+function statusBadgeShip(st){
+  if(!st) return '';
+  let cls = 'badge blue';
+  let text = st;
+  if(st === 'none'){ text = '未設定'; cls='badge'; }
+  else if(st === 'ready_to_ship'){ text = '待出貨'; }
+  else if(st === 'shipped'){ text = '已出貨'; }
+  else if(st === 'returned'){ text = '退貨'; cls='badge red'; }
+  else if(st === 'cancelled'){ text = '取消'; cls='badge red'; }
+  return `<span class="${cls}">${text}</span>`;
+}
+
+/* ===== 左側列表渲染 ===== */
+function renderOrderList(){
+  const listEl = $('#orderList');
+  if(!currentOrders.length){
+    listEl.innerHTML = '<div class="muted">目前沒有符合條件的訂單</div>';
+    updateSummary();
+    return;
+  }
+
+  const html = currentOrders.map(rec=>{
+    const f = rec.fields || rec || {};
+
+    const shipInfo = parseShippingInfo(f);
+const ship  = shipInfo.ship  || {};
+const store = ship.store     || {};
+const post  = ship.post      || {};
+const note  = shipInfo.note  || '';
+
+   // ✅ 訂金資訊：你的資料在 shipping_info.deposit 裡
+const dep = shipInfo.deposit || {};
+const depAmount = (f.deposit_amount ?? dep.amount ?? '');
+const depLast5  = (f.deposit_last5  ?? dep.last5  ?? '');
+const holdUntil10 = (f.hold_until ?? dep.hold_until ?? '') ? String(f.hold_until ?? dep.hold_until).slice(0,10) : '';
+const depExpire10 = (f.deposit_expire_at ?? dep.deposit_expire_at ?? '') ? String(f.deposit_expire_at ?? dep.deposit_expire_at).slice(0,10) : '';
+
+// ✅ 出貨時間顯示用（唯讀）
+const shipAtRaw  = (f.shipped_at || f.ship_at || '');
+const shipAtText = shipAtRaw
+  ? new Date(shipAtRaw).toLocaleString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:true })
+  : '';
+
+    let addr = '';
+    if (ship.type === '711') {
+      addr = `7-11 ${store.name || ''} (${store.id || ''}) ${store.addr || ''}`;
+    } else if (ship.type === 'post') {
+      addr = `郵寄 ${post.zip || ''} ${post.addr || ''}`;
+    } else if (ship.type === 'meetup') {
+      const place = ship.meetup_place || ship.meet_place || '';
+      const time  = ship.meetup_time  || ship.meet_time  || '';
+      let s = ['面交', time].filter(Boolean).join(' ');
+      if (place) s += ` @ ${place}`;
+      addr = s;
+    }
+    const line2   = [ship.name, ship.phone, addr].filter(Boolean).join(' / ');
+    const pay_b   = statusBadgePay(f.pay_status);
+    const ship_b  = statusBadgeShip(f.ship_status);
+    const method  = displayPaymentMethod(f.payment_method || '');
+    const created = f.CreatedAt || (f.created_at || '');
+    const a = calcAmounts(f);
+    const total   = money(a.net);
+    const creditTag = a.credit > 0
+  ? `<div class="tag-small credit-red">購物金折抵 ${money(a.credit)}</div>`
+  : ``;
+
+    const rowKey = f.order_id || rec.id || '';
+
+    return `
+      <div class="order-row" data-id="${rowKey}">
+        <div class="ord-top">
+          <div>
+            <div class="ord-id">${f.order_id || '(無編號)'}</div>
+            <div class="tag-small">${created}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="ord-amount">${total}</div>
+            <div class="tag-small">${method}</div>
+            ${creditTag}
+          </div>
+        </div>
+        <div class="ord-sub">${line2 || '&nbsp;'}</div>
+        <div class="badges">
+          ${pay_b}
+          ${ship_b}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  listEl.innerHTML = html;
+
+  $$('#orderList .order-row').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      $$('#orderList .order-row').forEach(x=>x.classList.remove('active'));
+      row.classList.add('active');
+      const key = row.getAttribute('data-id');
+      selectOrder(key);
+    });
+  });
+
+  if(currentRecord){
+    const f = currentRecord.fields || currentRecord || {};
+    const key = currentRecord.id || f.order_id || '';
+    const row = $(`#orderList .order-row[data-id="${key}"]`);
+    if(row){
+      row.classList.add('active');
+    }else{
+      currentRecord = null;
+      $('#orderDetail').innerHTML = '<div class="muted">請從左邊點選一筆訂單</div>';
+    }
+  }
+
+  updateSummary();
+}
+
+/* 根據 key 找出訂單（id 或 order_id） */
+function selectOrder(key){
+  if(!key) return;
+  const rec = currentOrders.find(x=>{
+    if (x.id && String(x.id) === String(key)) return true;
+    const f = x.fields || x || {};
+    return f.order_id && String(f.order_id) === String(key);
+  });
+  if(!rec) return;
+  renderDetail(rec);
+}
+
+/* ===== 右側詳細資料 ===== */
+function renderDetail(rec){
+  currentRecord = rec;
+  const f   = rec.fields || rec || {};
+  const dEl = $('#orderDetail');
+
+  const shipInfo = parseShippingInfo(f);
+const ship  = shipInfo.ship  || {};
+const store = ship.store     || {};
+const post  = ship.post      || {};
+const note  = shipInfo.note  || '';
+
+ // ✅ 訂金資訊：優先用 Orders 欄位，沒有就改讀 shipping_info.deposit
+const dep = shipInfo.deposit || {};
+const depAmount = (f.deposit_amount ?? dep.amount ?? dep.deposit_amount ?? '');
+const depLast5  = (f.deposit_last5  ?? dep.last5  ?? dep.deposit_last5  ?? '');
+const holdUntilRaw = (f.hold_until ?? dep.hold_until ?? dep.holdUntil ?? '');
+const depExpireRaw = (f.deposit_expire_at ?? dep.deposit_expire_at ?? dep.expire_at ?? holdUntilRaw ?? '');
+
+const date10 = (v)=> (v ? String(v).slice(0,10) : '');
+const holdUntil10 = date10(holdUntilRaw);
+const depExpire10 = date10(depExpireRaw);
+
+const shipAtLocal = toDatetimeLocal(f.shipped_at || f.ship_at);
+ const shipAtRaw  = (f.shipped_at || f.ship_at || '');
+const shipAtText = shipAtRaw
+  ? new Date(shipAtRaw).toLocaleString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:true })
+  : '';
+
+const addrText = (()=>{
+  if (ship.type === '711') {
+    return `7-11 ${store.name || ''}（${store.id || ''}）\n${store.addr || ''}`;
+  }
+  if (ship.type === 'post') {
+    return `${post.zip || ''} ${post.addr || ''}`;
+  }
+  if (ship.type === 'meetup') {
+    const place = ship.meetup_place || ship.meet_place || '';
+    const time  = ship.meetup_time  || ship.meet_time  || '';
+    let s = ['面交', time].filter(Boolean).join(' ');
+    if (place) s += ` @ ${place}`;
+    return s;
+  }
+  return '';
+})();
+
+  const itemsText = f.items_text || '';
+ const instApplyText = (f.installment_apply_text || "").trim();
+  const a = calcAmounts(f);
+  const totalBase = money(a.base);
+  const creditUse = money(a.credit);
+  const totalNet  = money(a.net);
+
+  dEl.innerHTML = `
+    <div class="detail-grid">
+      <div>
+        <div class="section-title">訂單 / 客戶資訊</div>
+<div class="pill">訂單編號：<span>${f.order_id || ''}</span></div>
+<div class="pill ${f.payment_method === 'cod_711' ? 'cod711' : ''}">
+  付款方式：<span>${displayPaymentMethod(f.payment_method || '')}</span>
+</div>
+<div class="pill">訂單金額：<span>${totalBase}</span></div>
+${a.credit>0 ? `<div class="pill credit-red">購物金折抵：<span>-${creditUse}</span></div>` : ``}
+<div class="pill">應付金額：<span>${totalNet}</span></div>
+<div class="pill">建立時間：<span>${f.CreatedAt || f.created_at || ''}</span></div>
+
+
+        <div class="mt-3">
+          <div class="section-title">收件人 / 取貨資訊</div>
+          <label>收件人</label>
+          <input id="d_ship_name" readonly value="${ship.name || ''}">
+          <div class="row">
+            <div>
+              <label>電話</label>
+              <input id="d_ship_phone" readonly value="${ship.phone || ''}">
+            </div>
+            <div>
+              <label>Email</label>
+              <input id="d_ship_email" readonly value="${ship.email || ''}">
+            </div>
+          </div>
+          <label>取貨方式 / 地址</label>
+          <textarea id="d_ship_addr" readonly>${addrText}</textarea>
+
+          <label class="mt-2">客戶備註</label>
+          <textarea id="d_note" readonly>${note || ''}</textarea>
+
+          <label class="mt-2">商品明細</label>
+          <textarea id="d_items_text" readonly>${itemsText}</textarea>
+          ${instApplyText ? `
+          <label class="mt-2">裕富分期申請資料</label>
+          <textarea id="d_installment_apply_text" readonly>${instApplyText}</textarea>
+` : ''}
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">付款 / 出貨狀態</div>
+        <div class="row">
+          <div>
+            <label>付款狀態</label>
+<div class="ro-field ro-sm" id="d_pay_status_ro">${statusBadgePay(f.pay_status)}</div>
+
+          </div>
+          <div>
+            <label>出貨狀態 (ship_status)</label>
+            <div class="ro-field ro-sm" id="d_ship_status_ro">${statusBadgeShip(f.ship_status)}</div>
+          </div>
+        </div>
+
+        <!-- ★ 新增：賣貨便名稱 + 當月累積金額顯示 -->
+        <div class="row mt-1">
+          <div>
+            <label>賣貨便名稱</label>
+            <select id="d_vendor_name">
+              <option value=""></option>
+              <!-- 下面這幾個選項可以依照你實際用的賣貨便自己改 -->
+              <option value="黃承偉">黃承偉</option>
+              <option value="蘇瑞潔">蘇瑞潔</option>
+              <option value="黃爸爸(黃玠銘)">黃爸爸(黃玠銘)</option>
+              <option value="夏雪媽咪">夏雪媽咪</option>
+              <option value="妹妹-京城">妹妹-京城</option>
+            </select>
+            <!-- 這行用來顯示「這個月份累積多少」 -->
+            <div class="tag-small" id="d_vendor_stats"></div>
+          </div>
+        </div>
+        <!-- ★ 新增結束 -->
+
+        <div class="row mt-2">
+          <div>
+            <label>物流單號</label>
+            <input id="d_ship_tracking" value="${f.ship_tracking || f.tracking_no || ''}">
+          </div>
+          <div>
+            <label>運費 TWD</label>
+            <input id="d_ship_fee" type="number" step="1" value="${(f.ship_fee ?? f.shipping_fee ?? '')}">
+          </div>
+        </div>
+
+        <label class="mt-2">出貨時間</label>
+<div class="ro-field ${shipAtText ? '' : 'ro-empty'}" id="d_ship_at_ro">${shipAtText || '—'}</div>
+<input id="d_ship_at" type="hidden" value="${toDatetimeLocal(f.shipped_at || f.ship_at)}">
+
+        <label class="mt-3">訂金 / 匯款資訊</label>
+
+<div class="row">
+  <div>
+    <label>訂金金額</label>
+    <div class="ro-field ${depAmount ? '' : 'ro-empty'}" id="d_deposit_amount_ro">
+      ${depAmount ? `NT$ ${depAmount}` : '—'}
+    </div>
+    <input id="d_deposit_amount" type="hidden" value="${depAmount}">
+  </div>
+
+  <div>
+    <label>匯款後五碼</label>
+    <div class="ro-field ${depLast5 ? '' : 'ro-empty'}" id="d_deposit_last5_ro">
+      ${depLast5 || '—'}
+    </div>
+    <input id="d_deposit_last5" type="hidden" value="${depLast5}">
+  </div>
+</div>
+
+<div class="row">
+  <div>
+    <label>訂金到期日</label>
+    <div class="ro-field ${depExpire10 ? '' : 'ro-empty'}" id="d_deposit_expire_at_ro">
+      ${depExpire10 || '—'}
+    </div>
+    <input id="d_deposit_expire_at" type="hidden" value="${depExpire10}">
+  </div>
+
+  <div>
+    <label>保留到</label>
+    <div class="ro-field ${holdUntil10 ? '' : 'ro-empty'}" id="d_hold_until_ro">
+      ${holdUntil10 || '—'}
+    </div>
+    <input id="d_hold_until" type="hidden" value="${holdUntil10}">
+  </div>
+</div>
+
+        <div class="label-inline mt-2">
+          <input id="d_deposit_received" type="checkbox" ${f.deposit_received ? 'checked':''}>
+          <span>已收到訂金 (deposit_received)</span>
+        </div>
+        <div class="label-inline">
+          <input id="d_pay_notice_sent" type="checkbox" ${f.pay_notice_sent ? 'checked':''}>
+          <span>已發出款/保留通知 (pay_notice_sent)</span>
+        </div>
+
+        <label class="mt-3">內部備註 (internal_note)</label>
+        <textarea id="d_internal_note">${f.internal_note || ''}</textarea>
+
+        <div class="detail-actions">
+  <button class="btn-primary" id="btnSaveAndShip">儲存資料+標記已出貨+發 LINE 通知</button>
+  <button class="btn-secondary" id="btnDepositPayAndNotice">✅ 已收到訂金+發保留通知（自動勾勾）</button>
+  <button class="btn-secondary" id="btnConfirmPayOk">✅ 確認已收款／審核通過 並 發 LINE</button>
+  <button class="btn-secondary" id="btnMarkZcFail">❌ 中租審核未通過 ＋ 發 LINE</button>
+  <button class="btn-secondary" id="btnSaveDetailOnly">📑 僅儲存資料（寫入 LINE，不改狀態）</button>
+  <button class="btn small" id="btnSendTailLink">發尾款結帳鏈結 ＋ 發 LINE</button>
+  <div id="detailMsg" class="tag-small mt-2"></div>
+  <div class="mt-2">
+    <button class="btn-secondary" id="btnMeetupNotify">❗ 預約面交通知（發 LINE）</button>
+  </div>
+</div>
+    </div>
+  `;
+
+ // ★ 賣貨便名稱選單：帶入目前欄位值，並更新當月累積金額
+  const vendorSel = $('#d_vendor_name');
+  if (vendorSel) {
+    vendorSel.value = f['賣貨便名稱'] || '';
+    vendorSel.onchange = updateVendorStats;
+  }
+  updateVendorStats();
+ 
+   const btnSaveAndShip = $('#btnSaveAndShip');
+if (btnSaveAndShip) {
+  btnSaveAndShip.addEventListener('click', saveAndShipAndLine);
+}
+
+ const btnTail = $('#btnSendTailLink');
+if (btnTail) {
+  btnTail.addEventListener('click', async () => {
+    if (!currentRecord) {
+      alert('尚未選擇訂單');
+      return;
+    }
+    const f = currentRecord.fields || currentRecord || {};
+    const oid = f.order_id;
+    if (!oid) {
+      alert('這筆資料沒有 order_id，無法發尾款連結');
+      return;
+    }
+
+    if (!confirm(`要發送「尾款結帳連結 + LINE 通知」給訂單 ${oid} 嗎？`)) {
+      return;
+    }
+
+    try {
+      const r = await fetch(`${API}/admin/deposit/send-tail-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          op_key: OP_KEY,
+          order_id: oid
+        })
+      });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok || !j.ok) {
+        alert('發送失敗：' + (j.message || j.error || ('HTTP ' + r.status)));
+        return;
+      }
+      alert('已發送尾款結帳連結並透過 LINE 通知客人。');
+    } catch (e) {
+      console.error(e);
+      alert('系統錯誤，發送失敗。');
+    }
+  });
+}
+
+
+  const btnPayOk = $('#btnConfirmPayOk');
+  if (btnPayOk) btnPayOk.addEventListener('click', ()=>confirmPay('ok'));
+
+ // ★ 新增：已收訂金＋發保留通知（自動勾勾）
+  const btnDepNotice = $('#btnDepositPayAndNotice');
+  if (btnDepNotice) btnDepNotice.addEventListener('click', depositReceivedAndNotify);
+
+  const btnZcFail = $('#btnMarkZcFail');
+  if (btnZcFail) btnZcFail.addEventListener('click', ()=>confirmPay('zc_fail'));
+ // ✅ 顯示/隱藏「完成面交收款」按鈕（只給 meetup_cash）
+const meetupDoneTop = $('#btnMeetupCashDoneTop');
+if (meetupDoneTop) {
+  const pm = String((f.payment_method || ''));
+  meetupDoneTop.style.display = (pm === 'meetup_cash') ? '' : 'none';
+}
+
+ const btnPrint = $('#btnPrintOrder');
+  if (btnPrint) btnPrint.addEventListener('click', printCurrentOrder);
+
+ // ★ 新增：僅儲存資料（不發 LINE、不改狀態）
+const btnSaveOnly = $('#btnSaveDetailOnly');
+if (btnSaveOnly) {
+  btnSaveOnly.addEventListener('click', async () => {
+    if (!currentRecord) {
+      alert('請先在左邊選一筆訂單');
+      return;
+    }
+    const msgEl = $('#detailMsg');
+    if (msgEl) msgEl.textContent = '儲存中…';
+
+    try {
+      await saveDetail();  // ← 只用你原本的儲存函式
+
+      if (msgEl) {
+        msgEl.textContent = '✅ 已儲存資料（未變更出貨／付款狀態，也未發 LINE）';
+      }
+    } catch (e) {
+      console.error(e);
+      if (msgEl) {
+        msgEl.textContent = '❌ 儲存失敗：' + (e.message || e);
+      } else {
+        alert('儲存失敗：' + (e.message || e));
+      }
+    }
+  });
+}
+// ★ 計算賣貨便在對應月份的累積金額，顯示在 detail 右側（改版：儲存後可以立刻重算）
+function updateVendorStats() {
+  const sel    = $('#d_vendor_name');
+  const infoEl = $('#d_vendor_stats');
+  if (!sel || !infoEl) return;
+
+  const name = sel.value;
+  if (!name) {
+    infoEl.textContent = '';
+    return;
+  }
+
+  // 目前這筆訂單的欄位
+  const f = (currentRecord && (currentRecord.fields || currentRecord)) || {};
+
+  // 先用 Airtable 的「賣貨便月份」，沒有的話就用 ship_at 自己算 YYYY-MM
+  let month = f['賣貨便月份'] || '';
+  if (!month) {
+    const shipAt = (f.shipped_at || f.ship_at || '');
+    if (shipAt) {
+      month = String(shipAt).slice(0, 7); // 2025-12-06T... → 2025-12
+    }
+  }
+
+  if (!month) {
+    infoEl.textContent = '尚未有對應月份（請先填出貨時間 ship_at）';
+    return;
+  }
+
+  let sum   = 0;
+  let count = 0;
+
+  (ORDERS_CACHE || []).forEach(o => {
+    if (!o) return;
+    const fo = o;
+
+    if (fo['賣貨便名稱'] !== name) return;
+
+    // 這一筆的月份：一樣先看「賣貨便月份」，沒有就用 ship_at 算
+    let m2 = fo['賣貨便月份'] || '';
+    if (!m2) {
+      const shipAt2 = (fo.shipped_at || fo.ship_at || '');
+      if (shipAt2) {
+        m2 = String(shipAt2).slice(0, 7);
+      }
+    }
+    if (m2 !== month) return;
+
+    // 優先用「賣貨便金額」，沒有就退而用 ship_fee / shipping_fee
+    let amount = fo['賣貨便金額'];
+    if (amount === undefined || amount === null || amount === '') {
+      amount = fo.ship_fee ?? fo.shipping_fee ?? 0;
+    }
+
+    sum   += Number(amount || 0);
+    count += 1;
+  });
+
+  infoEl.textContent = `${month}，${name} 本月累積 ${count} 筆，合計 ${money(sum)}`;
+}
+
+
+ // ★★★ 新增「面交按鈕事件綁定」只加這兩行 ***
+const btnMeetup = $('#btnMeetupNotify');
+if (btnMeetup) btnMeetup.addEventListener('click', sendMeetupNotify);
+
+}
+function renderDepositRemind(payload){
+  const dEl = $('#orderDetail');
+  if (!dEl) return;
+
+  const list = payload.records || [];
+  const date = payload.date || '';
+
+  if (!list.length) {
+    dEl.innerHTML = `
+      <div class="section-title">今日尾款提醒（保留到期）</div>
+      <p class="muted">今天（${date}）沒有需要提醒尾款的訂單。</p>
+    `;
+    return;
+  }
+
+  const rows = list.map(r => `
+    <tr data-oid="${r.order_id || ''}">
+      <td style="text-decoration:underline;">${r.order_id || ''}</td>
+      <td>${r.name || ''}</td>
+      <td>${r.phone || ''}</td>
+      <td style="text-align:right;">${r.amount || 0}</td>
+      <td>${r.hold_until || ''}</td>
+    </tr>
+  `).join('');
+
+  dEl.innerHTML = `
+    <div class="section-title">今日尾款提醒（保留到期：${date}）</div>
+    <p class="muted">
+      共 ${list.length} 筆。<br>
+      👉 直接「點表格裡的訂單編號那一行」，左邊會自動跳到那一筆訂單詳細資料。
+    </p>
+    <div style="overflow:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr>
+            <th style="border-bottom:1px solid #334155;text-align:left;padding:4px 6px;">訂單編號</th>
+            <th style="border-bottom:1px solid #334155;text-align:left;padding:4px 6px;">客戶姓名</th>
+            <th style="border-bottom:1px solid #334155;text-align:left;padding:4px 6px;">電話</th>
+            <th style="border-bottom:1px solid #334155;text-align:right;padding:4px 6px;">尾款金額</th>
+            <th style="border-bottom:1px solid #334155;text-align:left;padding:4px 6px;">保留到</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  // 綁定點擊事件：點一行就切到那筆訂單
+  $$('#orderDetail table tbody tr[data-oid]').forEach(tr => {
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', () => {
+      const oid = tr.getAttribute('data-oid') || '';
+      if (!oid) return;
+
+      // 用現成的 selectOrder 把右邊換成那筆訂單的詳細資料
+      selectOrder(oid);
+
+      // 順便讓左邊那一筆高亮
+      $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
+      const row = document.querySelector(`#orderList .order-row[data-id="${oid}"]`);
+      if (row) row.classList.add('active');
+    });
+  });
+}
+
+
+/* ===== 取消訂單（補回庫存） ===== */
+async function cancelCurrentOrder() {
+  if (!currentRecord) {
+    alert('請先在左邊選一張訂單');
+    return;
+  }
+
+  const oid = currentRecord.fields.order_id;
+  if (!oid) {
+    alert('這筆資料沒有 order_id，無法取消');
+    return;
+  }
+
+  if (!confirm(`確定要取消訂單 ${oid} 並補回庫存嗎？`)) {
+    return;
+  }
+
+  try {
+    const r = await fetch(API + "/admin/order/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        order_id: oid
+      })
+    });
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      alert("取消失敗：" + (j.message || j.error || ('HTTP ' + r.status)));
+      return;
+    }
+
+    alert("已取消訂單並補回庫存。");
+    // 最簡單：整頁重載，列表 / 明細一起更新
+    await reloadCurrentView();
+  } catch (e) {
+    console.error(e);
+    alert("取消訂單時發生錯誤，請稍後再試。");
+  }
+}
+
+ 
+/* ===== 儲存右側欄位 ===== */
+async function saveDetail(){
+  if(!currentRecord) return;
+  const msgEl = $('#detailMsg');
+  msgEl.textContent = '儲存中…';
+
+  const fields = {};
+
+// ★ 新增：賣貨便名稱（對應 Airtable 的「賣貨便名稱」欄位）
+  fields['賣貨便名稱']   = $('#d_vendor_name') ? $('#d_vendor_name').value || '' : '';
+ 
+ // 物流單號 / 運費 → 用 Orders 的欄位名
+const tracking = $('#d_ship_tracking').value.trim();
+fields.tracking_no = tracking || '';
+
+const fee = $('#d_ship_fee').value.trim();
+fields.shipping_fee = fee ? Number(fee) : null;
+  fields.deposit_received  = $('#d_deposit_received').checked;
+  fields.pay_notice_sent   = $('#d_pay_notice_sent').checked;
+  fields.internal_note     = $('#d_internal_note').value || '';
+ // ✅ 裕富（手動申請欄位）— 有元素才讀，沒元素就不送
+const y_name   = $('#d_yufu_name');
+const y_idno   = $('#d_yufu_idno');
+const y_phone  = $('#d_yufu_phone');
+const y_email  = $('#d_yufu_email');
+const y_period = $('#d_yufu_period');
+const y_status = $('#d_yufu_status');
+const y_case   = $('#d_yufu_case_no');
+const y_note   = $('#d_yufu_note');
+
+if (y_name)   fields.yufu_name   = (y_name.value || '').trim();
+if (y_idno)   fields.yufu_idno   = (y_idno.value || '').trim();
+if (y_phone)  fields.yufu_phone  = (y_phone.value || '').trim();
+if (y_email)  fields.yufu_email  = (y_email.value || '').trim();
+if (y_period) fields.yufu_period = (y_period.value || '').trim();
+if (y_status) fields.yufu_status = (y_status.value || '').trim();
+if (y_case)   fields.yufu_case_no= (y_case.value || '').trim();
+if (y_note)   fields.yufu_note   = (y_note.value || '').trim();
+
+  const f = currentRecord.fields || currentRecord || {};
+  const payload = {
+    record_id: currentRecord.id || null,  // Airtable recID（有就用）
+    order_id : f.order_id || null,        // 或用 order_id 找
+    fields
+  };
+
+  try{
+    const r = await fetch(`${API}/admin/order/update?op_key=${encodeURIComponent(OP_KEY)}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if(!r.ok || !j.ok){
+      throw new Error(j.error || 'update_error');
+    }
+    msgEl.textContent = '已儲存 ✅';
+
+    const keepF   = currentRecord.fields || currentRecord || {};
+    const keepKey = currentRecord.id || keepF.order_id || '';
+    await reloadCurrentView();
+    const found = currentOrders.find(x=>{
+      if (x.id && x.id === keepKey) return true;
+      const fx = x.fields || x || {};
+      return fx.order_id && fx.order_id === keepKey;
+    });
+    if(found){
+      renderDetail(found);
+      const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
+      if(row) row.classList.add('active');
+    }
+  }catch(e){
+    console.error(e);
+    msgEl.textContent = '儲存失敗：' + (e.message || e);
+  }
+}
+/* ===== 一鍵：先儲存，再出貨＋發 LINE（上面那顆大按鈕用） ===== */
+async function saveDetailAndShip(){
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const msgEl = $('#detailMsg');
+  if (msgEl) msgEl.textContent = '儲存出貨 / 付款資料中…';
+
+  // 1. 先儲存右側欄位
+  await saveDetail();
+
+  // 如果儲存失敗（訊息裡有「失敗」），就不要繼續出貨
+  if (msgEl && String(msgEl.textContent || '').includes('失敗')) {
+    return;
+  }
+
+  // 2. 儲存成功後，再出貨＋發 LINE 通知
+  await shipAndLine();
+}
+
+
+/* ===== 一鍵：標記出貨 ＋ LINE 通知（整合 admin_ship_orderid 版） ===== */
+async function shipAndLine(){
+  if(!currentRecord) return;
+  const msgEl = $('#detailMsg');
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = f.order_id;
+  if (!orderId){
+    alert('這筆訂單沒有 order_id，無法出貨。');
+    return;
+  }
+
+  const tracking = $('#d_ship_tracking').value.trim();
+  const feeTxt   = $('#d_ship_fee').value.trim();
+  let shipping_fee = null;
+  if (feeTxt !== ''){
+    const n = Number(feeTxt);
+    if (isNaN(n) || n < 0){
+      alert('運費請輸入數字或留空');
+      $('#d_ship_fee').focus();
+      return;
+    }
+    shipping_fee = n;
+  }
+
+  const payload = { op_key: OP_KEY, order_id: orderId, tracking_no: tracking };
+  if (shipping_fee !== null) payload.shipping_fee = shipping_fee;
+
+  msgEl.textContent = '出貨處理中（會同時發送 LINE 通知）…';
+
+  try{
+    const res = await fetch(API + '/admin/order/ship', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    const j = await res.json().catch(()=> ({}));
+    if (!res.ok || !j.ok){
+      throw new Error(j.error || ('HTTP ' + res.status));
+    }
+    msgEl.textContent = '✅ 已標記出貨並嘗試發送 LINE 通知';
+
+    // 出貨後重新載入目前 filter
+    const keepKey = orderId;
+    await reloadCurrentView();
+    const found = currentOrders.find(x=>{
+      const fx = x.fields || x || {};
+      return fx.order_id && String(fx.order_id) === String(keepKey);
+    });
+    if(found){
+      renderDetail(found);
+      const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
+      if(row) row.classList.add('active');
+    }
+  }catch(e){
+    console.error(e);
+    msgEl.textContent = '❌ 出貨失敗：' + (e.message || e);
+  }
+}
+// 一鍵：先儲存出貨 / 付款欄位，再標記出貨＋發 LINE
+async function saveAndShipAndLine() {
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const msgEl = $('#detailMsg');
+  if (msgEl) msgEl.textContent = '儲存出貨 / 付款資料中…';
+
+  // 1. 先儲存右側出貨 / 付款欄位
+  await saveDetail();
+
+  // 如果儲存有失敗訊息，就不要往下出貨
+  if (msgEl && msgEl.textContent.includes('失敗')) {
+    return;
+  }
+
+  // 2. 再出貨＋發 LINE 通知
+  await shipAndLine();
+}
+
+ /* ===== 確認收款 / 中租審核 ＋ 發 LINE ===== */
+async function confirmPay(mode){
+  if (!currentRecord) return;
+  const msgEl = $('#detailMsg');
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = f.order_id;
+  if (!orderId){
+    alert('這筆訂單沒有 order_id，無法更新付款狀態。');
+    return;
+  }
+
+  const depAmtTxt  = $('#d_deposit_amount').value.trim();
+  const depLast5   = $('#d_deposit_last5').value.trim();
+  const depAmt     = depAmtTxt ? Number(depAmtTxt) : null;
+
+  const payload = {
+    op_key: OP_KEY,
+    order_id: orderId,
+    mode: mode || 'ok',          // ok / zc_fail
+    deposit_amount: depAmt,
+    deposit_last5 : depLast5
+  };
+
+  msgEl.textContent = '更新付款狀態中…';
+
+  try{
+    const res = await fetch(API + '/admin/order/confirm-pay', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const j = await res.json().catch(()=> ({}));
+    if (!res.ok || !j.ok){
+      throw new Error(j.error || ('HTTP ' + res.status));
+    }
+
+    msgEl.textContent = '✅ 已更新付款狀態並嘗試發送 LINE 通知';
+
+    const keepKey = orderId;
+    await reloadCurrentView();
+    const found = currentOrders.find(x=>{
+      const fx = x.fields || x || {};
+      return fx.order_id && String(fx.order_id) === String(keepKey);
+    });
+    if (found){
+      renderDetail(found);
+      const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
+      if (row) row.classList.add('active');
+    }
+  }catch(e){
+    console.error(e);
+    msgEl.textContent = '❌ 付款狀態更新失敗：' + (e.message || e);
+  }
+}
+ // ★ 新增：已收訂金＋發保留通知（自動勾勾）
+async function depositReceivedAndNotify() {
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  // 1) 自動勾選「已收到訂金」＋「已發出款/保留通知」
+  const depChk    = $('#d_deposit_received');
+  const noticeChk = $('#d_pay_notice_sent');
+  if (depChk)    depChk.checked    = true;
+  if (noticeChk) noticeChk.checked = true;
+
+  // 2) 先存右邊欄位（包含勾勾、內部備註等等）
+  await saveDetail();
+
+  const msgEl = $('#detailMsg');
+  if (msgEl && msgEl.textContent.includes('❌')) {
+    // 如果儲存失敗，就不要往下跑確認付款
+    return;
+  }
+
+  // 3) 再走一次原本的「確認已收款」流程
+  //    → 後端會依付款方式：線上支付 / 中租 / 匯款 / 訂金 自己決定 pay_status / status
+  await confirmPay('ok');
+}
+ /* ===== 面交付現：完成收款（已收款 + 出貨完成） ===== */
+async function markMeetupCashDone(){
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const pm = String(f.payment_method || '');
+
+  if (pm !== 'meetup_cash') {
+    alert('這顆按鈕只給「面交付現」訂單使用。');
+    return;
+  }
+
+  const orderId = f.order_id;
+  if (!orderId && !currentRecord.id) {
+    alert('這筆訂單缺少 order_id / record_id，無法更新狀態。');
+    return;
+  }
+
+  if (!confirm('確定要將此「面交付現」訂單標記為：已收款 + 出貨完成（已出貨）？')) {
+    return;
+  }
+
+  const msgEl = $('#detailMsg');
+  if (msgEl) msgEl.textContent = '更新面交狀態中…';
+
+  const payload = {
+    op_key: OP_KEY,
+    record_id: currentRecord.id || null,
+    order_id: orderId || null,
+    fields: {
+      pay_status:  'paid_ok',
+      ship_status: 'shipped',
+      status:      'shipped',
+      shipped_at:  new Date().toISOString()
+    }
+  };
+
+  try {
+    const res = await fetch(API + '/admin/order/update', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const j = await res.json().catch(()=> ({}));
+    if (!res.ok || !j.ok) {
+      throw new Error(j.error || ('HTTP ' + res.status));
+    }
+
+    if (msgEl) msgEl.textContent = '✅ 已標記：已收款 + 出貨完成';
+    await reloadCurrentView();
+  } catch(e) {
+    console.error(e);
+    if (msgEl) msgEl.textContent = '❌ 更新失敗：' + (e.message || e);
+    alert('更新失敗，請稍後再試');
+  }
+}
+/* ===== 預約面交通知：發 LINE ===== */
+async function sendMeetupNotify(){
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = f.order_id;
+  if (!orderId) {
+    alert('這筆訂單沒有 order_id，無法發送面交通知。');
+    return;
+  }
+
+  const msgEl = $('#detailMsg');
+  if (msgEl) msgEl.textContent = '發送面交通知中…';
+
+  // 把「內部備註」當成面交補充說明一起傳給後端（選填）
+  const note = ($('#d_internal_note')?.value || '').trim();
+
+  const payload = {
+    op_key: OP_KEY,
+    order_id: orderId,
+    note: note
+  };
+
+  try {
+    const res = await fetch(API + '/admin/order/meetup-notify', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const j = await res.json().catch(()=> ({}));
+    if (!res.ok || !j.ok) {
+      throw new Error(j.error || ('HTTP ' + res.status));
+    }
+
+    if (msgEl) {
+      if (j.line_sent) {
+        msgEl.textContent = '✅ 已發送面交 LINE 通知';
+      } else {
+        msgEl.textContent = '✅ 已處理，但找不到此訂單的 LINE 綁定';
+      }
+    }
+  } catch(e) {
+    console.error(e);
+    if (msgEl) msgEl.textContent = '❌ 面交通知失敗：' + (e.message || e);
+    alert('面交通知失敗，請稍後再試');
+  }
+}
+/* ===== 複製出貨通知 ===== */
+async function copyNotice(){
+  const ta = $('#d_notice_text');
+  if(!ta) return;
+  const text = ta.value || '';
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(text);
+    }else{
+      ta.select();
+      document.execCommand('copy');
+      window.getSelection().removeAllRanges();
+    }
+    alert('已複製出貨通知文字，可以貼到 LINE / Messenger。');
+  }catch(e){
+    console.error(e);
+    alert('複製失敗，請手動選取文字複製。');
+  }
+}
+// 列印「出貨明細」：抓 JSON → 開新視窗 → 80mm 熱感版面（和匯出中心一樣）
+async function printShipSlipsRange(){
+  if (!OP_KEY){
+    alert('尚未登入後台，請重新整理頁面再試一次。');
+    return;
+  }
+
+  // 用 admin 這頁上面的日期
+  const df = $('#date_from')?.value || '';
+  const dt = $('#date_to')?.value   || '';
+  const params = [];
+  if (df) params.push(`date_from=${encodeURIComponent(df)}`);
+  if (dt) params.push(`date_to=${encodeURIComponent(dt)}`);
+  const queryDates = params.length ? '&' + params.join('&') : '';
+
+  const url = `${API}/admin/export-view?key=${
+    encodeURIComponent(OP_KEY)
+  }&kind=orders&format=json${queryDates}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const txt = await res.text();
+      alert(`讀取出貨明細失敗（${res.status}）：${txt}`);
+      return;
+    }
+
+    const data    = await res.json();
+    const records = data.records || [];
+    if (!records.length) {
+      alert('目前日期區間沒有訂單可以列印');
+      return;
+    }
+
+    const win = window.open('', '_blank');
+    const doc = win.document;
+
+    // ↓ 這裡完全照匯出中心的 printOrders 抄來 ↓
+    const slipsHtml = records.map((rec) => {
+      const f = rec.fields || {};
+
+      const orderId      = f['訂單編號']       || '';
+      const doneAt       = f['結單完成時間']   || '';
+      const lineName     = f['LINE名稱']       || '';
+      const payMethod    = f['付款方式']       || '';
+      const amount       = f['應付金額']       || '';
+      const sku          = f['商品編號']       || '';
+      const product      = f['商品明細']       || '';
+      const customerNote = f['客戶備註']       || '';
+      const shipType     = f['出貨方式']       || '';
+      const note         = f['備註']           || '';
+      const zip          = f['郵遞區號']       || '';
+      const addr         = f['收件地址']       || '';
+      const name         = f['收件人姓名']     || '';
+      const phone        = f['收件人電話']     || '';
+      const storeName    = f['超商店名']       || '';
+
+      return `
+        <div class="slip">
+          <!-- 上半部：內部用資訊 -->
+          <div class="line small">訂單編號：${orderId}</div>
+          <div class="line small">結單時間：${doneAt}</div>
+          <div class="line">LINE 名稱：${lineName}</div>
+          <div class="line">出貨方式：${shipType}</div>
+          <div class="line">付款方式：${payMethod}</div>
+          <div class="line">應付金額：${amount}</div>
+          <!-- ★ 商品編號、商品明細：標題一行，內容一行 ★ -->
+    <div class="line small">商品編號：</div>
+    <div class="line">${sku}</div>
+
+    <div class="line small">商品明細：</div>
+    <div class="line">${product}</div>
+          ${customerNote ? `<div class="line">客戶備註：${customerNote}</div>` : ''}
+          ${note ? `<div class="line">備註：${note}</div>` : ''}
+
+          <!-- 分隔線：下面這塊可以剪下來貼在包裹上 -->
+          <div class="line">--------------------------------</div>
+
+          <!-- 下半部：收件資料（剪下用） -->
+          <div class="line big">${name}</div>
+          <div class="line">電話：${phone}</div>
+          <div class="line">地址：${zip} ${addr}</div>
+          ${storeName ? `<div class="line">門市：${storeName}</div>` : ''}
+        </div>
+       `;
+    }).join('<div class="page-break"></div>');
+
+    doc.write(`<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<title>出貨明細列印</title>
+<style>
+  @page {
+    size: 80mm auto;      /* 保持原本設定，讓瀏覽器知道是熱感紙寬度 */
+    margin: 3mm;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 15px;      /* ★ 整體字體放大：原本 12 → 14 */
+    line-height: 1.5;     /* ★ 行距稍微拉開，字大一點也不擠 */
+  }
+
+  .slip {
+    width: 72mm;          /* 保持不動，避免重調寬度 */
+    padding: 2mm 2mm 4mm;
+    box-sizing: border-box;
+  }
+
+  .line {
+    margin-bottom: 3px;   /* 原本 2px，稍微拉開一點比較好讀 */
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  /* 收件人姓名那行，用更大的字＋粗體 */
+  .line.big {
+    font-size: 17px;      /* 原本 14 → 16，更醒目 */
+    font-weight: 700;
+  }
+
+  /* 比較不重要的小字（例如時間、訂單編號）可以套 small */
+  .line.small {
+    font-size: 12px;      /* 跟 body 差一級，還是看得清楚 */
+    color: #555;
+  }
+
+  .page-break {
+    page-break-after: always;
+  }
+</style>
+<meta name="robots" content="noindex, nofollow">
+</head>
+<body>
+${slipsHtml}
+</body>
+</html>`);
+    doc.close();
+    win.focus();
+    win.print();
+  } catch (e) {
+    console.error(e);
+    alert('列印出貨明細時發生錯誤：' + (e.message || e));
+  }
+}
+
+ /* ===== 列印目前這筆訂單 ===== */
+
+/* ===== 列印目前這筆訂單 ===== */
+function printCurrentOrder() {
+  if (!currentRecord) {
+    alert('請先選一筆訂單');
+    return;
+  }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const shipInfo = parseShippingInfo(f) || {};
+  const ship  = shipInfo.ship  || {};
+  const store = ship.store     || {};
+  const post  = ship.post      || {};
+
+  let shipType = '';
+  let shipAddr = '';
+  if (ship.type === '711') {
+    shipType = '7-11 超商取貨';
+    shipAddr = `7-11 ${store.name || ''}（${store.id || ''}）\n${store.addr || ''}`;
+  } else if (ship.type === 'post') {
+    shipType = '郵寄';
+    shipAddr = `${post.zip || ''} ${post.addr || ''}`;
+  } else if (ship.type === 'meetup') {
+    shipType = '面交';
+    const place = ship.meetup_place || ship.meet_place || '';
+    const time  = ship.meetup_time  || ship.meet_time  || '';
+    shipAddr = ['面交', time].filter(Boolean).join(' ');
+    if (place) shipAddr += ` @ ${place}`;
+  }
+  const itemsText = f.items_text || '';
+  const a = calcAmounts(f);
+  const totalBase = money(a.base);
+  const creditUse = money(a.credit);
+  const totalNet  = money(a.net);
+  const orderId   = f.order_id || '';
+
+  const html = `
 <!doctype html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="utf-8" />
-  <title>XUYUAN | 會員中心</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
-
-  <style>
-    /* --- 核心變數 & 高級感調色盤 --- */
-    :root {
-      --bg-color: #050505; 
-      --card-bg: rgba(20, 20, 20, 0.65);
-      --border-color: rgba(255, 255, 255, 0.08);
-      --text-main: #fcfcfc;
-      --text-sub: #a0a0a0;
-      --text-muted: #666666;
-      --gold-primary: #cfc09f; 
-      --gold-gradient: linear-gradient(135deg, #bf953f, #fcf6ba, #b38728, #fbf5b7, #aa771c);
-      --gold-text-gradient: linear-gradient(to bottom, #cfc09f, #ffecb3);
-      --success: #5eb37e;
-      --success-bg: rgba(94, 179, 126, 0.1);
-      --danger: #d45d5d;
-      --danger-bg: rgba(212, 93, 93, 0.1);
-      --font-serif: 'Playfair Display', 'Noto Sans TC', serif;
-      --font-sans: 'Lato', 'Noto Sans TC', sans-serif;
-    }
-
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; outline: none; }
-
-    body {
-      margin: 0;
-      font-family: var(--font-sans);
-      background-color: var(--bg-color);
-      color: var(--text-main);
-      min-height: 100vh;
-      background-image: 
-        radial-gradient(circle at 50% -10%, rgba(50, 50, 50, 0.4) 0%, transparent 60%),
-        linear-gradient(to bottom, #050505 0%, #000000 100%);
-      background-attachment: fixed;
-    }
-
-    .page {
-      max-width: 600px;
-      margin: 0 auto;
-      padding: 30px 20px 80px;
-      animation: fadeIn 0.8s ease-out;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* --- Header --- */
-    .header-area {
-      text-align: center;
-      margin-bottom: 32px;
-      position: relative;
-      padding-top: 10px;
-    }
-    
-    .brand-title {
-      font-family: var(--font-serif);
-      font-size: 28px;
-      letter-spacing: 0.15em;
-      background: var(--gold-gradient);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      margin-bottom: 8px;
-      font-weight: 700;
-      text-shadow: 0 2px 10px rgba(0,0,0,0.5);
-    }
-    
-    .page-title {
-      font-size: 13px;
-      letter-spacing: 0.2em;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      font-weight: 400;
-      padding-left: 0.2em;
-    }
-
-    .refresh-btn, .clear-focus-btn {
-      position: absolute;
-      top: 0;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--border-color);
-      color: var(--text-sub);
-      width: 36px; height: 36px;
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      cursor: pointer;
-      font-size: 14px;
-      transition: all 0.3s ease;
-      backdrop-filter: blur(4px);
-    }
-    .refresh-btn { right: 0; }
-    .clear-focus-btn { right: 48px; }
-
-    .refresh-btn:hover, .clear-focus-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: var(--text-sub);
-      color: #fff;
-    }
-    .refresh-btn:active, .clear-focus-btn:active { transform: scale(0.95); }
-
-    /* --- Member Card --- */
-    .member-card {
-      background: rgba(20, 20, 20, 0.4);
-      backdrop-filter: blur(15px); 
-      -webkit-backdrop-filter: blur(15px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 20px;
-      padding: 28px;
-      margin-bottom: 32px;
-      position: relative;
-      overflow: hidden;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
-    }
-    
-    .member-card::after {
-      content: '';
-      position: absolute;
-      top: 0; left: -100%;
-      width: 50%; height: 100%;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent);
-      transform: skewX(-25deg);
-      animation: shine 6s infinite;
-      pointer-events: none;
-    }
-    
-    @keyframes shine {
-      0% { left: -100%; } 20% { left: 200%; } 100% { left: 200%; }
-    }
-    
-    .member-card::before {
-      content: ''; position: absolute;
-      top: -50%; right: -20%;
-      width: 250px; height: 250px;
-      background: radial-gradient(circle, rgba(191, 149, 63, 0.15), transparent 70%);
-      filter: blur(40px);
-      z-index: 0;
-    }
-
-    .user-info {
-      display: flex; align-items: center; gap: 18px;
-      margin-bottom: 30px;
-      position: relative; z-index: 2;
-    }
-    
-    .user-avatar {
-      width: 56px; height: 56px;
-      background: #0f0f0f; 
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      color: #cfc09f; 
-      font-size: 22px;
-      box-shadow: 0 0 0 1px rgba(191, 149, 63, 0.3), 0 0 0 4px rgba(0,0,0,0.5);
-      overflow: hidden;
-    }
-    .user-avatar img { width: 100%; height: 100%; object-fit: cover; }
-
-    .user-name { 
-      font-family: var(--font-serif); font-size: 20px; font-weight: 500; color: #fff; letter-spacing: 0.05em; 
-    }
-    .user-status { 
-      font-family: var(--font-sans); font-size: 12px; color: var(--gold-primary); margin-top: 4px; letter-spacing: 0.1em; opacity: 0.8;
-    }
-
-    .credit-row {
-      display: flex; justify-content: space-between; align-items: flex-end;
-      position: relative; z-index: 2;
-      border-top: 1px solid rgba(255,255,255,0.08);
-      padding-top: 20px;
-    }
-    .credit-label { font-size: 13px; color: var(--text-sub); letter-spacing: 0.05em; margin-bottom: 6px; }
-    .credit-amount {
-      font-family: var(--font-sans); font-size: 24px;
-      background: var(--gold-text-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums;
-      letter-spacing: 0.05em; text-shadow: 0 4px 10px rgba(0,0,0,0.3);
-    }
-    
-    /* --- Tabs --- */
-    .tabs {
-      display: flex; background: #111; padding: 4px;
-      border-radius: 99em; margin-bottom: 28px;
-      border: 1px solid var(--border-color);
-      position: relative;
-    }
-    .tab {
-      flex: 1; padding: 10px 0; border: none; background: transparent;
-      color: var(--text-muted); font-size: 13px; border-radius: 99em;
-      cursor: pointer; transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
-      font-family: var(--font-sans); font-weight: 500; letter-spacing: 0.05em;
-      position: relative; z-index: 2;
-    }
-    .tab.active {
-      background: #252525; color: #fff; font-weight: 600;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);
-    }
-
-    .msg { font-size: 12px; color: var(--text-sub); text-align: center; margin: 20px 0; letter-spacing: 0.05em; }
-    .msg.error { color: var(--danger); }
-    .empty-state {
-      padding: 60px 0; text-align: center; color: var(--text-muted); font-size: 13px;
-      border: 1px dashed var(--border-color); border-radius: 16px;
-      background: rgba(255,255,255,0.01); letter-spacing: 0.05em;
-    }
-
-    /* --- [修改] 訂單卡片 (Order Card) --- */
-    .order-list { display: flex; flex-direction: column; gap: 16px; }
-    
-    .order-card {
-      background: var(--card-bg);
-      border-radius: 12px;
-      padding: 0; /* 內距改由內部元素控制 */
-      border: 1px solid var(--border-color);
-      position: relative;
-      overflow: hidden; 
-      transition: all 0.3s ease;
-      animation: fadeIn 0.5s ease-out;
-      cursor: pointer;
-    }
-    .order-card:active { transform: scale(0.99); }
-    
-    /* 標頭：常駐顯示 */
-    .card-header {
-      padding: 20px;
-      display: flex; justify-content: space-between; align-items: center;
-      border-bottom: 1px solid transparent;
-      margin-bottom: 0;
-      background: rgba(255,255,255,0.01);
-      transition: background 0.3s;
-    }
-    .order-card.expanded .card-header {
-      background: rgba(255,255,255,0.03);
-      border-bottom: 1px solid rgba(255,255,255,0.06);
-    }
-    
-    .order-info-main { display: flex; flex-direction: column; gap: 4px; }
-    .order-id { 
-      font-family: 'Lato', monospace; font-size: 15px; color: #fff; 
-      letter-spacing: 0.05em; font-weight: 600;
-    }
-    .order-date { 
-      font-size: 11px; color: var(--text-muted); font-family: var(--font-sans);
-    }
-    
-    /* 狀態 Badge */
-    .status-badge {
-      font-size: 11px; padding: 4px 10px; border-radius: 4px;
-      font-weight: 500; white-space: nowrap; backdrop-filter: blur(4px);
-    }
-    .st-paid { background: var(--success-bg); color: var(--success); border: 1px solid rgba(94, 179, 126, 0.2); }
-    .st-unpaid { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(212, 93, 93, 0.2); }
-    .st-waitpay {
-      background: linear-gradient(135deg, rgba(124, 92, 255, 0.16), rgba(64, 129, 255, 0.10));
-      color: #d9d3ff; border: 1px solid rgba(124, 92, 255, 0.25);
-    }
-    .st-pending {
-      background: linear-gradient(135deg, rgba(255, 168, 76, 0.18), rgba(210, 122, 44, 0.10));
-      color: #ffd9ad; border: 1px solid rgba(255, 168, 76, 0.25);
-    }
-
-    /* 箭頭 Icon */
-    .toggle-icon {
-      margin-left: 10px; width: 20px; height: 20px;
-      display: flex; align-items: center; justify-content: center;
-      transition: transform 0.3s ease; opacity: 0.5;
-    }
-    .toggle-icon::after {
-      content: ''; display: block; width: 8px; height: 8px;
-      border-right: 2px solid var(--text-sub); border-bottom: 2px solid var(--text-sub);
-      transform: rotate(45deg);
-    }
-    .order-card.expanded .toggle-icon { transform: rotate(-180deg); }
-
-    /* 隱藏區塊：內容明細 */
-    .card-body { 
-      display: none; 
-      padding: 20px;
-      background: rgba(0,0,0,0.2);
-      animation: slideDown 0.3s ease-out;
-    }
-    .order-card.expanded .card-body { display: block; }
-    
-    @keyframes slideDown {
-      from { opacity: 0; transform: translateY(-10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .info-group { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: var(--text-sub); margin-bottom: 20px; }
-    .info-row {
-      display: flex; flex-direction: column; gap: 6px;
-      border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 12px;
-    }
-    .info-row:last-child { border-bottom: none; }
-    
-    .info-label { 
-      font-size: 11px; color: var(--gold-primary); font-family: var(--font-serif);
-      margin-bottom: 2px; display: inline-block; letter-spacing: 0.05em;
-    }
-
-    .items-box{
-      margin-top: 5px; padding: 10px; border-radius: 8px;
-      border: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.02);
-    }
-    .items-title{ font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
-    .items-text{ font-size: 12px; color: #fff; line-height: 1.6; }
-
-    .amount-display { 
-      display: flex; justify-content: flex-end; align-items: center; gap: 10px;
-      border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;
-    }
-    .amount-label { font-size: 11px; color: var(--text-muted); letter-spacing: 0.05em; }
-    .amount-val {
-      font-family: var(--font-sans); font-size: 16px; color: #ffffff; 
-      font-weight: 700; font-variant-numeric: tabular-nums;
-      letter-spacing: 0.05em; text-shadow: 0 2px 8px rgba(0,0,0,0.5);
-    }
-
-    /* --- Credits List --- */
-    .credits-list { display: flex; flex-direction: column; gap: 0; }
-    .credit-item {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 20px 10px; background: transparent;
-      border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.2s;
-    }
-    .credit-item:last-child { border-bottom: none; }
-    .credit-item:hover { background: rgba(255,255,255,0.02); }
-
-    .c-info { display: flex; flex-direction: column; gap: 6px; }
-    .c-reason { font-size: 14px; color: #ececec; font-weight: 400; letter-spacing: 0.03em; }
-    .c-date { font-size: 11px; color: #666; font-family: monospace; }
-    
-    .c-amount {
-      font-family: var(--font-sans); font-size: 18px; font-weight: 600; text-align: right;
-      font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
-    }
-    .c-amount.pos { color: var(--success); }
-    .c-amount.neg { color: var(--danger); }
-    .c-balance { font-size: 10px; color: #555; text-align: right; margin-top: 4px; font-family: var(--font-sans); }
-  </style>
-
-  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<meta charset="utf-8" />
+<title>訂單 ${orderId}</title>
+<style>
+  body{font-family:-apple-system,"Noto Sans TC";margin:20px;font-size:12px}
+  h1{font-size:18px;margin-bottom:10px}
+  table{border-collapse:collapse;width:100%;margin-top:10px}
+  td,th{border:1px solid #000;padding:4px 6px;vertical-align:top}
+  pre{white-space:pre-wrap;margin:0}
+</style>
+<meta name="robots" content="noindex, nofollow">
 </head>
 <body>
+  <h1>MURAIN 訂單明細</h1>
+  <table>
+    <tr><th>訂單編號</th><td>${orderId}</td></tr>
+    <tr><th>建立時間</th><td>${f.CreatedAt || f.created_at || ''}</td></tr>
+    <tr><th>付款方式</th><td>${f.payment_method || ''}</td></tr>
+    <tr><th>訂單金額</th><td>${totalBase}</td></tr>
+${a.credit>0 ? `<tr><th>購物金折抵</th><td>-${creditUse}</td></tr>` : ``}
+<tr><th>應付金額</th><td>${totalNet}</td></tr>
+    <tr><th>收件人</th><td>${ship.name || ''}</td></tr>
+    <tr><th>電話</th><td>${ship.phone || ''}</td></tr>
+    <tr><th>出貨方式</th><td>${shipType}</td></tr>
+    <tr><th>取貨門市 / 地址</th><td><pre>${shipAddr}</pre></td></tr>
+    <tr><th>物流單號</th><td>${f.ship_tracking || f.tracking_no || ''}</td></tr>
+    <tr><th>運費</th><td>${f.ship_fee ?? f.shipping_fee ?? ''}</td></tr>
+    <tr><th>客戶備註</th><td><pre>${(shipInfo.note || '').trim()}</pre></td></tr>
+    <tr><th>商品明細</th><td><pre>${itemsText}</pre></td></tr>
+  </table>
+</body>
+</html>
+  `;
 
-  <div class="page">
-    <div class="header-area">
-      <div class="brand-title">XUYUAN</div>
-      <div class="page-title">會員中心</div>
-      <button class="refresh-btn" id="reloadBtn" title="重新整理">↻</button>
-      <button class="clear-focus-btn" id="clearFocusBtn" title="取消定位" style="display:none;">✕</button>
-    </div>
+  const w = window.open('', '_blank');
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  w.print();
+}
 
-    <div class="member-card">
-      <div class="user-info">
-        <div class="user-avatar">
-          <span id="defaultAvatar">X</span>
-          <img id="userAvatarImg" style="display:none;" />
-        </div>
-        <div>
-          <div class="user-name" id="userName">貴賓</div>
-          <div class="user-status" id="statusText">歡迎回來</div>
-        </div>
-      </div>
-      <div class="credit-row">
-        <div>
-          <div class="credit-label">可用購物金</div>
-        </div>
-        <div class="credit-amount" id="creditValue">NT$ --</div>
-      </div>
-    </div>
+document.addEventListener('DOMContentLoaded', async ()=>{
+  // 上方快速分類按鈕
+  $$('.filter-btn').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      // 先把按鈕外觀切換
+      $$('.filter-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
 
-    <div class="tabs">
-      <button class="tab active" data-tab="history">歷史訂單</button>
-      <button class="tab" data-tab="deposit">定金保留</button>
-      <button class="tab" data-tab="credits">購物金明細</button>
-    </div>
+      const filter = btn.dataset.filter || 'all';
+     currentFilter = filter;
+      await ensureOpKey();
 
-    <div class="msg" id="infoMsg">資料讀取中...</div>
-    <div class="order-list" id="orderList"></div>
-    <div class="credits-list" id="creditsList" style="display:none;"></div>
-    <div class="empty-state" id="emptyText" style="display:none;">尚無資料紀錄</div>
-  </div>
+      // ⭐「線上付款待確認」特別處理：全部日期 + pay_status = pending
+      if (filter === 'pending_online') {
+        const msgEl = $('#msg');
+        if (msgEl) msgEl.textContent = '';
 
-<script>
-  const API_BASE    = "https://api.murain.tw";
-  const MEMBER_API  = API_BASE + "/member/orders";
-  const CREDITS_API = API_BASE + "/member/credits";
-  const MEMBER_INFO_API = API_BASE + "/line/member-info";
-  const LIFF_ID     = "2008430261-EGZPg3Qp";
+        // 日期自動改成 2024-01-01 ~ 今天（不用你手動選）
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm   = String(today.getMonth() + 1).padStart(2, '0');
+        const dd   = String(today.getDate()).padStart(2, '0');
 
-  let currentUserId = null;
-  let orders = [];
-  let memberInfo = null;
-  let credits = [];
-  let currentFilter = "history";
+        if ($('#date_from')) $('#date_from').value = '2024-01-01';
+        if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
 
-  const urlParams = new URLSearchParams(window.location.search || "");
-  let focusOrderId = urlParams.get("order_id") || "";
-  let hasScrolledToInitialOrder = false;
+        // 狀態清空，讓後端回傳全部狀態
+        if ($('#status')) $('#status').value = '';
 
-  // DOM Elements
-  const statusText  = document.getElementById("statusText");
-  const userName    = document.getElementById("userName");
-  const userAvatarImg = document.getElementById("userAvatarImg");
-  const defaultAvatar = document.getElementById("defaultAvatar");
-  const infoMsg     = document.getElementById("infoMsg");
-  const orderList   = document.getElementById("orderList");
-  const creditsList = document.getElementById("creditsList");
-  const emptyText   = document.getElementById("emptyText");
-  const creditValue = document.getElementById("creditValue");
-  const clearFocusBtn = document.getElementById("clearFocusBtn");
+        // 先載入這段日期內「全部」訂單
+        await loadOrdersByDate();
 
-  document.getElementById("reloadBtn").addEventListener("click", () => {
-    if (currentUserId) {
-      infoMsg.textContent = "更新資料中...";
-      infoMsg.style.display = "block";
-      loadMemberInfo();
-      loadOrders();
-      loadCredits();
-    } else {
-      initLiff();
-    }
-  })
+        // 再在前端只留下「付款狀態 = 待確認」的
+        currentOrders = (currentOrders || []).filter(rec => {
+          const f = rec.fields || rec || {};
+          return f.pay_status === 'pending';
+        });
 
-  if (clearFocusBtn) {
-    if (focusOrderId) clearFocusBtn.style.display = "flex";
-    clearFocusBtn.addEventListener("click", () => {
-      focusOrderId = "";
-      hasScrolledToInitialOrder = true;
-      try {
-        const u = new URL(window.location.href);
-        u.searchParams.delete("order_id");
-        history.replaceState({}, "", u.toString());
-      } catch (e) {}
-      if (currentFilter === "credits") renderCredits();
-      else renderOrders();
-      clearFocusBtn.style.display = "none";
-    });
-  };
+        // 更新快取＋畫面
+        ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+        renderOrderList();
 
-  /* --- Helper Functions --- */
-  function formatDate(s) {
-    if (!s) return "";
-    const d = new Date(s);
-    if (isNaN(d.getTime())) return s;
-    return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
-  }
-
-  function displayPaymentMethod(pm) {
-    const k = String(pm || "").toLowerCase();
-    const map = {
-      cod_711: "7-11 貨到付款",
-      cod_post: "宅配 / 貨到付款",
-      meetup_cash: "面交付款",
-      paid_af: "AFTEE先享後付",
-      paid_linepay: "LINE Pay",
-      paid_card_once: "信用卡一次付清",
-      paid_card_inst_3: "信用卡分 3 期",
-      paid_card_inst_6: "信用卡分 6 期",
-      paid_card_inst_9: "信用卡分 9 期",
-      zero_card_3: "零卡分 3 期",
-      zero_card_6: "零卡分 6 期",
-      zero_card_9: "零卡分 9 期",
-      zero_card_12: "零卡分 12 期",
-      zero_card_18: "零卡分 18 期",
-      zero_card_24: "零卡分 24 期",
-      yufu_inst_3: "裕富 3 期",
-      yufu_inst_6: "裕富 6 期",
-      yufu_inst_9: "裕富 9 期",
-      yufu_inst_12: "裕富 12 期",
-      yufu_inst_24: "裕富 24 期",
-      yufu_inst_36: "裕富 36 期",
-      paid_aftee_direct: "AF 先享後付",
-      atm_full: "全額匯款",
-      atm_deposit: "定金匯款",
-      deposit_new_full_meetup: "匯款全額 - 面交",
-      meetup_cash: "面交付現",
-      deposit_old: "定金匯款",
-      deposit_new_full: "全額匯款",
-      deposit_new_full_711: "定金匯款",
-      deposit_new_full_post: "定金匯款",
-      deposit_new_partial_711: "定金匯款",
-      deposit_new_partial_post: "定金匯款",
-      deposit_old_partial: "定金匯款"
-    };
-    return map[k] || pm || "—";
-  }
-
-  function escapeHtml(s) {
-    return String(s ?? "").replace(/[&<>"']/g, (c) => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-    }[c]));
-  }
-
-  function isDepositHoldOrder(o) {
-    const st = String(o?.status || o?.order_status || o?.orderStatus || "").toLowerCase();
-    const ps = String(o?.pay_status || "").toLowerCase();
-    const ss = String(o?.ship_status || "").toLowerCase();
-    // ✅ 以「狀態=deposit_hold」作為定金保留判斷（避免把已付款的匯款單也排除）
-    if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return true;
-
-    // 兼容：如果後端有另外塞在 ship 內（shipping_info）
-    const ship = o?.ship || {};
-    const shipFlag = String(ship?.deposit_status || ship?.deposit || "").toLowerCase();
-    if (shipFlag.includes("deposit_hold")) return true;
-
-    return false;
-  }
-
-  function isBankDepositPM(pm) {
-    //（保留：若你未來要用 payment_method 判斷匯款類型）
-    const k = String(pm || "").toLowerCase();
-    return (
-      k.includes("deposit") ||
-      k === "atm_deposit"
-    );
-  }
-
-  function getMeetupTime(ship) {
-    return String(ship?.meetup_time || ship?.meet_time || ship?.meetupTime || ship?.meetTime || ship?.meetup?.time || "").trim();
-  }
-  function getMeetupPlace(ship) {
-    return String(ship?.meetup_place || ship?.meet_place || ship?.meetupPlace || ship?.meetPlace || ship?.meetup?.place || "").trim();
-  }
-
-  function isMeetupOrder(ship, paymentMethod) {
-    const methodRaw = String(ship?.method || ship?.type || ship?.ship_type || "");
-    const method = methodRaw.toLowerCase();
-    const pm = String(paymentMethod || "").toLowerCase();
-    const t = getMeetupTime(ship);
-    const p = getMeetupPlace(ship);
-
-    if (method.includes("面交") || method.includes("meetup") || pm.includes("meetup") || !!t || !!p) return true;
-
-    const hasTarget = !!ship?.address || !!ship?.addr || !!ship?.store_id || !!ship?.store_name || !!ship?.store_address || method.length > 0;
-    const hasContact = !!String(ship?.name || "").trim() || !!String(ship?.phone || "").trim();
-    const looksOnlinePay = pm.startsWith("paid_") || pm.startsWith("zero_card_") || pm.startsWith("yufu_") || pm.includes("linepay") || pm === "atm_full";
-
-    if (!hasTarget && hasContact && looksOnlinePay) return true;
-    return false;
-  }
-
-  /* --- [修改] 狀態顯示邏輯：回歸正常判斷 --- */
-  function shipBadgeText(o) {
-    const st = String(o?.status || "").toLowerCase();
-    const ps = String(o?.pay_status || "").toLowerCase();
-    const ss = String(o?.ship_status || "").toLowerCase();
-
-    // 1. 取消與失敗
-    if (st.includes("cancel") || ps.includes("cancel") || ss.includes("cancel")) return "已取消";
-    if (ps === "failed") return "付款失敗";
-
-    // 2. 物流狀態
-    if (ss === "shipped" || st === "shipped") return "已出貨";
-    if (ss === "arrived") return "已送達";
-    if (ss === "picked_up" || st === "picked_up") return "已取貨";
-    if (ss === "returned") return "已退回";
-
-    // 3. 付款與處理狀態
-    if (ps === "paid_ok" || ps === "paid") return "已付款";
-    if (ps === "pending") {
-      const pm = String(o?.payment_method || "").toLowerCase();
-      if (pm.includes("cod")) return "訂單確認中"; 
-      return "待付款";
-    }
-    return "處理中";
-  }
-
-  function shipBadgeClass(o) {
-    const txt = shipBadgeText(o);
-    if (txt === "已取消" || txt === "付款失敗" || txt === "已退回") return "st-unpaid"; 
-    if (txt === "已出貨" || txt === "已送達" || txt === "已取貨" || txt === "已付款") return "st-paid";
-    if (txt === "待付款") return "st-waitpay";
-    return "st-pending";
-  }
-
-  function deliveryPlaceText(ship, receiver, paymentMethod) {
-    const methodRaw = String(ship?.method || ship?.type || ship?.ship_type || "");
-    const method = methodRaw.toLowerCase();
-    const pm = String(paymentMethod || "").toLowerCase();
-
-    if (method.includes("7-11") || method.includes("711") || method.includes("超商") || ship?.store_id || ship?.store_name) {
-      const sname = ship.store_name || "";
-      const sid = ship.store_id ? `（${ship.store_id}）` : "";
-      const saddr = ship.store_address ? ` ${ship.store_address}` : "";
-      const txt = `7-11 ${sname}${sid}${saddr}`.trim();
-      return txt || "7-11 門市";
-    }
-
-    const isMeetup = isMeetupOrder(ship, paymentMethod);
-    if (isMeetup) {
-      const t = getMeetupTime(ship);
-      const p = getMeetupPlace(ship);
-      if (t && p) return `面交 ${t} @ ${p}`;
-      if (t) return `面交 ${t}`;
-      if (p) return `面交 @ ${p}`;
-      return "面交";
-    }
-
-    if (receiver?.address) return String(receiver.address);
-    if (ship?.address) return String(ship.address);
-    if (ship?.addr) return String(ship.addr);
-    if (methodRaw) return methodRaw;
-
-    return "尚未填寫";
-  }
-
-  function receiverFullText(receiver, ship, paymentMethod) {
-    const name = String(receiver?.name || ship?.name || "").trim();
-    const phone = String(receiver?.phone || ship?.phone || "").trim();
-    const head = [name, phone].filter(Boolean).join(" / ");
-    const isMeetup = isMeetupOrder(ship, paymentMethod);
-
-    if (isMeetup) {
-      const t = getMeetupTime(ship);
-      const p = getMeetupPlace(ship);
-      const lines = [];
-      if (head) lines.push(head);
-      if (t) lines.push(`面交時間：${t}`);
-      if (p) lines.push(`面交地點：${p}`);
-      if (!t && !p) lines.push("面交");
-      return lines.join("\n");
-    }
-    const place = deliveryPlaceText(ship || {}, receiver || {}, paymentMethod);
-    return (head ? head + "\n" : "") + place;
-  }
-
-  /* --- Tabs & Render Logic --- */
-  function updateTabsUI() {
-    document.querySelectorAll(".tab").forEach(btn => {
-      if (btn.dataset.tab === currentFilter) btn.classList.add("active");
-      else btn.classList.remove("active");
-    });
-  }
-
-  function renderOrders() {
-    orderList.style.display = "flex";
-    creditsList.style.display = "none";
-    emptyText.style.display = "none";
-    orderList.innerHTML = "";
-
-    let list = orders.slice();
-    const now = new Date();
-
-    if (currentFilter === "history") {
-      // 15 天前
-      const halfMonthAgo = new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000);
-      list = list.filter(o => {
-        if (focusOrderId && o.order_id === focusOrderId) return true;
-        const pm = String(o.payment_method || "").toLowerCase();
-        // 排除「定金保留」(deposit_hold)
-        if (isDepositHoldOrder(o)) return false;
-        
-        const createdAt = o.created_at ? new Date(o.created_at) : null;
-        if (!createdAt || isNaN(createdAt.getTime())) return false;
-        return createdAt >= halfMonthAgo;
-      });
-    } else if (currentFilter === "deposit") {
-      // 45 天前
-      const oneAndHalfMonthAgo = new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000);
-      list = list.filter(o => {
-        if (focusOrderId && o.order_id === focusOrderId) return true;
-        const pm = String(o.payment_method || "").toLowerCase();
-        // 必須是「定金保留」(deposit_hold)
-        if (!isDepositHoldOrder(o)) return false;
-
-        const createdAt = o.created_at ? new Date(o.created_at) : null;
-        if (!createdAt || isNaN(createdAt.getTime())) return false;
-        return createdAt >= oneAndHalfMonthAgo;
-      });
-    }
-
-    if (!list.length) {
-      emptyText.style.display = "block";
-      return;
-    }
-
-    for (const o of list) {
-      const wrap = document.createElement("div");
-      wrap.className = "order-card"; // 預設收合
-
-      // 若指定單號，預設展開
-      if (focusOrderId && o.order_id === focusOrderId) {
-        wrap.classList.add("highlight");
-        wrap.classList.add("expanded");
-        if (!hasScrolledToInitialOrder) {
-          hasScrolledToInitialOrder = true;
-          setTimeout(() => {
-            wrap.scrollIntoView({ behavior: "smooth", block: "center" });
-          }, 150);
+        if (msgEl) {
+          if (!currentOrders.length) {
+            msgEl.textContent = '目前沒有「付款狀態＝待確認」的訂單。';
+          } else {
+            msgEl.textContent = '僅顯示「付款狀態＝待確認(pay_status = pending)」的訂單。';
+          }
         }
-      }
+      } else if (filter === 'all_no_fail') {
+  const msgEl = $('#msg');
+  if (msgEl) msgEl.textContent = '';
 
-      // --- [關鍵] 點擊切換展開收合 ---
-      wrap.onclick = function(e) {
-        if(e.target.tagName === 'A' || e.target.tagName === 'BUTTON') return;
-        this.classList.toggle('expanded');
+  // 1) 先照「全部訂單」原本邏輯載入（不動後端）
+  await loadOrders('all');
+
+  // 2) 因為 loadOrders('all') 會把 currentFilter 改成 all，這裡把它切回來
+  currentFilter = 'all_no_fail';
+
+  // 3) 前端再排除：失敗/作廢 + 取消(補回庫存)
+  currentOrders = (currentOrders || []).filter(rec => {
+  const f = rec.fields || rec || {};
+  const ps = String(f.pay_status || '').toLowerCase();
+  return ps !== 'failed' && ps !== 'cancelled';
+});
+
+  ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+  renderOrderList();
+
+  if (msgEl) {
+    msgEl.textContent = '僅顯示「排除 pay_status=failed / cancelled」的訂單（不含作廢/補回庫存）。';
+  }
+} else {
+  // 其他按鈕維持原本行為（完全不動）
+  await loadOrders(filter);
+}
+    });
+  });
+
+
+  // OP_KEY 重設（如果你已經拿掉更改密碼那顆，可以保留這段但加保護）
+  const btnChangeKey = $('#btnChangeKey');
+  if (btnChangeKey){
+    btnChangeKey.addEventListener('click', ()=>{
+      localStorage.removeItem(STORAGE_KEY);
+      OP_KEY = '';
+      ensureOpKey().then(()=>loadOrders(currentFilter));
+    });
+  }
+
+  // 預設把日期帶成「本月 1 號 ~ 今天」
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth()+1).padStart(2,'0');
+  const dd = String(today.getDate()).padStart(2,'0');
+  const first = yyyy + '-' + mm + '-01';
+  const todayStr = yyyy + '-' + mm + '-' + dd;
+  if ($('#date_from') && !$('#date_from').value) $('#date_from').value = first;
+  if ($('#date_to') && !$('#date_to').value) $('#date_to').value = todayStr;
+
+  // 日期載入 / 只看 paid / 匯出
+  const btnLoadByDate = $('#btnLoadByDate');
+  if (btnLoadByDate){
+    btnLoadByDate.addEventListener('click', async ()=>{
+      await ensureOpKey();
+      await loadOrdersByDate();
+    });
+  }
+
+    const btnQuickPaid = $('#btnQuickPaid');
+  if (btnQuickPaid){
+    btnQuickPaid.addEventListener('click', async ()=>{
+      // 不再只看 paid，改成「只看運費未填寫」
+      $('#status').value = '';      // 狀態清空，後端回傳全部狀態
+
+      await ensureOpKey();
+      await loadOrdersByDate();     // 先載入這段日期內的全部訂單
+
+      // 判斷這筆訂單是否已經有運費
+      const hasFee = (f) => {
+        if (!f) return false;
+        const fee1 = f.shipping_fee;
+        const fee2 = f.ship_fee;
+        const filled1 = fee1 !== undefined && fee1 !== null && String(fee1) !== '';
+        const filled2 = fee2 !== undefined && fee2 !== null && String(fee2) !== '';
+        // 只要任一欄位有值就算「有填運費」
+        return filled1 || filled2;
       };
 
-      const statusCls = shipBadgeClass(o);
-      const payTxt = shipBadgeText(o);
-      const shipObj = o.ship || {};
-      const receiverObj = o.receiver || {};
-      const total = Number(o.total_amount || 0);
-      const itemsTextRaw = String(o.items_text || o.itemsText || o.items || "").trim();
-      const pmTxt = displayPaymentMethod(o.payment_method);
+      const msgEl = $('#msg');
 
-      const receiverTxt = receiverFullText(receiverObj, shipObj, o.payment_method).replace(/\n/g, "<br>");
-      const itemsHtml = itemsTextRaw
-        ? `<div class="items-box">
-             <div class="items-title">商品明細</div>
-             <div class="items-text">${escapeHtml(itemsTextRaw).replace(/\n/g, "<br>")}</div>
-           </div>`
-        : "";
+      // 只保留「已收款(paid_ok)」且「運費未填寫」的訂單
+    currentOrders = (currentOrders || []).filter(rec => {
+      const f = rec.fields || rec || {};
+      const feeMissing = !hasFee(f);
+      const isPaidOk   = (f.pay_status === 'paid_ok');
+      return feeMissing && isPaidOk;
+    });
+      ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+      renderOrderList();
 
-      // 渲染 HTML：包含常駐Header 與 隱藏Body
-      wrap.innerHTML = `
-        <div class="card-header">
-          <div class="order-info-main">
-            <div class="order-id">#${o.order_id}</div>
-            <div class="order-date">${formatDate(o.created_at)}</div>
-          </div>
-          <div style="display:flex; align-items:center;">
-            <div class="status-badge ${statusCls}">${payTxt}</div>
-            <div class="toggle-icon"></div>
-          </div>
-        </div>
-        
-        <div class="card-body">
-          <div class="info-group">
-            <div class="info-row">
-              <span class="info-label">收件資料</span>
-              <span style="color:#fff; line-height:1.5;">${receiverTxt}</span>
-            </div>
-            <div class="info-row">
-              <span class="info-label">付款方式</span>
-              <span style="color:#ddd;">${pmTxt}</span>
-            </div>
-            ${itemsHtml}
-          </div>
-          
-          <div class="amount-display">
-            <div class="amount-label">總金額</div>
-            <div class="amount-val">NT$ ${total.toLocaleString("zh-TW")}</div>
-          </div>
-        </div>
-      `;
-      orderList.appendChild(wrap);
+       if (!currentOrders.length){
+      msgEl.textContent = '目前沒有「已收款且運費未填寫」的訂單。';
+    } else {
+      msgEl.textContent = '僅顯示「已收款(pay_status = paid_ok) 且 運費 TWD 未填寫」的訂單。';
     }
-  }
-
-  function renderCredits() {
-    orderList.style.display = "none";
-    creditsList.style.display = "flex";
-    emptyText.style.display = "none";
-    creditsList.innerHTML = "";
-
-    if (!credits.length) {
-      emptyText.style.display = "block";
-      return;
-    }
-    credits.forEach(item => {
-      const el = document.createElement("div");
-      el.className = "credit-item";
-      const amt = Number(item.amount || 0);
-      const isPositive = amt >= 0;
-      const amtClass = isPositive ? "pos" : "neg";
-      const sign = isPositive ? "+" : "";
-      const reason = item.reason || "購物金異動";
-      const bal = (item.balance !== undefined && item.balance !== null) ? Number(item.balance) : null;
-
-      el.innerHTML = `
-        <div class="c-info">
-          <div class="c-reason">${reason}</div>
-          <div class="c-date">${formatDate(item.created_at)}</div>
-        </div>
-        <div>
-          <div class="c-amount ${amtClass}">${sign}NT$ ${Math.abs(amt).toLocaleString("zh-TW")}</div>
-          ${bal !== null ? `<div class="c-balance">餘額: NT$ ${bal.toLocaleString("zh-TW")}</div>` : ''}
-        </div>
-      `;
-      creditsList.appendChild(el);
     });
   }
 
-  /* --- API Calls --- */
-  async function loadMemberInfo() {
-    if (!currentUserId) return;
-    try {
-      const res = await fetch(MEMBER_INFO_API + "?user_id=" + encodeURIComponent(currentUserId));
-      const json = await res.json();
-      if (res.ok && json.ok) {
-        memberInfo = json;
-        const c = Number(memberInfo.credit || 0);
-        creditValue.textContent = "NT$ " + c.toLocaleString("zh-TW");
-      }
-    } catch (e) { console.error(e); }
+
+    const btnExport = $('#exportBtn');
+  if (btnExport){
+    btnExport.addEventListener('click', exportCSV);
   }
 
-  async function loadCredits() {
-    if (!currentUserId) return;
-    if (currentFilter === "credits") {
-      infoMsg.textContent = "載入明細中...";
-      infoMsg.style.display = "block";
-    }
-    try {
-      const res = await fetch(CREDITS_API + "?line_user_id=" + encodeURIComponent(currentUserId));
-      const json = await res.json();
-      if (res.ok && json.ok) {
-        credits = json.items || [];
-        if (currentFilter === "credits") renderCredits();
-      }
-    } catch (e) { console.error(e); }
-    if (currentFilter === "credits") {
-      infoMsg.textContent = "";
-      infoMsg.style.display = "none";
-    }
+    // ★ 新增：出貨明細／賣貨便
+  const btnExportShip = $('#btnExportShip');
+  if (btnExportShip){
+    btnExportShip.addEventListener('click', exportShipReport);
   }
 
-  async function loadOrders() {
-    if (!currentUserId) return;
-    if (currentFilter !== "credits") {
-      infoMsg.textContent = "更新資料中...";
-      infoMsg.style.display = "block";
-    }
-    try {
-      const res = await fetch(MEMBER_API + "?line_user_id=" + encodeURIComponent(currentUserId));
-      const json = await res.json();
-      if (res.ok && json.ok) {
-        orders = json.orders || [];
-        if (currentFilter !== "credits") renderOrders();
-      }
-    } catch (e) { 
-      infoMsg.textContent = "載入失敗"; 
-      infoMsg.classList.add("error");
-    }
-    if (currentFilter !== "credits") {
-      infoMsg.textContent = "";
-      infoMsg.style.display = "none";
-    }
+  // ★ 新增：0 元包裹明細
+  const btnExportZero = $('#btnExportZero');
+  if (btnExportZero){
+    btnExportZero.addEventListener('click', exportZeroReport);
   }
 
-  async function initLiff() {
-    if (!window.liff) return;
-    try {
-      await liff.init({ liffId: LIFF_ID });
-      if (!liff.isLoggedIn()) {
-        liff.login(); return;
-      }
-      const profile = await liff.getProfile();
-      currentUserId = profile.userId;
-      userName.textContent = profile.displayName;
-      if(profile.pictureUrl){
-        defaultAvatar.style.display = "none";
-        userAvatarImg.style.display = "block";
-        userAvatarImg.src = profile.pictureUrl;
-      }
-      statusText.textContent = "歡迎回來";
-      loadMemberInfo();
-      loadOrders();
-      loadCredits();
-    } catch (e) {
-      infoMsg.textContent = "請從 LINE 官方帳號開啟";
-      infoMsg.style.display = "block";
-    }
+ // ★ 新增：批次列印熱感出貨單
+  const btnPrintSlips = $('#btnPrintSlipsRange');
+  if (btnPrintSlips){
+    btnPrintSlips.addEventListener('click', printShipSlipsRange);
   }
 
-  /* --- Init --- */
-  document.addEventListener("DOMContentLoaded", () => {
-    document.querySelectorAll(".tab").forEach(btn => {
-      btn.addEventListener("click", () => {
-        currentFilter = btn.dataset.tab || "history";
-        updateTabsUI();
-        if (currentFilter === "credits") {
-          if(credits.length === 0) loadCredits();
-          else renderCredits();
-        } else {
-          renderOrders();
-        }
+  const btnRemindToday = $('#btnRemindToday');
+  if (btnRemindToday){
+    btnRemindToday.addEventListener('click', async () => {
+      const msgEl = $('#msg');
+      if (msgEl) msgEl.textContent = '';
+
+      // 1. 日期改成「很大一段範圍」：例如 2024-01-01 ~ 今天
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm   = String(today.getMonth() + 1).padStart(2, '0');
+      const dd   = String(today.getDate()).padStart(2, '0');
+
+      if ($('#date_from')) $('#date_from').value = '2024-01-01';   // 你第一筆訂單之前的日期
+      if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
+
+      // 2. 狀態清空（全部），後面用前端自己篩
+      if ($('#status')) $('#status').value = '';
+
+      // 3. 先照原本方式載入這段日期內的全部訂單
+      await ensureOpKey();
+      await loadOrdersByDate();
+
+      // 4. 前端再篩選：訂金已收 + 尚未出貨
+      currentOrders = (currentOrders || []).filter(rec => {
+        const f = rec.fields || rec || {};
+        const isDepositOk = (f.pay_status === 'deposit_ok');  // 訂金已收
+        const notShipped  = (f.ship_status !== 'shipped');    // 尚未出貨
+        return isDepositOk && notShipped;
       });
-    });
-    updateTabsUI();
-    initLiff();
-  });
-</script>
 
+      // 5. 更新快取 & 畫面
+      ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+      renderOrderList();
+
+       if (msgEl){
+        if (!currentOrders.length){
+          msgEl.textContent = '目前沒有「訂金已收 ＋ 尚未出貨」的訂單。';
+        } else {
+          msgEl.textContent = '僅顯示「訂金已收(pay_status = deposit_ok) ＋ 尚未出貨」的訂單。';
+        }
+      }
+    });
+  }
+  // ★ 上方「取消訂單（補回庫存）」按鈕：直接走 cancelCurrentOrder()
+  const btnCancelTop = $('#btnCancelOrderTop');
+  if (btnCancelTop) {
+    btnCancelTop.addEventListener('click', () => {
+      if (!currentRecord) {
+        alert('請先在左邊選一筆訂單');
+        return;
+      }
+      cancelCurrentOrder();
+    });
+  }
+
+  // 上方工具列：快捷操作目前選取的訂單（這幾顆如果你有保留）
+  function proxyButton(topId, originalId){
+    const top = $('#' + topId);
+    if (!top) return;
+    top.addEventListener('click', () => {
+      const orig = $('#' + originalId);
+      if (orig) {
+        orig.click();
+      } else {
+        alert('請先在右側選一筆訂單');
+      }
+    });
+  }
+
+  proxyButton('btnSaveAndShipTop',   'btnSaveAndShip');
+  proxyButton('btnConfirmPayOkTop',  'btnConfirmPayOk');
+  proxyButton('btnMarkZcFailTop',    'btnMarkZcFail');
+
+// ✅ 面交付現：完成收款（標記已收款 + 出貨完成）
+const meetupDoneTop = $('#btnMeetupCashDoneTop');
+if (meetupDoneTop) {
+  meetupDoneTop.style.display = 'none'; // 預設先隱藏，選到面交單才顯示
+  meetupDoneTop.addEventListener('click', ()=> markMeetupCashDone());
+}
+  proxyButton('btnPrintOrderTop',    'btnPrintOrder');
+  proxyButton('btnSendTailLinkTop',  'btnSendTailLink');
+  // ★ 這行拿掉，因為取消已經上面直接綁 cancelCurrentOrder 了
+  // proxyButton('btnCancelOrderTop',   'btnCancelOrder');
+  proxyButton('btnMeetupNotifyTop',  'btnMeetupNotify');
+  // ★ 新增：上方兩顆「訂金＋保留通知」＆「僅儲存」
+  proxyButton('btnDepositPayAndNoticeTop', 'btnDepositPayAndNotice');
+  proxyButton('btnSaveDetailOnlyTop',      'btnSaveDetailOnly');
+
+  await ensureOpKey();
+  await loadOrders('all');
+});
+</script>
 </body>
 </html>
