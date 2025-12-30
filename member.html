@@ -558,33 +558,36 @@
 
   /* --- [修改] 狀態顯示邏輯：回歸正常判斷 --- */
   function shipBadgeText(o) {
-    const st = String(o?.status || "").toLowerCase();
-    const ps = String(o?.pay_status || "").toLowerCase();
-    const ss = String(o?.ship_status || "").toLowerCase();
+  const st = String(o?.status || "").toLowerCase();
+  const ps = String(o?.pay_status || "").toLowerCase();
+  const ss = String(o?.ship_status || "").toLowerCase();
+  const pm = String(o?.payment_method || "").toLowerCase();
 
-    // 1. 取消與失敗
-    if (st.includes("cancel") || ps.includes("cancel") || ss.includes("cancel")) return "已取消";
-    if (ps === "failed") return "付款失敗";
+  // 1) 取消 / 付款失敗（最高優先）
+  if (st.includes("cancel") || ps.includes("cancel") || ss.includes("cancel")) return "已取消";
+  if (ps === "failed") return "付款失敗";
 
-    // 2. 物流狀態
-    if (ss === "shipped" || st === "shipped") return "已出貨";
-    if (ss === "arrived") return "已送達";
-    if (ss === "picked_up" || st === "picked_up") return "已取貨";
-    if (ss === "returned") return "已退回";
+  // 2) 定金流程（比一般 pending 更優先）
+  if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return "匯款核對中";
+  if (ps === "deposit_ok") return "匯款核對中";
 
-    // 3. 付款與處理狀態
-    if (ps === "deposit_ok") return "待付尾款";
-    if (ps === "paid_ok" || ps === "paid") return "已付款";
-    // 定金流程
-if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return "待匯定金";
-if (ps === "deposit_ok") return "待付尾款";
-    if (ps === "pending") {
-      const pm = String(o?.payment_method || "").toLowerCase();
-      if (pm.includes("cod")) return "訂單確認中"; 
-      return "待付款";
-    }
-    return "處理中";
+  // 3) 物流狀態
+  if (ss === "shipped" || st === "shipped") return "已出貨";
+  if (ss === "arrived") return "已送達";
+  if (ss === "picked_up" || st === "picked_up") return "已取貨";
+  if (ss === "returned") return "已退回";
+
+  // 4) 已付款
+  if (ps === "paid_ok" || ps === "paid") return "待出貨中";
+
+  // 5) 待付款 / COD 例外
+  if (ps === "pending") {
+    if (pm.includes("cod")) return "待出貨中";
+    return "待付款";
   }
+
+  return "處理中";
+}
 
   function shipBadgeClass(o) {
     const txt = shipBadgeText(o);
