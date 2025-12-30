@@ -506,16 +506,14 @@
   const ps = String(o?.pay_status || "").toLowerCase();
   const ss = String(o?.ship_status || "").toLowerCase();
 
-  // ✅ 定金相關旗標：舊的 deposit_hold + 後端實際在用的 deposit_ok
-  const flags = ["deposit_hold", "deposit_ok"];
-  const hit = (v) => flags.some(f => String(v || "").toLowerCase().includes(f));
+  // ✅ 後端部分訂金會用 deposit_ok
+  if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return true;
+  if (ps === "deposit_ok" || st === "deposit_ok" || ss === "deposit_ok") return true;
 
-  if (hit(st) || hit(ps) || hit(ss)) return true;
-
-  // 兼容：如果後端塞在 ship（shipping_info）內
+  // 兼容：如果後端塞在 ship / shipping_info
   const ship = o?.ship || {};
   const shipFlag = String(ship?.deposit_status || ship?.deposit || "").toLowerCase();
-  if (hit(shipFlag)) return true;
+  if (shipFlag.includes("deposit_hold") || shipFlag.includes("deposit_ok")) return true;
 
   return false;
 }
@@ -570,6 +568,7 @@
     if (ss === "returned") return "已退回";
 
     // 3. 付款與處理狀態
+    if (ps === "deposit_ok") return "待付尾款";
     if (ps === "paid_ok" || ps === "paid") return "已付款";
     // 定金流程
 if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return "待匯定金";
