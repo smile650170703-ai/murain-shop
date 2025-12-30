@@ -837,6 +837,19 @@ const store = ship.store     || {};
 const post  = ship.post      || {};
 const note  = shipInfo.note  || '';
 
+ // ✅ 訂金資訊：優先用 Orders 欄位，沒有就改讀 shipping_info.deposit
+const dep = shipInfo.deposit || {};
+const depAmount = (f.deposit_amount ?? dep.amount ?? dep.deposit_amount ?? '');
+const depLast5  = (f.deposit_last5  ?? dep.last5  ?? dep.deposit_last5  ?? '');
+const holdUntilRaw = (f.hold_until ?? dep.hold_until ?? dep.holdUntil ?? '');
+const depExpireRaw = (f.deposit_expire_at ?? dep.deposit_expire_at ?? dep.expire_at ?? holdUntilRaw ?? '');
+
+const date10 = (v)=> (v ? String(v).slice(0,10) : '');
+const holdUntil10 = date10(holdUntilRaw);
+const depExpire10 = date10(depExpireRaw);
+
+const shipAtLocal = toDatetimeLocal(f.shipped_at || f.ship_at);
+
 const addrText = (()=>{
   if (ship.type === '711') {
     return `7-11 ${store.name || ''}（${store.id || ''}）\n${store.addr || ''}`;
@@ -939,38 +952,38 @@ ${a.credit>0 ? `<div class="pill credit-red">購物金折抵：<span>-${creditUs
 
         <div class="row mt-2">
           <div>
-            <label>物流單號 (ship_tracking)</label>
+            <label>物流單號</label>
             <input id="d_ship_tracking" value="${f.ship_tracking || f.tracking_no || ''}">
           </div>
           <div>
-            <label>運費 TWD (ship_fee)</label>
+            <label>運費 TWD</label>
             <input id="d_ship_fee" type="number" step="1" value="${(f.ship_fee ?? f.shipping_fee ?? '')}">
           </div>
         </div>
 
-        <label class="mt-2">出貨時間 (ship_at)</label>
-        <input id="d_ship_at" type="datetime-local" value="${toDatetimeLocal(f.shipped_at || f.ship_at)}" disabled>
+        <label class="mt-2">出貨時間</label>
+        <input id="d_ship_at" type="datetime-local" value="${shipAtLocal}" disabled>
 
         <label class="mt-3">訂金 / 匯款資訊</label>
         <div class="row">
           <div>
-            <label>訂金金額 (deposit_amount)</label>
-            <input id="d_deposit_amount" type="number" step="1" value="${f.deposit_amount || ''}" readonly>
+            <label>訂金金額</label>
+            <input id="d_deposit_amount" type="number" step="1" value="${depAmount}" readonly>
           </div>
           <div>
-            <label>匯款後五碼 (deposit_last5)</label>
-            <input id="d_deposit_last5" value="${f.deposit_last5 || ''}" readonly>
+            <label>匯款後五碼</label>
+            <input id="d_deposit_last5" value="${depLast5}" readonly>
           </div>
         </div>
 
         <div class="row mt-2">
           <div>
-            <label>訂金到期日 (deposit_expire_at)</label>
-            <input id="d_deposit_expire_at" type="date" value="${(f.deposit_expire_at || '').slice(0,10)}" disabled>
+            <label>訂金到期日</label>
+            <input id="d_deposit_expire_at" type="date" value="${depExpire10}" disabled>
           </div>
           <div>
             <label>保留到 (hold_until)</label>
-            <input id="d_hold_until" type="date" value="${(f.hold_until || '').slice(0,10)}" disabled>
+            <input id="d_hold_until" type="date" value="${holdUntil10}" disabled>
           </div>
         </div>
 
@@ -1296,13 +1309,6 @@ fields.tracking_no = tracking || '';
 
 const fee = $('#d_ship_fee').value.trim();
 fields.shipping_fee = fee ? Number(fee) : null;
-
-
-  const depAmt           = $('#d_deposit_amount').value.trim();
-  fields.deposit_amount  = depAmt ? Number(depAmt) : null;
-  fields.deposit_last5   = $('#d_deposit_last5').value.trim() || '';
-  fields.deposit_expire_at = $('#d_deposit_expire_at').value || null;
-  fields.hold_until        = $('#d_hold_until').value || null;
   fields.deposit_received  = $('#d_deposit_received').checked;
   fields.pay_notice_sent   = $('#d_pay_notice_sent').checked;
   fields.internal_note     = $('#d_internal_note').value || '';
@@ -1324,9 +1330,6 @@ if (y_period) fields.yufu_period = (y_period.value || '').trim();
 if (y_status) fields.yufu_status = (y_status.value || '').trim();
 if (y_case)   fields.yufu_case_no= (y_case.value || '').trim();
 if (y_note)   fields.yufu_note   = (y_note.value || '').trim();
-
-  const shipAt = $('#d_ship_at').value;
-  fields.ship_at = shipAt || null;
 
   const f = currentRecord.fields || currentRecord || {};
   const payload = {
