@@ -505,12 +505,17 @@
   const st = String(o?.status || o?.order_status || o?.orderStatus || "").toLowerCase();
   const ps = String(o?.pay_status || "").toLowerCase();
   const ss = String(o?.ship_status || "").toLowerCase();
+  const pm = String(o?.payment_method || "").toLowerCase();
 
-  // ✅ 後端部分訂金會用 deposit_ok
+  // ✅ 最關鍵：用 payment_method 也抓「定金保留」單（避免後端沒寫 deposit_hold 狀態）
+  // 你常見的「定金保留」通常會是 deposit_old / deposit_old_partial
+  if (pm === "deposit_old" || pm === "deposit_old_partial" || pm.includes("deposit_old")) return true;
+
+  // ✅ 原本的判斷：後端有些會用 deposit_hold / deposit_ok
   if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return true;
   if (ps === "deposit_ok" || st === "deposit_ok" || ss === "deposit_ok") return true;
 
-  // 兼容：如果後端塞在 ship / shipping_info
+  // ✅ 兼容：如果後端塞在 ship / shipping_info
   const ship = o?.ship || {};
   const shipFlag = String(ship?.deposit_status || ship?.deposit || "").toLowerCase();
   if (shipFlag.includes("deposit_hold") || shipFlag.includes("deposit_ok")) return true;
