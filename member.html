@@ -404,7 +404,38 @@
       align-items: flex-end; 
     }
     
-    .info-group { 
+    
+    /* --- 訂單明細下拉（預設只顯示：單號 / 日期 / 貨況） --- */
+    .order-details{
+      margin-top: 12px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      padding-top: 12px;
+    }
+    .order-summary{
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-sub);
+      padding: 10px 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.02);
+      letter-spacing: 0.05em;
+    }
+    .order-summary::-webkit-details-marker{ display:none; }
+    .order-summary::marker{ content:""; }
+    .order-summary:after{
+      content: "▾";
+      opacity: 0.8;
+    }
+    .order-details[open] .order-summary:after{
+      content: "▴";
+    }
+    .details-body{ margin-top: 12px; }
+.info-group { 
       display: flex; flex-direction: column; gap: 8px; 
       font-size: 13px; color: var(--text-sub); 
     }
@@ -760,32 +791,23 @@ function shipBadgeText(o) {
   const ss = String(o?.ship_status || "").toLowerCase();
   const st = String(o?.status || "").toLowerCase();
   const ps = String(o?.pay_status || "").toLowerCase();
-  const pm = String(o?.payment_method || "").toLowerCase();
 
-  // 1) 取消/失敗（最高優先）
-  if (st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel")) {
-    return "取消訂單";
-  }
-  if (ps === "failed" || ps.includes("failed")) {
-    return "付款失敗";
-  }
+  // 1) 取消 / 付款失敗
+  if (st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel")) return "取消訂單";
+  if (ps === "failed" || ps.includes("failed")) return "付款失敗";
 
-  // 2) 已出貨（最高優先）
+  // 2) 定金保留（只在「定金保留」頁籤會看到）
+  if (st.includes("deposit_hold") || ps.includes("deposit_hold")) return "定金保留中";
+
+  // 3) 貨況優先：已出貨 / 已送達
   if (ss === "shipped" || st === "shipped") return "已出貨";
+  if (ss.includes("delivered")) return "已送達";
 
-  // 3) ✅ 7-11 貨到付款：不看 pay_status，固定顯示「已確認待出貨中」
-  if (pm === "cod_711") return "已確認待出貨中";
-
-  // 4) 裕富：paid_ok 才算通過，否則審核中
-  if (pm.startsWith("yufu_")) {
-    return ps === "paid_ok" ? "已付款待出貨中" : "裕富審核中";
-  }
-
-  // 5) 其他付款狀態：依 pay_status 正常判定
+  // 4) 付款狀態
   if (ps === "paid_ok") return "已付款待出貨中";
   if (ps === "pending") return "待確認";
 
-  // 6) 沒帶 pay_status 的保底（避免空白）
+  // 5) 其它：待出貨（保底）
   return "已確認待出貨中";
 }
 
@@ -793,27 +815,25 @@ function shipBadgeClass(o) {
   const ss = String(o?.ship_status || "").toLowerCase();
   const st = String(o?.status || "").toLowerCase();
   const ps = String(o?.pay_status || "").toLowerCase();
-  const pm = String(o?.payment_method || "").toLowerCase();
 
   // 1) 取消/失敗 → 紅
   if (st.includes("cancel") || ss.includes("cancel") || ps.includes("cancel") || ps === "failed" || ps.includes("failed")) {
     return "st-unpaid";
   }
 
-  // 2) 已出貨 → 綠
-  if (ss === "shipped" || st === "shipped") return "st-paid";
+  // 2) 已出貨/送達 → 綠
+  if (ss === "shipped" || st === "shipped" || ss.includes("delivered")) return "st-paid";
 
-  // 3) ✅ 7-11 貨到付款：固定灰（待出貨）
-  if (pm === "cod_711") return "st-pending";
+  // 3) 待確認 → 藍紫
+  if (ps === "pending") return "st-waitpay";
 
-  // 3.5) ✅ 待確認（pending）：用另一種顏色
-if (ps === "pending") return "st-waitpay";
-
-  // 4) 已付款 → 綠；其餘 pending/審核 → 灰
+  // 4) 已付款 → 綠
   if (ps === "paid_ok") return "st-paid";
 
+  // 5) 其它 → 灰
   return "st-pending";
 }
+
   // ✅ 依照你 API 回傳的 ship.method / ship.store_name / ship.address 來判斷
   function deliveryPlaceText(ship, receiver, paymentMethod) {
   const methodRaw = String(ship?.method || ship?.type || ship?.ship_type || "");
@@ -922,10 +942,10 @@ function receiverFullText(receiver, ship, paymentMethod) {
 
     if (currentFilter === "history") {
       const now = new Date();
-      const oneMonthAgo = new Date(now);
-      oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+      const halfMonthAgo = new Date(now);
+      halfMonthAgo.setDate(halfMonthAgo.getDate() - 15);
 
-  list = list.filter(o => {
+list = list.filter(o => {
   // ✅ 特例：從 LINE 帶 order_id 進來，永遠保留那筆
   if (focusOrderId && o.order_id === focusOrderId) return true;
 
@@ -938,26 +958,30 @@ function receiverFullText(receiver, ship, paymentMethod) {
     ps.includes("cancel") || ps === "failed" || ps.includes("failed");
   if (isBad) return false;
 
-  // ✅ 只留近 1 個月
+  // ✅ 不包含：定金保留（請到「定金保留」頁籤查看）
+  const pm = String(o.payment_method || "").toLowerCase();
+  if (isBankDepositPM(pm) || st.includes("deposit_hold") || ps.includes("deposit_hold")) return false;
+
+  // ✅ 只留近半個月（15 天）
   const createdAt = o.created_at ? new Date(o.created_at) : null;
   if (!createdAt || isNaN(createdAt.getTime())) return false;
-  return createdAt >= oneMonthAgo;
+  return createdAt >= halfMonthAgo;
 });
     }
    else if (currentFilter === "deposit") {
-  // ✅ 定金保留訂單：只看半年內（跟 history 分開）
+  // ✅ 定金保留訂單：保留 1 個半月（45 天）
   const now = new Date();
-  const sixMonthsAgo = new Date(now);
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const oneAndHalfMonthAgo = new Date(now);
+  oneAndHalfMonthAgo.setDate(oneAndHalfMonthAgo.getDate() - 45);
 
-  list = list.filter(o => {
+list = list.filter(o => {
     // 仍保留「從 Flex 帶 order_id 進來」時能看到那一筆
     if (focusOrderId && o.order_id === focusOrderId) return true;
 
     // 半年內
     const createdAt = o.created_at ? new Date(o.created_at) : null;
     if (!createdAt || isNaN(createdAt.getTime())) return false;
-    if (createdAt < sixMonthsAgo) return false;
+    if (createdAt < oneAndHalfMonthAgo) return false;
 
     // ✅ 只保留「匯款 - 定金」= atm_deposit
     const pm = String(o.payment_method || "").toLowerCase();
