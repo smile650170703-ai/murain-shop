@@ -197,14 +197,10 @@
           ✅ 收款/審核通過+發LINE
         </button>
         <button class="btn-secondary" id="btnMarkZcFailTop" type="button">
-          ❌ 中租審核未通過+發LINE＋「回原訂單重新結帳」
+          ❌ 分期審核未通過+發LINE＋「回原訂單重新結帳」
         </button>
-       <button class="btn-secondary" id="btnMarkYufuOkTop" type="button">
-  ✅ 裕富審核通過+發LINE
-</button>
-<button class="btn-secondary" id="btnMarkYufuFailTop" type="button">
-  ❌ 裕富審核未通過+發LINE＋「回原訂單重新結帳」
-</button>
+       <button class="btn-secondary" id="btnMeetupCashDoneTop" type="button">
+  🤝 完成面交收款（已收款＋出貨完成）
         <button class="btn-secondary" id="btnSendTailLinkTop" type="button">
           💰發尾款結帳連結+發LINE
         </button>
@@ -913,28 +909,12 @@ ${a.credit>0 ? `<div class="pill credit-red">購物金折抵：<span>-${creditUs
         <div class="row">
           <div>
             <label>付款狀態</label>
-<select id="d_pay_status">
-  <option value=""></option>
-  <option value="unpaid"${f.pay_status==='unpaid'?' selected':''}>未收款</option>
-  <option value="pending"${f.pay_status==='pending'?' selected':''}>待確認</option>
-  <!-- ★ 新增：訂金已收這一行 -->
-  <option value="deposit_ok"${f.pay_status==='deposit_ok'?' selected':''}>訂金已收</option>
-  <option value="paid_ok"${f.pay_status==='paid_ok'?' selected':''}>已收款</option>
-  <option value="failed"${f.pay_status==='failed'?' selected':''}>失敗 / 作廢</option>
-  <option value="cancelled"${f.pay_status==='cancelled'?' selected':''}>取消訂單（補回庫存）</option>
-</select>
+<div class="readonly-box" id="d_pay_status_ro">${statusBadgePay(f.pay_status)}</div>
 
           </div>
           <div>
             <label>出貨狀態 (ship_status)</label>
-            <select id="d_ship_status">
-              <option value=""></option>
-              <option value="none"${f.ship_status==='none'?' selected':''}>none（未設定）</option>
-              <option value="ready_to_ship"${f.ship_status==='ready_to_ship'?' selected':''}>ready_to_ship（待出貨）</option>
-              <option value="shipped"${f.ship_status==='shipped'?' selected':''}>shipped（已出貨）</option>
-              <option value="returned"${f.ship_status==='returned'?' selected':''}>returned（退貨）</option>
-              <option value="cancelled"${f.ship_status==='cancelled'?' selected':''}>cancelled（取消）</option>
-            </select>
+            <div class="readonly-box" id="d_ship_status_ro">${statusBadgeShip(f.ship_status)}</div>
           </div>
         </div>
 
@@ -1012,8 +992,6 @@ ${a.credit>0 ? `<div class="pill credit-red">購物金折抵：<span>-${creditUs
   <button class="btn-secondary" id="btnConfirmPayOk">✅ 確認已收款／審核通過 並 發 LINE</button>
   <button class="btn-secondary" id="btnMarkZcFail">❌ 中租審核未通過 ＋ 發 LINE</button>
   <button class="btn-secondary" id="btnSaveDetailOnly">📑 僅儲存資料（寫入 LINE，不改狀態）</button>
-  <button class="btn-secondary" id="btnMarkYufuOk">✅ 裕富審核通過 ＋ 發 LINE</button>
-<button class="btn-secondary" id="btnMarkYufuFail">❌ 裕富審核未通過 ＋ 發 LINE＋「回原訂單重新結帳」</button>
   <button class="btn small" id="btnSendTailLink">發尾款結帳鏈結 ＋ 發 LINE</button>
   <div id="detailMsg" class="tag-small mt-2"></div>
   <div class="mt-2">
@@ -1022,22 +1000,6 @@ ${a.credit>0 ? `<div class="pill credit-red">購物金折抵：<span>-${creditUs
 </div>
     </div>
   `;
-
- // ✅ 裕富：審核通過 / 未通過
-const btnMarkYufuOk = $('#btnMarkYufuOk');
-if (btnMarkYufuOk) {
-  btnMarkYufuOk.addEventListener('click', () => confirmPay('yufu_ok'));
-}
-const btnMarkYufuFail = $('#btnMarkYufuFail');
-if (btnMarkYufuFail) {
-  btnMarkYufuFail.addEventListener('click', () => confirmPay('yufu_fail'));
-}
-
-// ✅ 非裕富單就隱藏裕富按鈕（避免誤按）
-const isYufuOrder = String(f.payment_method || "").startsWith("yufu_inst_");
-[btnMarkYufuOk, btnMarkYufuFail, $('#btnMarkYufuOkTop'), $('#btnMarkYufuFailTop')].forEach(b=>{
-  if (b) b.style.display = isYufuOrder ? "" : "none";
-});
 
  // ★ 賣貨便名稱選單：帶入目前欄位值，並更新當月累積金額
   const vendorSel = $('#d_vendor_name');
@@ -1102,6 +1064,12 @@ if (btnTail) {
 
   const btnZcFail = $('#btnMarkZcFail');
   if (btnZcFail) btnZcFail.addEventListener('click', ()=>confirmPay('zc_fail'));
+ // ✅ 顯示/隱藏「完成面交收款」按鈕（只給 meetup_cash）
+const meetupDoneTop = $('#btnMeetupCashDoneTop');
+if (meetupDoneTop) {
+  const pm = String((f.payment_method || ''));
+  meetupDoneTop.style.display = (pm === 'meetup_cash') ? '' : 'none';
+}
 
  const btnPrint = $('#btnPrintOrder');
   if (btnPrint) btnPrint.addEventListener('click', printCurrentOrder);
@@ -1318,8 +1286,6 @@ async function saveDetail(){
   msgEl.textContent = '儲存中…';
 
   const fields = {};
-  fields.pay_status      = $('#d_pay_status').value || null;
-  fields.ship_status     = $('#d_ship_status').value || null;
 
 // ★ 新增：賣貨便名稱（對應 Airtable 的「賣貨便名稱」欄位）
   fields['賣貨便名稱']   = $('#d_vendor_name') ? $('#d_vendor_name').value || '' : '';
@@ -1581,6 +1547,65 @@ async function depositReceivedAndNotify() {
   // 3) 再走一次原本的「確認已收款」流程
   //    → 後端會依付款方式：線上支付 / 中租 / 匯款 / 訂金 自己決定 pay_status / status
   await confirmPay('ok');
+}
+ /* ===== 面交付現：完成收款（已收款 + 出貨完成） ===== */
+async function markMeetupCashDone(){
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const pm = String(f.payment_method || '');
+
+  if (pm !== 'meetup_cash') {
+    alert('這顆按鈕只給「面交付現」訂單使用。');
+    return;
+  }
+
+  const orderId = f.order_id;
+  if (!orderId && !currentRecord.id) {
+    alert('這筆訂單缺少 order_id / record_id，無法更新狀態。');
+    return;
+  }
+
+  if (!confirm('確定要將此「面交付現」訂單標記為：已收款 + 出貨完成（已出貨）？')) {
+    return;
+  }
+
+  const msgEl = $('#detailMsg');
+  if (msgEl) msgEl.textContent = '更新面交狀態中…';
+
+  const payload = {
+    op_key: OP_KEY,
+    record_id: currentRecord.id || null,
+    order_id: orderId || null,
+    fields: {
+      pay_status:  'paid_ok',
+      ship_status: 'shipped',
+      status:      'shipped',
+      shipped_at:  new Date().toISOString()
+    }
+  };
+
+  try {
+    const res = await fetch(API + '/admin/order/update', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const j = await res.json().catch(()=> ({}));
+    if (!res.ok || !j.ok) {
+      throw new Error(j.error || ('HTTP ' + res.status));
+    }
+
+    if (msgEl) msgEl.textContent = '✅ 已標記：已收款 + 出貨完成';
+    await reloadCurrentView();
+  } catch(e) {
+    console.error(e);
+    if (msgEl) msgEl.textContent = '❌ 更新失敗：' + (e.message || e);
+    alert('更新失敗，請稍後再試');
+  }
 }
 /* ===== 預約面交通知：發 LINE ===== */
 async function sendMeetupNotify(){
@@ -2127,8 +2152,13 @@ return ps !== 'cancelled';
   proxyButton('btnSaveAndShipTop',   'btnSaveAndShip');
   proxyButton('btnConfirmPayOkTop',  'btnConfirmPayOk');
   proxyButton('btnMarkZcFailTop',    'btnMarkZcFail');
- proxyButton('btnMarkYufuOkTop',   'btnMarkYufuOk');
-proxyButton('btnMarkYufuFailTop', 'btnMarkYufuFail');
+
+// ✅ 面交付現：完成收款（標記已收款 + 出貨完成）
+const meetupDoneTop = $('#btnMeetupCashDoneTop');
+if (meetupDoneTop) {
+  meetupDoneTop.style.display = 'none'; // 預設先隱藏，選到面交單才顯示
+  meetupDoneTop.addEventListener('click', ()=> markMeetupCashDone());
+}
   proxyButton('btnPrintOrderTop',    'btnPrintOrder');
   proxyButton('btnSendTailLinkTop',  'btnSendTailLink');
   // ★ 這行拿掉，因為取消已經上面直接綁 cancelCurrentOrder 了
