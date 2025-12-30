@@ -103,7 +103,9 @@
   .top-order-actions > button{
     margin-top:0; /* 不要再往下推一格，看起來才會平整 */
   }
- /* ===== Read-only field (display-only) ===== */
+.ro-field.ro-sm{ height: 38px; }
+
+/* ===== 唯讀顯示欄位 ===== */
 .ro-field{
   height: 44px;
   display: flex;
@@ -113,11 +115,9 @@
   background: rgba(255,255,255,.04);
   border: 1px solid rgba(255,255,255,.10);
   color: rgba(255,255,255,.92);
-  letter-spacing: .2px;
   position: relative;
+  box-shadow: inset 3px 0 0 rgba(212,175,55,.45); /* 左側金色提示條 */
 }
-
-.ro-field.ro-sm{ height: 38px; }
 
 .ro-field::after{
   content: "🔒";
@@ -130,11 +130,6 @@
 .ro-field.ro-empty{
   color: rgba(255,255,255,.55);
   font-style: italic;
-}
-
-/* 讓唯讀欄位更「不一樣」：左側金色提示條 */
-.ro-field{
-  box-shadow: inset 3px 0 0 rgba(212,175,55,.45);
 }
 
 /* 如果你仍有用 readonly/disabled input，也讓它好看 */
@@ -778,9 +773,23 @@ function renderOrderList(){
     const f = rec.fields || rec || {};
 
     const shipInfo = parseShippingInfo(f);
-    const ship  = shipInfo.ship  || {};
-    const store = ship.store     || {};
-    const post  = ship.post      || {};
+const ship  = shipInfo.ship  || {};
+const store = ship.store     || {};
+const post  = ship.post      || {};
+const note  = shipInfo.note  || '';
+
+   // ✅ 訂金資訊：你的資料在 shipping_info.deposit 裡
+const dep = shipInfo.deposit || {};
+const depAmount = (f.deposit_amount ?? dep.amount ?? '');
+const depLast5  = (f.deposit_last5  ?? dep.last5  ?? '');
+const holdUntil10 = (f.hold_until ?? dep.hold_until ?? '') ? String(f.hold_until ?? dep.hold_until).slice(0,10) : '';
+const depExpire10 = (f.deposit_expire_at ?? dep.deposit_expire_at ?? '') ? String(f.deposit_expire_at ?? dep.deposit_expire_at).slice(0,10) : '';
+
+// ✅ 出貨時間顯示用（唯讀）
+const shipAtRaw  = (f.shipped_at || f.ship_at || '');
+const shipAtText = shipAtRaw
+  ? new Date(shipAtRaw).toLocaleString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:true })
+  : '';
 
     let addr = '';
     if (ship.type === '711') {
@@ -1004,34 +1013,46 @@ ${a.credit>0 ? `<div class="pill credit-red">購物金折抵：<span>-${creditUs
         </div>
 
         <label class="mt-2">出貨時間</label>
-        <div class="ro-field ${shipAtText ? '' : 'ro-empty'}" id="d_ship_at_ro">
-  ${shipAtText || '—'}
+<div class="ro-field ${shipAtText ? '' : 'ro-empty'}" id="d_ship_at_ro">${shipAtText || '—'}</div>
+<input id="d_ship_at" type="hidden" value="${toDatetimeLocal(f.shipped_at || f.ship_at)}">
 
         <label class="mt-3">訂金 / 匯款資訊</label>
-        <div class="row">
-          <div>
-            <label>訂金金額</label>
-            <div class="ro-field ${depAmount ? '' : 'ro-empty'}" id="d_deposit_amount_ro">
-  ${depAmount ? `NT$ ${depAmount}` : '—'}
-</div>
-          <div>
-            <label>匯款後五碼</label>
-            <div class="ro-field ${depLast5 ? '' : 'ro-empty'}" id="d_deposit_last5_ro">
-  ${depLast5 || '—'}
-</div>
-        </div>
 
-        <div class="row mt-2">
-          <div>
-            <label>訂金到期日</label>
-            <div class="ro-field ${holdUntil10 ? '' : 'ro-empty'}" id="d_hold_until_ro">
-  ${holdUntil10 || '—'}
+<div class="row">
+  <div>
+    <label>訂金金額</label>
+    <div class="ro-field ${depAmount ? '' : 'ro-empty'}" id="d_deposit_amount_ro">
+      ${depAmount ? `NT$ ${depAmount}` : '—'}
+    </div>
+    <input id="d_deposit_amount" type="hidden" value="${depAmount}">
+  </div>
+
+  <div>
+    <label>匯款後五碼</label>
+    <div class="ro-field ${depLast5 ? '' : 'ro-empty'}" id="d_deposit_last5_ro">
+      ${depLast5 || '—'}
+    </div>
+    <input id="d_deposit_last5" type="hidden" value="${depLast5}">
+  </div>
 </div>
-          <div>
-            <label>保留到 (hold_until)</label>
-            <input id="d_hold_until" type="date" value="${holdUntil10}" disabled>
-          </div>
-        </div>
+
+<div class="row">
+  <div>
+    <label>訂金到期日</label>
+    <div class="ro-field ${depExpire10 ? '' : 'ro-empty'}" id="d_deposit_expire_at_ro">
+      ${depExpire10 || '—'}
+    </div>
+    <input id="d_deposit_expire_at" type="hidden" value="${depExpire10}">
+  </div>
+
+  <div>
+    <label>保留到</label>
+    <div class="ro-field ${holdUntil10 ? '' : 'ro-empty'}" id="d_hold_until_ro">
+      ${holdUntil10 || '—'}
+    </div>
+    <input id="d_hold_until" type="hidden" value="${holdUntil10}">
+  </div>
+</div>
 
         <div class="label-inline mt-2">
           <input id="d_deposit_received" type="checkbox" ${f.deposit_received ? 'checked':''}>
