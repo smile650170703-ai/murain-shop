@@ -568,8 +568,8 @@
   if (ps === "failed") return "付款失敗";
 
   // 2) 定金流程
-  if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return "待匯定金";
-  if (ps === "deposit_ok") return "待付尾款";
+  if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return "核對中";
+  if (ps === "deposit_ok") return "核對中";
 
   // 3) 中租 / 裕富（分期）審核中：要放在 pending 前面
   const looksInstallment =
@@ -604,12 +604,21 @@
 }
 
   function shipBadgeClass(o) {
-    const txt = shipBadgeText(o);
-    if (txt === "已取消" || txt === "付款失敗" || txt === "已退回") return "st-unpaid"; 
-    if (txt === "已出貨" || txt === "已送達" || txt === "已取貨" || txt === "已付款") return "st-paid";
-    if (txt === "待付款") return "st-waitpay";
-    return "st-pending";
-  }
+  const txt = shipBadgeText(o);
+
+  if (txt === "已取消" || txt === "付款失敗" || txt === "已退回") return "st-unpaid";
+
+  // 你把「已付款」改成「待出貨中」了，所以這裡要把「待出貨中」算進已付款那類
+  if (txt === "已出貨" || txt === "已送達" || txt === "已取貨" || txt === "待出貨中") return "st-paid";
+
+  // 需要客人處理 / 等待中的狀態
+  if (txt === "待付款" || txt === "核對中" || txt === "待匯定金" || txt === "待付尾款") return "st-waitpay";
+
+  // 分期審核中、其他處理中
+  if (txt === "審核中") return "st-pending";
+
+  return "st-pending";
+}
 
   function deliveryPlaceText(ship, receiver, paymentMethod) {
     const methodRaw = String(ship?.method || ship?.type || ship?.ship_type || "");
