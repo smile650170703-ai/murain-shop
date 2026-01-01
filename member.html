@@ -641,23 +641,29 @@
     return (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold"));
   }
 
-  function progressStage(o){
-    const st = String(o?.status || "").toLowerCase();
-    const ss = String(o?.ship_status || "").toLowerCase();
-    const ps = String(o?.pay_status || "").toLowerCase();
-    const remaining = getRemainingAmount(o);
+  // ✅ history 用：下單 - 付款狀態 - 出貨狀態（3 段）
+function progressStageHistory3(o){
+  const st = String(o?.status || "").toLowerCase();
+  const ss = String(o?.ship_status || "").toLowerCase();
+  const ps = String(o?.pay_status || "").toLowerCase();
+  const pm = String(o?.payment_method || "").toLowerCase();
 
-    const shipped = (ss === "shipped" || st === "shipped" || ss === "arrived" || ss === "picked_up" || st === "picked_up");
-    if (shipped) return 3;
+  const shipped = (
+    ss === "shipped" || st === "shipped" ||
+    ss === "arrived" ||
+    ss === "picked_up" || st === "picked_up" ||
+    ss === "returned" || st === "returned"
+  );
+  if (shipped) return 2;
 
-    const paidAll = (ps === "paid" || ps === "paid_ok" || remaining <= 0);
-    if (paidAll) return 2;
+  // COD：視為已進入「付款狀態」這一段（貨到付款）
+  if (pm.includes("cod")) return 1;
 
-    const depositPhase = isDepositHoldOrder(o) || isDepositChecking(o) || isDepositConfirmed(o);
-    if (depositPhase) return 1;
+  const paidLike = (ps === "paid" || ps === "paid_ok" || ps === "deposit_ok" || st === "deposit_ok" || ss === "deposit_ok");
+  if (paidLike) return 1;
 
-    return 0;
-  }
+  return 0; // 只在下單
+}
 
   async function copyText(text){
     try {
@@ -1032,41 +1038,58 @@
               </span>
             </div>
 
-            <div class="amount-line">
-              <span class="k">剩餘尾款</span>
-              <span class="v">${money(getRemainingAmount(o))}</span>
-            </div>
+            ${
+  (currentFilter === "history")
+    ? ""
+    : `
+      <div class="amount-line">
+        <span class="k">剩餘尾款</span>
+        <span class="v">${money(getRemainingAmount(o))}</span>
+      </div>
+    `
+}
           </div>
 
           <div class="progress">
-            <div class="p-steps">
-              <div class="p-step ${progressStage(o) >= 0 ? "done" : ""} ${progressStage(o)===0 ? "current" : ""}">
-                <div class="dot"></div><div class="lbl">下單</div>
-              </div>
-              <div class="p-step ${progressStage(o) >= 1 ? "done" : ""} ${progressStage(o)===1 ? "current" : ""}">
-                <div class="dot"></div><div class="lbl">已付訂金/保留中</div>
-              </div>
-              <div class="p-step ${progressStage(o) >= 2 ? "done" : ""} ${progressStage(o)===2 ? "current" : ""}">
-                <div class="dot"></div><div class="lbl">付清尾款</div>
-              </div>
-              <div class="p-step ${progressStage(o) >= 3 ? "done" : ""} ${progressStage(o)===3 ? "current" : ""}">
-                <div class="dot"></div><div class="lbl">出貨/服務開始</div>
-              </div>
-            </div>
-
-            <div class="microcopy">
-              若需要提早寄出或付款，可複製單號告知小編開立連結唷。
-            </div>
-
-            <div class="action-row">
-              <button class="btn-mini btn-ghost js-copy" data-oid="${escapeHtml(o.order_id)}">複製單號</button>
-              ${
-                (getRemainingAmount(o) > 0)
-                  ? `<button class="btn-mini btn-gold js-tail" data-oid="${escapeHtml(o.order_id)}">前往付尾款</button>`
-                  : `<button class="btn-mini btn-gold" disabled style="opacity:.45; cursor:not-allowed;">已結清</button>`
-              }
-            </div>
+  <div class="p-steps">
+    ${
+      (currentFilter === "history")
+        ? `
+          <div class="p-step ${progressStageHistory3(o) >= 0 ? "done" : ""} ${progressStageHistory3(o)===0 ? "current" : ""}">
+            <div class="dot"></div><div class="lbl">下單</div>
           </div>
+          <div class="p-step ${progressStageHistory3(o) >= 1 ? "done" : ""} ${progressStageHistory3(o)===1 ? "current" : ""}">
+            <div class="dot"></div><div class="lbl">付款狀態</div>
+          </div>
+          <div class="p-step ${progressStageHistory3(o) >= 2 ? "done" : ""} ${progressStageHistory3(o)===2 ? "current" : ""}">
+            <div class="dot"></div><div class="lbl">出貨狀態</div>
+          </div>
+        `
+        : `
+          <div class="p-step ${progressStage(o) >= 0 ? "done" : ""} ${progressStage(o)===0 ? "current" : ""}">
+            <div class="dot"></div><div class="lbl">下單</div>
+          </div>
+          <div class="p-step ${progressStage(o) >= 1 ? "done" : ""} ${progressStage(o)===1 ? "current" : ""}">
+            <div class="dot"></div><div class="lbl">已付訂金/保留中</div>
+          </div>
+          <div class="p-step ${progressStage(o) >= 2 ? "done" : ""} ${progressStage(o)===2 ? "current" : ""}">
+            <div class="dot"></div><div class="lbl">付清尾款</div>
+          </div>
+          <div class="p-step ${progressStage(o) >= 3 ? "done" : ""} ${progressStage(o)===3 ? "current" : ""}">
+            <div class="dot"></div><div class="lbl">出貨/服務開始</div>
+          </div>
+        `
+    }
+  </div>
+
+  <div class="microcopy">
+    若訂單有任何問題請複製單號告知小編唷。
+  </div>
+
+  <div class="action-row">
+    <button class="btn-mini btn-gold js-copy" data-oid="${escapeHtml(o.order_id)}">複製單號</button>
+  </div>
+</div>
       `;
         // --- Buttons ---
       const copyBtn = wrap.querySelector(".js-copy");
