@@ -324,6 +324,135 @@
       letter-spacing: 0.05em; text-shadow: 0 2px 8px rgba(0,0,0,0.5);
     }
 
+    /* ===== Amount Breakdown + Progress + Actions ===== */
+.amount-breakdown{
+  margin-top: 14px;
+  padding: 12px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.02);
+}
+.amount-line{
+  display:flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.amount-line:last-child{ border-bottom:none; }
+.amount-line .k{
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: .06em;
+}
+.amount-line .v{
+  font-size: 13px;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.tag{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding: 2px 6px;
+  margin-left: 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: .08em;
+  border: 1px solid rgba(255,255,255,0.12);
+  opacity: .9;
+}
+.tag-ok{ background: rgba(94,179,126,0.10); color: var(--success); border-color: rgba(94,179,126,0.22); }
+.tag-pending{ background: rgba(255,168,76,0.10); color: #ffd9ad; border-color: rgba(255,168,76,0.22); }
+
+.progress{
+  margin-top: 12px;
+  padding: 12px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.18);
+}
+.p-steps{
+  display:flex;
+  align-items:flex-start;
+  gap: 10px;
+}
+.p-step{
+  flex: 1;
+  display:flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+.p-step .dot{
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.06);
+}
+.p-step.done .dot{
+  border-color: rgba(191,149,63,0.55);
+  background: rgba(191,149,63,0.25);
+}
+.p-step.current .dot{
+  box-shadow: 0 0 0 4px rgba(191,149,63,0.12);
+}
+.p-step .lbl{
+  font-size: 10px;
+  color: var(--text-sub);
+  line-height: 1.35;
+  letter-spacing: .05em;
+}
+.p-step.done .lbl{ color: #fff; }
+.p-step:after{
+  content:'';
+  position:absolute;
+  top: 5px;
+  right: -5px;
+  width: calc(100% + 10px);
+  height: 1px;
+  background: rgba(255,255,255,0.10);
+  z-index: 0;
+}
+.p-step:last-child:after{ display:none; }
+
+.microcopy{
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-sub);
+  line-height: 1.55;
+  letter-spacing: .03em;
+}
+
+.action-row{
+  display:flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.btn-mini{
+  flex: 1;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.03);
+  color: #fff;
+  padding: 10px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: .06em;
+  transition: transform .12s ease, background .2s ease, border-color .2s ease;
+}
+.btn-mini:active{ transform: scale(0.98); }
+.btn-ghost:hover{ background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.18); }
+.btn-gold{
+  background: var(--gold-gradient);
+  color: #111;
+  border-color: rgba(255,255,255,0.12);
+  font-weight: 700;
+}
+
     /* --- Credits List --- */
     .credits-list { display: flex; flex-direction: column; gap: 0; }
     .credit-item {
@@ -453,6 +582,106 @@
     const d = new Date(s);
     if (isNaN(d.getTime())) return s;
     return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  function toInt(v){
+    const n = Number(v);
+    if (!Number.isFinite(n)) return 0;
+    return Math.round(n);
+  }
+  function pickNum(...vals){
+    for (const v of vals){
+      const x = toInt(v);
+      if (x > 0) return x;
+    }
+    return 0;
+  }
+  function money(v){
+    return "NT$ " + toInt(v).toLocaleString("zh-TW");
+  }
+
+  // 盡量從訂單物件各種可能欄位抓「已付金額」（你後端若有把 deposit/paid 寫在 shipping_info，也能吃到）
+  function getPaidAmount(o){
+    const ps = String(o?.pay_status || "").toLowerCase();
+    const ship = o?.ship || {};
+    const si = o?.shipping_info || o?.shippingInfo || ship?.shipping_info || ship?.shippingInfo || {};
+
+    // 若已全額付款，直接視為已付=總額
+    if (ps === "paid" || ps === "paid_ok") return toInt(o?.total_amount || 0);
+
+    return pickNum(
+      o?.paid_amount, o?.paidAmount,
+      o?.deposit_paid, o?.depositPaid,
+      o?.deposit_amount, o?.depositAmount,
+      si?.paid_amount, si?.paidAmount,
+      si?.deposit_paid, si?.depositPaid,
+      si?.deposit_amount, si?.depositAmount,
+      ship?.paid_amount, ship?.paidAmount,
+      ship?.deposit_paid, ship?.depositPaid,
+      ship?.deposit_amount, ship?.depositAmount
+    );
+  }
+
+  function getRemainingAmount(o){
+    const total = toInt(o?.total_amount || 0);
+    const paid = getPaidAmount(o);
+    return Math.max(0, total - paid);
+  }
+
+  function isDepositConfirmed(o){
+    const ps = String(o?.pay_status || "").toLowerCase();
+    const st = String(o?.status || "").toLowerCase();
+    const ss = String(o?.ship_status || "").toLowerCase();
+    return (ps === "deposit_ok" || st === "deposit_ok" || ss === "deposit_ok");
+  }
+  function isDepositChecking(o){
+    const ps = String(o?.pay_status || "").toLowerCase();
+    const st = String(o?.status || "").toLowerCase();
+    const ss = String(o?.ship_status || "").toLowerCase();
+    return (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold"));
+  }
+
+  function progressStage(o){
+    const st = String(o?.status || "").toLowerCase();
+    const ss = String(o?.ship_status || "").toLowerCase();
+    const ps = String(o?.pay_status || "").toLowerCase();
+    const remaining = getRemainingAmount(o);
+
+    const shipped = (ss === "shipped" || st === "shipped" || ss === "arrived" || ss === "picked_up" || st === "picked_up");
+    if (shipped) return 3;
+
+    const paidAll = (ps === "paid" || ps === "paid_ok" || remaining <= 0);
+    if (paidAll) return 2;
+
+    const depositPhase = isDepositHoldOrder(o) || isDepositChecking(o) || isDepositConfirmed(o);
+    if (depositPhase) return 1;
+
+    return 0;
+  }
+
+  async function copyText(text){
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) {
+      // fallback
+      try{
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        return true;
+      } catch (e2) {}
+    }
+    return false;
+  }
+
+  // ✅ 方案 A：直接用 tail-checkout.html（前提：你已經有這頁且吃 parent_order_id）
+  function buildTailCheckoutLiffUrl(parentOrderId){
+    const endpoint = `https://murain.tw/tail-checkout.html?parent_order_id=${encodeURIComponent(parentOrderId)}&force=1`;
+    return `https://liff.line.me/${LIFF_ID}?url=${encodeURIComponent(endpoint)}`;
   }
 
   function displayPaymentMethod(pm) {
@@ -785,12 +1014,83 @@
             ${itemsHtml}
           </div>
           
-          <div class="amount-display">
-            <div class="amount-label">總金額</div>
-            <div class="amount-val">NT$ ${total.toLocaleString("zh-TW")}</div>
+           <div class="amount-breakdown">
+            <div class="amount-line">
+              <span class="k">訂單金額</span>
+              <span class="v">NT$ ${total.toLocaleString("zh-TW")}</span>
+            </div>
+
+            <div class="amount-line">
+              <span class="k">${(String(o.payment_method||"").toLowerCase().includes("deposit") || isDepositHoldOrder(o)) ? "已付訂金" : "已付款"}</span>
+              <span class="v">
+                ${money(getPaidAmount(o))}
+                ${
+                  (String(o.payment_method||"").toLowerCase().includes("deposit") || isDepositHoldOrder(o))
+                    ? (isDepositConfirmed(o) ? `<span class="tag tag-ok">已確認</span>` : (isDepositChecking(o) ? `<span class="tag tag-pending">核對中</span>` : ``))
+                    : ((String(o?.pay_status||"").toLowerCase()==="paid" || String(o?.pay_status||"").toLowerCase()==="paid_ok") ? `<span class="tag tag-ok">完成</span>` : ``)
+                }
+              </span>
+            </div>
+
+            <div class="amount-line">
+              <span class="k">剩餘尾款</span>
+              <span class="v">${money(getRemainingAmount(o))}</span>
+            </div>
           </div>
-        </div>
+
+          <div class="progress">
+            <div class="p-steps">
+              <div class="p-step ${progressStage(o) >= 0 ? "done" : ""} ${progressStage(o)===0 ? "current" : ""}">
+                <div class="dot"></div><div class="lbl">下單</div>
+              </div>
+              <div class="p-step ${progressStage(o) >= 1 ? "done" : ""} ${progressStage(o)===1 ? "current" : ""}">
+                <div class="dot"></div><div class="lbl">已付訂金/保留中</div>
+              </div>
+              <div class="p-step ${progressStage(o) >= 2 ? "done" : ""} ${progressStage(o)===2 ? "current" : ""}">
+                <div class="dot"></div><div class="lbl">付清尾款</div>
+              </div>
+              <div class="p-step ${progressStage(o) >= 3 ? "done" : ""} ${progressStage(o)===3 ? "current" : ""}">
+                <div class="dot"></div><div class="lbl">出貨/服務開始</div>
+              </div>
+            </div>
+
+            <div class="microcopy">
+              若需要提早寄出或付款，可複製單號告知小編開立連結唷。
+            </div>
+
+            <div class="action-row">
+              <button class="btn-mini btn-ghost js-copy" data-oid="${escapeHtml(o.order_id)}">複製單號</button>
+              ${
+                (getRemainingAmount(o) > 0)
+                  ? `<button class="btn-mini btn-gold js-tail" data-oid="${escapeHtml(o.order_id)}">前往付尾款</button>`
+                  : `<button class="btn-mini btn-gold" disabled style="opacity:.45; cursor:not-allowed;">已結清</button>`
+              }
+            </div>
+          </div>
       `;
+        // --- Buttons ---
+      const copyBtn = wrap.querySelector(".js-copy");
+      if (copyBtn) {
+        copyBtn.addEventListener("click", async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const oid = copyBtn.getAttribute("data-oid") || "";
+          const ok = await copyText(oid);
+          alert(ok ? "已複製單號：" + oid : "複製失敗，請手動選取單號");
+        });
+      }
+
+      const tailBtn = wrap.querySelector(".js-tail");
+      if (tailBtn) {
+        tailBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const oid = tailBtn.getAttribute("data-oid") || "";
+          // 方案 A：直接導去 tail-checkout.html
+          const url = buildTailCheckoutLiffUrl(oid);
+          window.location.href = url;
+        });
+      }
       orderList.appendChild(wrap);
     }
   }
