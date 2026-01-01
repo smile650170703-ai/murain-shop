@@ -544,27 +544,60 @@ if (uid) {
 // 保留期限（你可能放在 shipping_info.hold_until 或 j.hold_until）
 $("#fieldHoldUntil").value = shipInfoObj.hold_until || j.hold_until || "";
 
-// 收件資訊
-const ship = shipInfoObj.ship || {};
-const store = ship.store || {};
-      
-      if($("#shipName")) $("#shipName").textContent = ship.name ? `姓名: ${ship.name}` : "";
-      if($("#shipPhone")) $("#shipPhone").textContent = ship.phone ? `電話: ${ship.phone}` : "";
-      const addr = store.addr || ship.addr || ship.address || "";
-if($("#shipAddr")) $("#shipAddr").textContent = addr ? `地址: ${addr}` : "";
-      const storeName = store.name || ship.store_name || "";
-const storeId   = store.id || ship.store_id || "";
-if($("#shipStore")) $("#shipStore").textContent = storeName ? `門市: ${storeName}${storeId ? ` (${storeId})` : ""}` : "";
+// 收件資訊（支援 711 / 郵寄 post / 其他）
+function setLine(id, text){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.textContent = text || "";
+  el.style.display = text ? "" : "none"; // 空就隱藏，避免看起來像壞掉
+}
 
-      // Logic: Hide COD if original was not 7-11
-      if(ship.type !== "711") {
-        const codTab = document.querySelector('.pill[data-pay="COD"]');
-        if(codTab) codTab.style.display = "none";
-        if(activePay === "COD") {
-          activePay = "PAID";
-          document.querySelector('.pill[data-pay="PAID"]')?.click();
-        }
-      }
+const ship = shipInfoObj.ship || {};
+const receiver = shipInfoObj.receiver || ship.receiver || {}; // ✅ 很多單會把郵寄收件人放這
+const shipTypeRaw = ship.type || shipInfoObj.ship_type || shipInfoObj.shipType || "";
+const shipType = String(shipTypeRaw).toLowerCase();
+
+const name  = ship.name  || receiver.name  || ship.receiver_name  || shipInfoObj.receiver_name  || "";
+const phone = ship.phone || receiver.phone || ship.receiver_phone || shipInfoObj.receiver_phone || "";
+
+// 地址 / 門市文字
+let addr = "";
+let storeText = "";
+
+if (shipType === "711") {
+  const store = ship.store || shipInfoObj.store || {};
+  const storeName = store.name || ship.store_name || shipInfoObj.store_name || "";
+  const storeId   = store.id   || ship.store_id   || shipInfoObj.store_id   || "";
+  const storeAddr = store.addr || ship.store_addr || shipInfoObj.store_addr || "";
+  addr = storeAddr || ship.addr || ship.address || "";
+  storeText = storeName ? `門市: ${storeName}${storeId ? ` (${storeId})` : ""}` : "";
+} else {
+  // ✅ 郵寄/宅配常見位置：ship.post / receiver / ship.address
+  const post = ship.post || shipInfoObj.post || {};
+  addr =
+    ship.addr || ship.address ||
+    receiver.addr || receiver.address ||
+    post.addr || post.address ||
+    ship.post_addr || ship.post_address ||
+    "";
+  storeText = ""; // 郵寄不顯示門市
+}
+
+// 套用到畫面
+setLine("shipName",  name  ? `姓名: ${name}` : "");
+setLine("shipPhone", phone ? `電話: ${phone}` : "");
+setLine("shipAddr",  addr  ? `地址: ${addr}` : "");
+setLine("shipStore", storeText);
+
+// Logic: Hide COD if original was not 7-11（用 shipType，避免 ship.type 空值判斷失準）
+if (shipType !== "711") {
+  const codTab = document.querySelector('.pill[data-pay="COD"]');
+  if(codTab) codTab.style.display = "none";
+  if(activePay === "COD") {
+    activePay = "PAID";
+    document.querySelector('.pill[data-pay="PAID"]')?.click();
+  }
+}
     }catch(e){ setError("系統錯誤"); }
   }
 
