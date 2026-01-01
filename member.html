@@ -936,6 +936,16 @@ if (
     return (head ? head + "\n" : "") + place;
   }
 
+  function getOrderCreatedAt(o){
+  const v =
+    o?.created_at || o?.createdAt ||
+    o?.created_time || o?.createdTime ||
+    o?.created || o?.created_date || o?.createdDate ||
+    o?.order_date || o?.orderDate;
+  const d = v ? new Date(v) : null;
+  return (d && !isNaN(d.getTime())) ? d : null;
+}
+
   /* --- Tabs & Render Logic --- */
   function updateTabsUI() {
     document.querySelectorAll(".tab").forEach(btn => {
@@ -962,8 +972,8 @@ if (
         // 排除「定金保留」(deposit_hold)
         if (isDepositHoldOrder(o)) return false;
         
-        const createdAt = o.created_at ? new Date(o.created_at) : null;
-        if (!createdAt || isNaN(createdAt.getTime())) return false;
+        const createdAt = getOrderCreatedAt(o);
+if (!createdAt) return false;
         return createdAt >= halfMonthAgo;
       });
     } else if (currentFilter === "deposit") {
@@ -975,9 +985,10 @@ if (
         // 必須是「定金保留」(deposit_hold)
         if (!isDepositHoldOrder(o)) return false;
 
-        const createdAt = o.created_at ? new Date(o.created_at) : null;
-        if (!createdAt || isNaN(createdAt.getTime())) return false;
-        return createdAt >= oneAndHalfMonthAgo;
+        const createdAt = getOrderCreatedAt(o);
+// ✅ 有些單如果後端沒回 created_at，不要整張被濾掉
+if (!createdAt) return true;
+return createdAt >= oneAndHalfMonthAgo;
       });
     }
 
