@@ -401,13 +401,26 @@ function updateTailAmountUI(){
 }
 
 function extractLineUserIdFromShipping(si){
-  try{
-    const shipInfo = (typeof si === "string") ? JSON.parse(si) : (si || {});
-    const line = shipInfo.line || shipInfo.line_profile || {};
-    return String(
-      line.user_id || line.userId || line.LINE_USER_ID || shipInfo.line_user_id || ""
-    ).trim();
-  }catch(e){
+  try {
+    const shipInfo = (si && typeof si === "object")
+      ? si
+      : (typeof si === "string" ? JSON.parse(si) : {});
+
+    // 常見位置：shipping_info.line / line_profile
+    const line = shipInfo.line || shipInfo.line_profile || shipInfo.lineProfile || {};
+
+    // 也有人會直接把 userId 塞在 shipInfo 或 shipInfo.ship 裡
+    const ship = shipInfo.ship || {};
+
+    const uid = (
+      line.user_id || line.userId || line.LINE_USER_ID ||
+      shipInfo.line_user_id || shipInfo.lineUserId ||
+      ship.line_user_id || ship.lineUserId ||
+      ""
+    );
+
+    return String(uid).trim();
+  } catch (e) {
     return "";
   }
 }
@@ -456,9 +469,38 @@ function applyCreditUI(balance, tailAmount){
     });
   }
 
+  function getParamWithLiffState(key){
+  const u = new URL(location.href);
+
+  // A) 正常：?order_id=...
+  let v = u.searchParams.get(key);
+  if (v) return v;
+
+  // B) LIFF 常見：?liff.state=%3Forder_id%3D...
+  const st = u.searchParams.get("liff.state");
+  if (st) {
+    const s = st.startsWith("?") ? st.slice(1) : st;
+    const p = new URLSearchParams(s);
+
+    v = p.get(key);
+    if (v) return v;
+
+    // C) 少數：liff.state 裡還包一層 url=ENCODED(https://...?...order_id=...)
+    const inner = p.get("url");
+    if (inner) {
+      try {
+        const innerUrl = new URL(inner, location.origin);
+        v = innerUrl.searchParams.get(key);
+        if (v) return v;
+      } catch(e) {}
+    }
+  }
+
+  return "";
+}
+
   async function loadTailInfo(){
-    const sp = new URLSearchParams(location.search);
-    const orderId = sp.get("order_id") || sp.get("parent_order_id") || "";
+    const orderId = getParamWithLiffState("order_id") || getParamWithLiffState("parent_order_id") || "";
     if(!orderId) return setError("缺少訂單編號");
 
     try{
