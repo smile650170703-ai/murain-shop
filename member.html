@@ -599,34 +599,63 @@
   function money(v){
     return "NT$ " + toInt(v).toLocaleString("zh-TW");
   }
+  // ✅ 新增：判斷已付款
+function isPaidOk(ps){
+  const s = String(ps || "").toLowerCase();
+  return (s === "paid" || s === "paid_ok");
+}
 
-  // 盡量從訂單物件各種可能欄位抓「已付金額」（你後端若有把 deposit/paid 寫在 shipping_info，也能吃到）
+// ✅ 新增：尾款已付金額（尾款單通常 paid_ok 時就用 total_amount）
+function getTailPaidAmount(t){
+  if (!t) return 0;
+  if (isPaidOk(t.pay_status)) return toInt(t.total_amount || 0);
+
+  // 若你未來 tail 也會回 paid_amount，這裡也吃得到
+  return pickNum(
+    t.paid_amount, t.paidAmount,
+    t.deposit_paid, t.depositPaid,
+    t.deposit_amount, t.depositAmount
+  );
+}
+
   function getPaidAmount(o){
-    const ps = String(o?.pay_status || "").toLowerCase();
-    const ship = o?.ship || {};
-    const si = o?.shipping_info || o?.shippingInfo || ship?.shipping_info || ship?.shippingInfo || {};
+  const total = toInt(o?.total_amount || 0);
+  const ps = String(o?.pay_status || "").toLowerCase();
 
-    // 若已全額付款，直接視為已付=總額
-    if (ps === "paid" || ps === "paid_ok") return toInt(o?.total_amount || 0);
+  // 若主單已全額付款，直接視為已付=總額
+  if (ps === "paid" || ps === "paid_ok") return total;
 
-    return pickNum(
-      o?.paid_amount, o?.paidAmount,
-      o?.deposit_paid, o?.depositPaid,
-      o?.deposit_amount, o?.depositAmount,
-      si?.paid_amount, si?.paidAmount,
-      si?.deposit_paid, si?.depositPaid,
-      si?.deposit_amount, si?.depositAmount,
-      ship?.paid_amount, ship?.paidAmount,
-      ship?.deposit_paid, ship?.depositPaid,
-      ship?.deposit_amount, ship?.depositAmount
-    );
-  }
+  const ship = o?.ship || {};
+  const si = o?.shipping_info || o?.shippingInfo || ship?.shipping_info || ship?.shippingInfo || {};
 
-  function getRemainingAmount(o){
-    const total = toInt(o?.total_amount || 0);
-    const paid = getPaidAmount(o);
-    return Math.max(0, total - paid);
-  }
+  // 主單已付（訂金/已付款）
+  let paid = pickNum(
+    o?.paid_amount, o?.paidAmount,
+    o?.deposit_paid, o?.depositPaid,
+    o?.deposit_amount, o?.depositAmount,
+
+    si?.paid_amount, si?.paidAmount,
+    si?.deposit_paid, si?.depositPaid,
+    si?.deposit_amount, si?.depositAmount,
+    si?.deposit?.paid, si?.deposit?.amount,
+
+    ship?.paid_amount, ship?.paidAmount,
+    ship?.deposit_paid, ship?.depositPaid,
+    ship?.deposit_amount, ship?.depositAmount,
+    ship?.deposit?.paid, ship?.deposit?.amount
+  );
+
+  // ✅ 把尾款單已付加進來（這就是讓後台/會員中心一致的關鍵）
+  const tail = o?.tail_order || null;
+  if (tail) paid += getTailPaidAmount(tail);
+
+  return Math.min(total, paid);
+}
+
+function getRemainingAmount(o){
+  const total = toInt(o?.total_amount || 0);
+  return Math.max(0, total - getPaidAmount(o));
+}
 
   function getTrackingNo(o){
   const ship = o?.ship || {};
@@ -1152,6 +1181,18 @@ try{
       <div class="amount-line">
         <span class="k">尾款單號</span>
         <span class="v" style="font-family: monospace;">${escapeHtml(tail.order_id)}</span>
+      </div>
+    `
+    : ``
+}
+${
+  (tail && currentFilter !== "history")
+    ? `
+      <div class="amount-line">
+        <span class="k">尾款狀態</span>
+        <span class="v">
+          ${isPaidOk(tail.pay_status) ? '尾款已付' : '尾款待付款'}
+        </span>
       </div>
     `
     : ``
