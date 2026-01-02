@@ -711,16 +711,23 @@ if (shipType !== "711") {
         body: JSON.stringify({ order_id: newOrderId })
       });
       const up = await pr.json();
+      alert("PayUni url=" + up.url);
       if(!up.ok) throw new Error(up.error);
 
       const f = document.createElement("form");
       f.method="POST";
-      f.action = "https://api.payuni.com.tw/api/upp";
+      f.action = String(up.url || "").trim();
+if(!/^https:\/\/api\.payuni\.com\.tw\/api\/upp$/i.test(f.action)){
+  throw new Error("PayUni url 不正確：" + f.action);
+}
+f.target = "_top";
       ["MerID","Version","EncryptInfo","HashInfo"].forEach(k=>{
-        const i=document.createElement("input");
-        i.type="hidden"; i.name=k; i.value=up[k];
-        f.appendChild(i);
-      });
+  const v = up[k];
+  if(!v) throw new Error("PayUni 欄位缺少：" + k);
+  const i=document.createElement("input");
+  i.type="hidden"; i.name=k; i.value=v;
+  f.appendChild(i);
+});
       document.body.appendChild(f);
       f.submit();
       return;
