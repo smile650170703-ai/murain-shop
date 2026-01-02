@@ -577,12 +577,12 @@
   };
 
   /* --- Helper Functions --- */
-  function formatDate(s) {
-    if (!s) return "";
-    const d = new Date(s);
-    if (isNaN(d.getTime())) return s;
-    return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
-  }
+  function formatDate(input) {
+  if (!input) return "";
+  const d = (input instanceof Date) ? input : new Date(input);
+  if (isNaN(d.getTime())) return String(input || "");
+  return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+}
 
   function toInt(v){
     const n = Number(v);
@@ -1094,10 +1094,6 @@ if (txt === "已出貨" || txt === "已送達" || txt === "已取貨" || txt ===
     orderList.innerHTML = "";
 
     let list = orders.slice();
-    try{
-  infoMsg.textContent =
-    `[DEBUG] renderOrders start | orders=${orders.length} filter=${currentFilter}`;
-}catch(e){}
     const now = new Date();
 
     if (currentFilter === "history") {
@@ -1110,7 +1106,7 @@ if (txt === "已出貨" || txt === "已送達" || txt === "已取貨" || txt ===
         if (isDepositHoldOrder(o)) return false;
         
         const createdAt = getOrderCreatedAt(o);
-if (!createdAt) return false;
+if (!createdAt) return true;
         return createdAt >= halfMonthAgo;
       });
     } else if (currentFilter === "deposit") {
@@ -1128,10 +1124,6 @@ if (!createdAt) return true;
 return createdAt >= oneAndHalfMonthAgo;
       });
     }
-try{
-  infoMsg.textContent =
-    `[DEBUG] after filter | list=${list.length} filter=${currentFilter}`;
-}catch(e){}
     if (!list.length) {
       emptyText.style.display = "block";
       return;
@@ -1164,7 +1156,7 @@ try{
     const payTxt = shipBadgeText(o);
     const d = getDisplayOrder(o);
 const shipObj = (d.src && d.src.ship) ? d.src.ship : (o.ship || {});
-const tail = d.tail || null;
+const tail = (!isTailOrder(o) && String(o?.order_id || "").toUpperCase().startsWith("OD")) ? (d.tail || null) : null;
     const receiverObj = o.receiver || {};
     const total = Number(o.total_amount || 0);
     const itemsTextRaw = String(o.items_text || o.itemsText || o.items || "").trim();
@@ -1195,7 +1187,7 @@ const tail = d.tail || null;
       <div class="card-header">
         <div class="order-info-main">
           <div class="order-id">#${escapeHtml(o.order_id || "")}</div>
-          <div class="order-date">${formatDate(o.created_at || "")}</div>
+          <div class="order-date">${formatDate(getOrderCreatedAt(o) || o.created_at || o.createdTime || o.createdAt || "")}</div>
         </div>
         <div style="display:flex; align-items:center;">
           <div class="status-badge ${statusCls}">${escapeHtml(payTxt)}</div>
@@ -1355,7 +1347,7 @@ ${
 
       el.innerHTML = `
         <div class="c-info">
-          <div class="c-reason">${reason}</div>
+          <div class="c-reason">${escapeHtml(reason)}</div>
           <div class="c-date">${formatDate(item.created_at)}</div>
         </div>
         <div>
