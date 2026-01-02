@@ -446,6 +446,118 @@ function toDatetimeLocal(v){
     pad(d.getMinutes());
 }
 
+ function safeJsonParse(s, fallback = null){
+  try{
+    if (!s) return fallback;
+    if (typeof s === "object") return s;
+    return JSON.parse(String(s));
+  }catch(e){
+    return fallback;
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+// 從 OD（主單）的 fields 裡抓尾款資訊（優先 tail_* 欄位，其次 tail_paid_snapshot）
+function getTailInfoFromParentFields(f){
+  const snap = safeJsonParse(f?.tail_paid_snapshot, null) || {};
+  const pick = (a,b,def="") => (String(a||"").trim() ? a : (String(b||"").trim() ? b : def));
+
+  return {
+    order_id: pick(f?.tail_order_id, snap?.tail_order_id, ""),
+    payment_method: pick(f?.tail_payment_method, snap?.tail_payment_method, ""),
+    total_amount: Number(f?.tail_total_amount ?? snap?.tail_total_amount ?? 0) || 0,
+    credit_used: Number(f?.tail_credit_used ?? snap?.tail_credit_used ?? 0) || 0,
+    net_amount: Number(f?.tail_net_amount ?? snap?.tail_net_amount ?? 0) || 0,
+    pay_channel: pick(f?.tail_pay_channel, snap?.tail_pay_channel, ""),
+    paid_at: pick(f?.tail_paid_at, snap?.tail_paid_at, ""),
+
+    invoice_no: pick(f?.tail_invoice_no, snap?.invoice?.invoice_no ?? snap?.tail_invoice_no, ""),
+    invoice_date: (f?.tail_invoice_date ?? snap?.invoice?.invoice_date ?? snap?.tail_invoice_date ?? ""),
+    invoice_random: pick(f?.tail_invoice_random, snap?.invoice?.invoice_random ?? snap?.tail_invoice_random, ""),
+    invoice_rtn_code: pick(f?.tail_invoice_rtn_code, snap?.invoice?.invoice_rtn_code ?? snap?.tail_invoice_rtn_code, ""),
+    invoice_rtn_msg: pick(f?.tail_invoice_rtn_msg, snap?.invoice?.invoice_rtn_msg ?? snap?.tail_invoice_rtn_msg, ""),
+    invoice_issued: (f?.tail_invoice_issued ?? snap?.invoice?.invoice_issued ?? snap?.tail_invoice_issued ?? null),
+  };
+}
+
+// 產生後台顯示用區塊（沒有尾款資料就回傳空字串，不影響任何既有畫面）
+function renderTailInfoBlock(f){
+  const t = getTailInfoFromParentFields(f || {});
+  const hasAny = !!(t.order_id || t.payment_method || t.total_amount || t.net_amount || t.invoice_no || t.paid_at);
+  if (!hasAny) return "";
+
+  const pmLabel = (typeof displayPaymentMethod === "function")
+    ? (displayPaymentMethod(t.payment_method) || t.payment_method || "—")
+    : (t.payment_method || "—");
+
+  const invLabel = t.invoice_no
+    ? `已開立（${t.invoice_no}）`
+    : (t.invoice_issued ? "已開立" : "未開立/尚未回寫");
+
+  const invRtn = (t.invoice_rtn_code || t.invoice_rtn_msg)
+    ? `${t.invoice_rtn_code || ""} ${t.invoice_rtn_msg || ""}`.trim()
+    : "—";
+
+  const paidAtTxt = t.paid_at ? (toDatetimeLocal(t.paid_at).replace("T"," ")) : "—";
+
+  return `
+    <div class="card mt-3">
+      <div style="font-weight:800;margin-bottom:8px;">尾款資訊（併入主單）</div>
+
+      <div class="row">
+        <div>
+          <div class="muted">尾款單號</div>
+          <div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">
+            ${escapeHtml(t.order_id || "—")}
+          </div>
+        </div>
+        <div>
+          <div class="muted">尾款付款方式</div>
+          <div>${escapeHtml(pmLabel)}</div>
+        </div>
+      </div>
+
+      <div class="row mt-2">
+        <div>
+          <div class="muted">尾款金額</div>
+          <div>${t.total_amount ? escapeHtml(money(t.total_amount)) : "—"}</div>
+        </div>
+        <div>
+          <div class="muted">尾款實收</div>
+          <div>${t.net_amount ? escapeHtml(money(t.net_amount)) : "—"}</div>
+        </div>
+      </div>
+
+      <div class="row mt-2">
+        <div>
+          <div class="muted">尾款購物金折抵</div>
+          <div>${t.credit_used ? escapeHtml(money(t.credit_used)) : "—"}</div>
+        </div>
+        <div>
+          <div class="muted">尾款已付時間</div>
+          <div>${escapeHtml(paidAtTxt)}</div>
+        </div>
+      </div>
+
+      <div class="row mt-2">
+        <div>
+          <div class="muted">尾款發票</div>
+          <div>${escapeHtml(invLabel)}</div>
+        </div>
+        <div>
+          <div class="muted">發票回傳</div>
+          <div>${escapeHtml(invRtn)}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 // CSV 欄位 escape（沿用原 admin_orders）
 function escapeCSV(v){
   if (v == null) return '';
@@ -455,7 +567,6 @@ function escapeCSV(v){
   }
   return s;
 }
-
 /* ===== OP_KEY 驗證 ===== */
 async function ensureOpKey(){
   $('#opLabel').textContent = OP_KEY ? '已登入後台' : '尚未登入';
@@ -953,6 +1064,7 @@ ${a.credit>0 ? `<div class="pill credit-red">購物金折抵：<span>-${creditUs
 <div class="pill">應付金額：<span>${totalNet}</span></div>
 <div class="pill">建立時間：<span>${f.CreatedAt || f.created_at || ''}</span></div>
 
+${renderTailInfoBlock(f)}
 
         <div class="mt-3">
           <div class="section-title">收件人 / 取貨資訊</div>
