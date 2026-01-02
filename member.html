@@ -909,6 +909,12 @@ if (
     return false;
   }
 
+  function isTailPaid(tail){
+  const ps = String(tail?.pay_status || "").toLowerCase();
+  const st = String(tail?.status || "").toLowerCase();
+  return (ps === "paid" || ps === "paid_ok" || st === "paid" || st === "paid_ok");
+}
+
   /* --- [修改] 狀態顯示邏輯：回歸正常判斷 --- */
   function shipBadgeText(o) {
   const st = String(o?.status || "").toLowerCase();
@@ -922,7 +928,7 @@ if (
 
   // 2) 定金流程
   if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return "核對中";
-  if (ps === "deposit_ok") return "定金已付，待結清";
+  if (ps === "deposit_ok") return "已付定金";
 
   // 3) 中租 / 裕富（分期）審核中：要放在 pending 前面
   const looksInstallment =
@@ -937,6 +943,15 @@ if (
     reviewingToken.includes("approve");
 
   if (looksInstallment && isReviewing) return "審核中";
+
+      // 3.5) ✅ 尾款已付清：顯示「尾款已付完待出貨」
+  // 只針對主單（定金單）有掛到 tail_order 才套用
+  const tail = o?.tail_order || null;
+  if (tail && isTailPaid(tail)) {
+    // 如果已經出貨，就不要蓋過出貨狀態（所以放在物流判斷前，但仍要先排除已出貨）
+    // 你物流判斷在下面會處理 shipped/picked_up 等
+    return "尾款已付完待出貨";
+  }
 
   // 4) 物流狀態
   if (ss === "shipped" || st === "shipped") return "已出貨";
