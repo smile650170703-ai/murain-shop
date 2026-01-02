@@ -684,6 +684,36 @@ function progressStageHistory3(o){
   return 0; // 只在下單
 }
 
+  // ✅ 定金/尾款用：下單 -> 訂金/保留 -> 付清尾款 -> 出貨/服務開始（4 段）
+function progressStage(o){
+  const st = String(o?.status || "").toLowerCase();
+  const ss = String(o?.ship_status || "").toLowerCase();
+  const ps = String(o?.pay_status || "").toLowerCase();
+  const pm = String(o?.payment_method || "").toLowerCase();
+
+  // 3：已出貨/服務開始
+  const shipped =
+    ss === "shipped" || st === "shipped" ||
+    ss === "arrived" ||
+    ss === "picked_up" || st === "picked_up" ||
+    ss === "returned" || st === "returned";
+  if (shipped) return 3;
+
+  // 2：付清尾款（paid / paid_ok 或剩餘尾款=0）
+  if (ps === "paid" || ps === "paid_ok") return 2;
+  try {
+    if (getRemainingAmount(o) === 0 && (ps || st || ss)) return 2;
+  } catch (e) {}
+
+  // 1：已付訂金/保留中（deposit_hold / deposit_ok）
+  if (ps === "deposit_ok" || st === "deposit_ok") return 1;
+  if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return 1;
+  if (pm.includes("deposit")) return 1;
+
+  // 0：下單
+  return 0;
+}
+
   async function copyText(text){
     try {
       await navigator.clipboard.writeText(text);
@@ -1228,6 +1258,48 @@ try{
   }
 
   /* --- API Calls --- */
+    // ===== Credits：載入購物金明細 =====
+async function loadCredits() {
+  if (!currentUserId) return;
+
+  try {
+    const url = CREDITS_API + "?line_user_id=" + encodeURIComponent(currentUserId);
+    const res = await fetch(url);
+
+    // 用 text 先吃，避免 JSON 失敗整個進 catch
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch (e) {}
+
+    if (res.ok && json && json.ok) {
+      // 你的後端可能回 credits / items / ledger，這裡做容錯
+      credits = json.credits || json.items || json.ledger || [];
+
+      // 可選：時間新到舊
+      credits.sort((a,b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+
+      // 若後端有回餘額（可有可無）
+      const balRaw = (json.balance ?? json.credit ?? json.credit_balance ?? null);
+      const bal = (balRaw === null) ? null : Number(balRaw);
+      if (bal !== null && !Number.isNaN(bal)) {
+        creditValue.textContent = "NT$ " + bal.toLocaleString("zh-TW");
+      }
+
+      if (currentFilter === "credits") renderCredits();
+      return;
+    }
+
+    console.error("[loadCredits] API not ok", res.status, json || text.slice(0, 200));
+    if (currentFilter === "credits") {
+      emptyText.style.display = "block";
+    }
+  } catch (e) {
+    console.error("[loadCredits] fetch fail", e);
+    if (currentFilter === "credits") {
+      emptyText.style.display = "block";
+    }
+  }
+}
   async function loadMemberInfo() {
     if (!currentUserId) return;
     try {
@@ -1240,67 +1312,6 @@ try{
       }
     } catch (e) { console.error(e); }
   }
-
-  async function loadOrders() {
-  if (!currentUserId) {
-    // 讓你確認到底有沒有拿到 userId
-    infoMsg.textContent = "[DEBUG] no currentUserId";
-    infoMsg.style.display = "block";
-    infoMsg.classList.add("error");
-    return;
-  }
-
-  if (currentFilter !== "credits") {
-    infoMsg.textContent = "更新資料中...";
-    infoMsg.classList.remove("error");
-    infoMsg.style.display = "block";
-  }
-
-  try {
-    const url = MEMBER_API + "?line_user_id=" + encodeURIComponent(currentUserId);
-    const res = await fetch(url);
-
-    // 用 text 先吃，避免 json 解析失敗就整個進 catch
-    const text = await res.text();
-    let json = null;
-    try { json = JSON.parse(text); } catch (e) {}
-
-    const ordersLen = (json?.orders || []).length;
-    const depLen = (json?.orders || []).filter(isDepositHoldOrder).length;
-
-    // ✅ 不管成功失敗都先把 debug 印在畫面上（你一定看得到）
-    infoMsg.textContent = `[DEBUG] status=${res.status} json.ok=${json?.ok} orders=${ordersLen} deposit=${depLen}`;
-    infoMsg.style.display = "block";
-
-    // ✅ 成功才更新 orders + render
-    if (res.ok && json && json.ok) {
-      orders = json.orders || [];
-      if (currentFilter !== "credits") renderOrders();
-
-      // 成功才把 infoMsg 收起來（延遲一下避免你看不到）
-      setTimeout(() => {
-        if (currentFilter !== "credits") {
-          infoMsg.textContent = "";
-          infoMsg.style.display = "none";
-        }
-      }, 800);
-
-      return;
-    }
-
-    // ❌ API 回傳不是 ok，就把部分內容顯示出來
-    infoMsg.classList.add("error");
-    infoMsg.textContent = `[DEBUG] status=${res.status} json.ok=${json?.ok} orders=${ordersLen} deposit=${depLen} | body=${text.slice(0, 160)}`;
-    infoMsg.style.display = "block";
-    return;
-
-  } catch (e) {
-    infoMsg.classList.add("error");
-    infoMsg.textContent = "[DEBUG] fetch error: " + (e?.message || e);
-    infoMsg.style.display = "block";
-    return;
-  }
-}
 
   async function loadOrders() {
   if (!currentUserId) {
