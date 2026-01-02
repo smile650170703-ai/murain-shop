@@ -332,7 +332,7 @@
       placeholder="12345 或填寫 購物金" 
     />
 
-    <div style="font-size: 12px; color: #e53e3e; margin-top: 6px; line-height: 1.4;">
+    <div style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.4;">
       * 若使用全額購物金，請務必填寫「購物金」以利結單人員快速辨識。
     </div>
 </div> <!-- /paneATM -->
@@ -525,6 +525,12 @@ function applyCreditUI(balance, tailAmount){
     const orderId = getParamWithLiffState("order_id") || getParamWithLiffState("parent_order_id") || "";
     if(!orderId) return setError("缺少訂單編號");
 
+    const oid = String(orderId || "").trim().toUpperCase();
+if (oid.startsWith("TL")) {
+  // 直接不顯示尾款頁，避免 OP 誤會
+  return setError("此連結為尾款單 TL…，請使用原訂單 OD… 產生尾款連結。");
+}
+
     try{
       const r = await fetch(`${API}/tail/info?order_id=${encodeURIComponent(orderId)}`);
       const j = await r.json();
@@ -657,14 +663,18 @@ if (shipType !== "711") {
       : `paid_${paidChannel}`;
   }
   else if(activePay === "ATM") {
-  const last5 = ($("#atmLast5").value||"").trim();
+  const last5 = ($("#atmLast5").value || "").trim();
 
-  // ✅ 只要填「購物金」就直接放行（不管 payable 是否為 0）
+  // ✅ 你要求：只要輸入「購物金」三個字，一律放行（不管 payable 是否為 0）
   if (last5 === "購物金") {
     payment_method = (payable === 0) ? "credit_only_tail" : "atm_full_tail";
     extra.atm_last5 = "購物金";
-  } 
-  // ✅ 其他情況：仍維持原本 5 碼驗證
+  }
+  // ✅ payable=0 的情況：必須填「購物金」才算全額購物金
+  else if (payable === 0) {
+    return alert('全額購物金請在後五碼處填寫「購物金」');
+  }
+  // ✅ 其他（非全額購物金）：維持你原本的 5 碼規則
   else {
     if(!/^\d{5}$/.test(last5)) return alert("請輸入 5 位數帳號後五碼 或 填寫「購物金」");
     payment_method = "atm_full_tail";
