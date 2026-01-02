@@ -1215,25 +1215,66 @@ if (copyTrackBtn) {
     } catch (e) { console.error(e); }
   }
 
-  async function loadCredits() {
-    if (!currentUserId) return;
-    if (currentFilter === "credits") {
-      infoMsg.textContent = "載入明細中...";
-      infoMsg.style.display = "block";
-    }
-    try {
-      const res = await fetch(CREDITS_API + "?line_user_id=" + encodeURIComponent(currentUserId));
-      const json = await res.json();
-      if (res.ok && json.ok) {
-        credits = json.items || [];
-        if (currentFilter === "credits") renderCredits();
-      }
-    } catch (e) { console.error(e); }
-    if (currentFilter === "credits") {
-      infoMsg.textContent = "";
-      infoMsg.style.display = "none";
-    }
+  async function loadOrders() {
+  if (!currentUserId) {
+    // 讓你確認到底有沒有拿到 userId
+    infoMsg.textContent = "[DEBUG] no currentUserId";
+    infoMsg.style.display = "block";
+    infoMsg.classList.add("error");
+    return;
   }
+
+  if (currentFilter !== "credits") {
+    infoMsg.textContent = "更新資料中...";
+    infoMsg.classList.remove("error");
+    infoMsg.style.display = "block";
+  }
+
+  try {
+    const url = MEMBER_API + "?line_user_id=" + encodeURIComponent(currentUserId);
+    const res = await fetch(url);
+
+    // 用 text 先吃，避免 json 解析失敗就整個進 catch
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch (e) {}
+
+    const ordersLen = (json?.orders || []).length;
+    const depLen = (json?.orders || []).filter(isDepositHoldOrder).length;
+
+    // ✅ 不管成功失敗都先把 debug 印在畫面上（你一定看得到）
+    infoMsg.textContent = `[DEBUG] status=${res.status} json.ok=${json?.ok} orders=${ordersLen} deposit=${depLen}`;
+    infoMsg.style.display = "block";
+
+    // ✅ 成功才更新 orders + render
+    if (res.ok && json && json.ok) {
+      orders = json.orders || [];
+      if (currentFilter !== "credits") renderOrders();
+
+      // 成功才把 infoMsg 收起來（延遲一下避免你看不到）
+      setTimeout(() => {
+        if (currentFilter !== "credits") {
+          infoMsg.textContent = "";
+          infoMsg.style.display = "none";
+        }
+      }, 800);
+
+      return;
+    }
+
+    // ❌ API 回傳不是 ok，就把部分內容顯示出來
+    infoMsg.classList.add("error");
+    infoMsg.textContent = `[DEBUG] status=${res.status} json.ok=${json?.ok} orders=${ordersLen} deposit=${depLen} | body=${text.slice(0, 160)}`;
+    infoMsg.style.display = "block";
+    return;
+
+  } catch (e) {
+    infoMsg.classList.add("error");
+    infoMsg.textContent = "[DEBUG] fetch error: " + (e?.message || e);
+    infoMsg.style.display = "block";
+    return;
+  }
+}
 
   async function loadOrders() {
   if (!currentUserId) {
