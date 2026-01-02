@@ -814,6 +814,37 @@ function progressStage(o){
     }[c]));
   }
 
+  function shippedLike(order){
+  const st = String(order?.status || "").toLowerCase();
+  const ss = String(order?.ship_status || "").toLowerCase();
+  return (
+    ss === "shipped" || st === "shipped" ||
+    ss === "arrived" ||
+    ss === "picked_up" || st === "picked_up" ||
+    ss === "returned" || st === "returned"
+  );
+}
+
+function tailPaidLike(tail){
+  const ps = String(tail?.pay_status || "").toLowerCase();
+  return (ps === "paid" || ps === "paid_ok");
+}
+
+// ✅ 取得「用來顯示給客人看的狀態來源」：有 tail 就優先 tail
+function getDisplayOrder(o){
+  const tail = o?.tail_order || null;
+  if (!tail) return { src: o, tail: null };
+
+  // 1) 尾款已出貨：整筆訂單就是已出貨（用 tail 當來源）
+  if (shippedLike(tail)) return { src: tail, tail };
+
+  // 2) 尾款已付款未出貨：顯示「尾款已付，待出貨」（仍用主單資料，但狀態要看 tail）
+  if (tailPaidLike(tail)) return { src: o, tail, tail_paid: true };
+
+  // 3) 有尾款單但未付款：顯示「待付尾款」
+  return { src: o, tail, tail_unpaid: true };
+}
+
   function isTailOrder(o){
   const t = String(o?.order_type || "").toLowerCase();
   const pid = String(o?.parent_order_id || "").trim();
@@ -917,6 +948,16 @@ if (
 
   /* --- [修改] 狀態顯示邏輯：回歸正常判斷 --- */
   function shipBadgeText(o) {
+  const d = getDisplayOrder(o);
+  const src = d.src;
+  const tail = d.tail;
+
+  // ✅ 有尾款單且尾款已付但尚未出貨：直接顯示這句（你要的「尾款已付完待出貨」）
+  if (tail && d.tail_paid && !shippedLike(tail)) return "尾款已付，待出貨";
+
+  // ✅ 有尾款單但未付
+  if (tail && d.tail_unpaid) return "待付尾款";
+    
   const st = String(o?.status || "").toLowerCase();
   const ps = String(o?.pay_status || "").toLowerCase();
   const ss = String(o?.ship_status || "").toLowerCase();
@@ -1131,7 +1172,9 @@ try{
 
     const statusCls = shipBadgeClass(o);
     const payTxt = shipBadgeText(o);
-    const shipObj = o.ship || {};
+    const d = getDisplayOrder(o);
+const shipObj = (d.src && d.src.ship) ? d.src.ship : (o.ship || {});
+const tail = d.tail || null;
     const receiverObj = o.receiver || {};
     const total = Number(o.total_amount || 0);
     const itemsTextRaw = String(o.items_text || o.itemsText || o.items || "").trim();
