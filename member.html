@@ -785,6 +785,35 @@ function progressStage(o){
     }[c]));
   }
 
+  function isTailOrder(o){
+  const t = String(o?.order_type || "").toLowerCase();
+  const pid = String(o?.parent_order_id || "").trim();
+  const oid = String(o?.order_id || "").trim().toUpperCase();
+  return t === "tail" || !!pid || oid.startsWith("TL");
+}
+
+function normalizeOrdersWithTail(raw){
+  const tails = {};
+  const normals = [];
+
+  for (const o of (raw || [])) {
+    if (isTailOrder(o)) {
+      const pid = String(o.parent_order_id || "").trim();
+      if (pid) tails[pid] = o;
+      continue;
+    }
+    normals.push(o);
+  }
+
+  // 掛回主單
+  for (const n of normals) {
+    const pid = String(n.order_id || "").trim();
+    n.tail_order = tails[pid] || null;
+  }
+
+  return normals;
+}
+
   function isDepositHoldOrder(o) {
   const st = String(o?.status || o?.order_status || o?.orderStatus || "").toLowerCase();
   const ps = String(o?.pay_status || "").toLowerCase();
@@ -1063,6 +1092,7 @@ try{
     const total = Number(o.total_amount || 0);
     const itemsTextRaw = String(o.items_text || o.itemsText || o.items || "").trim();
     const pmTxt = displayPaymentMethod(o.payment_method);
+    const tail = o.tail_order || null;
 
     const receiverTxt = receiverFullText(receiverObj, shipObj, o.payment_method).replace(/\n/g, "<br>");
     const itemsHtml = itemsTextRaw
@@ -1115,6 +1145,17 @@ try{
             <span class="k">訂單金額</span>
             <span class="v">NT$ ${total.toLocaleString("zh-TW")}</span>
           </div>
+
+          ${
+  (tail && tail.order_id && currentFilter !== "history")
+    ? `
+      <div class="amount-line">
+        <span class="k">尾款單號</span>
+        <span class="v" style="font-family: monospace;">${escapeHtml(tail.order_id)}</span>
+      </div>
+    `
+    : ``
+}
 
           <div class="amount-line">
             <span class="k">${(String(o.payment_method||"").toLowerCase().includes("deposit") || isDepositHoldOrder(o)) ? "已付定金" : "已付款"}</span>
@@ -1324,7 +1365,8 @@ async function loadCredits() {
     console.log("[loadOrders] sample", (json?.orders || []).slice(0, 2));
 
     if (res.ok && json && json.ok) {
-      orders = json.orders || [];
+      const raw = json.orders || [];
+orders = normalizeOrdersWithTail(raw); // ✅ 列表只剩主單，每張主單有 o.tail_order
 
       const deps = orders.filter(isDepositHoldOrder);
       console.log("[deposit_hold_count]", deps.length, deps.slice(0, 3).map(x => ({
