@@ -1057,9 +1057,9 @@ try{
       }
     }
 
-    // --- [關鍵] 點擊切換展開收合 ---
+    // 點卡片收合（點到 button 不要觸發）
     wrap.onclick = function (e) {
-      if (e.target.tagName === "A" || e.target.tagName === "BUTTON") return;
+      if (e.target && (e.target.tagName === "BUTTON" || e.target.tagName === "A")) return;
       this.classList.toggle("expanded");
     };
 
@@ -1079,15 +1079,27 @@ try{
          </div>`
       : "";
 
-    // 渲染 HTML：包含常駐Header 與 隱藏Body
+    // ✅ 安全抓貨單號（不用 getTrackingNo，避免你沒定義就爆）
+    const trackingNo = String(
+      shipObj.tracking_no ||
+      shipObj.trackingNo ||
+      o.tracking_no ||
+      o.trackingNo ||
+      ""
+    ).trim();
+
+    // ✅ History：按鈕只留一個（有貨單號→複製貨單號；沒有→複製單號）
+    const copyLabel = (currentFilter === "history" && trackingNo) ? "複製貨單號" : "複製單號";
+    const copyValue = (currentFilter === "history" && trackingNo) ? trackingNo : (o.order_id || "");
+
     wrap.innerHTML = `
       <div class="card-header">
         <div class="order-info-main">
-          <div class="order-id">#${o.order_id}</div>
-          <div class="order-date">${formatDate(getOrderCreatedAt(o) || o.created_at)}</div>
+          <div class="order-id">#${escapeHtml(o.order_id || "")}</div>
+          <div class="order-date">${formatDate(o.created_at || "")}</div>
         </div>
         <div style="display:flex; align-items:center;">
-          <div class="status-badge ${statusCls}">${payTxt}</div>
+          <div class="status-badge ${statusCls}">${escapeHtml(payTxt)}</div>
           <div class="toggle-icon"></div>
         </div>
       </div>
@@ -1100,7 +1112,7 @@ try{
           </div>
           <div class="info-row">
             <span class="info-label">付款方式</span>
-            <span style="color:#ddd;">${pmTxt}</span>
+            <span style="color:#ddd;">${escapeHtml(pmTxt)}</span>
           </div>
           ${itemsHtml}
         </div>
@@ -1143,20 +1155,11 @@ try{
                   <span class="k">出貨狀態</span>
                   <span class="v">${escapeHtml(shipBadgeText(o))}</span>
                 </div>
-
                 <div class="amount-line" style="border-bottom:none;">
                   <span class="k">貨單號</span>
                   <span class="v" style="font-family: monospace;">
-                    ${getTrackingNo(o) ? escapeHtml(getTrackingNo(o)) : "—"}
+                    ${trackingNo ? escapeHtml(trackingNo) : "—"}
                   </span>
-                </div>
-
-                <div class="action-row" style="margin-top:10px;">
-                  ${
-                    getTrackingNo(o)
-                      ? `<button class="btn-mini btn-gold js-copy-track" data-track="${escapeHtml(getTrackingNo(o))}">複製貨單號</button>`
-                      : `<button class="btn-mini btn-gold" disabled style="opacity:.45; cursor:not-allowed;">尚無貨單號</button>`
-                  }
                 </div>
               `
               : `
@@ -1182,44 +1185,29 @@ try{
           </div>
 
           <div class="action-row">
-            <button class="btn-mini btn-gold js-copy" data-oid="${escapeHtml(o.order_id)}">複製單號</button>
+            <button class="btn-mini btn-gold js-copy-primary" data-copy="${escapeHtml(copyValue)}">${copyLabel}</button>
           </div>
         </div>
       </div>
     `;
 
-    // --- Buttons ---
-    const copyBtn = wrap.querySelector(".js-copy");
-    if (copyBtn) {
-      copyBtn.addEventListener("click", async (e) => {
+    const btn = wrap.querySelector(".js-copy-primary");
+    if (btn) {
+      btn.addEventListener("click", async (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const oid = copyBtn.getAttribute("data-oid") || "";
-        const ok = await copyText(oid);
-        alert(ok ? "已複製單號：" + oid : "複製失敗，請手動選取單號");
-      });
-    }
-
-    const copyTrackBtn = wrap.querySelector(".js-copy-track");
-    if (copyTrackBtn) {
-      copyTrackBtn.addEventListener("click", async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const tno = copyTrackBtn.getAttribute("data-track") || "";
-        const ok = await copyText(tno);
-        alert(ok ? "已複製貨單號：" + tno : "複製失敗，請手動選取貨單號");
+        const v = btn.getAttribute("data-copy") || "";
+        const ok = await copyText(v);
+        alert(ok ? "已複製：" + v : "複製失敗，請手動選取");
       });
     }
 
     orderList.appendChild(wrap);
-
-  } catch (e) {
-    console.error("[renderOrders item error]", o?.order_id, e);
-    infoMsg.style.display = "block";
+  } catch (err) {
+    console.error("[renderOrders] card error", o, err);
+    infoMsg.textContent = "載入失敗（render error）： " + (err?.message || String(err));
     infoMsg.classList.add("error");
-    infoMsg.textContent =
-      "[DEBUG] item error: " + (e?.message || String(e)) + " | order=" + (o?.order_id || "");
-    break;
+    infoMsg.style.display = "block";
   }
 }
 
