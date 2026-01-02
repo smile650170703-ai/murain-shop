@@ -1236,30 +1236,67 @@ if (copyTrackBtn) {
   }
 
   async function loadOrders() {
-    if (!currentUserId) return;
-    if (currentFilter !== "credits") {
-      infoMsg.textContent = "更新資料中...";
-      infoMsg.style.display = "block";
-    }
-    try {
-      const res = await fetch(MEMBER_API + "?line_user_id=" + encodeURIComponent(currentUserId));
-      const json = await res.json();
-      if (res.ok && json.ok) {
-        orders = json.orders || [];
-        console.log("[orders.length]", orders.length);
-const deps = orders.filter(isDepositHoldOrder);
-console.log("[deposit_hold_count]", deps.length, deps.slice(0, 3));
-        if (currentFilter !== "credits") renderOrders();
-      }
-    } catch (e) { 
-      infoMsg.textContent = "載入失敗"; 
-      infoMsg.classList.add("error");
-    }
-    if (currentFilter !== "credits") {
-      infoMsg.textContent = "";
-      infoMsg.style.display = "none";
-    }
+  if (!currentUserId) {
+    console.log("[loadOrders] no currentUserId");
+    return;
   }
+
+  if (currentFilter !== "credits") {
+    infoMsg.textContent = "更新資料中...";
+    infoMsg.classList.remove("error");
+    infoMsg.style.display = "block";
+  }
+
+  console.log("[loadOrders] start", { currentFilter, currentUserId, MEMBER_API });
+
+  try {
+    const url = MEMBER_API + "?line_user_id=" + encodeURIComponent(currentUserId);
+    const res = await fetch(url);
+    console.log("[loadOrders] res", res.status, res.ok);
+
+    let json = null;
+    try {
+      json = await res.json();
+    } catch (e) {
+      console.error("[loadOrders] json parse fail", e);
+    }
+
+    console.log("[loadOrders] json.ok", json?.ok, "orders.len", (json?.orders || []).length);
+    console.log("[loadOrders] sample", (json?.orders || []).slice(0, 2));
+
+    if (res.ok && json && json.ok) {
+      orders = json.orders || [];
+
+      const deps = orders.filter(isDepositHoldOrder);
+      console.log("[deposit_hold_count]", deps.length, deps.slice(0, 3).map(x => ({
+        order_id: x.order_id,
+        payment_method: x.payment_method,
+        created_at: x.created_at,
+        createdTime: x.createdTime,
+        createdAt: x.createdAt
+      })));
+
+      if (currentFilter !== "credits") renderOrders();
+
+      // ✅ 只有成功才清掉 loading
+      if (currentFilter !== "credits") {
+        infoMsg.textContent = "";
+        infoMsg.style.display = "none";
+      }
+      return;
+    }
+
+    // ❌ API 回來不是 ok
+    infoMsg.textContent = "載入失敗（API 回傳非 ok）";
+    infoMsg.classList.add("error");
+    infoMsg.style.display = "block";
+  } catch (e) {
+    console.error("[loadOrders] fetch fail", e);
+    infoMsg.textContent = "載入失敗（fetch error）";
+    infoMsg.classList.add("error");
+    infoMsg.style.display = "block";
+  }
+}
 
   async function initLiff() {
     if (!window.liff) return;
