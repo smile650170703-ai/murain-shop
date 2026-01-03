@@ -1278,6 +1278,67 @@ if (meetupDoneTop) {
   meetupDoneTop.style.display = (pm === 'meetup_cash') ? '' : 'none';
 }
 
+ // ✅ 顯示/綁定「同步尾款→主單」（只在 TL 才顯示）
+const syncTop = $('#btnSyncTailToParentTop');
+if (syncTop) {
+  const oid = String(f.order_id || '').trim();
+  const parentId = String(f.parent_order_id || '').trim();
+
+  // 判斷是否為 TL（保守一點：is_tail / order_type / TL 開頭 / 有 parent_order_id）
+  const isTail =
+    !!f.is_tail ||
+    String(f.order_type || '').toLowerCase() === 'tail' ||
+    oid.toUpperCase().startsWith('TL') ||
+    !!parentId;
+
+  // 只在「尾款單且有 parent」才顯示
+  syncTop.style.display = (isTail && parentId) ? '' : 'none';
+
+  // 每次 renderDetail 都覆寫 onclick，避免重複綁定造成多次觸發
+  syncTop.onclick = async () => {
+    if (!currentRecord) {
+      alert('尚未選擇訂單');
+      return;
+    }
+    const tf = currentRecord.fields || currentRecord || {};
+    const tailId = String(tf.order_id || '').trim();
+    const pid = String(tf.parent_order_id || '').trim();
+
+    if (!tailId) {
+      alert('這筆沒有 order_id，無法同步');
+      return;
+    }
+    if (!pid) {
+      alert('這筆尾款單沒有 parent_order_id，無法同步到主單');
+      return;
+    }
+
+    if (!confirm(`要把尾款單 ${tailId} 的付款資訊同步回主單 ${pid} 嗎？`)) return;
+
+    try {
+      const r = await fetch(`${API}/admin/tail/sync-to-parent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          op_key: OP_KEY,
+          tail_order_id: tailId
+        })
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) {
+        alert('同步失敗：' + (j.error || j.message || ('HTTP ' + r.status)));
+        return;
+      }
+
+      alert(`同步完成：${j.tail_order_id} → ${j.parent_order_id}`);
+      await reloadCurrentView(); // 重新載入列表/畫面
+    } catch (e) {
+      console.error(e);
+      alert('系統錯誤，同步失敗');
+    }
+  };
+}
+
  const btnPrint = $('#btnPrintOrder');
   if (btnPrint) btnPrint.addEventListener('click', printCurrentOrder);
 
