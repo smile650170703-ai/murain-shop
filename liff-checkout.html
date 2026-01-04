@@ -2377,10 +2377,21 @@ try { sessionStorage.setItem('murain_skip_restore_once','1'); } catch(e){}
   if (mode) {
     document.querySelector(`#payTabs .tab[data-pay="${mode}"]`)?.click();
   } else {
-    const tabMap = { cod:'COD', paid:'PAID', yufu:'YUFU', dep_old:'DEPOSIT', dep_new_f:'DEPOSIT', zc:'ZEROCARD' };
+    const tabMap = {
+      cod: 'COD',
+      paid: 'PAID',
+      yufu: 'YUFU',
+      dep_old: 'DEPOSIT',
+      dep_new_f: 'DEPOSIT',
+      zc: 'ZEROCARD'
+    };
     const kt = tabMap[src];
     if (kt) document.querySelector(`#payTabs .tab[data-pay="${kt}"]`)?.click();
   }
+
+  // ✅ 切回分頁後，強制刷新一次下方欄位（修正「匯款定金回來變一般匯款欄位」）
+  try { setTimeout(resyncPayUI, 0); } catch(e){}
+
 
   // ✅ ✅ 核心：回填完「立刻存起來」→ 下一次開結帳就不會跳回舊門市
   try { saveCheckoutState(true); } catch(e){}
@@ -2559,6 +2570,7 @@ try { sessionStorage.setItem('murain_skip_restore_once','1'); } catch(e){}
   if (mode) {
     document.querySelector(`#payTabs .tab[data-pay="${mode}"]`)?.click();
   }
+  try { setTimeout(resyncPayUI, 0); } catch(e){}
 });
 
 /* checkout 狀態暫存 */
@@ -3584,6 +3596,7 @@ async function copyToClipboard(text) {
 
     // 3) 先做 7-11 回填（必須在 loadCart 前，因為你會 saveCheckoutState）
     try { applyStoreFromURL(); } catch(e){}
+    try { setTimeout(resyncPayUI, 0); } catch(e){}
 
     // 4) 沒 token 就停（避免空跑然後把狀態存成空的）
     if (!cartToken) return;
@@ -3699,8 +3712,22 @@ async function guardPendingPay(token){
 window.addEventListener('pageshow', function () {
   const btn = document.getElementById('submitBtn');
   if (btn) btn.disabled = false;
+
+  // ✅ iOS/LINE 內建瀏覽器「上一頁返回」很常用 BFCache，不會重跑 init
+  try { setTimeout(resyncPayUI, 0); } catch(e){}
 });
 
+function resyncPayUI(){
+  try { updatePaidChannelBox(); } catch(e){}
+  try { updatePaidShip(); } catch(e){}
+  try { updateZcShip(); } catch(e){}
+  try { updateYufuShip(); } catch(e){}
+  try { updateYufuPhoneOwnerUI(); } catch(e){}
+  try { refreshCodType(); } catch(e){}
+  try { refreshDepType(); } catch(e){}
+  try { calcYUFU(); } catch(e){}
+  try { calcZC(); } catch(e){}
+}
 
 // ✅ 裕富：電話是否本人名下 → 控制掛號地址欄位顯示/必填
 function setupYufuPhoneOwner() {
