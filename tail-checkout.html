@@ -621,21 +621,43 @@ if (shipType !== "711") {
     }catch(e){ setError("系統錯誤"); }
   }
 
-  async function submitTail(){
+  function getInstMonthsFromPm(pm){
+  const m = String(pm || "").match(/paid_card_inst_(\d+)/);
+  return m ? Number(m[1]) : undefined;
+}
+
+async function cancelPendingTail(parentOrderId, lineUserId, reason="ui_cancel_rebuild"){
+  const r = await fetch(`${API}/tail/cancel-pending`, {
+    method: "POST",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify({
+      parent_order_id: String(parentOrderId || "").trim(),
+      line_user_id: String(lineUserId || "").trim(),
+      reason
+    })
+  });
+  const j = await r.json().catch(()=> ({}));
+  if(!r.ok || !j.ok) throw new Error(j.message || j.error || "取消前次尾款失敗");
+  return j;
+}
+
+async function submitTail(opts = {}){
+  const { _rebuildOnce = false } = opts; // 防止無限重試
+
   if(!tailInfo) return alert("資料尚未載入");
 
   const tailAmount = Math.round(Number(tailInfo.tail_amount || 0) || 0);
   if(tailAmount <= 0 && !confirm("尾款金額為 0，是否繼續？")) return;
 
-  // ✅ 讀取本次折抵（若頁面還沒加 input，就當 0）
+  // ✅ 讀取本次折抵
   const cuEl = document.getElementById("creditUsed");
   let credit_used = cuEl ? Math.floor(Math.max(0, Number(cuEl.value || 0) || 0)) : 0;
 
-    if (credit_used > creditBalance) {
-  return alert("購物金餘額不足");
-}
+  if (credit_used > creditBalance) {
+    return alert("購物金餘額不足");
+  }
 
-  // ✅ 從 shipping_info 抓 line_user_id（後端扣購物金用）
+  // ✅ 從 shipping_info 抓 line_user_id（取消重建、後端 hold 用）
   let line_user_id = "";
   try{
     const si = tailInfo.shipping_info || {};
@@ -646,13 +668,14 @@ if (shipType !== "711") {
     ).trim();
   }catch(e){ line_user_id = ""; }
 
-    const payable = Math.max(0, tailAmount - credit_used);
+  const payable = Math.max(0, tailAmount - credit_used);
 
-  // ✅ 線上付款：折抵後一定要 >= 1 元（避免 0 元也去走金流）
+  // ✅ 線上付款：折抵後一定要 >= 1 元
   if (activePay === "PAID" && payable < 1) {
     return alert("線上付款需至少支付 1 元（折抵後需支付金額不能為 0）");
   }
 
+  // ✅ 依 UI 算出「本次想要的」 payment_method
   let payment_method = "";
   const extra = {};
 
@@ -663,88 +686,126 @@ if (shipType !== "711") {
       : `paid_${paidChannel}`;
   }
   else if(activePay === "ATM") {
-  const last5 = ($("#atmLast5").value || "").trim();
+    const last5 = ($("#atmLast5").value || "").trim();
 
-  // ✅ 你要求：只要輸入「購物金」三個字，一律放行（不管 payable 是否為 0）
-  if (last5 === "購物金") {
-    payment_method = (payable === 0) ? "credit_only_tail" : "atm_full_tail";
-    extra.atm_last5 = "購物金";
+    if (last5 === "購物金") {
+      payment_method = (payable === 0) ? "credit_only_tail" : "atm_full_tail";
+      extra.atm_last5 = "購物金";
+    } else if (payable === 0) {
+      return alert('全額購物金請在後五碼處填寫「購物金」');
+    } else {
+      if(!/^\d{5}$/.test(last5)) return alert("請輸入 5 位數帳號後五碼 或 填寫「購物金」");
+      payment_method = "atm_full_tail";
+      extra.atm_last5 = last5;
+    }
   }
-  // ✅ payable=0 的情況：必須填「購物金」才算全額購物金
-  else if (payable === 0) {
-    return alert('全額購物金請在後五碼處填寫「購物金」');
-  }
-  // ✅ 其他（非全額購物金）：維持你原本的 5 碼規則
-  else {
-    if(!/^\d{5}$/.test(last5)) return alert("請輸入 5 位數帳號後五碼 或 填寫「購物金」");
-    payment_method = "atm_full_tail";
-    extra.atm_last5 = last5;
-  }
-}
 
   if(!payment_method) return alert("請選擇付款方式");
 
   try{
     $("#submitBtn").disabled = true;
 
-    // ✅ items_json 加上「原訂單」前綴（後端可用來防重複建單）
+    // ✅ items_json 加上前綴（保留你原本）
     const prefix = `【原訂單 ${tailInfo.parent_order_id}】\n`;
     const baseItems = String(tailInfo.items_text || "");
     const items_json = baseItems.startsWith(prefix) ? baseItems : (prefix + baseItems);
 
     const payload = {
       parent_order_id: tailInfo.parent_order_id,
-  items_json,
-  tail_amount: tailAmount,      // 原尾款（給你紀錄用）
-  pay_amount: payable,          // ✅ 建議：實際需支付（給金流用）
-  payment_method,
-  shipping_info: tailInfo.shipping_info || {},
-  credit_used,
-  line_user_id
-};
+      items_json,
+      tail_amount: tailAmount,
+      pay_amount: payable, // 後端不用也沒關係
+      payment_method,
+      shipping_info: tailInfo.shipping_info || {},
+      credit_used,
+      line_user_id
+    };
     if(extra.atm_last5) payload.atm_last5 = extra.atm_last5;
 
+    // ===== 送出建/續付 TL =====
     const r = await fetch(`${API}/tail/checkout`, {
       method:"POST",
       headers:{ "Content-Type":"application/json" },
       body: JSON.stringify(payload)
     });
     const j = await r.json();
-    if(!r.ok || !j.ok) throw new Error(j.message || j.error);
+    if(!r.ok || !j.ok) throw new Error(j.message || j.error || "尾款結帳失敗");
 
-    const newOrderId = j.order_id;
+    // ===== 關鍵：處理「已存在 TL」的 locked / reused =====
+    let newOrderId = j.order_id;
+    if (j.reused && j.locked) {
+      const lockedPm = String(j.payment_method || "").trim();
+      const lockedCu = Math.floor(Number(j.credit_used || 0) || 0);
 
-    // Redirects
-    if (payment_method.startsWith("paid_")) {
-  const isInst = (paidChannel === "card_inst");
-  const pr = await fetch(`${API}/payuni/start`, {
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({
-      order_id: newOrderId,
-      mode: "upp",
-      inst_months: isInst ? Number($("#instMonths").value) : undefined
-    })
-  });
-  const up = await pr.json();
-  if(!up.ok) throw new Error(up.error || up.message || "payuni start failed");
-  if(!up.url) throw new Error("payuni start missing url");
+      const mismatch = (lockedPm && lockedPm !== payment_method) || (lockedCu !== credit_used);
 
-  const f = document.createElement("form");
-  f.method = "POST";
-  f.action = up.url; // ✅
-  f.style.display = "none";
+      if (mismatch) {
+        // 使用者想改付款/折抵，但後端鎖定 → 問他要不要取消前次並重建
+        const ok = confirm(
+          `你有一筆未完成的尾款單，系統目前鎖定前次設定。\n\n` +
+          `前次：${lockedPm || "-"} / 折抵 ${lockedCu}\n` +
+          `本次：${payment_method} / 折抵 ${credit_used}\n\n` +
+          `要「取消前次嘗試並重新選擇」嗎？`
+        );
 
-  ["MerID","Version","EncryptInfo","HashInfo"].forEach(k=>{
-    const i=document.createElement("input");
-    i.type="hidden"; i.name=k; i.value=up[k] || "";
-    f.appendChild(i);
-  });
+        if (ok) {
+          if (_rebuildOnce) {
+            throw new Error("已嘗試取消重建一次仍失敗，請稍後再試或聯繫客服");
+          }
+          if (!line_user_id) throw new Error("缺少 line_user_id，無法取消重建");
 
-  document.body.appendChild(f);
-  f.submit();
-  return;
-}
+          // 1) 取消舊 TL + 釋放 hold
+          await cancelPendingTail(tailInfo.parent_order_id, line_user_id, "ui_cancel_rebuild");
+
+          // 2) 重新跑一次 submitTail（這次一定會開新 TL）
+          $("#submitBtn").disabled = false;
+          return submitTail({ _rebuildOnce: true });
+        }
+
+        // 不取消：就「沿用前次鎖定設定」並同步回 UI（避免使用者誤會）
+        if (lockedPm) payment_method = lockedPm;
+        credit_used = lockedCu;
+        if (cuEl) cuEl.value = String(lockedCu);
+        updateTailAmountUI();
+      } else {
+        // 沒 mismatch，代表本次選擇跟鎖定一致 → 直接續付即可
+        if (cuEl) cuEl.value = String(lockedCu);
+        updateTailAmountUI();
+      }
+    }
+
+    // ===== Redirects（用「最終的 payment_method」）=====
+    if (String(payment_method || "").startsWith("paid_")) {
+      const instMonths = getInstMonthsFromPm(payment_method);
+
+      const pr = await fetch(`${API}/payuni/start`, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          order_id: newOrderId,
+          mode: "upp",
+          inst_months: instMonths
+        })
+      });
+      const up = await pr.json();
+      if(!up.ok) throw new Error(up.error || up.message || "payuni start failed");
+      if(!up.url) throw new Error("payuni start missing url");
+
+      const f = document.createElement("form");
+      f.method = "POST";
+      f.action = up.url;
+      f.style.display = "none";
+
+      ["MerID","Version","EncryptInfo","HashInfo"].forEach(k=>{
+        const i=document.createElement("input");
+        i.type="hidden"; i.name=k; i.value=up[k] || "";
+        f.appendChild(i);
+      });
+
+      document.body.appendChild(f);
+      f.submit();
+      return;
+    }
 
     alert("尾款訂單已建立！");
     location.href = `/order-result.html?order_id=${encodeURIComponent(newOrderId)}&from=tail`;
