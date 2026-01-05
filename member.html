@@ -601,6 +601,7 @@
 }
 
 // ✅ 定金保留：抓「保留到期日」(有值就顯示；沒有就回 null)
+// ✅ 定金保留：抓「保留到期日」(回傳原字串；讓 formatDate 自己格式化)
 function getDepositHoldExpireAt(o){
   const si = getShippingInfoObj(o);
 
@@ -615,8 +616,8 @@ function getDepositHoldExpireAt(o){
     si?.deposit?.due_at || si?.deposit?.dueAt ||
     "";
 
-  const d = v ? new Date(v) : null;
-  return (d && !isNaN(d.getTime())) ? d : null;
+  // ✅ 直接回傳字串（例如 "2026年1月5日" / "2026-01-05" 都能顯示）
+  return String(v || "").trim();
 }
 
   function toInt(v){
@@ -690,6 +691,34 @@ function getTailPaidAmount(t){
 function getRemainingAmount(o){
   const total = toInt(o?.total_amount || 0);
   return Math.max(0, total - getPaidAmount(o));
+}
+
+  function safeObj(v){
+  if (!v) return {};
+  if (typeof v === "object") return v;
+  try { return JSON.parse(String(v)); } catch(e){ return {}; }
+}
+
+// ✅ 保留到期日：優先吃你的 Airtable 欄位 deposit_expire_at
+function getDepositExpireAt(o){
+  const ship = o?.ship || {};
+  const siRaw = o?.shipping_info || o?.shippingInfo || ship?.shipping_info || ship?.shippingInfo || {};
+  const si = safeObj(siRaw);
+  const dep = si?.deposit || {};
+
+  const v =
+    o?.deposit_expire_at || o?.depositExpireAt ||
+    ship?.deposit_expire_at || ship?.depositExpireAt ||
+    si?.deposit_expire_at || si?.depositExpireAt ||
+    dep?.expire_at || dep?.expireAt ||
+    // 兼容你另一個欄位（以防 API 回的是 hold_until）
+    o?.hold_until || o?.holdUntil ||
+    ship?.hold_until || ship?.holdUntil ||
+    si?.hold_until || si?.holdUntil ||
+    dep?.hold_until || dep?.holdUntil ||
+    "";
+
+  return String(v || "").trim();
 }
 
   function getTrackingNo(o){
@@ -772,7 +801,6 @@ function progressStage(o){
   // 1：已付訂金/保留中（deposit_hold / deposit_ok）
   if (ps === "deposit_ok" || st === "deposit_ok") return 1;
   if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return 1;
-  if (pm.includes("deposit")) return 1;
 
   // 0：下單
   return 0;
