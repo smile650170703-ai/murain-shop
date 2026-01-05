@@ -638,28 +638,46 @@
   }
 
   function renderBrandIcons(list){
-    const listEl = $('brandList'); listEl.innerHTML = '';
-    const brands = Array.from(new Set(list.map(it => it.brand || '').filter(Boolean)));
-    
-    const addBtn = (lbl, fn) => {
-        const item = document.createElement('div');
-        item.className = 'brand-item';
-        if(lbl === 'ALL') item.classList.add('all-btn', 'active');
-        
-        item.innerHTML = `
-            <div class="brand-avatar"><div class="brand-text-logo">${lbl}</div></div>
-            <span class="brand-name-label">${lbl === 'ALL' ? '全部' : lbl}</span>
-        `;
-        item.onclick = () => {
-            document.querySelectorAll('.brand-item').forEach(b => b.classList.remove('active'));
-            item.classList.add('active');
-            renderProducts(fn ? list.filter(fn) : list);
-        };
-        listEl.appendChild(item);
+  const listEl = $('brandList'); listEl.innerHTML = '';
+
+  // ✅ 改成用「分類」生選項
+  const cats = Array.from(new Set(
+    list.map(it => String(it.category || '').trim()).filter(Boolean)
+  ));
+
+  const catLabel = (c) => {
+    // 你可依自己資料庫分類碼調整
+    const m = {
+      BOUTIQUE: '精品包款',
+      HAIR: '髮品',
+      BEAUTY: '美妝保養',
+      ACCESSORY: '飾品配件'
     };
-    addBtn('ALL', null);
-    brands.forEach(b => addBtn(b, i => i.brand === b));
-  }
+    return m[c] || c;
+  };
+
+  const addBtn = (key, label, fn) => {
+    const item = document.createElement('div');
+    item.className = 'brand-item';
+    if(key === 'ALL') item.classList.add('all-btn', 'active');
+
+    item.innerHTML = `
+      <div class="brand-avatar"><div class="brand-text-logo">${key}</div></div>
+      <span class="brand-name-label">${label}</span>
+    `;
+
+    item.onclick = () => {
+      document.querySelectorAll('.brand-item').forEach(b => b.classList.remove('active'));
+      item.classList.add('active');
+      renderProducts(fn ? list.filter(fn) : list);
+    };
+
+    listEl.appendChild(item);
+  };
+
+  addBtn('ALL', '全部', null);
+  cats.forEach(c => addBtn(c, catLabel(c), i => String(i.category || '').trim() === c));
+}
 
   function renderProducts(list){
     const wrap = $('productList'); wrap.innerHTML = '';
@@ -672,7 +690,7 @@
             <img src="${img}" loading="lazy" alt="${p.title}">
         </div>
         <div class="card-info">
-            <div class="p-brand">${p.brand || ''}</div>
+            <div class="p-brand">${(p.brand || p.category || '')}</div>
             <div class="p-title">${p.title}</div>
             <div class="p-price">NT$ ${(p.price).toLocaleString()}</div>
         </div>
