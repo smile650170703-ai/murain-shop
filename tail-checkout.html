@@ -731,26 +731,24 @@ async function submitTail(opts = {}){
     const j = await r.json();
     if(!r.ok || !j.ok) throw new Error(j.message || j.error || "尾款結帳失敗");
 
-    // ===== 關鍵：處理「已存在 TL」的 locked / reused =====
-    let newOrderId = j.order_id;
+// ===== 關鍵：處理「已存在 TL」的 locked / reused =====
+let newOrderId = j.order_id;
 
 if (j.reused && j.locked) {
-  newOrderId = String(j.order_id || "").trim() || newOrderId;
-
-  const lockedPm  = String(j.payment_method || "").trim();
-  const lockedCu  = Math.floor(Number(j.credit_used || 0) || 0);
-  const lockedNet = Math.round(Number(j.net_amount || 0) || 0);
-
-  if (lockedPm) payment_method = lockedPm;
-  credit_used = lockedCu;
-
-  if (cuEl) cuEl.value = String(lockedCu);
-  updateTailAmountUI();
-
-  // ✅ 補強：若沿用後變成線上付款，確保實付 >= 1
-  if (String(payment_method || "").startsWith("paid_") && lockedNet < 1) {
-    throw new Error("線上付款需至少支付 1 元（鎖定尾款單實付為 0）");
+  // ✅ 不沿用：自動取消前次未完成尾款單 → 釋放購物金 hold → 立刻用本次選擇重建
+  if (_rebuildOnce) {
+    throw new Error("已嘗試自動取消重建一次仍失敗，請稍後再試或聯繫客服");
   }
+  if (!line_user_id) {
+    throw new Error("缺少 line_user_id，無法自動取消未完成尾款單");
+  }
+
+  // 1) 取消舊 TL + 釋放 hold
+  await cancelPendingTail(tailInfo.parent_order_id, line_user_id, "auto_cancel_rebuild");
+
+  // 2) 重新跑一次 submitTail（這次一定會開新 TL，且會用客人本次選擇）
+  $("#submitBtn").disabled = false;
+  return submitTail({ _rebuildOnce: true });
 }
 
     // ===== Redirects（用「最終的 payment_method」）=====
