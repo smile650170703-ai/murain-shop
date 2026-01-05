@@ -589,6 +589,36 @@
   return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
 }
 
+  function getShippingInfoObj(o){
+  const ship = o?.ship || {};
+  const raw =
+    o?.shipping_info || o?.shippingInfo ||
+    ship?.shipping_info || ship?.shippingInfo ||
+    {};
+  if (!raw) return {};
+  if (typeof raw === "object") return raw;
+  try { return JSON.parse(String(raw)); } catch (e) { return {}; }
+}
+
+// ✅ 定金保留：抓「保留到期日」(有值就顯示；沒有就回 null)
+function getDepositHoldExpireAt(o){
+  const si = getShippingInfoObj(o);
+
+  const v =
+    o?.deposit_expire_at || o?.depositExpireAt ||
+    si?.deposit_expire_at || si?.depositExpireAt ||
+    si?.deposit_due_at || si?.depositDueAt ||
+    si?.deposit_deadline || si?.depositDeadline ||
+    si?.hold_until || si?.holdUntil ||
+    si?.deposit_hold_until || si?.depositHoldUntil ||
+    si?.deposit?.expire_at || si?.deposit?.expireAt ||
+    si?.deposit?.due_at || si?.deposit?.dueAt ||
+    "";
+
+  const d = v ? new Date(v) : null;
+  return (d && !isNaN(d.getTime())) ? d : null;
+}
+
   function toInt(v){
     const n = Number(v);
     if (!Number.isFinite(n)) return 0;
@@ -1218,6 +1248,17 @@ const tail = (!isTailOrder(o) && String(o?.order_id || "").toUpperCase().startsW
             <span class="k">訂單金額</span>
             <span class="v">NT$ ${total.toLocaleString("zh-TW")}</span>
           </div>
+
+          ${
+  (currentFilter === "deposit" && isDepositHoldOrder(o))
+    ? `
+      <div class="amount-line">
+        <span class="k">保留到期日</span>
+        <span class="v">${formatDate(getDepositHoldExpireAt(o)) || "—"}</span>
+      </div>
+    `
+    : ``
+}
 
           ${
   (tail && tail.order_id && currentFilter !== "history")
