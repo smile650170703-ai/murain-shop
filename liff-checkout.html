@@ -3302,55 +3302,57 @@ document.getElementById('submitBtn')?.addEventListener('click', async (e) => {
 });
     console.log("[CHECKOUT credit]", { AVAILABLE_CREDIT, CREDIT_USED, input: document.getElementById("credit_input")?.value });
 
-    // ✅ 送出訂單（支援自動重建：不需要額外按鈕）
-    let __rebuildTried = false;
+ // ✅ 送出訂單（支援自動重建：不需要額外按鈕）
+let __rebuildTried = false;
 
-    const postCheckout = async (forceRebuild = false) => {
-      const bodyObj = forceRebuild ? { ...payload, force_rebuild: true } : payload;
-      const rr = await fetch(`${API}/checkout`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyObj)
-      });
-      const jj = await rr.json().catch(() => ({}));
-      return { rr, jj };
-    };
+// ✅ 統一解鎖送出按鈕（避免錯誤後「按了沒反應」）
+const unlockSubmit = () => {
+  try {
+    const b = document.getElementById('submitBtn');
+    if (b) b.disabled = false;
+  } catch (e) {}
+  // 保險：如果你後面有用到這個旗標，錯誤時也一併清掉
+  try { window.__payuniRedirecting = false; } catch (e) {}
+};
 
-    let { rr: r, jj: j } = await postCheckout(false);
+const postCheckout = async (forceRebuild = false) => {
+  const bodyObj = forceRebuild ? { ...payload, force_rebuild: true } : payload;
 
-if (!r.ok || !j.ok) {
-  // 先取一次錯誤訊息
-  let msg = j.detail || j.message || j.error || '送出失敗，請再試一次';
+  const rr = await fetch(`${API}/checkout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(bodyObj)
+  });
 
-  // ✅ 409：有舊的 pending 結單 → 自動用「最新付款方式」重建（不需要任何按鈕）
-  if (r.status === 409 && !__rebuildTried) {
-    __rebuildTried = true;
-    try {
-      const retry = await postCheckout(true);
-      r = retry.rr;
-      j = retry.jj || {};
-      msg = j.detail || j.message || j.error || msg;
-    } catch (e) {}
-  }
+  const jj = await rr.json().catch(() => ({}));
+  return { rr, jj };
+};
 
-  // 如果重建後還是失敗，就照舊提示並保留 pending 資訊（不自動續付）
-  if (!r.ok || !j.ok) {
-    if (r.status === 409 && j && j.order_id) {
-      alert(msg);
+let { rr: r, jj: j } = await postCheckout(false);
 
-      // ✅ 不自動續付：讓客人可以改付款方式/購物金後再按一次送出
-      try {
-        const pm = String(j.payment_method || payment_method || "");
-        if (typeof markCartPendingPay === "function") markCartPendingPay(cartToken, j.order_id, pm);
-      } catch (e) {}
+// ✅ 409：舊 pending 結單 → 靜默用「最新付款方式」重建一次（不跳 alert、不需要按鈕）
+if (r.status === 409 && !__rebuildTried) {
+  __rebuildTried = true;
+  try {
+    const retry = await postCheckout(true);
+    r = retry.rr;
+    j = retry.jj || {};
+  } catch (e) {}
+}
 
-      window.__lastPendingOrderId = j.order_id;
-      return;
-    }
+// ✅ 任何失敗：提示 + 解鎖按鈕（重點！）
+if (!j || !j.ok) {
+  const msg = (j && (j.detail || j.message || j.error)) || '送出失敗，請再試一次';
+  alert(msg);
+  unlockSubmit();
+  return;
+}
 
-    alert(msg);
-    return;
-  }
+// ✅ 保險：正常回來也要有 order_id（沒有就別往下跑）
+if (!j.order_id) {
+  alert("後端未回傳 order_id，請稍後再試");
+  unlockSubmit();
+  return;
 }
 
  // ✅ 保險：正常回來也要有 order_id
