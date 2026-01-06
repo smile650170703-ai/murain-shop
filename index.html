@@ -165,6 +165,27 @@
       gap: 8px; cursor: pointer; min-width: 60px; flex-shrink: 0;
     }
 
+    /* 第二排：小分類列 */
+.subcat-row{
+  margin-top: 10px;
+  padding-top: 6px;
+  padding-bottom: 2px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.subcat-row .brand-avatar{
+  width: 46px;
+  height: 46px;
+}
+
+.subcat-row .brand-text-logo{
+  font-size: 8px;
+}
+
+.subcat-row .brand-name-label{
+  font-size: 10px;
+}
+
     /* 品牌圓圈：更細的邊框 */
     .brand-avatar {
       width: 56px; height: 56px;
@@ -393,8 +414,9 @@
 
   <!-- 品牌牆 -->
   <div id="brandBarWrapper" class="brand-scroll-wrapper">
-    <div id="brandList" class="brand-list"></div>
-  </div>
+  <div id="brandList" class="brand-list"></div>
+  <div id="subcatList" class="brand-list subcat-row" style="display:none;"></div>
+</div>
 
   <div class="container">
     <div id="loading" class="loader">載入中...</div>
@@ -509,7 +531,7 @@
 
   /* --- Detail Modal --- */
   window.openProductDetail = function(product) {
-    $('detailBrand').textContent = product.brand || 'XUYUAN';
+    $('detailBrand').textContent = formatBrandLine(product) || 'XUYUAN';
     $('detailTitle').textContent = product.title || product.sku;
     $('detailPrice').textContent = 'NT$ ' + (Number(product.price)).toLocaleString();
     $('detailDesc').textContent = product.description || '';
@@ -631,11 +653,173 @@
     } finally {
         loader.style.display = 'none';
         if (allItems.length > 0) {
-            renderBrandIcons(allItems);
-            renderProducts(allItems);
+            renderCategoryTabs(allItems);
+renderProducts(applyCategoryFilter(allItems));
         } else $('emptyTip').style.display = 'block';
     }
   }
+
+  // ===== Category (大分類) -> Subcategory (小分類) tabs =====
+let selectedCat = "ALL";
+let selectedSub = "ALL";
+
+// 安全取字串
+function pickText(v){
+  if (v == null) return "";
+  // airtable 可能會給陣列/物件
+  if (Array.isArray(v)) return String(v[0] ?? "").trim();
+  if (typeof v === "object") return String(v.name || v.code || "").trim();
+  return String(v).trim();
+}
+
+// 大分類：優先 category
+function getItemCategory(it){
+  return pickText(it?.category || it?.cat || it?.main_category || it?.main_cat);
+}
+
+// 小分類：優先 sub_category，沒有就用 brand 當備援（你想「分類→品牌」會剛好符合）
+function getItemSubcategory(it){
+  return pickText(it?.sub_category || it?.subcategory || it?.subcat || it?.sub_cat || it?.brand);
+}
+
+// 顯示用：大分類文字（你可自行改）
+function catLabel(code){
+  const c = pickText(code);
+  const m = {
+    BOUTIQUE: "精品包袋",
+    HAIR: "髮品",
+    BEAUTY: "美妝保養",
+    ACCESSORY: "配件"
+  };
+  return m[c] || c;
+}
+
+// 商品卡片/詳情：顯示「分類 → 品牌/小分類」
+function formatBrandLine(p){
+  const c = catLabel(getItemCategory(p));
+  const s = getItemSubcategory(p); // 可能是 brand 或 sub_category
+  return [c, s].filter(Boolean).join(" → ");
+}
+
+function applyCategoryFilter(list){
+  return (list || []).filter(it => {
+    const c = getItemCategory(it);
+    const s = getItemSubcategory(it);
+
+    if (selectedCat !== "ALL" && c !== selectedCat) return false;
+    // 只有選了某個大分類，才允許篩小分類
+    if (selectedCat !== "ALL" && selectedSub !== "ALL" && s !== selectedSub) return false;
+
+    return true;
+  });
+}
+
+function renderCategoryTabs(list){
+  const catEl  = $("brandList");
+  const subEl  = $("subcatList");
+  catEl.innerHTML = "";
+  if (subEl) subEl.innerHTML = "";
+
+  // 算出有哪些大分類
+  const cats = Array.from(new Set(
+    (list || []).map(it => getItemCategory(it)).filter(Boolean)
+  ));
+
+  const makeBtn = (parentEl, key, label, isActive, onClick) => {
+    const item = document.createElement("div");
+    item.className = "brand-item";
+    if (key === "ALL") item.classList.add("all-btn");
+    if (isActive) item.classList.add("active");
+
+    item.innerHTML = `
+      <div class="brand-avatar"><div class="brand-text-logo">${key}</div></div>
+      <span class="brand-name-label">${label}</span>
+    `;
+
+    item.onclick = () => {
+      // 只清自己這一排的 active
+      parentEl.querySelectorAll(".brand-item").forEach(b => b.classList.remove("active"));
+      item.classList.add("active");
+      onClick && onClick();
+    };
+
+    parentEl.appendChild(item);
+  };
+
+  // --- 第一排：大分類 ---
+  makeBtn(catEl, "ALL", "全部", selectedCat === "ALL", () => {
+    selectedCat = "ALL";
+    selectedSub = "ALL";
+    if (subEl) { subEl.style.display = "none"; subEl.innerHTML = ""; }
+    renderProducts(applyCategoryFilter(list));
+  });
+
+  cats.forEach(c => {
+    makeBtn(catEl, c, catLabel(c), selectedCat === c, () => {
+      selectedCat = c;
+      selectedSub = "ALL";
+      renderSubTabs(list);
+      renderProducts(applyCategoryFilter(list));
+    });
+  });
+
+  // 初始化第二排
+  renderSubTabs(list);
+}
+
+function renderSubTabs(list){
+  const subEl = $("subcatList");
+  if (!subEl) return;
+
+  // 沒選大分類時，不顯示第二排
+  if (selectedCat === "ALL") {
+    subEl.style.display = "none";
+    subEl.innerHTML = "";
+    return;
+  }
+
+  // 算出該大分類底下的小分類（sub_category 或 brand）
+  const subs = Array.from(new Set(
+    (list || [])
+      .filter(it => getItemCategory(it) === selectedCat)
+      .map(it => getItemSubcategory(it))
+      .filter(Boolean)
+  ));
+
+  // 沒有小分類就不顯示
+  if (!subs.length) {
+    subEl.style.display = "none";
+    subEl.innerHTML = "";
+    return;
+  }
+
+  subEl.style.display = "";
+  subEl.innerHTML = "";
+
+  const makeBtn = (key, label) => {
+    const item = document.createElement("div");
+    item.className = "brand-item";
+    if (key === "ALL") item.classList.add("all-btn");
+    if (selectedSub === key) item.classList.add("active");
+
+    item.innerHTML = `
+      <div class="brand-avatar"><div class="brand-text-logo">${key}</div></div>
+      <span class="brand-name-label">${label}</span>
+    `;
+
+    item.onclick = () => {
+      subEl.querySelectorAll(".brand-item").forEach(b => b.classList.remove("active"));
+      item.classList.add("active");
+      selectedSub = key;
+      renderProducts(applyCategoryFilter(list));
+    };
+
+    subEl.appendChild(item);
+  };
+
+  makeBtn("ALL", "全部",);
+  subs.forEach(s => makeBtn(s, s));
+}
 
   function renderBrandIcons(list){
   const listEl = $('brandList'); listEl.innerHTML = '';
@@ -690,7 +874,7 @@
             <img src="${img}" loading="lazy" alt="${p.title}">
         </div>
         <div class="card-info">
-            <div class="p-brand">${(p.brand || p.category || '')}</div>
+            <div class="p-brand">${formatBrandLine(p)}</div>
             <div class="p-title">${p.title}</div>
             <div class="p-price">NT$ ${(p.price).toLocaleString()}</div>
         </div>
