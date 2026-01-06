@@ -2778,672 +2778,544 @@ function required(v){ return v && String(v).trim().length>0; }
 
 document.getElementById('submitBtn')?.addEventListener('click', async (e) => {
   e.preventDefault();
-  let leavingToPay = false; // ✅ 要跳轉線上付款時用
 
-    // ✅ 新增：防連點/防重複送出
+  // ✅ 防連點
   if (window.__checkoutSubmitting) return;
   window.__checkoutSubmitting = true;
 
+  let leavingToPay = false;
+
   try {
+    if (!cartToken) { alert('缺少 cart_token，請由正確結帳連結進入'); return; }
+    if (!CART_TOTAL_RAW || Number(CART_TOTAL_RAW) <= 0) { alert('金額為 0，請確認購物車內容'); return; }
 
-  if (!cartToken) { alert('缺少 cart_token，請由正確結帳連結進入'); return; }
-
-  const subtotal = CART_TOTAL_RAW;
-  if (!subtotal) { alert('金額為 0，請確認購物車內容'); return; }
-
-  const note = $('#note')?.value || '';
-
-  // 購物金尚未 ready 就不要讓送出，避免「第一次按下去就鎖死」
-  if (typeof CREDIT_READY !== "undefined" && !CREDIT_READY) {
-    alert('購物金資料載入中，請稍候 1-2 秒再送出');
-    return;
-  }
-
-  // ===== 組 shipping_info（含購物金與 LINE 身份）=====
-  const shipping_info = {};
-  shipping_info.note = note;
-
-  // 購物金：只要有輸入/計算到就放進 shipping_info
-  try {
-    const cu = Math.max(0, Math.floor(Number(CREDIT_USED || 0) || 0));
-    if (cu > 0) shipping_info.credit_used = cu;
-  } catch (e) {}
-
-  // LINE user id：優先吃 localStorage 的 murain_line_user_id
-  try {
-    let uid = "";
-    try { uid = String(localStorage.getItem("murain_line_user_id") || "").trim(); } catch (e) {}
-
-    if (!uid && MEMBER_INFO) {
-      uid = String(
-        MEMBER_INFO.line_user_id ||
-        MEMBER_INFO.lineUserId ||
-        MEMBER_INFO.user_id ||
-        MEMBER_INFO.userId ||
-        MEMBER_INFO.member?.line_user_id ||
-        ""
-      ).trim();
-    }
-
-    if (!uid) {
-      try { uid = String(localStorage.getItem("line_user_id") || "").trim(); } catch (e) {}
-      try { if (!uid) uid = String(sessionStorage.getItem("line_user_id") || "").trim(); } catch (e) {}
-    }
-
-    const dn =
-      (MEMBER_INFO && (MEMBER_INFO.display_name || MEMBER_INFO.name || MEMBER_INFO.member?.name)) || "";
-
-    if (uid) shipping_info.line = { user_id: uid, display_name: String(dn || "") };
-  } catch (e) {}
-
-  if (!shipping_info.line || !shipping_info.line.user_id) {
-    alert('請先在 LINE 官方帳號中開啟這個結帳頁，完成 LINE 會員綁定後再送出訂單');
-    return;
-  }
-
-  let payment_method = '';
-  let ship = null;
-
-  const activeTab = [...(tabs || [])].find(t => t.classList.contains('active'))?.dataset.pay || 'COD';
-
-  // ===== COD：貨到 / 面交 =====
-  if (activeTab === 'COD') {
-    const codType = (document.querySelector('input[name="codType"]:checked')?.value || '711');
-
-    const name  = $('#cod_name')?.value;
-    const phone = $('#cod_phone')?.value;
-    const emailCod = ($('#cod_email')?.value || '').trim();
-
-    if (![name, phone, emailCod].every(required)) {
-      alert('請填完姓名、電話與 Email');
+    // ✅ 購物金尚未 ready 不給送（避免第一次就被洗成 0/鎖死）
+    if (typeof CREDIT_READY !== "undefined" && !CREDIT_READY) {
+      alert('購物金資料載入中，請稍候 1-2 秒再送出');
       return;
     }
 
-    if (codType === '711') {
-      const id    = $('#cod_store_id')?.value;
-      const sname = $('#cod_store_name')?.value;
-      const addr  = $('#cod_store_addr')?.value;
+    const note = (document.getElementById('note')?.value || '').trim();
 
-      if (![id, sname, addr].every(required)) {
-        alert('請先選擇 7-11 門市');
-        return;
+    // ===== 組 shipping_info（含購物金與 LINE 身份）=====
+    const shipping_info = { note };
+
+    // 購物金
+    try {
+      const cu = Math.max(0, Math.floor(Number(CREDIT_USED || 0) || 0));
+      if (cu > 0) shipping_info.credit_used = cu;
+    } catch (e) {}
+
+    // LINE user id（必須）
+    try {
+      let uid = "";
+      try { uid = String(localStorage.getItem("murain_line_user_id") || "").trim(); } catch (e) {}
+
+      if (!uid && MEMBER_INFO) {
+        uid = String(
+          MEMBER_INFO.line_user_id ||
+          MEMBER_INFO.lineUserId ||
+          MEMBER_INFO.user_id ||
+          MEMBER_INFO.userId ||
+          MEMBER_INFO.member?.line_user_id ||
+          ""
+        ).trim();
       }
 
-      payment_method = 'cod_711';
-      ship = { type:'711', name, phone, email: emailCod, store:{ id, name:sname, addr } };
-    } else {
-      const mi = getMeetupInfo('cod');
-      if (!mi) return;
+      const dn =
+        (MEMBER_INFO && (MEMBER_INFO.display_name || MEMBER_INFO.name || MEMBER_INFO.member?.name)) || "";
 
-      payment_method = 'meetup_cash';
-      ship = { type:'meetup', name, phone, email: emailCod, meetup_place: mi.meetup_place, meetup_time: mi.meetup_time };
-    }
-  }
+      if (uid) shipping_info.line = { user_id: uid, display_name: String(dn || "") };
+    } catch (e) {}
 
-  // ===== PAID：線上支付（信用卡/LINE Pay/AFTEE/分期）=====
-  if (activeTab === 'PAID') {
-    const paidType = (document.querySelector('input[name="paidType"]:checked')?.value || 'card_once');
-
-    if (paidType === 'card_once') payment_method = 'paid_card_once';
-    else if (paidType === 'linepay') payment_method = 'paid_linepay';
-    else if (paidType === 'aftee') payment_method = 'paid_aftee';
-    else if (paidType.startsWith('inst_')) {
-      const months = paidType.split('_')[1];
-      payment_method = `paid_card_inst_${months}`;
-    } else {
-      alert('請選擇付款方式');
+    if (!shipping_info.line || !shipping_info.line.user_id) {
+      alert('請先在 LINE 官方帳號中開啟這個結帳頁（LIFF），完成 LINE 身份取得後再送出');
       return;
     }
 
-    const shipMethod = String($('#paid_ship_method')?.value || '').trim();
-    if (!shipMethod) { alert('請選擇寄送方式'); return; }
+    // ===== 共用工具 =====
+    const required = (v) => v && String(v).trim().length > 0;
 
-    if (shipMethod === '711') {
-      const name  = $('#ship_name_paid')?.value;
-      const phone = $('#ship_phone_paid')?.value;
-      const id    = $('#ship_store_id_paid')?.value;
-      const sname = $('#ship_store_name_paid')?.value;
-      const addr  = $('#ship_store_addr_paid')?.value;
-      const emailPaid = ($('#paid_email')?.value || '').trim();
+    const activeTab =
+      document.querySelector('#payTabs .tab.active')?.dataset?.pay ||
+      'COD';
 
-      if (![name, phone, id, sname, addr, emailPaid].every(required)) {
-        alert('請填完 7-11 收件資料（含 Email）');
-        return;
-      }
+    let payment_method = '';
+    let ship = null;
 
-      ship = { type:'711', name, phone, email: emailPaid, store:{ id, name:sname, addr } };
+    // =========================
+    // COD：7-11 貨到 / 面交
+    // =========================
+    if (activeTab === 'COD') {
+      const codType = (document.querySelector('input[name="codType"]:checked')?.value || '711');
 
-    } else if (shipMethod === 'post') {
-      const name  = $('#paid_post_name')?.value;
-      const phone = $('#paid_post_phone')?.value;
-      const zip   = $('#paid_post_zip')?.value;
-      const addr  = $('#paid_post_addr')?.value;
-      const emailPost = ($('#paid_post_email')?.value || '').trim();
-
-      if (![name, phone, addr, emailPost].every(required)) {
-        alert('請填完郵寄資料（含 Email）');
-        return;
-      }
-
-      ship = { type:'post', name, phone, email: emailPost, post:{ zip, addr } };
-
-    } else if (shipMethod === 'meetup') {
-      const mi = getMeetupInfo('paid');
-      if (!mi) return;
-
-      const name  = ($('#paid_meet_name')?.value || '').trim();
-      const phone = ($('#paid_meet_phone')?.value || '').trim();
-      const email = ($('#paid_meet_email')?.value || '').trim();
+      const name  = (document.getElementById('cod_name')?.value || '').trim();
+      const phone = (document.getElementById('cod_phone')?.value || '').trim();
+      const email = (document.getElementById('cod_email')?.value || '').trim();
 
       if (![name, phone, email].every(required)) {
-        alert('請填完面交聯絡資料（含 Email）');
+        alert('請填完姓名、電話與 Email');
         return;
       }
 
-      ship = { type:'meetup', name, phone, email, meetup_place: mi.meetup_place, meetup_time: mi.meetup_time };
-
-    } else {
-      alert('請選擇寄送方式');
-      return;
-    }
-  }
-
-  // ===== DEPOSIT：匯款訂金/匯款全額/部分匯款（你原本的分支保留）=====
-  if (activeTab === 'DEPOSIT') {
-    // 你的原本 DEPOSIT 邏輯（我沒有動你內容，下面沿用你檔案既有程式）
-    const depType = String(document.querySelector('input[name="depType"]:checked')?.value || 'dep_old').trim();
-
-    // ---- dep_old ----
-    if (depType === 'dep_old') {
-      payment_method = 'deposit_old';
-
-      const name  = ($('#dep_old_name')?.value || '').trim();
-      const phone = ($('#dep_old_phone')?.value || '').trim();
-      const email = ($('#dep_old_email')?.value || '').trim();
-      const last5 = ($('#dep_old_last5')?.value || '').trim();
-      const holdUntil = ($('#dep_old_hold_until')?.value || '').trim();
-      const amtRaw    = ($('#dep_old_amount')?.value || '').trim();
-
-      if (![name, phone, email, last5].every(required)) {
-        alert('請填完匯款定金的姓名、電話、Email、帳號後五碼');
-        return;
-      }
-      if (!holdUntil) {
-        alert('請選擇保留到期日');
-        return;
-      }
-
-      let depAmount = 0;
-      if (amtRaw) {
-        depAmount = Number(amtRaw);
-        if (!Number.isFinite(depAmount) || depAmount < 0) {
-          alert('定金金額請填 0 以上的數字（可留空）');
+      if (codType === '711') {
+        // ✅ 7-11 COD 同意勾選必填
+        const agree = !!document.getElementById('cod711_agree')?.checked;
+        if (!agree) {
+          alert('請勾選 7-11 貨到付款取貨同意');
           return;
         }
-      }
 
-      const shipMethod = String($('#dep_old_ship_method')?.value || '').trim();
-      if (!shipMethod) { alert('請選擇取貨方式'); return; }
-
-      if (shipMethod === '711') {
-        const id    = ($('#dep_old_store_id')?.value || '').trim();
-        const sname = ($('#dep_old_store_name')?.value || '').trim();
-        const addr  = ($('#dep_old_store_addr')?.value || '').trim();
+        const id    = (document.getElementById('cod_store_id')?.value || '').trim();
+        const sname = (document.getElementById('cod_store_name')?.value || '').trim();
+        const addr  = (document.getElementById('cod_store_addr')?.value || '').trim();
 
         if (![id, sname, addr].every(required)) {
-          alert('請填完匯款定金的 7-11 門市資料');
+          alert('請先選擇 7-11 門市');
           return;
         }
 
-        ship = {
-          type:'711',
-          name, phone, email,
-          store: { id, name:sname, addr },
-          deposit: { type:'old', last5, hold_until: holdUntil, amount: depAmount }
-        };
-
-      } else if (shipMethod === 'post') {
-        const zip  = ($('#dep_old_post_zip')?.value || '').trim();
-        const addr = ($('#dep_old_post_addr')?.value || '').trim();
-
-        if (![addr].every(required)) { alert('請填完匯款定金的郵寄地址'); return; }
-
-        ship = {
-          type:'post',
-          name, phone, email,
-          post: { zip, addr },
-          deposit: { type:'old', last5, hold_until: holdUntil, amount: depAmount }
-        };
-
-      } else if (shipMethod === 'meetup') {
-        const mi = getMeetupInfo('depold');
-        if (!mi) return;
-
-        ship = {
-          type:'meetup',
-          name, phone, email,
-          meetup_place: mi.meetup_place,
-          meetup_time:  mi.meetup_time,
-          deposit: { type:'old', last5, hold_until: holdUntil, amount: depAmount }
-        };
+        payment_method = 'cod_711';
+        ship = { type:'711', name, phone, email, store:{ id, name:sname, addr } };
 
       } else {
-        alert('請選擇取貨方式');
-        return;
+        const mi = getMeetupInfo('cod');
+        if (!mi) return;
+
+        payment_method = 'meetup_cash';
+        ship = { type:'meetup', name, phone, email, meetup_place: mi.meetup_place, meetup_time: mi.meetup_time };
       }
     }
 
-    // ---- dep_new_full / dep_new_partial ----
-    if (depType === 'dep_new_full' || depType === 'dep_new_partial') {
-      const isPartial = (depType === 'dep_new_partial');
-      payment_method = isPartial ? 'deposit_new_partial' : 'deposit_new_full';
+    // =========================
+    // PAID：線上付款（select #paid_channel）
+    // =========================
+    if (activeTab === 'PAID') {
+      const ch = String(document.getElementById('paid_channel')?.value || 'card_once').trim();
 
-      const name0  = ($('#dep_new_full_name')?.value || '').trim();
-      const phone0 = ($('#dep_new_full_phone')?.value || '').trim();
-      const email0 = ($('#dep_new_full_email')?.value || '').trim();
-      const last5  = ($('#dep_new_full_last5')?.value || '').trim();
-
-      if (![name0, phone0, email0, last5].every(required)) {
-        alert(isPartial ? '請填完部分匯款的姓名、電話、Email、帳號後五碼' : '請填完匯款全額的姓名、電話、Email、帳號後五碼');
+      if (ch === 'card_once') {
+        payment_method = 'paid_card_once';
+      } else if (ch === 'card_inst') {
+        const months = String(document.getElementById('inst_months')?.value || '').trim();
+        if (!months) { alert('請選擇分期期數'); return; }
+        payment_method = `paid_card_inst_${months}`;
+      } else if (ch === 'linepay') {
+        payment_method = 'paid_linepay';
+      } else if (ch === 'af') {
+        // ✅ 你 preselectPaidChannel 也是用 paid_aftee_direct 對應 af
+        payment_method = 'paid_aftee_direct';
+      } else {
+        alert('請選擇付款方式');
         return;
       }
 
-      // 部分匯款才需要填金額
-      let partialAmount = 0;
-      if (isPartial) {
-        const amt = Number(($('#dep_new_partial_amount')?.value || '').trim());
-        if (!Number.isFinite(amt) || amt <= 0) { alert('部分匯款金額請填大於 0 的數字'); return; }
-        partialAmount = amt;
-      }
-
-      const shipMethod = String($('#dep_new_full_ship_method')?.value || '').trim();
-      if (!shipMethod) { alert('請選擇取貨方式'); return; }
+      const shipMethod = String(document.getElementById('paid_ship_method')?.value || '').trim();
+      if (!shipMethod) { alert('請選擇寄送方式'); return; }
 
       if (shipMethod === '711') {
-        const id    = ($('#dep_new_full_store_id')?.value || '').trim();
-        const sname = ($('#dep_new_full_store_name')?.value || '').trim();
-        const addr  = ($('#dep_new_full_store_addr')?.value || '').trim();
+        const name  = (document.getElementById('ship_name_paid')?.value || '').trim();
+        const phone = (document.getElementById('ship_phone_paid')?.value || '').trim();
+        const email = (document.getElementById('paid_email')?.value || '').trim();
+        const id    = (document.getElementById('ship_store_id_paid')?.value || '').trim();
+        const sname = (document.getElementById('ship_store_name_paid')?.value || '').trim();
+        const addr  = (document.getElementById('ship_store_addr_paid')?.value || '').trim();
 
-        if (![id, sname, addr].every(required)) {
-          alert('請填完匯款取貨的 7-11 門市資料');
+        if (![name, phone, email, id, sname, addr].every(required)) {
+          alert('請填完 7-11 收件資料（含 Email）');
           return;
         }
-
-        ship = {
-          type:'711',
-          name: name0, phone: phone0, email: email0,
-          store: { id, name:sname, addr },
-          deposit: { type: isPartial ? 'new_partial' : 'new_full', last5, amount: partialAmount }
-        };
+        ship = { type:'711', name, phone, email, store:{ id, name:sname, addr } };
 
       } else if (shipMethod === 'post') {
-        const zip  = ($('#dep_new_full_post_zip')?.value || '').trim();
-        const addr = ($('#dep_new_full_post_addr')?.value || '').trim();
+        const name  = (document.getElementById('paid_post_name')?.value || '').trim();
+        const phone = (document.getElementById('paid_post_phone')?.value || '').trim();
+        const email = (document.getElementById('paid_post_email')?.value || '').trim();
+        const zip   = (document.getElementById('paid_post_zip')?.value || '').trim();
+        const addr  = (document.getElementById('paid_post_addr')?.value || '').trim();
 
-        if (![addr].every(required)) {
-          alert('請填完匯款全額的郵寄地址');
+        if (![name, phone, email, addr].every(required)) {
+          alert('請填完郵寄資料（含 Email）');
           return;
         }
-
-        ship = {
-          type:'post',
-          name: name0, phone: phone0, email: email0,
-          post: { zip, addr },
-          deposit: { type: isPartial ? 'new_partial' : 'new_full', last5, amount: partialAmount }
-        };
+        ship = { type:'post', name, phone, email, post:{ zip, addr } };
 
       } else if (shipMethod === 'meetup') {
-        const mi = getMeetupInfo('depnew');
+        const mi = getMeetupInfo('paid');
         if (!mi) return;
 
-        const name  = ($('#dep_new_full_meet_name')?.value || name0).trim();
-        const phone = ($('#dep_new_full_meet_phone')?.value || phone0).trim();
-        const email = ($('#dep_new_full_meet_email')?.value || email0).trim();
+        const name  = (document.getElementById('paid_meet_name')?.value || '').trim();
+        const phone = (document.getElementById('paid_meet_phone')?.value || '').trim();
+        const email = (document.getElementById('paid_meet_email')?.value || '').trim();
 
         if (![name, phone, email].every(required)) {
-          alert('請填完匯款全額面交聯絡資料（含 Email）');
+          alert('請填完面交聯絡資料（含 Email）');
+          return;
+        }
+        ship = { type:'meetup', name, phone, email, meetup_place: mi.meetup_place, meetup_time: mi.meetup_time };
+
+      } else {
+        alert('請選擇寄送方式');
+        return;
+      }
+    }
+
+    // =========================
+    // DEPOSIT：ATM 匯款（radio depType: old / new_full）
+    // =========================
+    if (activeTab === 'DEPOSIT') {
+      const depType = String(document.querySelector('input[name="depType"]:checked')?.value || 'new_full').trim();
+
+      // ---- 匯款定金（old）----
+      if (depType === 'old') {
+        // ✅ 定金同意勾選必填
+        const agree = !!document.getElementById('dep_old_agree')?.checked;
+        if (!agree) { alert('送出定金訂單前請勾選「逾期視同棄標，定金不退還」同意'); return; }
+
+        payment_method = 'deposit_old';
+
+        const name  = (document.getElementById('dep_old_name')?.value || '').trim();
+        const phone = (document.getElementById('dep_old_phone')?.value || '').trim();
+        const email = (document.getElementById('dep_old_email')?.value || '').trim();
+        const last5 = (document.getElementById('dep_old_last5')?.value || '').trim();
+        const holdUntil = (document.getElementById('dep_old_hold_until')?.value || '').trim();
+        const amtRaw    = (document.getElementById('dep_old_amount')?.value || '').trim();
+
+        if (![name, phone, email, last5].every(required)) {
+          alert('請填完匯款定金的姓名、電話、Email、帳號後五碼');
+          return;
+        }
+        if (!holdUntil) { alert('請選擇保留到期日'); return; }
+
+        let depAmount = 0;
+        if (amtRaw) {
+          depAmount = Number(amtRaw);
+          if (!Number.isFinite(depAmount) || depAmount < 0) {
+            alert('定金金額請填 0 以上的數字（可留空）');
+            return;
+          }
+        }
+
+        const shipMethod = String(document.getElementById('dep_old_method')?.value || '').trim();
+        if (!shipMethod) { alert('請選擇取貨方式'); return; }
+
+        if (shipMethod === '711') {
+          const id    = (document.getElementById('dep_old_store_id')?.value || '').trim();
+          const sname = (document.getElementById('dep_old_store_name')?.value || '').trim();
+          const addr  = (document.getElementById('dep_old_store_addr')?.value || '').trim();
+          if (![id, sname, addr].every(required)) { alert('請先選擇 7-11 門市'); return; }
+
+          ship = {
+            type:'711',
+            name, phone, email,
+            store:{ id, name:sname, addr },
+            deposit:{ type:'old', last5, hold_until: holdUntil, amount: depAmount }
+          };
+
+        } else if (shipMethod === 'post') {
+          const zip  = (document.getElementById('dep_old_post_zip')?.value || '').trim();
+          const addr = (document.getElementById('dep_old_post_addr')?.value || '').trim();
+          if (![addr].every(required)) { alert('請填完匯款定金的郵寄地址'); return; }
+
+          ship = {
+            type:'post',
+            name, phone, email,
+            post:{ zip, addr },
+            deposit:{ type:'old', last5, hold_until: holdUntil, amount: depAmount }
+          };
+
+        } else {
+          alert('匯款定金目前只支援 7-11 / 郵寄');
+          return;
+        }
+      }
+
+      // ---- 匯款全額（new_full）----
+      if (depType === 'new_full') {
+        payment_method = 'deposit_new_full';
+
+        const name0  = (document.getElementById('dep_new_full_name')?.value || '').trim();
+        const phone0 = (document.getElementById('dep_new_full_phone')?.value || '').trim();
+        const email0 = (document.getElementById('dep_new_full_email')?.value || '').trim();
+        const last5  = (document.getElementById('dep_new_full_last5')?.value || '').trim();
+
+        if (![name0, phone0, email0, last5].every(required)) {
+          alert('請填完匯款全額的姓名、電話、Email、帳號後五碼');
           return;
         }
 
-        ship = {
-          type:'meetup',
-          name, phone, email,
-          meetup_place: mi.meetup_place,
-          meetup_time:  mi.meetup_time,
-          deposit: { type: isPartial ? 'new_partial' : 'new_full', last5, amount: partialAmount }
-        };
+        const shipMethod = String(document.getElementById('dep_new_full_method')?.value || '').trim();
+        if (!shipMethod) { alert('請選擇取貨方式'); return; }
 
+        if (shipMethod === '711') {
+          const id    = (document.getElementById('dep_new_full_store_id')?.value || '').trim();
+          const sname = (document.getElementById('dep_new_full_store_name')?.value || '').trim();
+          const addr  = (document.getElementById('dep_new_full_store_addr')?.value || '').trim();
+          if (![id, sname, addr].every(required)) { alert('請先選擇 7-11 門市'); return; }
+
+          ship = {
+            type:'711',
+            name: name0, phone: phone0, email: email0,
+            store:{ id, name:sname, addr },
+            deposit:{ type:'new_full', last5 }
+          };
+
+        } else if (shipMethod === 'post') {
+          const zip  = (document.getElementById('dep_new_full_post_zip')?.value || '').trim();
+          const addr = (document.getElementById('dep_new_full_post_addr')?.value || '').trim();
+          if (![addr].every(required)) { alert('請填完匯款全額的郵寄地址'); return; }
+
+          ship = {
+            type:'post',
+            name: name0, phone: phone0, email: email0,
+            post:{ zip, addr },
+            deposit:{ type:'new_full', last5 }
+          };
+
+        } else if (shipMethod === 'meetup') {
+          const mi = getMeetupInfo('depnew');
+          if (!mi) return;
+
+          const name  = (document.getElementById('dep_new_full_meet_name')?.value || name0).trim();
+          const phone = (document.getElementById('dep_new_full_meet_phone')?.value || phone0).trim();
+          const email = (document.getElementById('dep_new_full_meet_email')?.value || email0).trim();
+
+          if (![name, phone, email].every(required)) {
+            alert('請填完匯款全額面交聯絡資料（含 Email）');
+            return;
+          }
+
+          ship = {
+            type:'meetup',
+            name, phone, email,
+            meetup_place: mi.meetup_place,
+            meetup_time:  mi.meetup_time,
+            deposit:{ type:'new_full', last5 }
+          };
+
+        } else {
+          alert('請選擇取貨方式');
+          return;
+        }
+      }
+    }
+
+    // =========================
+    // ZEROCARD：無卡分期（activeTab === ZEROCARD）
+    // =========================
+    if (activeTab === 'ZEROCARD') {
+      const months = String(document.getElementById('zc_months')?.value || '').trim();
+      if (!months) { alert('請選擇期數'); return; }
+
+      // ✅ 建議用 zero_card_*（你前面 preselect 也吃 zero_card_）
+      payment_method = `zero_card_${months}`;
+
+      const shipMethod = String(document.getElementById('zc_ship_method')?.value || '').trim();
+      if (!shipMethod) { alert('請選擇寄送方式'); return; }
+
+      if (shipMethod === '711') {
+        const name  = (document.getElementById('ship_name_zc')?.value || '').trim();
+        const phone = (document.getElementById('ship_phone_zc')?.value || '').trim();
+        const email = (document.getElementById('zc_email')?.value || '').trim();
+        const id    = (document.getElementById('ship_store_id_zc')?.value || '').trim();
+        const sname = (document.getElementById('ship_store_name_zc')?.value || '').trim();
+        const addr  = (document.getElementById('ship_store_addr_zc')?.value || '').trim();
+
+        if (![name, phone, email, id, sname, addr].every(required)) {
+          alert('請填完無卡分期 7-11 收件資料（含 Email）');
+          return;
+        }
+        ship = { type:'711', name, phone, email, store:{ id, name:sname, addr } };
+
+      } else if (shipMethod === 'post') {
+        const name  = (document.getElementById('zc_post_name')?.value || '').trim();
+        const phone = (document.getElementById('zc_post_phone')?.value || '').trim();
+        const email = (document.getElementById('zc_post_email')?.value || '').trim();
+        const zip   = (document.getElementById('zc_post_zip')?.value || '').trim();
+        const addr  = (document.getElementById('zc_post_addr')?.value || '').trim();
+
+        if (![name, phone, email, addr].every(required)) {
+          alert('請填完無卡分期郵寄資料（含 Email）');
+          return;
+        }
+        ship = { type:'post', name, phone, email, post:{ zip, addr } };
+
+      } else if (shipMethod === 'meetup') {
+        const mi = getMeetupInfo('zc');
+        if (!mi) return;
+
+        const name  = (document.getElementById('zc_meet_name')?.value || '').trim();
+        const phone = (document.getElementById('zc_meet_phone')?.value || '').trim();
+        const email = (document.getElementById('zc_meet_email')?.value || '').trim();
+
+        if (![name, phone, email].every(required)) {
+          alert('請填完無卡分期面交聯絡資料（含 Email）');
+          return;
+        }
+        ship = { type:'meetup', name, phone, email, meetup_place: mi.meetup_place, meetup_time: mi.meetup_time };
       } else {
-        alert('請選擇取貨方式');
+        alert('請選擇寄送方式');
         return;
       }
     }
-  }
 
-  // ===== ZEROCARD =====
-  if (activeTab === 'ZC') {
-    // 你原本的 ZEROCARD 邏輯（保留）
-    const zcMonths = String($('#zc_months')?.value || '').trim();
-    if (!zcMonths) { alert('請選擇期數'); return; }
-    payment_method = `zerocard_${zcMonths}`;
-
-    const shipMethod = String($('#zc_ship_method')?.value || '').trim();
-    if (!shipMethod) { alert('請選擇寄送方式'); return; }
-
-    if (shipMethod === '711') {
-      const name  = ($('#ship_name_zc')?.value || '').trim();
-      const phone = ($('#ship_phone_zc')?.value || '').trim();
-      const email = ($('#zc_email')?.value || '').trim();
-      const id    = ($('#ship_store_id_zc')?.value || '').trim();
-      const sname = ($('#ship_store_name_zc')?.value || '').trim();
-      const addr  = ($('#ship_store_addr_zc')?.value || '').trim();
-
-      if (![name, phone, email, id, sname, addr].every(required)) {
-        alert('請填完 7-11 收件資料（含 Email）');
+    // =========================
+    // YUFU：裕富分期
+    // =========================
+    if (activeTab === 'YUFU') {
+      const agree1 = !!document.getElementById('yufu_agree_privacy')?.checked;
+      const agree2 = !!document.getElementById('yufu_agree_rate')?.checked;
+      if (!agree1 || !agree2) {
+        alert('請勾選裕富分期同意（審核使用/利率說明）');
         return;
       }
 
-      ship = { type:'711', name, phone, email, store:{ id, name:sname, addr } };
+      const months = String(document.getElementById('yufu_months')?.value || '').trim();
+      if (!months) { alert('請選擇期數'); return; }
+      payment_method = `yufu_inst_${months}`;
 
-    } else if (shipMethod === 'post') {
-      const name  = ($('#zc_post_name')?.value || '').trim();
-      const phone = ($('#zc_post_phone')?.value || '').trim();
-      const email = ($('#zc_post_email')?.value || '').trim();
-      const zip   = ($('#zc_post_zip')?.value || '').trim();
-      const addr  = ($('#zc_post_addr')?.value || '').trim();
-
-      if (![name, phone, email, addr].every(required)) {
-        alert('請填完郵寄資料（含 Email）');
+      // 申請資料必填
+      const an = (document.getElementById('yufu_apply_name')?.value || '').trim();
+      const aid = (document.getElementById('yufu_apply_id')?.value || '').trim();
+      const ap = (document.getElementById('yufu_apply_phone')?.value || '').trim();
+      const ae = (document.getElementById('yufu_apply_email')?.value || '').trim();
+      if (![an, aid, ap, ae].every(required)) {
+        alert('請填完裕富申請資料（姓名/身分證/電話/Email）');
         return;
       }
 
-      ship = { type:'post', name, phone, email, post:{ zip, addr } };
+      const phoneOwner = document.querySelector('input[name="yufu_phone_owner"]:checked')?.value || 'yes';
 
-    } else if (shipMethod === 'meetup') {
-      const mi = getMeetupInfo('zc');
-      if (!mi) return;
-
-      const name  = ($('#zc_meet_name')?.value || '').trim();
-      const phone = ($('#zc_meet_phone')?.value || '').trim();
-      const email = ($('#zc_meet_email')?.value || '').trim();
-
-      if (![name, phone, email].every(required)) {
-        alert('請填完面交聯絡資料（含 Email）');
-        return;
+      // 若非本人門號 → 紙本掛號地址必填
+      if (phoneOwner === 'no') {
+        const pn = (document.getElementById('yufu_paper_name')?.value || '').trim();
+        const pp = (document.getElementById('yufu_paper_phone')?.value || '').trim();
+        const pz = (document.getElementById('yufu_paper_zip')?.value || '').trim();
+        const pa = (document.getElementById('yufu_paper_addr')?.value || '').trim();
+        if (![pn, pa].every(required)) {
+          alert('電話非本人名下：請填完掛號寄送地址（收件人/地址）');
+          return;
+        }
+        shipping_info.yufu_paper = { name: pn, phone: pp, zip: pz, addr: pa };
       }
 
-      ship = { type:'meetup', name, phone, email, meetup_place: mi.meetup_place, meetup_time: mi.meetup_time };
+      shipping_info.yufu_apply = {
+        name: an, id: aid, phone: ap, email: ae,
+        phone_owner: phoneOwner
+      };
 
-    } else {
-      alert('請選擇寄送方式');
-      return;
+      const shipMethod = String(document.getElementById('yufu_ship_method')?.value || '').trim();
+      if (!shipMethod) { alert('請選擇寄送方式'); return; }
+
+      if (shipMethod === '711') {
+        const name  = (document.getElementById('ship_name_yufu')?.value || '').trim();
+        const phone = (document.getElementById('ship_phone_yufu')?.value || '').trim();
+        const email = (document.getElementById('yufu_email')?.value || '').trim();
+        const id    = (document.getElementById('ship_store_id_yufu')?.value || '').trim();
+        const sname = (document.getElementById('ship_store_name_yufu')?.value || '').trim();
+        const addr  = (document.getElementById('ship_store_addr_yufu')?.value || '').trim();
+
+        if (![name, phone, email, id, sname, addr].every(required)) {
+          alert('請填完裕富 7-11 收件資料（含 Email）');
+          return;
+        }
+        ship = { type:'711', name, phone, email, store:{ id, name:sname, addr } };
+
+      } else if (shipMethod === 'post') {
+        const name  = (document.getElementById('yufu_post_name')?.value || '').trim();
+        const phone = (document.getElementById('yufu_post_phone')?.value || '').trim();
+        const email = (document.getElementById('yufu_post_email')?.value || '').trim();
+        const zip   = (document.getElementById('yufu_post_zip')?.value || '').trim();
+        const addr  = (document.getElementById('yufu_post_addr')?.value || '').trim();
+
+        if (![name, phone, email, addr].every(required)) {
+          alert('請填完裕富郵寄資料（含 Email）');
+          return;
+        }
+        ship = { type:'post', name, phone, email, post:{ zip, addr } };
+
+      } else if (shipMethod === 'meetup') {
+        const mi = getMeetupInfo('yufu');
+        if (!mi) return;
+
+        const name  = (document.getElementById('yufu_meet_name')?.value || '').trim();
+        const phone = (document.getElementById('yufu_meet_phone')?.value || '').trim();
+        const email = (document.getElementById('yufu_meet_email')?.value || '').trim();
+
+        if (![name, phone, email].every(required)) {
+          alert('請填完裕富面交聯絡資料（含 Email）');
+          return;
+        }
+        ship = { type:'meetup', name, phone, email, meetup_place: mi.meetup_place, meetup_time: mi.meetup_time };
+      } else {
+        alert('請選擇寄送方式');
+        return;
+      }
     }
-  }
 
-  // ===== YUFU：裕富分期（✅補齊送單分支 + 申請資料寫入）=====
-  if (activeTab === 'YUFU') {
-    const months = String($('#yufu_months')?.value || '').trim();
-    if (!months) { alert('請選擇期數'); return; }
-
-    payment_method = `yufu_inst_${months}`;
-
-    const shipMethod = String($('#yufu_ship_method')?.value || '').trim();
-    if (!shipMethod) { alert('請選擇寄送方式'); return; }
-
-    // --- 寄送資料 ---
-    if (shipMethod === '711') {
-      const name  = ($('#ship_name_yufu')?.value || '').trim();
-      const phone = ($('#ship_phone_yufu')?.value || '').trim();
-      const email = ($('#yufu_email')?.value || '').trim();
-      const id    = ($('#ship_store_id_yufu')?.value || '').trim();
-      const sname = ($('#ship_store_name_yufu')?.value || '').trim();
-      const addr  = ($('#ship_store_addr_yufu')?.value || '').trim();
-
-      if (![name, phone, email, id, sname, addr].every(required)) {
-        alert('請填完 7-11 收件資料（含 Email）');
-        return;
-      }
-
-      ship = { type:'711', name, phone, email, store:{ id, name:sname, addr } };
-
-    } else if (shipMethod === 'post') {
-      const name  = ($('#yufu_post_name')?.value || '').trim();
-      const phone = ($('#yufu_post_phone')?.value || '').trim();
-      const email = ($('#yufu_post_email')?.value || '').trim();
-      const zip   = ($('#yufu_post_zip')?.value || '').trim();
-      const addr  = ($('#yufu_post_addr')?.value || '').trim();
-
-      if (![name, phone, email, addr].every(required)) {
-        alert('請填完郵寄資料（含 Email）');
-        return;
-      }
-
-      ship = { type:'post', name, phone, email, post:{ zip, addr } };
-
-    } else if (shipMethod === 'meetup') {
-      const mi = getMeetupInfo('yufu');
-      if (!mi) return;
-
-      const name  = ($('#yufu_meet_name')?.value || '').trim();
-      const phone = ($('#yufu_meet_phone')?.value || '').trim();
-      const email = ($('#yufu_meet_email')?.value || '').trim();
-
-      if (![name, phone, email].every(required)) {
-        alert('請填完面交聯絡資料（含 Email）');
-        return;
-      }
-
-      ship = { type:'meetup', name, phone, email, meetup_place: mi.meetup_place, meetup_time: mi.meetup_time };
-
-    } else {
-      alert('請選擇寄送方式');
+    // 最終防呆
+    if (!payment_method || !ship) {
+      alert('付款/寄送資料不完整，請確認各欄位');
       return;
     }
 
-    // --- 申請資料（必填） ---
-    const aName = ($('#yufu_apply_name')?.value || '').trim();
-    const aId   = ($('#yufu_apply_id')?.value || '').trim();
-    const aPhone= ($('#yufu_apply_phone')?.value || '').trim();
-    const aEmail= ($('#yufu_apply_email')?.value || '').trim();
+    // 塞進 shipping_info
+    shipping_info.ship = ship;
 
-    if (![aName, aId, aPhone, aEmail].every(required)) {
-      alert('請填完裕富申請資料：姓名 / 身分證 / 本人門號 / Email');
-      return;
-    }
-
-    const phoneOwner = (document.querySelector('input[name="yufu_phone_owner"]:checked')?.value || 'yes').trim();
-
-    // 勾選同意
-    const agreePrivacy = document.getElementById('yufu_agree_privacy');
-    const agreeRate    = document.getElementById('yufu_agree_rate');
-    if (!agreePrivacy?.checked) { alert('請勾選同意提供資料供裕富審核'); return; }
-    if (!agreeRate?.checked)    { alert('請勾選已閱讀分期利率說明'); return; }
-
-    // phoneOwner=no 才需要掛號地址
-    let paperName = '', paperPhone = '', paperZip = '', paperAddr = '';
-    if (phoneOwner === 'no') {
-      paperName  = ($('#yufu_paper_name')?.value || '').trim();
-      paperPhone = ($('#yufu_paper_phone')?.value || '').trim();
-      paperZip   = ($('#yufu_paper_zip')?.value || '').trim();
-      paperAddr  = ($('#yufu_paper_addr')?.value || '').trim();
-      if (![paperName, paperAddr].every(required)) {
-        alert('門號非本人請填寫掛號寄送資料');
-        return;
-      }
-    }
-
-    // 把申請資料塞進 shipping_info
-    shipping_info.yufu = {
-      months,
-      apply: { name: aName, id: aId, phone: aPhone, email: aEmail },
-      phone_owner: phoneOwner,
-      paper: phoneOwner === 'no' ? { name: paperName, phone: paperPhone, zip: paperZip, addr: paperAddr } : null
+    // ✅ 若偵測「同 cart_token 已有 pending 舊單」且你改了付款方式 → 帶 flag 給後端（後端若未使用會忽略，不會壞）
+    const payload = {
+      cart_token: cartToken,
+      payment_method,
+      shipping_info
     };
-  }
-
-  // 最後保險：payment_method / ship
-  if (!payment_method || !ship) {
-    alert('請確認付款方式與取貨方式');
-    return;
-  }
-
-  // 合併 ship
-  shipping_info.ship = ship;
-
-    const btn = document.getElementById('submitBtn');
-    if (btn) btn.disabled = true;
-
-    console.log('[CHECKOUT] payment_method=', payment_method);
-    const payload = { cart_token: cartToken, payment_method, shipping_info };
-    console.log("[CHECKOUT]", {
-  cart_token: cartToken,
-  payment_method,
-  credit_used: shipping_info?.credit_used ?? 0
-});
-    console.log("[CHECKOUT credit]", { AVAILABLE_CREDIT, CREDIT_USED, input: document.getElementById("credit_input")?.value });
-
- // ✅ 送出訂單（支援自動重建：不需要額外按鈕）
-let __rebuildTried = false;
-
-// ✅ 統一解鎖送出按鈕（避免錯誤後「按了沒反應」）
-const unlockSubmit = () => {
-  try {
-    const b = document.getElementById('submitBtn');
-    if (b) b.disabled = false;
-  } catch (e) {}
-  // 保險：如果你後面有用到這個旗標，錯誤時也一併清掉
-  try { window.__payuniRedirecting = false; } catch (e) {}
-};
-
-const postCheckout = async (forceRebuild = false) => {
-  const bodyObj = forceRebuild ? { ...payload, force_rebuild: true } : payload;
-
-  const rr = await fetch(`${API}/checkout`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(bodyObj)
-  });
-
-  const jj = await rr.json().catch(() => ({}));
-  return { rr, jj };
-};
-
-let { rr: r, jj: j } = await postCheckout(false);
-
-// ✅ 409：舊 pending 結單 → 靜默用「最新付款方式」重建一次（不跳 alert、不需要按鈕）
-if (r.status === 409 && !__rebuildTried) {
-  __rebuildTried = true;
-  try {
-    const retry = await postCheckout(true);
-    r = retry.rr;
-    j = retry.jj || {};
-  } catch (e) {}
-}
-
-// ✅ 任何失敗：提示 + 解鎖按鈕（重點！）
-if (!j || !j.ok) {
-  const msg = (j && (j.detail || j.message || j.error)) || '送出失敗，請再試一次';
-  alert(msg);
-  unlockSubmit();
-  return;
-}
-
-// ✅ 保險：正常回來也要有 order_id（沒有就別往下跑）
-if (!j.order_id) {
-  alert("後端未回傳 order_id，請稍後再試");
-  unlockSubmit();
-  return;
-}
-
- // ✅ 保險：正常回來也要有 order_id
-if (!j.order_id) {
-  alert("後端未回傳 order_id，請稍後再試");
-  return;
-}
-
-    // ✅ 以後端回傳為準（避免前後端金額不一致）
-    const serverCreditUsed = Math.max(0, Math.floor(Number(j.credit_used ?? shipping_info?.credit_used ?? 0) || 0));
-    const serverNetAmount  = Math.max(0, Math.round(Number(j.net_amount ?? 0) || 0));
-
-    // ✅ 線上支付：走 PayUNI start → form POST 跳轉
-    if (String(payment_method || "").startsWith("paid_")) {
-      // 模式：card / linepay / aftee
-      let payMode = "card";
-      let instMonths = "";
-
-      if (payment_method === "paid_linepay") payMode = "linepay";
-      else if (payment_method === "paid_aftee") payMode = "aftee";
-      else if (payment_method.startsWith("paid_card_inst_")) {
-        payMode = "card";
-        instMonths = String(payment_method.split("_").pop() || "").trim();
-      } else {
-        payMode = "card";
-      }
-
-      // ✅ 防止重複啟動 / 重複送出
-      if (window.__payuniRedirecting) return;
-      window.__payuniRedirecting = true;
-
-      const pr = await fetch(`${API}/payuni/start`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order_id: j.order_id, mode: payMode, inst_months: instMonths })
-      });
-
-      const up = await pr.json().catch(() => ({}));
-      if (!pr.ok || !up.ok) {
-        window.__payuniRedirecting = false; // ✅ 解鎖
-        try { if (typeof clearPendingPay === "function") clearPendingPay(cartToken); } catch(e){}
-        alert("線上刷卡啟動失敗：" + (up.error || up.message || "請稍後再試"));
-        return;
-      }
-
-      const f = document.createElement("form");
-      f.method = "POST";
-      f.action = up.url;
-
-      ["MerID", "Version", "EncryptInfo", "HashInfo"].forEach(k => {
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = k;
-        input.value = up[k] || "";
-        f.appendChild(input);
-      });
-
-      document.body.appendChild(f);
-      leavingToPay = true;  // ✅ 加這行
-      f.submit();
-      return; // ✅ 線上一定要 return
-    }
-
-    // ✅ 非線上付款：清 pending，導結果頁
-    try { if (typeof clearPendingPay === "function") clearPendingPay(cartToken); } catch(e){}
-    // （可選）也順便清舊版固定 key，避免歷史殘留
-    try { sessionStorage.removeItem("murain_credit_used"); } catch(e){}
-
-    cartToken = "";
-
-    const finalTotal = Number.isFinite(Number(j.net_amount))
-      ? Number(j.net_amount)
-      : Math.max(subtotal - (Number(shipping_info?.credit_used || 0) || 0), 0);
-
-    const url = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}&total=${encodeURIComponent(finalTotal)}`;
-    location.href = url;
-
-  } catch (e) {
-    console.error(e);
-    alert(e.message || "送出失敗，請再試一次");
-  } finally {
     try {
-      if (!leavingToPay) {
-        const btn = document.getElementById('submitBtn');
-        if (btn) btn.disabled = false;
+      const pending = (typeof getPendingPay === "function") ? getPendingPay(cartToken) : null;
+      if (pending?.order_id && pending?.payment_method && String(pending.payment_method) !== String(payment_method)) {
+        payload.force_rebuild = true;
+        payload.cancel_pending = true;
+        payload.pending_order_id = String(pending.order_id);
       }
     } catch(e){}
-    // ✅ 釋放防連點鎖（不再鎖死）
-    window.__checkoutSubmitting = false;
+
+    // 呼叫後端 checkout
+    const resp = await jfetch(`${API}/checkout`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    if (!resp || !resp.ok) {
+      alert(resp?.error || resp?.message || '送出失敗，請稍後再試');
+      return;
+    }
+
+    // ✅ 常見欄位相容（你後端可能叫 redirect_url / pay_url）
+    const orderId = resp.order_id || resp.orderId || resp.id || '';
+    const redirect = resp.redirect_url || resp.pay_url || resp.url || '';
+
+    if (redirect) {
+      leavingToPay = true;
+      try { if (typeof markCartPendingPay === "function") markCartPendingPay(cartToken, orderId, payment_method); } catch(e){}
+      try { saveCheckoutState(true); } catch(e){}
+      window.location.href = redirect;
+      return;
+    }
+
+    // 沒有 redirect → 視為完成下單
+    try { if (typeof clearPendingPay === "function") clearPendingPay(cartToken); } catch(e){}
+    try { if (typeof markCartCheckedOut === "function") markCartCheckedOut(cartToken, orderId, Math.max(0, (CART_TOTAL_RAW||0)-(CREDIT_USED||0))); } catch(e){}
+    try { clearCheckoutState(); } catch(e){}
+
+    if (orderId) {
+      const url = `/order-result.html?order_id=${encodeURIComponent(orderId)}`;
+      try { location.replace(url); } catch(e){ location.href = url; }
+    } else {
+      alert('下單成功，但缺少訂單編號，請到會員中心確認');
+    }
+
+  } finally {
+    // ✅ 跳去金流頁就不解除鎖（避免回上一頁連點）
+    if (!leavingToPay) window.__checkoutSubmitting = false;
   }
-}); // ✅ 關掉 addEventListener('click', async(e)=>{ ... });
+});
 
 
 
