@@ -698,168 +698,6 @@
     }
   }
 
-  // ===== Category (大分類) -> Subcategory (小分類) tabs =====
-let selectedCat = "ALL";
-let selectedSub = "ALL";
-
-// 安全取字串
-function pickText(v){
-  if (v == null) return "";
-  // airtable 可能會給陣列/物件
-  if (Array.isArray(v)) return String(v[0] ?? "").trim();
-  if (typeof v === "object") return String(v.name || v.code || "").trim();
-  return String(v).trim();
-}
-
-// 大分類：優先 category
-function getItemCategory(it){
-  return pickText(it?.category || it?.cat || it?.main_category || it?.main_cat);
-}
-
-// 小分類：優先 sub_category，沒有就用 brand 當備援（你想「分類→品牌」會剛好符合）
-function getItemSubcategory(it){
-  return pickText(it?.sub_category || it?.subcategory || it?.subcat || it?.sub_cat || it?.brand);
-}
-
-// 顯示用：大分類文字（你可自行改）
-function catLabel(code){
-  const c = pickText(code);
-  const m = {
-    BOUTIQUE: "精品包袋",
-    HAIR: "髮品",
-    BEAUTY: "美妝保養",
-    ACCESSORY: "配件"
-  };
-  return m[c] || c;
-}
-
-// 商品卡片/詳情：顯示「分類 → 品牌/小分類」
-function formatBrandLine(p){
-  const c = catLabel(getItemCategory(p));
-  const s = getItemSubcategory(p); // 可能是 brand 或 sub_category
-  return [c, s].filter(Boolean).join(" → ");
-}
-
-function applyCategoryFilter(list){
-  return (list || []).filter(it => {
-    const c = getItemCategory(it);
-    const s = getItemSubcategory(it);
-
-    if (selectedCat !== "ALL" && c !== selectedCat) return false;
-    // 只有選了某個大分類，才允許篩小分類
-    if (selectedCat !== "ALL" && selectedSub !== "ALL" && s !== selectedSub) return false;
-
-    return true;
-  });
-}
-
-function renderCategoryTabs(list){
-  const catEl  = $("brandList");
-  const subEl  = $("subcatList");
-  catEl.innerHTML = "";
-  if (subEl) subEl.innerHTML = "";
-
-  // 算出有哪些大分類
-  const cats = Array.from(new Set(
-    (list || []).map(it => getItemCategory(it)).filter(Boolean)
-  ));
-
-  const makeBtn = (parentEl, key, label, isActive, onClick) => {
-    const item = document.createElement("div");
-    item.className = "brand-item";
-    if (key === "ALL") item.classList.add("all-btn");
-    if (isActive) item.classList.add("active");
-
-    item.innerHTML = `
-      <div class="brand-avatar"><div class="brand-text-logo">${key}</div></div>
-      <span class="brand-name-label">${label}</span>
-    `;
-
-    item.onclick = () => {
-      // 只清自己這一排的 active
-      parentEl.querySelectorAll(".brand-item").forEach(b => b.classList.remove("active"));
-      item.classList.add("active");
-      onClick && onClick();
-    };
-
-    parentEl.appendChild(item);
-  };
-
-  // --- 第一排：大分類 ---
-  makeBtn(catEl, "ALL", "全部", selectedCat === "ALL", () => {
-    selectedCat = "ALL";
-    selectedSub = "ALL";
-    if (subEl) { subEl.style.display = "none"; subEl.innerHTML = ""; }
-    renderProducts(applyCategoryFilter(list));
-  });
-
-  cats.forEach(c => {
-    makeBtn(catEl, c, catLabel(c), selectedCat === c, () => {
-      selectedCat = c;
-      selectedSub = "ALL";
-      renderSubTabs(list);
-      renderProducts(applyCategoryFilter(list));
-    });
-  });
-
-  // 初始化第二排
-  renderSubTabs(list);
-}
-
-function renderSubTabs(list){
-  const subEl = $("subcatList");
-  if (!subEl) return;
-
-  // 沒選大分類時，不顯示第二排
-  if (selectedCat === "ALL") {
-    subEl.style.display = "none";
-    subEl.innerHTML = "";
-    return;
-  }
-
-  // 算出該大分類底下的小分類（sub_category 或 brand）
-  const subs = Array.from(new Set(
-    (list || [])
-      .filter(it => getItemCategory(it) === selectedCat)
-      .map(it => getItemSubcategory(it))
-      .filter(Boolean)
-  ));
-
-  // 沒有小分類就不顯示
-  if (!subs.length) {
-    subEl.style.display = "none";
-    subEl.innerHTML = "";
-    return;
-  }
-
-  subEl.style.display = "";
-  subEl.innerHTML = "";
-
-  const makeBtn = (key, label) => {
-    const item = document.createElement("div");
-    item.className = "brand-item";
-    if (key === "ALL") item.classList.add("all-btn");
-    if (selectedSub === key) item.classList.add("active");
-
-    item.innerHTML = `
-      <div class="brand-avatar"><div class="brand-text-logo">${key}</div></div>
-      <span class="brand-name-label">${label}</span>
-    `;
-
-    item.onclick = () => {
-      subEl.querySelectorAll(".brand-item").forEach(b => b.classList.remove("active"));
-      item.classList.add("active");
-      selectedSub = key;
-      renderProducts(applyCategoryFilter(list));
-    };
-
-    subEl.appendChild(item);
-  };
-
-  makeBtn("ALL", "全部",);
-  subs.forEach(s => makeBtn(s, s));
-}
-
 function labelOfCat(c){
     // 後端若有給 name 就用；沒有就 fallback
     const code = String(c?.code || "").trim();
@@ -899,6 +737,7 @@ function labelOfCat(c){
 
         // 更新商品
         renderProducts(filterItems(allItems));
+        scrollToProducts();
       };
 
       listEl.appendChild(item);
@@ -934,6 +773,7 @@ function labelOfCat(c){
         selectedSub = key;
         renderSubcatBar(categories, catCode);
         renderProducts(filterItems(allItems));
+        scrollToProducts();
       };
 
       subEl.appendChild(item);
@@ -954,6 +794,23 @@ function labelOfCat(c){
       addBtn(code, labelOfSub(s));
     });
   }
+
+  function scrollToProducts(){
+  const grid = document.getElementById('productList');
+  if(!grid) return;
+
+  // 兩層黏住高度：navbar + brand bar（保守抓）
+  const navH = 60;
+  const bar = document.getElementById('brandBarWrapper');
+  const barH = bar ? Math.round(bar.getBoundingClientRect().height) : 0;
+
+  // 目標 Y：商品區頂端 - 黏住高度 - 一點點呼吸
+  const y = window.scrollY + grid.getBoundingClientRect().top - navH - barH - 8;
+
+  requestAnimationFrame(() => {
+    window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+  });
+}
 
   function filterItems(items){
     return (items || []).filter(p => {
