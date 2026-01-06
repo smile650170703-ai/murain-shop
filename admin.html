@@ -2012,16 +2012,48 @@ async function printShipSlipsRange(){
     const win = window.open('', '_blank');
     const doc = win.document;
 
+   const firstNonEmpty = (...vals) => {
+  for (const v of vals) {
+    const s = String(v ?? '').trim();
+    if (s) return s;
+  }
+  return '';
+};
+
     // ↓ 這裡完全照匯出中心的 printOrders 抄來 ↓
     const slipsHtml = records.map((rec) => {
       const f = rec.fields || {};
+     if (!window.__slip_debug_once) {
+  window.__slip_debug_once = true;
+  console.log("[slip] keys:", Object.keys(f));
+  console.log("[slip] sample fields:", f);
+  console.log("[slip] shipInfoObj:", shipInfoObj);
+  console.log("[slip] lp:", lp);
+}
+
+     const shipInfoObj  = (typeof parseShippingInfo === 'function') ? (parseShippingInfo(f) || {}) : {};
+const lp = shipInfoObj.line_profile || shipInfoObj.line || shipInfoObj.lineProfile || {};
+
+const lineName = firstNonEmpty(
+  f['LINE名稱'],
+  f['LINE 名稱'],
+  f['line_name'],
+  lp.displayName,
+  lp.display_name,
+  lp.name
+);
+
+const sku = firstNonEmpty(
+  f['商品編號'],
+  f['SKU'],
+  f['sku'],
+  f['商品SKU']
+);
 
       const orderId      = f['訂單編號']       || '';
       const doneAt       = f['結單完成時間']   || '';
-      const lineName     = f['LINE名稱']       || '';
       const payMethod    = f['付款方式']       || '';
       const amount       = f['應付金額']       || '';
-      const sku          = f['商品編號']       || '';
       const product      = f['商品明細']       || '';
       const customerNote = f['客戶備註']       || '';
       const shipType     = f['出貨方式']       || '';
@@ -2037,16 +2069,16 @@ async function printShipSlipsRange(){
           <!-- 上半部：內部用資訊 -->
           <div class="line small">訂單編號：${orderId}</div>
           <div class="line small">結單時間：${doneAt}</div>
-          <div class="line">LINE 名稱：${lineName}</div>
+          <div class="line">LINE 名稱：${lineName || '-'}</div>
           <div class="line">出貨方式：${shipType}</div>
           <div class="line">付款方式：${payMethod}</div>
           <div class="line">應付金額：${amount}</div>
           <!-- ★ 商品編號、商品明細：標題一行，內容一行 ★ -->
    <div class="section-title">商品</div>
       <div class="block items">
-        <div class="sku">SKU：${sku || '-'}</div>
-        <div class="desc">${product || '-'}</div>
-      </div>
+  ${sku ? `<div class="sku">SKU：${sku}</div>` : ``}
+  <div class="desc">${product || '-'}</div>
+</div>
 
       ${(customerNote || note) ? `
         <div class="remark">
@@ -2182,9 +2214,6 @@ ${slipsHtml}
     alert('列印出貨明細時發生錯誤：' + (e.message || e));
   }
 }
-
- /* ===== 列印目前這筆訂單 ===== */
-
 /* ===== 列印目前這筆訂單 ===== */
 function printCurrentOrder() {
   if (!currentRecord) {
