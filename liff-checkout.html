@@ -2780,6 +2780,10 @@ document.getElementById('submitBtn')?.addEventListener('click', async (e) => {
   e.preventDefault();
   let leavingToPay = false; // ✅ 要跳轉線上付款時用
 
+    // ✅ 新增：防連點/防重複送出
+  if (window.__checkoutSubmitting) return;
+  window.__checkoutSubmitting = true;
+
   if (!cartToken) { alert('缺少 cart_token，請由正確結帳連結進入'); return; }
 
   const subtotal = CART_TOTAL_RAW;
@@ -3387,9 +3391,36 @@ ${paperLine ? paperLine : ''}`.trim();
 
     const j = await r.json().catch(() => ({}));
 
-    if (!r.ok || !j.ok) {
-      const msg = j.detail || j.message || j.error || '送出失敗，請再試一次';
+    // ✅ 先處理錯誤，務必 alert + return（不然會繼續往下跑）
+if (!r.ok || !j.ok) {
+  const msg = j.detail || j.message || j.error || '送出失敗，請再試一次';
+
+  // ✅ 特別處理：購物車已被鎖/已有結單（常見 409）
+  if (r.status === 409 && j && j.order_id) {
+    alert(msg);
+
+    // 若是線上付款：記 pending，直接「續付」那張單（避免一直新建單）
+    const pm = String(j.payment_method || payment_method || "");
+    if (pm.startsWith("paid_")) {
+      try { if (typeof markCartPendingPay === "function") markCartPendingPay(cartToken, j.order_id, pm); } catch(e){}
+      try { await guardPendingPay(cartToken); } catch(e){}
+      return;
     }
+
+    // 非線上付款：導去結果頁看那張單
+    location.href = `/order-result.html?order_id=${encodeURIComponent(j.order_id)}`;
+    return;
+  }
+
+  alert(msg);
+  return;
+}
+
+// ✅ 保險：正常回來也要有 order_id
+if (!j.order_id) {
+  alert("後端未回傳 order_id，請稍後再試");
+  return;
+}
 
     // ✅ 以後端回傳為準（避免前後端金額不一致）
     const serverCreditUsed = Math.max(0, Math.floor(Number(j.credit_used ?? shipping_info?.credit_used ?? 0) || 0));
@@ -3430,7 +3461,7 @@ ${paperLine ? paperLine : ''}`.trim();
 
       const up = await pr.json().catch(() => ({}));
       if (!pr.ok || !up.ok) {
-  // ✅ 啟動失敗：清掉 pending，避免之後被 guardPendingPay 卡住
+  window.__payuniRedirecting = false; // ✅ 解鎖
   try { if (typeof clearPendingPay === "function") clearPendingPay(cartToken); } catch(e){}
   alert("線上刷卡啟動失敗：" + (up.error || up.message || "請稍後再試"));
   return;
@@ -3517,6 +3548,9 @@ try { sessionStorage.removeItem("murain_credit_used"); } catch(e){}
       if (btn) btn.disabled = false;
     }
   } catch(e){}
+     // ✅ 新增：釋放防連點鎖
+  window.__checkoutSubmitting = false;
+}
 }
 }); // ✅ 關掉 addEventListener('click', async(e)=>{ ... });
 
