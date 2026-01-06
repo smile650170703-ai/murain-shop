@@ -165,25 +165,23 @@
       gap: 8px; cursor: pointer; min-width: 60px; flex-shrink: 0;
     }
 
-    /* 第二排：小分類列 */
-.subcat-row{
+   /* 第二排：小分類 */
+.subcat-list{
   margin-top: 10px;
-  padding-top: 6px;
-  padding-bottom: 2px;
+  padding-top: 10px;
   border-top: 1px solid rgba(255,255,255,0.06);
+  gap: 14px;
 }
-
-.subcat-row .brand-avatar{
+.subcat-list .brand-avatar{
   width: 46px;
   height: 46px;
 }
-
-.subcat-row .brand-text-logo{
+.subcat-list .brand-text-logo{
   font-size: 8px;
 }
-
-.subcat-row .brand-name-label{
-  font-size: 10px;
+.subcat-list .brand-name-label{
+  font-size: 9px;
+  opacity: 0.9;
 }
 
     /* 品牌圓圈：更細的邊框 */
@@ -415,7 +413,7 @@
   <!-- 品牌牆 -->
   <div id="brandBarWrapper" class="brand-scroll-wrapper">
   <div id="brandList" class="brand-list"></div>
-  <div id="subcatList" class="brand-list subcat-row" style="display:none;"></div>
+  <div id="subcatList" class="brand-list subcat-list"></div>
 </div>
 
   <div class="container">
@@ -531,7 +529,7 @@
 
   /* --- Detail Modal --- */
   window.openProductDetail = function(product) {
-    $('detailBrand').textContent = formatBrandLine(product) || 'XUYUAN';
+    $('detailBrand').textContent = topLine(product) || 'XUYUAN';
     $('detailTitle').textContent = product.title || product.sku;
     $('detailPrice').textContent = 'NT$ ' + (Number(product.price)).toLocaleString();
     $('detailDesc').textContent = product.description || '';
@@ -640,22 +638,63 @@
     isDemoMode = true; return 'DEMO';
   }
 
+ let allCats = [];
+  let selectedCat = "ALL";     // category_code
+  let selectedSub = "ALL";     // subcategory_code
+
   async function fetchProducts(){
     const loader = $('loading'); const grid = $('productList');
     loader.style.display = 'block'; grid.innerHTML = '';
-    
+
     try {
       const res = await fetch(PRODUCT_API);
       const json = await res.json();
+
       allItems = json.items || [];
+      allCats  = json.categories || [];
+
+      // 沒 categories 的話（例如 demo），就從 items 反推一份
+      if (!Array.isArray(allCats) || allCats.length === 0) {
+        const catMap = new Map();
+        allItems.forEach(it => {
+          const c = String(it.category || it.category_code || "").trim();
+          if (!c) return;
+          if (!catMap.has(c)) catMap.set(c, { code: c, name: c, subcategories: [] });
+          const s = String(it.subcategory || it.subcategory_code || "").trim();
+          if (s) {
+            const node = catMap.get(c);
+            if (!node.subcategories.find(x => x.code === s)) node.subcategories.push({ code:s, name:s });
+          }
+        });
+        allCats = Array.from(catMap.values());
+      }
+
     } catch (err) {
-      allItems = mockProducts; isDemoMode = true;
+      allItems = mockProducts;
+      isDemoMode = true;
+
+      // demo mode 一樣做一份 categories 給 UI 用
+      const catMap = new Map();
+      allItems.forEach(it => {
+        const c = String(it.category || "").trim();
+        if (!c) return;
+        if (!catMap.has(c)) catMap.set(c, { code: c, name: c, subcategories: [] });
+        const s = String(it.brand || "").trim();
+        if (s) {
+          const node = catMap.get(c);
+          if (!node.subcategories.find(x => x.code === s)) node.subcategories.push({ code:s, name:s });
+        }
+      });
+      allCats = Array.from(catMap.values());
     } finally {
-        loader.style.display = 'none';
-        if (allItems.length > 0) {
-            renderCategoryTabs(allItems);
-renderProducts(applyCategoryFilter(allItems));
-        } else $('emptyTip').style.display = 'block';
+      loader.style.display = 'none';
+      if (allItems.length > 0) {
+        renderCategoryBar(allCats);
+        renderSubcatBar(allCats, selectedCat);
+        renderProducts(filterItems(allItems));
+      } else {
+        $('emptyTip').style.display = 'block';
+      }
     }
   }
 
@@ -821,47 +860,119 @@ function renderSubTabs(list){
   subs.forEach(s => makeBtn(s, s));
 }
 
-  function renderBrandIcons(list){
-  const listEl = $('brandList'); listEl.innerHTML = '';
+function labelOfCat(c){
+    // 後端若有給 name 就用；沒有就 fallback
+    const code = String(c?.code || "").trim();
+    const name = String(c?.name || "").trim();
+    return name || code || "";
+  }
 
-  // ✅ 改成用「分類」生選項
-  const cats = Array.from(new Set(
-    list.map(it => String(it.category || '').trim()).filter(Boolean)
-  ));
+  function labelOfSub(s){
+    const code = String(s?.code || "").trim();
+    const name = String(s?.name || "").trim();
+    return name || code || "";
+  }
 
-  const catLabel = (c) => {
-    // 你可依自己資料庫分類碼調整
-    const m = {
-      BOUTIQUE: '精品包款',
-      HAIR: '髮品',
-      BEAUTY: '美妝保養',
-      ACCESSORY: '飾品配件'
+  function renderCategoryBar(categories){
+    const listEl = $('brandList'); 
+    listEl.innerHTML = '';
+
+    const addBtn = (key, label) => {
+      const item = document.createElement('div');
+      item.className = 'brand-item';
+      if (key === 'ALL') item.classList.add('all-btn');
+      if (key === selectedCat) item.classList.add('active');
+      if (key === 'ALL' && selectedCat === 'ALL') item.classList.add('active');
+
+      item.innerHTML = `
+        <div class="brand-avatar"><div class="brand-text-logo">${key}</div></div>
+        <span class="brand-name-label">${label}</span>
+      `;
+
+      item.onclick = () => {
+        selectedCat = key;
+        selectedSub = "ALL"; // 換大分類時，小分類重置
+
+        // 重畫兩排
+        renderCategoryBar(categories);
+        renderSubcatBar(categories, selectedCat);
+
+        // 更新商品
+        renderProducts(filterItems(allItems));
+      };
+
+      listEl.appendChild(item);
     };
-    return m[c] || c;
-  };
 
-  const addBtn = (key, label, fn) => {
-    const item = document.createElement('div');
-    item.className = 'brand-item';
-    if(key === 'ALL') item.classList.add('all-btn', 'active');
+    addBtn('ALL', '全部');
 
-    item.innerHTML = `
-      <div class="brand-avatar"><div class="brand-text-logo">${key}</div></div>
-      <span class="brand-name-label">${label}</span>
-    `;
+    (categories || []).forEach(c => {
+      const code = String(c.code || "").trim();
+      if (!code) return;
+      addBtn(code, labelOfCat(c));
+    });
+  }
 
-    item.onclick = () => {
-      document.querySelectorAll('.brand-item').forEach(b => b.classList.remove('active'));
-      item.classList.add('active');
-      renderProducts(fn ? list.filter(fn) : list);
+  function renderSubcatBar(categories, catCode){
+    const subEl = $('subcatList');
+    subEl.innerHTML = '';
+
+    // ALL（全部小分類）
+    const addBtn = (key, label) => {
+      const item = document.createElement('div');
+      item.className = 'brand-item';
+      if (key === 'ALL') item.classList.add('all-btn');
+      if (key === selectedSub) item.classList.add('active');
+      if (key === 'ALL' && selectedSub === 'ALL') item.classList.add('active');
+
+      item.innerHTML = `
+        <div class="brand-avatar"><div class="brand-text-logo">${key}</div></div>
+        <span class="brand-name-label">${label}</span>
+      `;
+
+      item.onclick = () => {
+        selectedSub = key;
+        renderSubcatBar(categories, catCode);
+        renderProducts(filterItems(allItems));
+      };
+
+      subEl.appendChild(item);
     };
 
-    listEl.appendChild(item);
-  };
+    // 如果目前是 ALL 大分類：第二排就先清空（或你想顯示熱門也可以）
+    if (catCode === "ALL") {
+      return;
+    }
 
-  addBtn('ALL', '全部', null);
-  cats.forEach(c => addBtn(c, catLabel(c), i => String(i.category || '').trim() === c));
-}
+    addBtn('ALL', '全部');
+
+    const cat = (categories || []).find(x => String(x.code || "").trim() === String(catCode).trim());
+    const subs = (cat && Array.isArray(cat.subcategories)) ? cat.subcategories : [];
+    subs.forEach(s => {
+      const code = String(s.code || "").trim();
+      if (!code) return;
+      addBtn(code, labelOfSub(s));
+    });
+  }
+
+  function filterItems(items){
+    return (items || []).filter(p => {
+      // 後端新格式優先
+      const c = String(p.category_code || p.category || "").trim();
+      const s = String(p.subcategory_code || p.subcategory || p.brand || "").trim();
+
+      if (selectedCat !== "ALL" && c !== selectedCat) return false;
+      if (selectedSub !== "ALL" && s !== selectedSub) return false;
+      return true;
+    });
+  }
+
+  function topLine(p){
+    const cName = String(p.category_name || p.category || p.category_code || "").trim();
+    const sName = String(p.subcategory_name || p.subcategory || p.subcategory_code || p.brand || "").trim();
+    if (cName && sName) return `${cName} → ${sName}`;
+    return cName || sName || "";
+  }
 
   function renderProducts(list){
     const wrap = $('productList'); wrap.innerHTML = '';
@@ -874,7 +985,7 @@ function renderSubTabs(list){
             <img src="${img}" loading="lazy" alt="${p.title}">
         </div>
         <div class="card-info">
-            <div class="p-brand">${formatBrandLine(p)}</div>
+            <div class="p-brand">${topLine(p)}</div>
             <div class="p-title">${p.title}</div>
             <div class="p-price">NT$ ${(p.price).toLocaleString()}</div>
         </div>
