@@ -3288,13 +3288,11 @@ try {
   );
 }
 
-// ★ 新增：清理「線上付款跳轉中途關掉」的棄單（補回庫存 / 釋放購物金 hold / 解鎖購物車）
-// 預設：超過 30 分鐘仍未付款 → 自動作廢
-async function runAbandonedOnlineCleanup(env, minutes = 30) {
+async function runAbandonedOnlineCleanup(env, minutes = 1440) {
   const T  = env.AT_ORDERS || "Orders";
   const CT = env.AT_CARTS  || "CartToken";
 
-  const cutoffMs = Date.now() - Math.max(1, Number(minutes) || 30) * 60 * 1000;
+  const cutoffMs = Date.now() - Math.max(1, Number(minutes) || 1440) * 60 * 1000;
 
   // 只撈「可能需要跳轉付款」且仍 pending/submitted 的單
   // （排除 cod_/atm_/deposit_/meetup_cash；也排除 paid_ok / shipped / completed）
@@ -3307,14 +3305,9 @@ async function runAbandonedOnlineCleanup(env, minutes = 30) {
     OR(
       LOWER({pay_status}&"")="pending",
       LOWER({pay_status}&"")="submitted",
-      {pay_status}=""
-    ),
-    NOT(OR(
-      LOWER({pay_status}&"")="paid_ok",
-      LOWER({pay_status}&"")="deposit_ok",
-      LOWER({status}&"")="shipped",
-      LOWER({status}&"")="completed"
-    ))
+      LOWER({payment_status}&"")="pending",
+      LOWER({payment_status}&"")="submitted"
+    )
   )`;
 
   let cleaned = 0;
@@ -3346,26 +3339,33 @@ async function runAbandonedOnlineCleanup(env, minutes = 30) {
         String(f.order_type || "").toLowerCase() === "tail" ||
         !!f.is_tail;
 
-      // ① 釋放購物金 hold（尾款 TL 線上付款 pending 時你有做 hold；一般單若沒 hold 也不會動）
+      const didDeductStock = f.stock_deduct_done === true;
+
       try {
-        await releaseCreditHoldIfNeeded(env, oid, "auto_abandoned");
+        if (typeof globalThis.releaseCreditHoldIfNeeded === "function") {
+          await globalThis.releaseCreditHoldIfNeeded(env, oid, "auto_abandoned");
+        } else {
+          console.log("[abandoned cleanup] releaseCreditHoldIfNeeded missing; skip", oid);
+        }
       } catch (e) {
         console.log("abandoned cleanup: releaseCreditHoldIfNeeded error", oid, e?.message || e);
       }
 
       // ② 非尾款：補回庫存 + 解鎖 CartToken（讓客人可以重新結單）
       if (!isTail) {
-        // 補回庫存（只要 items_json 能 parse 成陣列就補）
-        try {
-          const items = (typeof safeJsonParse === "function")
-            ? safeJsonParse(f.items_json, [])
-            : (() => { try { return JSON.parse(f.items_json || "[]"); } catch { return []; } })();
+        // 補回庫存：只在「真的扣過庫存」才補（避免線上金流原本沒扣、清理卻 +1 造成庫存虛增）
+        if (didDeductStock) {
+          try {
+            const items = (typeof safeJsonParse === "function")
+              ? safeJsonParse(f.items_json, [])
+              : (() => { try { return JSON.parse(f.items_json || "[]"); } catch { return []; } })();
 
-          if (Array.isArray(items) && items.length) {
-            await adjustStockByItems(env, items, +1);
+            if (Array.isArray(items) && items.length) {
+              await adjustStockByItems(env, items, +1);
+            }
+          } catch (e) {
+            console.log("abandoned cleanup: restock error", oid, e?.message || e);
           }
-        } catch (e) {
-          console.log("abandoned cleanup: restock error", oid, e?.message || e);
         }
 
         // 解鎖購物車（清掉 checked_out / 綁單，避免卡死）
@@ -3394,7 +3394,7 @@ async function runAbandonedOnlineCleanup(env, minutes = 30) {
         }
       }
 
-      // ③ 作廢訂單（變成 cancelled/failed，之後不會再被當成 active）
+      // ③ 訂單標記：cancelled + failed
       try {
         const note = (
           (String(f.internal_note || "") + " ").trim() +
@@ -3407,19 +3407,19 @@ async function runAbandonedOnlineCleanup(env, minutes = 30) {
             fields: {
               status: "cancelled",
               pay_status: "failed",
-              pay_notify_status: `ABANDONED_AUTO_VOID:${Math.max(1, Number(minutes) || 30)}m`,
+              pay_notify_status: `ABANDONED_AUTO_VOID:${Math.max(1, Number(minutes) || 1440)}m`,
               internal_note: note
             }
           }]
         });
-
-        cleaned++;
       } catch (e) {
         console.log("abandoned cleanup: patch order failed", oid, e?.message || e);
       }
+
+      cleaned++;
     }
 
-    offset = res?.offset || "";
+    offset = res && res.offset;
     if (!offset) break;
   }
 
@@ -3723,13 +3723,22 @@ async function deleteRecordsBatch(env, table, ids) {
     await at(env, "DELETE", table, "?" + qs);
   }
 }
-// ✅ 共用：把訂單作廢（補回庫存 + 退購物金 + 狀態統一 cancelled）
-// 用途：裕富審核失敗 / 任何線上付款失敗想要顯示成「失敗作廢/補回庫存」都可用
 async function cancelOrderAsFailed(env, rec, failCode = "failed", failMsg = "") {
   if (!rec || !rec.id) return;
   const T = env.AT_ORDERS || "Orders";
   const f = rec.fields || {};
 const orderId = String(f.order_id || "").trim();
+
+
+  // ✅ 判斷是否尾款 TL（避免取消尾款時把父單庫存加回去）
+  const isTail =
+    orderId.startsWith("TL") ||
+    String(f.order_type || "").toLowerCase() === "tail" ||
+    !!f.is_tail ||
+    !!String(f.parent_order_id || "").trim();
+
+  // ✅ 只有真的扣過庫存才允許補回（線上金流通常 checkout 時 stock_deduct_done=false）
+  const didDeductStock = f.stock_deduct_done === true;
 
 // ✅ 去重：用 internal_note 打標，避免任何原因造成的重複補庫存/退款
 const RESTOCK_TAG = "[AUTO_CANCEL_ORDER_AS_FAILED]";
@@ -3753,31 +3762,20 @@ if (String(f.status || "").toLowerCase() === "cancelled" || alreadyHandled) retu
       try {
         const ci = await listCartItemsAnyToken(env, cartToken);
         items = (ci || [])
-          .map(r => {
-            const ff = r.fields || {};
-            return {
-              sku: String(ff.SKU ?? ff.sku ?? "").trim(),
-              qty: Number(ff.Qty ?? ff.qty ?? 0) || 0
-            };
-          })
-          .filter(x => x.sku && x.qty > 0);
-      } catch (e) {
-        items = [];
-      }
+          .filter(x => x && x.sku)
+          .map(x => ({ sku: x.sku, qty: Number(x.qty || 1) }));
+      } catch (e) {}
     }
   }
 
-  // ✅ 先打標（只改 internal_note，比較不會因為 select 欄位失敗而整包失敗）
-// 這樣就算後面 status/pay_status 寫入失敗，下一次也不會再補一次庫存
+  // 2) ✅ 先 patch internal_note 打標（防重入）
 try {
-  const stamp = new Date().toISOString();
-  const note = failMsg ? `[${failCode}] ${failMsg}` : `[${failCode}]`;
-  const tagLine = `${RESTOCK_TAG} ${stamp} ${note}`.trim();
-  const oldNote = String(f.internal_note || "").trim();
-  const newNote = oldNote ? (oldNote + "\n" + tagLine) : tagLine;
-
+  const newNote = (note0 + " " + RESTOCK_TAG + " " + nowISO() + (failMsg ? ` ${failMsg}` : "")).trim();
   await at(env, "PATCH", T, "", {
-    records: [{ id: rec.id, fields: { internal_note: newNote } }]
+    records: [{
+      id: rec.id,
+      fields: { internal_note: newNote }
+    }]
   });
 
   // 讓後面 PATCH status 時也用同一份 newNote
@@ -3786,11 +3784,13 @@ try {
   console.log("cancelOrderAsFailed patch internal_note tag error", orderId, e);
 }
 
-  // 2) 補回庫存
-  try {
-    await adjustStockByItems(env, items || [], +1);
-  } catch (e) {
-    console.log("cancelOrderAsFailed adjustStock(+1) error", orderId, e);
+  // 2) 補回庫存（只限：非尾款 + 真的扣過庫存）
+  if (!isTail && didDeductStock) {
+    try {
+      await adjustStockByItems(env, items || [], +1);
+    } catch (e) {
+      console.log("cancelOrderAsFailed adjustStock(+1) error", orderId, e);
+    }
   }
 
   // 3) 退回購物金（你已經有 refundCreditIfNeeded）
@@ -10242,7 +10242,7 @@ async scheduled(event, env, ctx) {
 
     try {
       if (cron === "*/10 * * * *") {
-        await runAbandonedOnlineCleanup(env, 30);
+        await runAbandonedOnlineCleanup(env, 1440); // 24 小時
       }
     } catch (e) {
       console.log("scheduled: runAbandonedOnlineCleanup error", e?.message || e);
