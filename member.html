@@ -1150,6 +1150,19 @@ if (txt === "已出貨" || txt === "已送達" || txt === "已取貨" || txt ===
       else btn.classList.remove("active");
     });
   }
+
+  function shouldHideInHistory(o){
+  const st = String(o?.status || "").trim().toLowerCase();
+  const ps = String(o?.pay_status || o?.payStatus || "").trim().toLowerCase();
+
+  // ✅ 你目前描述的兩大來源：付款失敗造成大量作廢
+  if (ps === "failed") return true;
+
+  // ✅ 已取消也隱藏（就算未來不是 failed，也先不出現在歷史訂單）
+  if (st === "cancelled" || st === "canceled") return true;
+
+  return false;
+}
   function renderOrders() {
     orderList.style.display = "flex";
     creditsList.style.display = "none";
@@ -1167,6 +1180,9 @@ if (txt === "已出貨" || txt === "已送達" || txt === "已取貨" || txt ===
         const pm = String(o.payment_method || "").toLowerCase();
         // 排除「定金保留」(deposit_hold)
         if (isDepositHoldOrder(o)) return false;
+
+        // ✅ 新增：隱藏 failed / cancelled（避免一堆作廢單）
+    if (shouldHideInHistory(o)) return false;
         
         const createdAt = getOrderCreatedAt(o);
 if (!createdAt) return true;
@@ -1180,6 +1196,7 @@ if (!createdAt) return true;
         const pm = String(o.payment_method || "").toLowerCase();
         // 必須是「定金保留」(deposit_hold)
         if (!isDepositHoldOrder(o)) return false;
+        if (shouldHideInHistory(o)) return false;
 
         const createdAt = getOrderCreatedAt(o);
 // ✅ 有些單如果後端沒回 created_at，不要整張被濾掉
