@@ -208,6 +208,7 @@
   const qs = new URLSearchParams(location.search);
   const orderId = (qs.get('order_id') || '').trim();
   const total = (qs.get('total') || '').trim();
+  let orderAmount = null;
   const channel = (qs.get('channel') || '').trim().toLowerCase(); // payuni / zero_card / ...
   const statusRaw = (qs.get('status') || '').trim().toUpperCase(); // SUCCESS / FAILED / PENDING / ...
   const msg = (qs.get('message') || '').trim();
@@ -303,6 +304,18 @@
 
   // ✅ 初始 UI（先用 querystring）
   applyUiByStatus(statusRaw);
+
+ (async function hydrateFromApi() {
+  if (!orderId) return;
+  const info = await fetchOrderStatus();
+  if (!info || !info.ok) return;
+
+  const n = Number(info.net_amount);
+  if (!Number.isNaN(n) && n >= 0) {
+    const el = document.getElementById('amountText');
+    if (el) el.textContent = 'NT$ ' + n.toLocaleString();
+  }
+})();
 
   // ✅ ZeroCard（或 status=PENDING）才輪詢：審核中 → 自動更新成 SUCCESS/FAILED
   (function startPollingIfNeeded() {
