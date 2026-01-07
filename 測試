@@ -2661,6 +2661,47 @@ if (orderRecId) {
       });
     }
   }
+  // ✅ 小包裝：給棄單清理用（只要該單有做過 hold 且還沒 spend，就釋放）
+async function releaseCreditHoldIfNeeded(env, orderId, reason = "auto_abandoned") {
+  const oid = String(orderId || "").trim();
+  if (!oid) return;
+
+  const T = env.AT_ORDERS || "Orders";
+  const rows = await atListByField(env, T, "order_id", oid);
+  const rec = rows && rows[0];
+  if (!rec) return;
+
+  const f = rec.fields || {};
+  const used = Math.round(Number(f.credit_used || 0) || 0);
+
+  // 沒用購物金 / 沒做 hold / 已經 spend / 已釋放 → 都不用動
+  if (!(used > 0)) return;
+  if (!f.credit_hold_done) return;
+  if (f.credit_spend_done) return;
+  if (f.credit_hold_release_done) return;
+
+  // 找 line_user_id（優先 Orders.line_user_id，沒有就從 shipping_info 補）
+  let uid = String(f.line_user_id || "").trim();
+  if (!uid) {
+    try {
+      const shipInfo = f.shipping_info ? JSON.parse(f.shipping_info) : {};
+      const line = shipInfo.line || shipInfo.line_profile || {};
+      uid = String(
+        line.user_id || line.userId || line.LINE_USER_ID || shipInfo.line_user_id || ""
+      ).trim();
+    } catch (e) {}
+  }
+
+  if (!uid) return;
+
+  // ✅ 釋放（releaseCreditHold 會負責寫 credit_hold_release_done 等欄位）
+  await releaseCreditHold(env, {
+    lineUserId: uid,
+    orderRecId: rec.id,
+    amount: used,
+    reason: `${reason}:${oid}`
+  });
+}
 async function spendCredit(env, { lineUserId, orderId, amount, reason = "購物金折抵" }) {
   const n = Math.round(Number(amount || 0) || 0);
   const oid = String(orderId || "").trim();
@@ -2700,101 +2741,47 @@ async function refundCredit(env, { lineUserId, orderId, amount, reason = "購物
 }
 
 // ✅ 給「線上支付成功」用：如果這張單有 credit_used 且還沒真的扣，就在這裡扣
-async function spendCreditIfNeeded(env, orderRec, reason = "paid_success") {
-  try {
-    const rec = orderRec;
-    const f = rec?.fields || {};
-    const orderId = String(f.order_id || "").trim();
-    if (!orderId) return;
+async function spendCreditIfNeeded(env, orderRec) {
+  const f = orderRec?.fields || {};
+  const orderId = String(f.order_id || "").trim();
 
-    // 只在 paid_ok 才做
-    const ps = String(f.pay_status || "").trim().toLowerCase();
-    if (ps !== "paid_ok") return;
-
-    // 已做過就不重複
-    if (f.credit_spend_done === true) return;
-
-    const creditUsed = Math.round(Number(f.credit_used || 0) || 0);
-    if (creditUsed <= 0) return;
-
-    // 抓會員 uid：優先 Orders.line_user_id，不然吃 shipping_info
-    let uid = String(f.line_user_id || "").trim();
-    if (!uid) {
-      try {
-        const shipInfo = f.shipping_info ? JSON.parse(f.shipping_info) : {};
-        const line = shipInfo.line || shipInfo.line_profile || shipInfo.lineProfile || {};
-        uid = String(
-          line.user_id || line.userId || line.LINE_USER_ID ||
-          shipInfo.line_user_id || shipInfo.lineUserId || ""
-        ).trim();
-      } catch (e) {}
-    }
-    if (!uid) return;
-
-    // tail 的 reason 盡量沿用 parent（避免你尾款的去重邏輯失效）
-    const isTail =
-      orderId.toUpperCase().startsWith("TL") ||
-      !!String(f.parent_order_id || "").trim() ||
-      f.is_tail === true;
-
-    let spendReason = String(reason || "paid_success");
-    const pid = String(f.parent_order_id || "").trim();
-    if (isTail && pid) spendReason = `tail:${pid}`;
-
-    // ✅ 若這筆單曾經預扣（hold），付款成功要把 hold 減回來（不然餘額會卡住）
-    const holdDone = f.credit_hold_done === true;
-    const holdRelDone = f.credit_hold_release_done === true;
-
-    if (holdDone && !holdRelDone) {
-      try {
-        const info = await getMemberCreditInfo(env, uid);
-        if (info?.rec?.id) {
-          const holdNow = Number(info.hold || 0) || 0;
-          const hold2 = Math.max(0, Math.round(holdNow - creditUsed));
-
-          await at(env, "PATCH", env.AT_LINE_MEMBERS || "LineMembers", `/${info.rec.id}`, {
-            fields: { credit_hold: hold2 }
-          });
-        }
-
-        // 訂單上標記：hold 已在「付款成功」時轉成實扣
-        await at(env, "PATCH", env.AT_ORDERS || "Orders", "", {
-          records: [{
-            id: rec.id,
-            fields: {
-              credit_hold_release_done: true,
-              credit_hold_release_at: nowISO(),
-              credit_hold_release_reason: `captured:${spendReason}`
-            }
-          }]
-        });
-      } catch (e) {
-        console.log("[spendCreditIfNeeded] capture hold failed", orderId, e?.message || e);
-      }
-    }
-
-    // ✅ 真正實扣：寫 use ledger（spendCredit 本身有去重）
-    await spendCredit(env, {
-      lineUserId: uid,
-      orderId,
-      amount: creditUsed,
-      reason: spendReason
-    });
-
-    await at(env, "PATCH", env.AT_ORDERS || "Orders", "", {
-      records: [{
-        id: rec.id,
-        fields: {
-          credit_spend_done: true,
-          credit_spend_at: nowISO(),
-          credit_spend_reason: spendReason
-        }
-      }]
-    });
-
-  } catch (e) {
-    console.log("[spendCreditIfNeeded] error", e?.message || e);
+  // 原本只看 Orders.line_user_id，這裡補：從 shipping_info 抓 line user id
+  let lineUserId = String(f.line_user_id || "").trim();
+  if (!lineUserId) {
+    try {
+      const shipInfo = f.shipping_info ? JSON.parse(f.shipping_info) : {};
+      const line = shipInfo.line || shipInfo.line_profile || {};
+      lineUserId = String(
+        line.user_id || line.userId || line.LINE_USER_ID || ""
+      ).trim();
+    } catch (e) {}
   }
+
+  const creditUsed = Math.round(Number(f.credit_used || 0) || 0);
+
+  const spendDone  = !!f.credit_spend_done;
+const refundDone = !!f.credit_refund_done;
+
+if (!orderId || !lineUserId) return;
+if (!(creditUsed > 0)) return;
+
+if (refundDone) return;
+if (spendDone) return;
+if (String(f.pay_status || "") !== "paid_ok") return;
+
+await spendCredit(env, { lineUserId, orderId, amount: creditUsed, reason: "paid_success" });
+
+const T = env.AT_ORDERS || "Orders";
+await at(env, "PATCH", T, "", {
+  records: [{
+    id: orderRec.id,
+    fields: {
+      credit_spend_done: true,
+      credit_spend_at: nowISO(),
+      credit_spend_reason: "paid_success"
+    }
+  }]
+});
 }
 // ✅ 取消/作廢時：若曾「預扣」就釋放；若曾「實扣」就退款（寫 ledger + 標記 Orders）
 // 用法：await refundCreditIfNeeded(env, rec, "cancelled")
@@ -2834,11 +2821,7 @@ const creditUsed = Math.round(Number(
 
     // A) 只有「預扣」但尚未實扣：取消時應該釋放 hold（不能做 refund，否則餘額會被加回兩次）
     if (holdDone && !holdRelDone && !spendDone) {
-      if (typeof globalThis.releaseCreditHoldIfNeeded === "function") {
-        await globalThis.releaseCreditHoldIfNeeded(env, orderId, String(reason || "cancelled"));
-      } else {
-        console.log("[refundCreditIfNeeded] releaseCreditHoldIfNeeded missing; skip hold release", orderId);
-      }
+      await releaseCreditHoldIfNeeded(env, orderId, String(reason || "cancelled"));
 
       //（可選）同步在 Orders 留痕跡，避免重複釋放
       await at(env, "PATCH", T, "", {
@@ -4930,11 +4913,15 @@ const params = {
         amount: Number(f.Amount || 0),             // 正數＝發放、負數＝使用
         reason: f.Reason || "",
         order_id: f.OrderId || "",
+        // ✅ 顯示用名稱（讓前端不要再看到 use:OD...）
+        DisplayName: f.DisplayName || f.display_name || f.displayName || "",
+        display_name: f.DisplayName || f.display_name || f.displayName || "",
+        status: f.Status || f.status || "",
         created_at:
           f.CreatedAt ||
           f["Created time"] ||
           rec.createdTime ||
-          ""
+          
       };
     });
 
@@ -9404,65 +9391,50 @@ async function creditLedgerReasonExists(env, lineUserId, reason) {
   return !!res?.records?.[0]?.id;
 }
 
-async function captureCreditHoldIfNeeded(env, orderId, reason = "paid_success") {
-  try {
-    const oid = String(orderId || "").trim();
-    if (!oid) return;
+async function captureCreditHoldIfNeeded(env, orderId) {
+  const T = env.AT_ORDERS || "Orders";
+  const CL = env.AT_CREDITS_LEDGER || "CreditsLedger";
 
-    const T = env.AT_ORDERS || "Orders";
-    const rows = await atListByField(env, T, "order_id", oid);
-    const rec = rows && rows[0];
-    if (!rec) return;
+  const orec = await atFindByField(env, T, "order_id", orderId);
+  if (!orec) return;
 
-    await spendCreditIfNeeded(env, rec, reason);
-  } catch (e) {
-    console.log("[captureCreditHoldIfNeeded] error", orderId, e?.message || e);
+  const f = orec.fields || {};
+  if (f.credit_capture_done) return;
+
+  const used = Number(f.credit_used || 0) || 0;
+  if (!(used > 0)) {
+    // 沒用購物金也算完成
+    await at(env, "PATCH", T, "", { records:[{ id: orec.id, fields:{ credit_capture_done:true } }] });
+    return;
   }
+
+  const uid = String(f.line_user_id || "").trim();
+  if (!uid) return;
+
+  const reason = `hold:${orderId}`;
+
+  // 找到那筆 hold
+  const filter = `AND({LineUserId}='${esc(uid)}',{Reason}='${esc(reason)}',{Status}='hold')`;
+  const res = await at(env, "GET", CL, "", null, { filterByFormula: filter, maxRecords: "1" });
+  const holdRec = res?.records?.[0];
+  if (!holdRec?.id) return;
+
+  // 把 hold 轉成 use（更新同一筆，避免多算）
+  await at(env, "PATCH", CL, "", {
+    records: [{
+      id: holdRec.id,
+      fields: { Type:"use", Status:"used", Amount: -Math.abs(Number(holdRec?.fields?.Amount || used) || 0), Reason:`used:${orderId}`, DisplayName: (typeof creditDisplayName==="function" ? creditDisplayName("use", orderId, "paid_success") : `購物金折抵（${orderId}）`) }}]
+  });
+
+  await at(env, "PATCH", T, "", {
+    records:[{ id: orec.id, fields:{ credit_capture_done:true, credit_spend_done:true } }]
+  });
 }
 
 // ✅ 補：釋放「購物金 hold」（給 abandoned cleanup / 金流失敗時用）
 // 依 Orders 欄位判斷：credit_used / credit_hold_done / credit_spend_done / credit_hold_release_done
-async function releaseCreditHoldIfNeeded(env, orderId, reason = "release_if_needed") {
-  const oid = String(orderId || "").trim();
-  if (!oid) return;
 
-  const T = env.AT_ORDERS || "Orders";
-  const rows = await atListByField(env, T, "order_id", oid);
-  const rec = rows && rows[0];
-  if (!rec) return;
 
-  const f = rec.fields || {};
-  const used = Math.round(Number(f.credit_used || 0) || 0);
-
-  // 沒用購物金就不用釋放
-  if (!(used > 0)) return;
-
-  // 沒 hold、已 spend、已釋放 → 都不用再做
-  if (!f.credit_hold_done) return;
-  if (f.credit_spend_done) return;
-  if (f.credit_hold_release_done) return;
-
-  // 找 line user id（優先 Orders.line_user_id，不然從 shipping_info 抓）
-  let uid = String(f.line_user_id || "").trim();
-  if (!uid) {
-    try {
-      const shipInfo = f.shipping_info ? JSON.parse(f.shipping_info) : {};
-      const line = shipInfo.line || shipInfo.line_profile || {};
-      uid = String(
-        line.user_id || line.userId || line.LINE_USER_ID || shipInfo.line_user_id || ""
-      ).trim();
-    } catch (e) {}
-  }
-  if (!uid) return;
-
-  // ✅ 走你現有的 releaseCreditHold（會把 LineMembers.credit_hold 釋放掉 + Orders 做標記）
-  await releaseCreditHold(env, {
-    lineUserId: uid,
-    orderRecId: rec.id,
-    amount: used,
-    reason: `${reason}:${oid}`
-  });
-}
 
 async function tailCreditUseExists(env, uid, parent_order_id) {
   const CL = env.AT_CREDITS_LEDGER || "CreditsLedger";
