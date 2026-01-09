@@ -1800,48 +1800,38 @@ if (cartToken) {
   } catch (e) {}
 }
 
-// ✅ 必補：購物金 Key 綁定 cartToken
-function creditKey(token){
-  if (!token) return 'murain_credit_used_fallback';
-  return `murain_credit_used:${String(token).trim()}`;
+function creditKey(cartToken){
+  return `murain_credit_used:${String(cartToken || "").trim()}`;
 }
 
-  // ✅ A) 綁定：隨打隨存（session + local）
+// ✅ A) 綁定：隨打隨存（只存 sessionStorage；不寫 localStorage）
 function attachCreditPersist(){
-  const el = document.getElementById("credit_input");
-  if (!el) return false;
+  const el = document.getElementById('credit_used');
+  if (!el) return;
 
-  // 避免重複綁定（loadCart 重繪時會換 DOM）
-  if (el.dataset.boundCreditPersist === "1") return true;
-  el.dataset.boundCreditPersist = "1";
-
-  el.addEventListener("input", () => {
-    const v = String(el.value || "");
-    try { sessionStorage.setItem(creditKey(cartToken), v); } catch(e){}
-    try { localStorage.setItem(creditKey(cartToken), v); } catch(e){}
+  const key = creditKey(cartToken);
+  el.addEventListener('input', () => {
+    const v = String(el.value || '').trim();
+    try { sessionStorage.setItem(key, v); } catch(e){}
   });
-
-  return true;
 }
 
-// ✅ B) 回填：優先 token key，其次舊 key
+// ✅ B) 進頁面：讀回（只讀「本 cartToken」）
 function restoreCreditInput(){
-  try {
-    const key = creditKey(cartToken);
-    const saved =
-      (sessionStorage.getItem(key) ?? localStorage.getItem(key) ??
-       sessionStorage.getItem("murain_credit_used") ?? localStorage.getItem("murain_credit_used"));
+  const el = document.getElementById('credit_used');
+  if (!el) return;
 
-    if (saved === null) return;
+  const key = creditKey(cartToken);
+  let v = "";
+  try { v = sessionStorage.getItem(key) || ""; } catch(e){}
 
-    const el = document.getElementById("credit_input");
-    if (!el) return;
+  if (String(v || "").trim() !== "") el.value = String(v);
+}
 
-    if (String(el.value || "").trim() !== String(saved).trim()) {
-      el.value = saved;
-      el.dispatchEvent(new Event("input", { bubbles:true }));
-    }
-  } catch(e){}
+// ✅ C) 成功結帳後清掉（避免下次回來還在）
+function clearCreditPersist(){
+  const key = creditKey(cartToken);
+  try { sessionStorage.removeItem(key); } catch(e){}
 }
 
 /* ===== PayReturn/PayFail 回來用的參數 ===== */
@@ -2297,15 +2287,12 @@ CART_LOADED = true; // ✅ 加在這裡
 /* ===== 7-11 地圖 ===== */
 function open711(src) {
   saveCheckoutState();
-  // ✅【新增】記住使用者輸入的購物金（7-11 跳轉前）
-  try {
-  const ci = document.getElementById('credit_input');
-  if (ci) {
-    const v = String(ci.value || "");
-    sessionStorage.setItem(creditKey(cartToken), v);
-    localStorage.setItem(creditKey(cartToken), v);
-  }
-} catch(e) {}
+  // ✅【修正】只存 sessionStorage（不存 localStorage），且只綁 cartToken
+        try {
+          const ci = document.getElementById('credit_input');
+          const v  = ci ? String(ci.value || '').trim() : "";
+          sessionStorage.setItem(creditKey(cartToken), v);
+        } catch(e) {}
 
   
   // ✅ 加這段：給 message listener / applyStoreFromURL 當備援
@@ -2734,6 +2721,16 @@ function restoreCheckoutState() {
 
   let state;
   try { state = JSON.parse(raw); } catch { return; }
+
+   // ✅ 防呆：只允許同一張 cart_token 回填（避免上一張購物車資料污染）
+  try {
+    const ctNow = String(cartToken || "");
+    const ctOld = String(state?.__cartToken || "");
+    if (ctOld && ctNow && ctOld !== ctNow) {
+      clearCheckoutState();
+      return;
+    }
+  } catch (e) {}
 
   // 1) 先回填所有欄位
   document.querySelectorAll('input, select, textarea').forEach(el => {
@@ -3278,7 +3275,7 @@ document.getElementById('submitBtn')?.addEventListener('click', async (e) => {
       if (pending?.order_id && pending?.payment_method && String(pending.payment_method) !== String(payment_method)) {
         payload.force_rebuild = true;
         payload.cancel_pending = true;
-        payload.pending_order_id = String(pending.order_id);
+        payload.pending_order_id = g.order_id;
       }
     } catch(e){}
 
@@ -3313,6 +3310,7 @@ document.getElementById('submitBtn')?.addEventListener('click', async (e) => {
     try { if (typeof clearPendingPay === "function") clearPendingPay(cartToken); } catch(e){}
     try { if (typeof markCartCheckedOut === "function") markCartCheckedOut(cartToken, orderId, Math.max(0, (CART_TOTAL_RAW||0)-(CREDIT_USED||0))); } catch(e){}
     try { clearCheckoutState(); } catch(e){}
+    try { clearCreditPersist(); } catch(e) {}
 
     if (orderId) {
       const url = `/order-result.html?order_id=${encodeURIComponent(orderId)}`;
