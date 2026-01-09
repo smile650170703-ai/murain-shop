@@ -3290,14 +3290,63 @@ document.getElementById('submitBtn')?.addEventListener('click', async (e) => {
       return;
     }
 
-    // ✅ 常見欄位相容（你後端可能叫 redirect_url / pay_url）
+ // ✅ 常見欄位相容（你後端可能叫 redirect_url / pay_url）
     const orderId = resp.order_id || resp.orderId || resp.id || '';
-    const redirect =
-  resp.next_url || resp.nextUrl ||
-  resp.redirect_url || resp.redirectUrl ||
-  resp.pay_url || resp.payUrl ||
-  resp.url || '';
 
+    let redirect =
+      resp.next_url || resp.nextUrl ||
+      resp.redirect_url || resp.redirectUrl ||
+      resp.pay_url || resp.payUrl ||
+      resp.payment_url || resp.paymentUrl ||
+      resp.url || '';
+
+    // ✅ 哪些付款「一定要跳轉付款頁」
+    const pmLower = String(payment_method || "").trim().toLowerCase();
+    const isOnlinePaid = pmLower.startsWith("paid_");        // PayUNI：信用卡/分期/LINE Pay/AFTEE
+    const isZeroCard   = pmLower.startsWith("zero_card_");   // 中租零卡
+    const mustRedirect = isOnlinePaid || isZeroCard;
+
+    // ✅ fallback：如果後端沒給 redirect，再嘗試要一次付款連結（避免誤判成功）
+    async function tryFetchRedirectFallback() {
+      try {
+        if (!orderId) return "";
+
+        // 1) ZeroCard → /zero-card/start（拿 payment_url）
+        if (isZeroCard) {
+          const r2 = await jfetch(`${API}/zero-card/start`, {
+            method: "POST",
+            body: JSON.stringify({ order_id: orderId })
+          });
+          if (r2?.ok) {
+            return (
+              r2.payment_url || r2.paymentUrl ||
+              r2.next_url || r2.nextUrl ||
+              r2.redirect_url || r2.redirectUrl ||
+              r2.pay_url || r2.payUrl ||
+              r2.url || ""
+            );
+          }
+          return "";
+        }
+
+        // 2) PayUNI → /payuni/start（通常是 GET，但你也可能做成 POST）
+        if (isOnlinePaid) {
+          // ✅ 最穩：直接組 GET 網址（後端會自動送出表單到 UPP）
+          return `${API}/payuni/start?order_id=${encodeURIComponent(orderId)}`;
+        }
+
+        return "";
+      } catch (e) {
+        return "";
+      }
+    }
+
+    // ✅ 先用後端回來的 redirect；沒有就 fallback 補救一次
+    if (!redirect && mustRedirect) {
+      redirect = await tryFetchRedirectFallback();
+    }
+
+    // ✅ 有 redirect → 去付款
     if (redirect) {
       leavingToPay = true;
       try { if (typeof markCartPendingPay === "function") markCartPendingPay(cartToken, orderId, payment_method); } catch(e){}
@@ -3306,11 +3355,17 @@ document.getElementById('submitBtn')?.addEventListener('click', async (e) => {
       return;
     }
 
-    // 沒有 redirect → 視為完成下單
+    // ✅ 線上支付/零卡「沒有拿到 redirect」＝不要誤判成功
+    if (mustRedirect) {
+      alert('付款跳轉連結取得失敗（沒有拿到 next_url）。請稍後再試，或改用其他付款方式。');
+      return;
+    }
+
+    // ✅ 沒有 redirect → 才視為「完成下單」（貨到付款 / 匯款 / 定金 / 裕富審核...）
     try { if (typeof clearPendingPay === "function") clearPendingPay(cartToken); } catch(e){}
     try { if (typeof markCartCheckedOut === "function") markCartCheckedOut(cartToken, orderId, Math.max(0, (CART_TOTAL_RAW||0)-(CREDIT_USED||0))); } catch(e){}
     try { clearCheckoutState(); } catch(e){}
-    try { clearCreditPersist(); } catch(e) {}
+    try { clearCreditPersist(); } catch(e){}
 
     if (orderId) {
       const url = `/order-result.html?order_id=${encodeURIComponent(orderId)}`;
