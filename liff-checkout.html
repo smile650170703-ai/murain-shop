@@ -3448,23 +3448,41 @@ async function copyToClipboard(text) {
 
   // ✅ 只要使用者「有改付款方式」就清掉 pendingPay，避免一直用舊的 AF/舊跳轉
 (function bindClearPendingPayOnPaymentChange(){
-  const payTabs = document.getElementById('payTabs');
-  if (payTabs) {
-    payTabs.addEventListener('click', (e) => {
-      if (e.target && e.target.closest && e.target.closest('.tab')) {
+  function run(){
+    // 1) 點付款分頁（tab）
+    const payTabs = document.getElementById('payTabs');
+    if (payTabs) {
+      payTabs.addEventListener('click', (e) => {
+        const tab = e.target && e.target.closest ? e.target.closest('.tab') : null;
+        if (tab) {
+          try { clearPendingPay(cartToken); } catch(e) {}
+        }
+      });
+    }
+
+    // 2) 付款區域內任何 select/radio/change 都算「改付款方式」
+    document.addEventListener('change', (e) => {
+      const t = e.target;
+      if (!t || !t.closest) return;
+
+      const inPayArea =
+        t.closest('#payTabs') ||
+        t.closest('#payPanels') ||
+        t.closest('#paymentPanel') ||
+        t.closest('.pay-panel');
+
+      if (inPayArea) {
         try { clearPendingPay(cartToken); } catch(e) {}
       }
-    });
+    }, true);
   }
 
-  // 用捕獲：任何付款區域內的 select/radio/change 都算「改付款方式」
-  document.addEventListener('change', (e) => {
-    const t = e.target;
-    if (!t) return;
-    if (t.closest && (t.closest('#payTabs') || t.closest('#payPanels') || t.closest('#paymentPanel') || t.closest('.pay-panel'))) {
-      try { clearPendingPay(cartToken); } catch(e) {}
-    }
-  }, true);
+  // 確保 DOM 可抓到 payTabs/payPanels
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
 })();
 // ===== 頁面初始化（唯一入口）=====
 (async () => {
