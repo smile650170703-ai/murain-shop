@@ -148,6 +148,11 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   #orderDetail #btnSaveDetailOnly {
     display: none;
   }
+
+ /* ★ 隱藏：0 元包裹匯出按鈕（不動其他邏輯） */
+  #btnExportZero{display:none !important;}
+ button.filter-btn[data-filter="unshipped"]{display:none !important;}
+
 </style>
 </head>
 <body>
@@ -158,7 +163,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     <div class="toolbar-left">
       <div class="filter-group">
         <button class="filter-btn active" data-filter="all">全部訂單</button>
-       <button class="filter-btn" data-filter="all_no_fail">全部訂單（不含作廢/補回）</button>
+       <button class="filter-btn" data-filter="all_no_fail">未出貨訂單</button>
         <button class="filter-btn" data-filter="pending_online">✅線上付款待確認</button>
        <button class="filter-btn" data-filter="unshipped">未出貨訂單</button>
         <button class="filter-btn" data-filter="ready_to_ship"
@@ -673,10 +678,21 @@ if (currentFilter === 'all_no_fail') {
   currentFilter = 'all_no_fail';
 
   currentOrders = (currentOrders || []).filter(rec => {
-  const f = rec.fields || rec || {};
-  const ps = String(f.pay_status || '').toLowerCase();
-  return ps !== 'failed' && ps !== 'cancelled';
-});
+    const f  = rec.fields || rec || {};
+    const ps = String(f.pay_status || '').toLowerCase();
+    const st = String(f.status || '').toLowerCase();
+    const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
+
+    // 不含作廢/補回
+    if (ps === 'failed' || ps === 'cancelled') return false;
+    if (st === 'cancelled') return false;
+
+    // 不含已出貨（含 shipped/arrived/picked_up/returned）
+    if (st === 'shipped') return false;
+    if (ss === 'shipped' || ss === 'arrived' || ss === 'picked_up' || ss === 'returned') return false;
+
+    return true;
+  });
 
   ORDERS_CACHE = currentOrders.map(r => r.fields || r || {});
   renderOrderList();
@@ -2420,16 +2436,27 @@ $$('.filter-btn').forEach(btn=>{
 
       // 前端排除 failed/cancelled
       currentOrders = (currentOrders || []).filter(rec => {
-        const f = rec.fields || rec || {};
-        const ps = String(f.pay_status || '').toLowerCase();
-        return ps !== 'failed' && ps !== 'cancelled';
-      });
+  const f  = rec.fields || rec || {};
+  const ps = String(f.pay_status || '').toLowerCase();
+  const st = String(f.status || '').toLowerCase();
+  const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
+
+  // 不含作廢/補回
+  if (ps === 'failed' || ps === 'cancelled') return false;
+  if (st === 'cancelled') return false;
+
+  // 不含已出貨
+  if (st === 'shipped') return false;
+  if (ss === 'shipped' || ss === 'arrived' || ss === 'picked_up' || ss === 'returned') return false;
+
+  return true;
+});
 
       ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
       renderOrderList();
 
       if (msgEl) {
-        msgEl.textContent = '僅顯示「排除 pay_status=failed / cancelled」的訂單（不含作廢/補回庫存）。';
+        msgEl.textContent = '未出貨訂單';
       }
 
     } else if (filter === 'unshipped') {
