@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MURAIN 內部庫存查詢系統</title>
+    <style>
+        :root {
+            --primary-color: #1a1a1a;    /* 極致黑 */
+            --accent-color: #c5a059;     /* 香檳金 */
+            --bg-color: #f9f9f9;
+            --text-color: #333;
+        }
+        body { font-family: "PingFang TC", "Microsoft JhengHei", sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: 40px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+        
+        /* 標題樣式 */
+        .header { text-align: center; border-bottom: 2px solid var(--accent-color); padding-bottom: 15px; margin-bottom: 30px; }
+        h2 { margin: 0; letter-spacing: 2px; color: var(--primary-color); }
+        .brand-sub { font-size: 12px; color: var(--accent-color); text-transform: uppercase; margin-top: 5px; }
+
+        /* 搜尋框 */
+        .search-container { position: relative; margin-bottom: 25px; }
+        input[type="text"] { width: 100%; padding: 12px 15px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; transition: border 0.3s; }
+        input[type="text"]:focus { outline: none; border-color: var(--accent-color); box-shadow: 0 0 5px rgba(197, 160, 89, 0.2); }
+
+        /* 表格樣式 */
+        table { width: 100%; border-collapse: collapse; background: white; }
+        th { background-color: var(--primary-color); color: white; padding: 15px 10px; text-align: left; font-weight: 400; font-size: 14px; }
+        td { padding: 15px 10px; border-bottom: 1px solid #eee; font-size: 15px; }
+        tr:hover { background-color: #fcfaf5; }
+
+        /* 狀態樣式 */
+        .stock-tag { padding: 4px 8px; border-radius: 4px; font-size: 13px; font-weight: bold; }
+        .low-stock { color: #d9534f; background: #fff1f0; border: 1px solid #ffa39e; }
+        .in-stock { color: #52c41a; background: #f6ffed; border: 1px solid #b7eb8f; }
+        
+        .loading { text-align: center; padding: 40px; color: #999; }
+        #auth-screen { display: none; text-align: center; padding-top: 100px; }
+        #main-content { display: none; }
+    </style>
+</head>
+<body>
+
+<div id="auth-screen">
+    <h2>請輸入存取密碼</h2>
+    <p style="color: #666;">此頁面僅供內部人員使用</p>
+</div>
+
+<div class="container" id="main-content">
+    <div class="header">
+        <h2>庫存即時查詢系統</h2>
+        <div class="brand-sub">Inventory Management System</div>
+    </div>
+    
+    <div class="search-container">
+        <input type="text" id="searchInput" placeholder="搜尋 SKU、產品名稱...">
+    </div>
+
+    <div id="loading" class="loading">正在連線至後端資料庫...</div>
+    
+    <table id="productTable" style="display:none;">
+        <thead>
+            <tr>
+                <th>SKU 編號</th>
+                <th>產品名稱</th>
+                <th style="text-align: right;">售價</th>
+                <th style="text-align: center;">庫存狀態</th>
+            </tr>
+        </thead>
+        <tbody id="productBody"></tbody>
+    </table>
+</div>
+
+<script>
+    // --- 設定區 ---
+    const API_BASE = "https://api.murain.tw"; // 💡 請換成您的 Worker 網址
+    const VIEW_PASSWORD = "88"; // 💡 請設定您的密碼
+    // -------------
+
+    let allProducts = [];
+
+    // 啟動密碼驗證
+    function checkAuth() {
+        const pass = prompt("請輸入內部查詢密碼：");
+        if (pass === VIEW_PASSWORD) {
+            document.getElementById('main-content').style.display = 'block';
+            fetchInventory();
+        } else {
+            alert("密碼錯誤，拒絕存取。");
+            document.getElementById('auth-screen').style.display = 'block';
+        }
+    }
+
+    // 抓取後端資料
+    async function fetchInventory() {
+        try {
+            const response = await fetch(`${API_BASE}/public/products?limit=1000`);
+            const data = await response.json();
+            
+            if (data.ok) {
+                allProducts = data.items;
+                displayProducts(allProducts);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('productTable').style.display = 'table';
+            }
+        } catch (error) {
+            document.getElementById('loading').innerText = "❌ 無法讀取資料，請確認後端是否運作中。";
+        }
+    }
+
+    // 呈現資料
+    function displayProducts(products) {
+        const body = document.getElementById('productBody');
+        body.innerHTML = "";
+
+        products.forEach(p => {
+            const row = document.createElement('tr');
+            const isLow = p.stock <= 3; // 設定庫存低於 3 件顯示警告
+            
+            row.innerHTML = `
+                <td style="font-family: monospace; color: #666;">${p.sku || '-'}</td>
+                <td style="font-weight: 500;">${p.title || p.name || '-'}</td>
+                <td style="text-align: right; color: var(--accent-color); font-weight: bold;">
+                    $${p.price?.toLocaleString() || 0}
+                </td>
+                <td style="text-align: center;">
+                    <span class="stock-tag ${isLow ? 'low-stock' : 'in-stock'}">
+                        ${isLow ? '⚠ 低庫存: ' : '現貨: '}${p.stock ?? 0}
+                    </span>
+                </td>
+            `;
+            body.appendChild(row);
+        });
+    }
+
+    // 搜尋過濾功能
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+        const keyword = e.target.value.toLowerCase();
+        const filtered = allProducts.filter(p => 
+            (p.sku && p.sku.toLowerCase().includes(keyword)) || 
+            (p.title && p.title.toLowerCase().includes(keyword))
+        );
+        displayProducts(filtered);
+    });
+
+    // 頁面載入後立即要求密碼
+    window.onload = checkAuth;
+</script>
+
+</body>
+</html>
