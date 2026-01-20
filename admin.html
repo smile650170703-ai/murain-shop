@@ -939,61 +939,6 @@ function statusBadgeShip(st){
 /* ===== 左側列表渲染 ===== */
 function renderOrderList(){
   const listEl = $('#orderList');
-
-  // 小工具：attribute 安全
-  const escAttr = (s) => escapeHtml(String(s ?? ''));
-
-  // ✅ 寫入 Orders.取貨登記（用你原本就有的 /admin/order/update）
-  async function writePickupReg(key, value){
-    if(!key) return;
-    await ensureOpKey();
-
-    const rec = (currentOrders || []).find(x=>{
-      if (x.id && String(x.id) === String(key)) return true;
-      const fx = x.fields || x || {};
-      return fx.order_id && String(fx.order_id) === String(key);
-    });
-    if(!rec){
-      alert('找不到這筆訂單');
-      return;
-    }
-
-    const f = rec.fields || rec || {};
-    const payload = {
-      record_id: rec.id || null,
-      order_id : f.order_id || null,
-      fields   : { '取貨登記': String(value || '').trim() }
-    };
-
-    try{
-      const res = await fetch(`${API}/admin/order/update?op_key=${encodeURIComponent(OP_KEY)}`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(payload)
-      });
-      const j = await res.json().catch(()=> ({}));
-      if(!res.ok || !j.ok) throw new Error(j.error || ('HTTP ' + res.status));
-
-      // ✅ 成功後：重新載入目前畫面，並保留選取
-      const keepKey = f.order_id || rec.id || key;
-      await reloadCurrentView();
-
-      const found = (currentOrders || []).find(x=>{
-        if (x.id && String(x.id) === String(keepKey)) return true;
-        const fx = x.fields || x || {};
-        return fx.order_id && String(fx.order_id) === String(keepKey);
-      });
-      if(found){
-        renderDetail(found);
-        const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
-        if(row) row.classList.add('active');
-      }
-    }catch(e){
-      console.error(e);
-      alert('寫入取貨登記失敗：' + (e.message || e));
-    }
-  }
-
   if(!currentOrders.length){
     listEl.innerHTML = '<div class="muted">目前沒有符合條件的訂單</div>';
     updateSummary();
@@ -1004,25 +949,25 @@ function renderOrderList(){
     const f = rec.fields || rec || {};
 
     const shipInfo = parseShippingInfo(f);
-    const ship  = shipInfo.ship  || {};
-    const store = ship.store     || {};
-    const post  = ship.post      || {};
-    const note  = shipInfo.note  || '';
+const ship  = shipInfo.ship  || {};
+const store = ship.store     || {};
+const post  = ship.post      || {};
+const note  = shipInfo.note  || '';
 
-    // ✅ 訂金資訊：你的資料在 shipping_info.deposit 裡
-    const dep = shipInfo.deposit || {};
-    const depAmount = (f.deposit_amount ?? dep.amount ?? '');
-    const depLast5  = (f.deposit_last5  ?? dep.last5  ?? '');
-    const atmLast5 = String(shipInfo.atm_last5 || "").trim();
-    const last5Show = String(depLast5 || atmLast5 || "").trim(); // 訂金匯款/尾款匯款共用顯示
-    const holdUntil10 = (f.hold_until ?? dep.hold_until ?? '') ? String(f.hold_until ?? dep.hold_until).slice(0,10) : '';
-    const depExpire10 = (f.deposit_expire_at ?? dep.deposit_expire_at ?? '') ? String(f.deposit_expire_at ?? dep.deposit_expire_at).slice(0,10) : '';
+   // ✅ 訂金資訊：你的資料在 shipping_info.deposit 裡
+const dep = shipInfo.deposit || {};
+const depAmount = (f.deposit_amount ?? dep.amount ?? '');
+const depLast5  = (f.deposit_last5  ?? dep.last5  ?? '');
+const atmLast5 = String(shipInfo.atm_last5 || "").trim();
+const last5Show = String(depLast5 || atmLast5 || "").trim(); // 訂金匯款/尾款匯款共用顯示
+const holdUntil10 = (f.hold_until ?? dep.hold_until ?? '') ? String(f.hold_until ?? dep.hold_until).slice(0,10) : '';
+const depExpire10 = (f.deposit_expire_at ?? dep.deposit_expire_at ?? '') ? String(f.deposit_expire_at ?? dep.deposit_expire_at).slice(0,10) : '';
 
-    // ✅ 出貨時間顯示用（唯讀）
-    const shipAtRaw  = (f.shipped_at || f.ship_at || '');
-    const shipAtText = shipAtRaw
-      ? new Date(shipAtRaw).toLocaleString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:true })
-      : '';
+// ✅ 出貨時間顯示用（唯讀）
+const shipAtRaw  = (f.shipped_at || f.ship_at || '');
+const shipAtText = shipAtRaw
+  ? new Date(shipAtRaw).toLocaleString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:true })
+  : '';
 
     let addr = '';
     if (ship.type === '711') {
@@ -1033,74 +978,41 @@ function renderOrderList(){
       const place = ship.meetup_place || ship.meet_place || '';
       const time  = ship.meetup_time  || ship.meet_time  || '';
       let s = ['面交', time].filter(Boolean).join(' ');
-      if (place) s += ' @ ' + place;
+      if (place) s += ` @ ${place}`;
       addr = s;
-    } else {
-      addr = note || '';
     }
-
-    const rowKey = f.order_id || rec.id || '';
-
-    // ✅ 右側地址那行
-    const line2Text = [ship.name, ship.phone, addr].filter(Boolean).join(' / ');
-    const line2Html = line2Text ? escapeHtml(line2Text) : '&nbsp;';
-
-    // ✅ 只有 7-11（賣貨便）才顯示「取貨登記」欄位（在地址那行旁邊）
-    const pickNow = String(f['取貨登記'] || '').trim();
-    const pickInline = (ship.type === '711')
-      ? `
-        <span class="pickreg-inline" style="display:inline-flex;align-items:center;gap:6px;margin-left:10px;">
-          <span class="tag-small">取貨登記</span>
-          <input
-            class="pickreg-input"
-            data-id="${escAttr(rowKey)}"
-            type="text"
-            value="${escAttr(pickNow)}"
-            placeholder="輸入編號/已取貨"
-            style="width:150px;height:28px;padding:4px 8px;border-radius:999px;border:1px solid rgba(148,163,184,.6);background:#020617;color:#e2e8f0;font-size:12px;"
-          />
-          <button
-            class="small-btn pickreg-save"
-            data-id="${escAttr(rowKey)}"
-            type="button"
-            style="padding:4px 10px;height:28px;font-size:12px;"
-          >存</button>
-        </span>
-      `
-      : '';
-
+    const line2   = [ship.name, ship.phone, addr].filter(Boolean).join(' / ');
     const pay_b   = statusBadgePay(f.pay_status);
     const ship_b  = statusBadgeShip(f.ship_status);
     const method  = displayPaymentMethod(f.payment_method || '');
     const created = f.CreatedAt || (f.created_at || '');
     const a = calcAmounts(f);
     const total   = money(a.net);
-
     const creditTag = a.credit > 0
-      ? `<div class="tag-small credit-red">購物金折抵 ${money(a.credit)}</div>`
-      : ``;
+  ? `<div class="tag-small credit-red">購物金折抵 ${money(a.credit)}</div>`
+  : ``;
 
-    const last5Tag = last5Show
-      ? `<div class="tag-small">後五碼：${escapeHtml(last5Show)}</div>`
-      : ``;
+   const last5Tag = last5Show
+  ? `<div class="tag-small">後五碼：${escapeHtml(last5Show)}</div>`
+  : ``;
+
+    const rowKey = f.order_id || rec.id || '';
 
     return `
-      <div class="order-row" data-id="${escAttr(rowKey)}">
+      <div class="order-row" data-id="${rowKey}">
         <div class="ord-top">
           <div>
-            <div class="ord-id">${escapeHtml(f.order_id || '(無編號)')}</div>
-            <div class="tag-small">${escapeHtml(created)}</div>
+            <div class="ord-id">${f.order_id || '(無編號)'}</div>
+            <div class="tag-small">${created}</div>
           </div>
           <div style="text-align:right">
-            <div class="ord-amount">${escapeHtml(total)}</div>
-            <div class="tag-small">${escapeHtml(method)}</div>
-            ${last5Tag}
-            ${creditTag}
-          </div>
+            <div class="ord-amount">${total}</div>
+            <div class="tag-small">${method}</div>
+  ${last5Tag}
+  ${creditTag}
+</div>
         </div>
-
-        <div class="ord-sub">${line2Html}${pickInline}</div>
-
+        <div class="ord-sub">${line2 || '&nbsp;'}</div>
         <div class="badges">
           ${pay_b}
           ${ship_b}
@@ -1111,11 +1023,8 @@ function renderOrderList(){
 
   listEl.innerHTML = html;
 
-  // ✅ 點整列 → 選取訂單（但點「取貨登記」區塊不會觸發）
   $$('#orderList .order-row').forEach(row=>{
-    row.addEventListener('click', (ev)=>{
-      if (ev && ev.target && ev.target.closest && ev.target.closest('.pickreg-inline')) return;
-
+    row.addEventListener('click', ()=>{
       $$('#orderList .order-row').forEach(x=>x.classList.remove('active'));
       row.classList.add('active');
       const key = row.getAttribute('data-id');
@@ -1123,30 +1032,6 @@ function renderOrderList(){
     });
   });
 
-  // ✅ 取貨登記：點欄位不選列；Enter 直接存；按「存」也能存
-  $$('#orderList .pickreg-input').forEach(inp=>{
-    inp.addEventListener('click', (ev)=>ev.stopPropagation());
-    inp.addEventListener('keydown', async (ev)=>{
-      if(ev.key === 'Enter'){
-        ev.preventDefault();
-        ev.stopPropagation();
-        const key = inp.getAttribute('data-id');
-        await writePickupReg(key, (inp.value || '').trim());
-      }
-    });
-  });
-
-  $$('#orderList .pickreg-save').forEach(btn=>{
-    btn.addEventListener('click', async (ev)=>{
-      ev.stopPropagation();
-      const key = btn.getAttribute('data-id');
-      const inp = btn.parentElement ? btn.parentElement.querySelector('.pickreg-input') : null;
-      const v = inp ? (inp.value || '').trim() : '';
-      await writePickupReg(key, v);
-    });
-  });
-
-  // ✅ 保留你原本的「重新渲染後保持 active」
   if(currentRecord){
     const f = currentRecord.fields || currentRecord || {};
     const key = currentRecord.id || f.order_id || '';
