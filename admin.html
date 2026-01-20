@@ -1663,21 +1663,24 @@ async function savePickupRegOnly(){
     const j = await r.json().catch(()=>({}));
     if(!r.ok || !j.ok) throw new Error(j.message || j.error || ('HTTP ' + r.status));
 
-    // ✅ 只更新前端快取，不重載列表（就不會跳回首訂單）
-    if (!currentRecord.fields) currentRecord.fields = (currentRecord.fields || {});
-    currentRecord.fields['取貨登記'] = v;
+    // ✅ 只更新前端快取（不重載、不跳單）
+const setField = (rec, k, val) => {
+  if (!rec) return;
+  if (rec.fields && typeof rec.fields === 'object') rec.fields[k] = val;
+  else rec[k] = val;
+};
 
-    const idx = currentOrders.findIndex(x=>{
-      const fx = x.fields || x || {};
-      return String(fx.order_id||'') === String(orderId);
-    });
-    if (idx >= 0){
-      if (!currentOrders[idx].fields) currentOrders[idx].fields = (currentOrders[idx].fields || {});
-      currentOrders[idx].fields['取貨登記'] = v;
-    }
+setField(currentRecord, '取貨登記', v);
 
-    if (msgEl) msgEl.textContent = '取貨登記已儲存 ✅';
-   // ✅ 新增這行：只重畫左側列表（不打 API、不跳回首訂單）
+const idx = currentOrders.findIndex(x=>{
+  const fx = x.fields || x || {};
+  return String(fx.order_id||'') === String(orderId);
+});
+if (idx >= 0) setField(currentOrders[idx], '取貨登記', v);
+
+if (msgEl) msgEl.textContent = '取貨登記已儲存 ✅';
+
+// ✅ 只重畫左側列表（不打 API、不跳回首訂單）
 renderOrderList();
   }catch(e){
     console.error(e);
