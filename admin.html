@@ -202,6 +202,10 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
           <label>&nbsp;</label>
           <button class="small-btn" id="btnRemindToday" type="button">已收定金未出貨</button>
         </div>
+       <div class="field">
+  <label>&nbsp;</label>
+  <button class="small-btn" id="btnPickupNeed" type="button">賣貨便登記</button>
+</div>
         <div class="field">
           <label>&nbsp;</label>
           <!-- ★ 新增：列印多筆熱感出貨單 -->
@@ -2625,6 +2629,61 @@ $$('.filter-btn').forEach(btn=>{
       }
     });
   }
+ const btnPickupNeed = $('#btnPickupNeed');
+if (btnPickupNeed){
+  btnPickupNeed.addEventListener('click', async () => {
+    const msgEl = $('#msg');
+    if (msgEl) msgEl.textContent = '';
+
+    // 1) 日期拉大範圍：2024-01-01 ~ 今天（沿用你 btnRemindToday 的做法）
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm   = String(today.getMonth() + 1).padStart(2, '0');
+    const dd   = String(today.getDate()).padStart(2, '0');
+
+    if ($('#date_from')) $('#date_from').value = '2024-01-01';
+    if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
+
+    // 2) 狀態：先用「shipped」縮小後端回傳（仍會再用前端篩一次）
+    if ($('#status')) $('#status').value = 'shipped';
+
+    // 3) 先照原本方式載入
+    await ensureOpKey();
+    await loadOrdersByDate();
+
+    // 4) 前端再篩選：已出貨 +（7-11 類型）+「取貨登記」不是「已取貨」
+    currentOrders = (currentOrders || []).filter(rec => {
+      const f  = rec.fields || rec || {};
+      const ps = String(f.pay_status || '').toLowerCase();
+      if (ps === 'failed' || ps === 'cancelled') return false;
+
+      // 已出貨判斷（保守寫法：status 或 ship_status 任一像已出貨都算）
+      const st = String(f.status || '').toLowerCase();
+      const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
+      const shipped = (st === 'shipped') || (ss === 'shipped') || (ss === 'arrived') || (ss === 'picked_up');
+
+      // 只抓 7-11（避免郵寄也被撈進來：取貨登記通常是超商取貨才需要）
+      const shipInfo = (typeof parseShippingInfo === 'function') ? (parseShippingInfo(f) || {}) : {};
+      const ship = shipInfo.ship || {};
+      const is711 = String(ship.type || '').toLowerCase() === '711';
+
+      const pickReg = String(f['取貨登記'] || '').trim(); // 你的 Airtable 欄位
+      const notPicked = (pickReg !== '已取貨');
+
+      return shipped && is711 && notPicked;
+    });
+
+    // 5) 更新快取 & 畫面
+    ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+    renderOrderList();
+
+    if (msgEl){
+      msgEl.textContent = currentOrders.length
+        ? `僅顯示「已出貨 + 7-11 取貨 + 取貨登記≠已取貨」的訂單。共 ${currentOrders.length} 筆。`
+        : '目前沒有「已出貨且尚未登記已取貨」的訂單。';
+    }
+  });
+}
   // ★ 上方「取消訂單（補回庫存）」按鈕：直接走 cancelCurrentOrder()
   const btnCancelTop = $('#btnCancelOrderTop');
   if (btnCancelTop) {
