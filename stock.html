@@ -3,24 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>庫存查詢（後端 SKU 查詢）</title>
+  <title>庫存查詢（五碼模糊搜尋）</title>
   <style>
     body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans TC","Microsoft JhengHei",sans-serif;background:#0b0c10;color:#eaeaea}
     header{position:sticky;top:0;z-index:10;background:#090a0d;border-bottom:1px solid #222;padding:14px 16px}
     h1{margin:0 0 10px;font-size:18px}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    input,textarea,button,select{
+    input,button,select{
       background:#12131a;color:#eaeaea;border:1px solid #2a2b34;border-radius:10px;
       padding:10px 12px;outline:none
     }
-    input:focus,textarea:focus,select:focus{border-color:#d4af37;box-shadow:0 0 0 3px rgba(212,175,55,.15)}
-    button{background:#d4af37;border:0;color:#101015;font-weight:700;cursor:pointer}
-    button.secondary{background:#1b1c25;color:#eaeaea;border:1px solid #2a2b34;font-weight:600}
+    input:focus,select:focus{border-color:#d4af37;box-shadow:0 0 0 3px rgba(212,175,55,.15)}
+    button{background:#d4af37;border:0;color:#101015;font-weight:800;cursor:pointer}
+    button.secondary{background:#1b1c25;color:#eaeaea;border:1px solid #2a2b34;font-weight:700}
     button:disabled{opacity:.55;cursor:not-allowed}
     main{max-width:1200px;margin:0 auto;padding:16px}
     .card{background:#0f1016;border:1px solid #22232b;border-radius:14px;padding:14px;margin-top:12px}
     .muted{color:#9aa0a6;font-size:13px}
-    textarea{width:min(820px,100%);height:120px;resize:vertical}
     table{width:100%;border-collapse:collapse;margin-top:10px}
     th,td{border-bottom:1px solid #1e1f28;padding:10px 8px;font-size:13px;vertical-align:top}
     th{color:#cfcfcf;text-align:left}
@@ -37,50 +36,44 @@
 </head>
 <body>
 <header>
-  <h1>庫存查詢（直接打後端 /product/:sku）</h1>
+  <h1>庫存查詢（五碼模糊搜尋 / OP）</h1>
   <div class="row">
-    <input id="api" type="text" style="min-width:280px" placeholder="API Base" />
-    <input id="sku" type="text" style="min-width:260px" placeholder="輸入單一 SKU（例如 B001）" />
-    <button id="btnOne">查 SKU</button>
-    <button id="btnBatch" class="secondary">批次查（下方貼 SKU）</button>
-    <label class="muted small">並發：
-      <select id="conc">
-        <option value="3">3</option>
-        <option value="5" selected>5</option>
-        <option value="8">8</option>
-        <option value="12">12</option>
+    <input id="api" type="text" style="min-width:260px" placeholder="API Base" />
+    <input id="op" type="password" style="min-width:180px" placeholder="OP_KEY（網頁密碼）" />
+    <input id="q" type="text" style="min-width:260px" placeholder="輸入任意五碼/關鍵字（例如 12345）" />
+    <button id="btnSearch">搜尋</button>
+    <button id="btnAll" class="secondary">全部庫存</button>
+
+    <label class="muted small"><input id="onlyStock" type="checkbox" checked />只看庫存&gt;0</label>
+    <label class="muted small">上限：
+      <select id="limit">
+        <option value="500">500</option>
+        <option value="1000">1000</option>
+        <option value="2000" selected>2000</option>
+        <option value="5000">5000</option>
       </select>
     </label>
-    <label class="muted small"><input id="onlyStock" type="checkbox" checked />只看庫存&gt;0</label>
+    <button id="btnCSV" class="secondary">匯出 CSV</button>
+    <span id="stat" class="muted"></span>
   </div>
+
   <div class="muted" style="margin-top:8px">
-    這頁只用後端既有：<span class="badge">GET /product/:sku</span>（不依賴上架/官網清單）。:contentReference[oaicite:2]{index=2}
+    來源：<span class="badge">GET /op/stock/search</span>（只新增查詢，不影響原本結帳/付款）
   </div>
 </header>
 
 <main>
-  <div class="card">
-    <div class="muted">批次查詢：把 SKU 一行一個貼在這裡（也可用逗號/空白分隔）</div>
-    <textarea id="skus" placeholder="B001&#10;B002&#10;COACH-123"></textarea>
-    <div class="row" style="margin-top:10px">
-      <button id="btnRun">開始批次查詢</button>
-      <button id="btnClear" class="secondary">清空結果</button>
-      <button id="btnCSV" class="secondary">匯出 CSV</button>
-      <span id="stat" class="muted"></span>
-    </div>
-  </div>
-
   <div id="msg" class="card muted">準備就緒。</div>
 
   <div class="card">
     <table>
       <thead>
         <tr>
-          <th style="width:150px">SKU</th>
+          <th style="width:160px">SKU</th>
           <th>名稱</th>
           <th class="right" style="width:90px">庫存</th>
           <th class="right" style="width:120px">價格</th>
-          <th style="width:140px">狀態</th>
+          <th style="width:90px">上架</th>
         </tr>
       </thead>
       <tbody id="tb"></tbody>
@@ -90,15 +83,17 @@
 
 <script>
   const DEFAULT_API = "https://api.murain.tw";
-
   const $ = (id)=>document.getElementById(id);
-  const apiEl = $("api"), skuEl = $("sku"), skusEl = $("skus");
+
+  const apiEl = $("api"), opEl = $("op"), qEl = $("q");
+  const onlyStockEl = $("onlyStock"), limitEl = $("limit");
   const tb = $("tb"), msg = $("msg"), stat = $("stat");
-  const onlyStockEl = $("onlyStock"), concEl = $("conc");
 
-  apiEl.value = DEFAULT_API;
+  apiEl.value = localStorage.getItem("stock_api") || DEFAULT_API;
+  opEl.value  = localStorage.getItem("stock_op")  || "";
+  qEl.value   = localStorage.getItem("stock_q")   || "";
 
-  let rows = []; // {sku,name,stock,price,status,raw}
+  let rows = [];
 
   function setMsg(type, text){
     msg.className = "card " + (type==="err" ? "err" : type==="good" ? "good" : "muted");
@@ -106,7 +101,15 @@
   }
 
   function normApi(){
-    return (apiEl.value || "").trim().replace(/\/+$/,"") || DEFAULT_API;
+    const v = (apiEl.value || "").trim().replace(/\/+$/,"") || DEFAULT_API;
+    localStorage.setItem("stock_api", v);
+    return v;
+  }
+
+  function normOp(){
+    const v = (opEl.value || "").trim();
+    localStorage.setItem("stock_op", v);
+    return v;
   }
 
   function badgeStock(n){
@@ -126,156 +129,110 @@
     return String(s).replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
   }
 
-  async function fetchOne(sku){
+  async function fetchList(q){
     const api = normApi();
-    const url = `${api}/product/${encodeURIComponent(sku)}`; // :contentReference[oaicite:3]{index=3}
-    const r = await fetch(url, {method:"GET"});
-    const text = await r.text();
-    let data = null;
-    try{ data = JSON.parse(text); }catch{}
-    if (!r.ok){
-      return { sku, status: `HTTP ${r.status}`, error: data || text };
+    const op  = normOp();
+    if (!op) throw new Error("請先輸入 OP_KEY（網頁密碼）");
+
+    const in_stock = onlyStockEl.checked ? "1" : "0";
+    const limit = String(limitEl.value || "2000");
+
+    const url =
+      `${api}/op/stock/search?op_key=${encodeURIComponent(op)}&in_stock=${in_stock}&limit=${encodeURIComponent(limit)}`
+      + (q ? `&q=${encodeURIComponent(q)}` : "");
+
+    const r = await fetch(url, { method:"GET" });
+    const data = await r.json().catch(()=> ({}));
+    if (!r.ok || !data.ok) {
+      const err = data?.error ? `${data.error}` : `HTTP ${r.status}`;
+      throw new Error(err + (data?.detail ? `\n${data.detail}` : ""));
     }
-    const p = (data && data.product) ? data.product : (data || {});
-    // 你後端商品包含 stock 欄位 :contentReference[oaicite:4]{index=4}
-    const name = p.title ?? p.name ?? p.Name ?? "";
-    const stock = Number(p.stock ?? p.Stock ?? p.StockQty ?? 0) || 0;
-    const price = Number(p.price ?? p.Price ?? 0) || 0;
-    return { sku: p.sku ?? sku, name, stock, price, status: "OK", raw: p };
+    return data;
   }
 
   function render(){
-    const onlyStock = !!onlyStockEl.checked;
-    const view = onlyStock ? rows.filter(r=> (Number(r.stock)||0) > 0) : rows;
-
-    tb.innerHTML = view.map(r=>`
+    tb.innerHTML = rows.map(r=>`
       <tr>
         <td><b>${esc(r.sku||"-")}</b></td>
         <td>${esc(r.name||"-")}</td>
         <td class="right">${badgeStock(r.stock)}</td>
         <td class="right">${esc(money(r.price))}</td>
-        <td>${esc(r.status||"")}</td>
+        <td>${r.active ? `<span class="badge ok">是</span>` : `<span class="badge">否</span>`}</td>
       </tr>
     `).join("");
-
-    stat.textContent = `結果：${view.length} 筆（總查詢 ${rows.length} 筆）`;
+    stat.textContent = `顯示：${rows.length} 筆`;
   }
 
-  function parseSkus(text){
-    return Array.from(new Set(
-      String(text||"")
-        .split(/[\s,，;；\n\r\t]+/g)
-        .map(s=>s.trim())
-        .filter(Boolean)
-    ));
-  }
-
-  async function runBatch(list){
-    if (!list.length) return;
-
+  async function run(q){
+    localStorage.setItem("stock_q", q || "");
     setMsg("muted", "查詢中…");
-    const concurrency = Math.max(1, parseInt(concEl.value||"5",10) || 5);
+    stat.textContent = "查詢中…";
 
-    let done = 0;
-    const out = [];
-    let idx = 0;
-
-    async function worker(){
-      while (idx < list.length){
-        const i = idx++;
-        const sku = list[i];
-        try{
-          const res = await fetchOne(sku);
-          out.push(res);
-        }catch(e){
-          out.push({ sku, status:"ERROR", error:String(e?.message||e) });
-        }finally{
-          done++;
-          stat.textContent = `進度：${done}/${list.length}`;
-        }
-      }
-    }
-
-    const ws = Array.from({length: Math.min(concurrency, list.length)}, worker);
-    await Promise.all(ws);
-
-    // 依 SKU 排序
-    out.sort((a,b)=>String(a.sku||"").localeCompare(String(b.sku||""), "en"));
-
-    rows = out.map(r=>({
-      sku: r.sku,
-      name: r.name || "",
-      stock: Number(r.stock||0)||0,
-      price: Number(r.price||0)||0,
-      status: r.status || "OK",
-      raw: r.raw || r.error || null
-    }));
-
+    const data = await fetchList(q);
+    rows = Array.isArray(data.items) ? data.items : [];
     render();
-    setMsg("good", `完成：${list.length} 筆查詢。`);
+    setMsg("good", `完成：${data.count} 筆（updated_at=${data.updated_at || "-"})`);
   }
 
-  // UI actions
-  $("btnOne").addEventListener("click", async ()=>{
-    const sku = (skuEl.value||"").trim();
-    if (!sku) return setMsg("err", "請輸入 SKU");
-    setMsg("muted", "查詢中…");
+  $("btnSearch").addEventListener("click", async ()=>{
     try{
-      const r = await fetchOne(sku);
-      rows = [ { sku:r.sku, name:r.name||"", stock:Number(r.stock||0)||0, price:Number(r.price||0)||0, status:r.status||"OK", raw:r.raw||r.error||null } ];
-      render();
-      setMsg(r.status==="OK" ? "good" : "err", r.status==="OK" ? "查詢完成。" : `查詢失敗：${r.status}`);
+      const q = (qEl.value || "").trim();
+      if (q.length < 5) return setMsg("err", "請輸入至少 5 碼（例如 12345）");
+      await run(q);
     }catch(e){
-      setMsg("err", String(e?.message||e));
+      setMsg("err", String(e?.message || e));
+      stat.textContent = "";
     }
   });
 
-  $("btnBatch").addEventListener("click", ()=>{
-    skusEl.focus();
-    setMsg("muted", "把 SKU 貼在下方，再按「開始批次查詢」。");
+  $("btnAll").addEventListener("click", async ()=>{
+    try{
+      await run(""); // q 空＝全部
+    }catch(e){
+      setMsg("err", String(e?.message || e));
+      stat.textContent = "";
+    }
   });
 
-  $("btnRun").addEventListener("click", ()=>{
-    const list = parseSkus(skusEl.value);
-    runBatch(list);
-  });
-
-  $("btnClear").addEventListener("click", ()=>{
-    rows = [];
-    render();
-    setMsg("muted", "已清空。");
+  onlyStockEl.addEventListener("change", ()=> {
+    const q = (qEl.value || "").trim();
+    if (q.length >= 5) run(q).catch(()=>{});
+    else run("").catch(()=>{});
   });
 
   $("btnCSV").addEventListener("click", ()=>{
     if (!rows.length) return setMsg("err", "沒有資料可匯出");
-    const onlyStock = !!onlyStockEl.checked;
-    const view = onlyStock ? rows.filter(r=> (Number(r.stock)||0) > 0) : rows;
-
     const lines = [
-      ["sku","name","stock","price","status"].join(","),
-      ...view.map(r=>[
+      ["sku","name","stock","price","active"].join(","),
+      ...rows.map(r=>[
         `"${String(r.sku||"").replace(/"/g,'""')}"`,
         `"${String(r.name||"").replace(/"/g,'""')}"`,
         String(Number(r.stock||0)||0),
         String(Number(r.price||0)||0),
-        `"${String(r.status||"").replace(/"/g,'""')}"`
+        r.active ? "1" : "0"
       ].join(","))
     ].join("\n");
 
     const blob = new Blob([lines], {type:"text/csv;charset=utf-8"});
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "stock_export.csv";
+    a.download = "stock_search_export.csv";
     a.click();
     URL.revokeObjectURL(a.href);
-    setMsg("good", `已匯出 CSV（${view.length} 筆）。`);
+    setMsg("good", `已匯出 CSV（${rows.length} 筆）。`);
   });
 
-  onlyStockEl.addEventListener("change", render);
-
-  // init
-  render();
-  setMsg("muted", "提示：你還沒上架官網也沒關係，這頁直接查後端 /product/:sku。");
+  // 初始：若 q 已有 5 碼 → 先搜尋；否則先載全部（若未輸入 OP_KEY 就提示）
+  (async ()=>{
+    try{
+      const q = (qEl.value || "").trim();
+      if (!opEl.value.trim()) throw new Error("need op_key");
+      if (q.length >= 5) await run(q);
+      else await run("");
+    } catch {
+      setMsg("muted", "請先輸入 OP_KEY（網頁密碼），再按「全部庫存」或輸入五碼搜尋。");
+    }
+  })();
 </script>
 </body>
 </html>
