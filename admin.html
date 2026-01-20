@@ -997,6 +997,37 @@ const shipAtText = shipAtRaw
   : ``;
 
     const rowKey = f.order_id || rec.id || '';
+   // ===== 賣貨便 / 取貨登記（寫入 Airtable 欄位：取貨登記）=====
+const pickReg = String(f['取貨登記'] || '').trim();
+
+const st2 = String(f.status || '').toLowerCase();
+const ss2 = String(f.ship_status || f.shipping_status || '').toLowerCase();
+const shipped2 = (st2 === 'shipped') || (ss2 === 'shipped') || (ss2 === 'arrived') || (ss2 === 'picked_up');
+
+const is711 = String(ship.type || '').toLowerCase() === '711';
+
+// 顯示目前值（有值才顯示）
+const pickRegTag = pickReg
+  ? `<div class="tag-small">取貨登記：${escapeHtml(pickReg)}</div>`
+  : ``;
+
+// 依狀態決定按鈕
+let pickRegBtn = '';
+if (is711) {
+  if (!shipped2) {
+    // 還沒出貨：通常是要先登記/填編號（你也可當成備註欄）
+    pickRegBtn = `<button class="small-btn btn-pickreg" data-id="${rowKey}" data-action="set_code" type="button"
+      style="margin-top:6px;padding:4px 8px;font-size:12px">賣貨便登記</button>`;
+  } else if (pickReg !== '已取貨') {
+    // 已出貨未取：一鍵寫「已取貨」
+    pickRegBtn = `<button class="small-btn btn-pickreg" data-id="${rowKey}" data-action="mark_picked" type="button"
+      style="margin-top:6px;padding:4px 8px;font-size:12px">登記已取貨</button>`;
+  } else {
+    // 已取貨：可清除
+    pickRegBtn = `<button class="small-btn btn-pickreg" data-id="${rowKey}" data-action="clear" type="button"
+      style="margin-top:6px;padding:4px 8px;font-size:12px">清除取貨</button>`;
+  }
+}
 
     return `
       <div class="order-row" data-id="${rowKey}">
@@ -1010,6 +1041,8 @@ const shipAtText = shipAtRaw
             <div class="tag-small">${method}</div>
   ${last5Tag}
   ${creditTag}
+  ${pickRegTag}
+  ${pickRegBtn}
 </div>
         </div>
         <div class="ord-sub">${line2 || '&nbsp;'}</div>
@@ -1023,8 +1056,18 @@ const shipAtText = shipAtRaw
 
   listEl.innerHTML = html;
 
+ $$('#orderList .btn-pickreg').forEach(btn=>{
+  btn.addEventListener('click', async (ev)=>{
+    ev.stopPropagation();
+    const key = btn.getAttribute('data-id');
+    const act = btn.getAttribute('data-action');
+    await pickRegAction(key, act);
+  });
+});
+
   $$('#orderList .order-row').forEach(row=>{
     row.addEventListener('click', ()=>{
+         if (ev.target.closest('.btn-pickreg')) return; // ✅ 點按鈕不切換選單
       $$('#orderList .order-row').forEach(x=>x.classList.remove('active'));
       row.classList.add('active');
       const key = row.getAttribute('data-id');
@@ -1057,6 +1100,71 @@ function selectOrder(key){
   });
   if(!rec) return;
   renderDetail(rec);
+}
+
+ // ===== 點左側列表的「賣貨便登記 / 已取貨」：寫入 Orders.取貨登記 =====
+async function pickRegAction(key, action){
+  await ensureOpKey();
+
+  // 跟 selectOrder 同邏輯：用 id 或 order_id 找
+  const rec = (currentOrders || []).find(x=>{
+    if (x.id && String(x.id) === String(key)) return true;
+    const fx = x.fields || x || {};
+    return fx.order_id && String(fx.order_id) === String(key);
+  });
+  if(!rec){
+    alert('找不到這筆訂單');
+    return;
+  }
+
+  const f = rec.fields || rec || {};
+  const now = String(f['取貨登記'] || '').trim();
+
+  let value = '';
+  if (action === 'set_code'){
+    const v = prompt('請輸入賣貨便取貨編號/寄件編號（留空=清除）', now);
+    if (v === null) return;
+    value = String(v).trim();
+  } else if (action === 'mark_picked'){
+    value = '已取貨';
+  } else if (action === 'clear'){
+    value = '';
+  } else {
+    return;
+  }
+
+  const payload = {
+    record_id: rec.id || null,
+    order_id : f.order_id || null,
+    fields   : { '取貨登記': value }
+  };
+
+  try{
+    const res = await fetch(`${API}/admin/order/update?op_key=${encodeURIComponent(OP_KEY)}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const j = await res.json().catch(()=> ({}));
+    if(!res.ok || !j.ok) throw new Error(j.error || ('HTTP ' + res.status));
+
+    // 刷新畫面、保留選取
+    const keepKey = f.order_id || rec.id || key;
+    await reloadCurrentView();
+    const found = (currentOrders || []).find(x=>{
+      if (x.id && String(x.id) === String(keepKey)) return true;
+      const fx = x.fields || x || {};
+      return fx.order_id && String(fx.order_id) === String(keepKey);
+    });
+    if(found){
+      renderDetail(found);
+      const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
+      if(row) row.classList.add('active');
+    }
+  }catch(e){
+    console.error(e);
+    alert('寫入取貨登記失敗：' + (e.message || e));
+  }
 }
 
 /* ===== 右側詳細資料 ===== */
