@@ -1,323 +1,131 @@
-<!doctype html>
-<html lang="zh-Hant">
+/**
+ * MURAIN 整合版後端 (含內部庫存查詢網頁)
+ * 密碼預設：8888
+ * 網址：api.murain.tw/stock
+ */
+
+// --- 這裡開始是原本的後端邏輯 (我保留了您所有的功能) ---
+// (這部分包含您原本的 Airtable 連接、訂單處理、Flex 卡片等)
+
+// [此處省略您原本檔案中的數千行代碼，實際操作時請保留您檔案中 fetch 之前的全部設定]
+
+export default {
+  async fetch(request, env, ctx) {
+    const { pathname, searchParams } = new URL(request.url);
+    const origin = request.headers.get("Origin") || "";
+
+    // 🌟 新增：庫存查詢網頁路由
+    if (pathname === '/stock') {
+      return new Response(stockHtml, {
+        headers: { 
+          'Content-Type': 'text/html;charset=UTF-8',
+          'Access-Control-Allow-Origin': '*' 
+        }
+      });
+    }
+
+    // --- 以下是您原本就有的路由判斷 ---
+    if (pathname === '/ping') return new Response("pong");
+    
+    // ... (原本的 /public/products, /cart/add, /checkout 等判斷) ...
+    // [請確保原本檔案中所有的 if (pathname === ...) 判斷都還在]
+
+    // 如果都沒有對到路徑，最後會跑這行
+    return new Response(JSON.stringify({ ok:false, error:"not_found" }), { 
+      status: 404,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+    });
+  }
+};
+
+// 🌟 這裡就是要把 HTML 網頁代碼貼在檔案最末端 🌟
+const stockHtml = `
+<!DOCTYPE html>
+<html lang="zh-TW">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>庫存查詢</title>
-  <style>
-    :root { color-scheme: light; }
-    body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif; margin: 0; background:#0b0c10; color:#eaeaea; }
-    header { padding: 16px 18px; border-bottom: 1px solid #222; background:#090a0d; position: sticky; top:0; z-index:10; }
-    h1 { font-size: 18px; margin: 0 0 10px; letter-spacing: .5px; }
-    .row { display:flex; gap:10px; flex-wrap: wrap; align-items:center; }
-    .row > * { flex: 0 0 auto; }
-    input[type="text"], input[type="url"]{
-      background:#12131a; color:#eaeaea; border:1px solid #2a2b34; border-radius:10px;
-      padding:10px 12px; outline:none; min-width: 220px;
-    }
-    input[type="text"]:focus, input[type="url"]:focus { border-color:#d4af37; box-shadow: 0 0 0 3px rgba(212,175,55,.15); }
-    button{
-      background:#d4af37; border:0; color:#101015; padding:10px 14px; border-radius:10px;
-      cursor:pointer; font-weight:700;
-    }
-    button.secondary{ background:#1b1c25; color:#eaeaea; border:1px solid #2a2b34; font-weight:600; }
-    button:disabled{ opacity:.55; cursor:not-allowed; }
-    label { font-size: 13px; color:#bdbdbd; display:flex; align-items:center; gap:8px; }
-    main { padding: 16px 18px; max-width: 1200px; margin: 0 auto; }
-    .hint { color:#9aa0a6; font-size: 13px; margin: 10px 0 0; }
-    .card { background:#0f1016; border:1px solid #22232b; border-radius:14px; padding:14px; margin-top:14px; }
-    .grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:10px; }
-    .kv { background:#0c0d12; border:1px solid #1d1e27; border-radius:12px; padding:10px; }
-    .k { font-size:12px; color:#a7a7a7; margin-bottom:4px; }
-    .v { font-size:14px; word-break: break-word; }
-    table { width:100%; border-collapse: collapse; margin-top: 12px; }
-    th, td { border-bottom: 1px solid #1e1f28; padding: 10px 8px; font-size: 13px; vertical-align: top; }
-    th { color:#cfcfcf; text-align:left; position: sticky; top: 86px; background:#0f1016; z-index:5; }
-    tr:hover td { background:#0c0d12; }
-    .badge { display:inline-block; padding: 3px 8px; border-radius: 999px; font-size:12px; border:1px solid #2a2b34; color:#d7d7d7; }
-    .ok { border-color: rgba(70, 200, 120, .35); color:#b8f7cf; }
-    .low { border-color: rgba(255, 200, 60, .35); color:#ffe6a0; }
-    .zero { border-color: rgba(255, 90, 90, .35); color:#ffb3b3; }
-    .right { text-align:right; }
-    .muted { color:#9aa0a6; }
-    .img { width:42px; height:42px; border-radius:10px; object-fit:cover; background:#0b0c10; border:1px solid #1e1f28; }
-    .small { font-size:12px; }
-    .error { color:#ffb3b3; white-space: pre-wrap; }
-    .success { color:#b8f7cf; white-space: pre-wrap; }
-    @media (max-width: 860px){
-      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      th { top: 132px; }
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MURAIN 內部庫存查詢</title>
+    <style>
+        :root { --primary: #1a1a1a; --accent: #c5a059; --bg: #f9f9f9; }
+        body { font-family: sans-serif; background: var(--bg); margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 20px auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+        .header { text-align: center; border-bottom: 2px solid var(--accent); margin-bottom: 20px; padding-bottom: 10px; }
+        input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 16px; margin-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: var(--primary); color: white; padding: 12px; text-align: left; }
+        td { padding: 12px; border-bottom: 1px solid #eee; }
+        .low { color: #d9534f; font-weight: bold; background: #fff1f0; padding: 2px 6px; border-radius: 4px; }
+        #auth-screen { text-align: center; margin-top: 100px; }
+        .btn { padding: 12px 25px; background: var(--accent); border: none; color: white; border-radius: 6px; cursor: pointer; font-size: 16px; }
+    </style>
 </head>
 <body>
-  <header>
-    <h1>庫存查詢</h1>
-    <div class="row">
-      <input id="apiBase" type="url" placeholder="API Base（例如 https://api.murain.tw）" />
-      <input id="q" type="text" placeholder="輸入 SKU / 關鍵字（例如 B001）" />
-      <button id="btnSku">查 SKU</button>
-      <button id="btnLoad" class="secondary">載入清單</button>
-      <label><input id="inStockOnly" type="checkbox" />只看有庫存</label>
-      <label><input id="autoRefresh" type="checkbox" />每 60 秒自動更新（清單）</label>
-    </div>
-    <div class="hint">
-      ①「查 SKU」走 <span class="badge">GET /product/:sku</span>（快）:contentReference[oaicite:3]{index=3}　
-      ②「載入清單」需要你後端有商品列表端點（常見是 <span class="badge">/public/products</span>）。
-    </div>
-  </header>
-
-  <main>
-    <div id="msg" class="card muted small">準備就緒。</div>
-
-    <div id="single" class="card" style="display:none;"></div>
-
-    <div id="list" class="card" style="display:none;">
-      <div class="row" style="justify-content: space-between;">
-        <div class="small muted">清單筆數：<span id="count">0</span></div>
-        <div class="row">
-          <label class="small muted">排序：</label>
-          <select id="sort" style="background:#12131a;color:#eaeaea;border:1px solid #2a2b34;border-radius:10px;padding:10px 12px;">
-            <option value="sku">SKU</option>
-            <option value="stock_desc">庫存（高→低）</option>
-            <option value="stock_asc">庫存（低→高）</option>
-            <option value="price_desc">價格（高→低）</option>
-            <option value="price_asc">價格（低→高）</option>
-          </select>
+    <div id="auth-box">
+        <div id="auth-screen">
+            <h2 style="letter-spacing:2px;">MURAIN 內部系統</h2>
+            <p style="color:#666;">請輸入查詢密碼</p>
+            <input type="password" id="pw" placeholder="密碼" style="width: 250px; text-align:center;">
+            <br>
+            <button class="btn" onclick="check()">進入系統</button>
         </div>
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th style="width:56px;">圖</th>
-            <th>SKU / 名稱</th>
-            <th class="right" style="width:90px;">庫存</th>
-            <th class="right" style="width:120px;">價格</th>
-            <th style="width:180px;">分類</th>
-          </tr>
-        </thead>
-        <tbody id="tbody"></tbody>
-      </table>
     </div>
-  </main>
 
-<script>
-  // 你只需要改這個：指向你目前在用的後端
-  const DEFAULT_API_BASE = "https://api.murain.tw";
-
-  const $ = (id) => document.getElementById(id);
-  const apiBaseEl = $("apiBase");
-  const qEl = $("q");
-  const msgEl = $("msg");
-  const singleEl = $("single");
-  const listEl = $("list");
-  const tbodyEl = $("tbody");
-  const countEl = $("count");
-  const inStockOnlyEl = $("inStockOnly");
-  const sortEl = $("sort");
-  const autoRefreshEl = $("autoRefresh");
-
-  let itemsCache = [];
-  let timer = null;
-
-  function setMsg(type, text){
-    msgEl.className = "card " + (type === "error" ? "error" : type === "success" ? "success" : "muted") + " small";
-    msgEl.textContent = text;
-  }
-
-  function money(n){
-    const v = Number(n || 0);
-    if (!Number.isFinite(v)) return "-";
-    return "NT$ " + Math.round(v).toLocaleString("zh-TW");
-  }
-
-  function stockBadge(n){
-    const v = Number(n || 0) || 0;
-    if (v <= 0) return `<span class="badge zero">0</span>`;
-    if (v <= 2) return `<span class="badge low">${v}</span>`;
-    return `<span class="badge ok">${v}</span>`;
-  }
-
-  function getApiBase(){
-    const v = (apiBaseEl.value || "").trim() || DEFAULT_API_BASE;
-    return v.replace(/\/+$/g, "");
-  }
-
-  async function fetchJSON(url){
-    const r = await fetch(url, { method:"GET" });
-    const t = await r.text();
-    let data = null;
-    try { data = JSON.parse(t); } catch {}
-    if (!r.ok) {
-      const detail = data ? JSON.stringify(data, null, 2) : t;
-      throw new Error(`HTTP ${r.status}\n${detail}`);
-    }
-    return data ?? {};
-  }
-
-  // --- 1) 查單一 SKU：GET /product/:sku ---
-  async function querySKU(){
-    const api = getApiBase();
-    const q = (qEl.value || "").trim();
-    if (!q) return setMsg("error", "請先輸入 SKU");
-
-    setMsg("muted", "查詢中…");
-    singleEl.style.display = "none";
-
-    try{
-      const url = `${api}/product/${encodeURIComponent(q)}`;
-      const data = await fetchJSON(url);
-
-      // 你的商品資料包含 stock（庫存）:contentReference[oaicite:4]{index=4}
-      // 這裡做容錯：有些版本可能包在 {ok:true, item:{...}} 或直接 {sku:...}
-      const item = data.item || data.data || data || {};
-      const sku = item.sku || item.SKU || q;
-      const title = item.title || item.name || item.Name || "-";
-      const price = item.price ?? item.Price;
-      const stock = item.stock ?? item.Stock;
-
-      singleEl.innerHTML = `
-        <div class="grid">
-          <div class="kv"><div class="k">SKU</div><div class="v">${escapeHtml(String(sku))}</div></div>
-          <div class="kv"><div class="k">名稱</div><div class="v">${escapeHtml(String(title))}</div></div>
-          <div class="kv"><div class="k">庫存</div><div class="v">${stockBadge(stock)}</div></div>
-          <div class="kv"><div class="k">價格</div><div class="v">${escapeHtml(money(price))}</div></div>
+    <div class="container" id="main" style="display:none;">
+        <div class="header">
+            <h2>📦 庫存即時查詢</h2>
+            <small style="color:#999;">資料來源：Airtable 雲端庫存</small>
         </div>
-        ${item.image_url ? `<div style="margin-top:12px;"><img class="img" style="width:110px;height:110px;" src="${escapeAttr(item.image_url)}" /></div>` : ""}
-        <div class="small muted" style="margin-top:10px;">來源：${escapeHtml(url)}</div>
-      `;
-      singleEl.style.display = "block";
-      setMsg("success", "查詢完成。");
-    }catch(e){
-      setMsg("error", String(e && e.message || e));
-    }
-  }
+        <input type="text" id="search" placeholder="輸入產品名稱或 SKU 搜尋...">
+        <div id="msg" style="text-align:center; padding: 20px; color: #999;">正在連線至資料庫...</div>
+        <table id="list" style="display:none;">
+            <thead><tr><th>SKU</th><th>產品名稱</th><th style="text-align:right;">庫存</th></tr></thead>
+            <tbody id="body"></tbody>
+        </table>
+    </div>
 
-  // --- 2) 載入清單：預設嘗試 /public/products ---
-  async function loadList(){
-    const api = getApiBase();
-    setMsg("muted", "載入清單中…");
-    listEl.style.display = "none";
-    singleEl.style.display = "none";
+    <script>
+        const PASS = "8888"; // 💡 密碼設在這裡
+        let allData = [];
 
-    try{
-      // 若你後端有這支（很多版本會有）：/public/products?limit=2000&in_stock=1
-      const inStockOnly = inStockOnlyEl.checked ? "1" : "";
-      const url = `${api}/public/products?limit=2000${inStockOnly ? "&in_stock=1" : ""}`;
-      const data = await fetchJSON(url);
+        function check() {
+            if(document.getElementById('pw').value === PASS) {
+                document.getElementById('auth-box').style.display = 'none';
+                document.getElementById('main').style.display = 'block';
+                load();
+            } else { alert('密碼錯誤'); }
+        }
 
-      // 容錯：可能是 {ok:true, items:[...]} 或 {items:[...]} 或直接陣列
-      const items = Array.isArray(data) ? data : (data.items || data.data || []);
-      if (!Array.isArray(items)) throw new Error("清單格式不符合預期（items 不是 array）");
+        async function load() {
+            try {
+                // 直接抓取後端的產品接口
+                const res = await fetch('/public/products?limit=1000');
+                const json = await res.json();
+                if(json.ok) {
+                    allData = json.items;
+                    render(allData);
+                    document.getElementById('msg').style.display = 'none';
+                    document.getElementById('list').style.display = 'table';
+                }
+            } catch(e) { document.getElementById('msg').innerText = '讀取失敗，請確認後端狀態'; }
+        }
 
-      itemsCache = items.map(x => ({
-        sku: x.sku || x.SKU || "",
-        title: x.title || x.name || x.Name || "",
-        price: Number(x.price ?? x.Price ?? 0) || 0,
-        stock: Number(x.stock ?? x.Stock ?? 0) || 0,
-        category: x.category_name || x.category || "",
-        subcategory: x.subcategory_name || x.subcategory || "",
-        image: x.thumb_url || x.image_url || x.image || ""
-      }));
+        function render(items) {
+            const b = document.getElementById('body');
+            b.innerHTML = items.map(p => \`
+                <tr>
+                    <td style="font-family: monospace; color:#666;">\${p.sku || '-'}</td>
+                    <td style="font-weight:bold;">\${p.title || p.name}</td>
+                    <td style="text-align:right;"><span class="\${p.stock <= 3 ? 'low' : ''}">\${p.stock ?? 0}</span></td>
+                </tr>
+            \`).join('');
+        }
 
-      renderList();
-      listEl.style.display = "block";
-      setMsg("success", `清單載入完成（${itemsCache.length} 筆）。`);
-    }catch(e){
-      setMsg("error",
-        "載入清單失敗：\n" + String(e && e.message || e) +
-        "\n\n如果你後端沒有 /public/products 這支，就只用「查 SKU」也完全可用。"
-      );
-    }
-  }
-
-  function renderList(){
-    const q = (qEl.value || "").trim().toLowerCase();
-    const inStockOnly = inStockOnlyEl.checked;
-
-    let rows = itemsCache;
-
-    if (q){
-      rows = rows.filter(x =>
-        String(x.sku).toLowerCase().includes(q) ||
-        String(x.title).toLowerCase().includes(q)
-      );
-    }
-    if (inStockOnly){
-      rows = rows.filter(x => (Number(x.stock) || 0) > 0);
-    }
-
-    const sort = sortEl.value;
-    rows = rows.slice().sort((a,b) => {
-      if (sort === "stock_desc") return (b.stock||0) - (a.stock||0);
-      if (sort === "stock_asc")  return (a.stock||0) - (b.stock||0);
-      if (sort === "price_desc") return (b.price||0) - (a.price||0);
-      if (sort === "price_asc")  return (a.price||0) - (b.price||0);
-      return String(a.sku||"").localeCompare(String(b.sku||""), "en");
-    });
-
-    countEl.textContent = String(rows.length);
-
-    tbodyEl.innerHTML = rows.map(x => `
-      <tr>
-        <td>${x.image ? `<img class="img" src="${escapeAttr(x.image)}" />` : `<span class="muted">-</span>`}</td>
-        <td>
-          <div><b>${escapeHtml(String(x.sku||"-"))}</b></div>
-          <div class="muted small">${escapeHtml(String(x.title||"-"))}</div>
-        </td>
-        <td class="right">${stockBadge(x.stock)}</td>
-        <td class="right">${escapeHtml(money(x.price))}</td>
-        <td>
-          <div class="small">${escapeHtml(String(x.category||"-"))}</div>
-          <div class="muted small">${escapeHtml(String(x.subcategory||""))}</div>
-        </td>
-      </tr>
-    `).join("");
-  }
-
-  function setupAutoRefresh(){
-    if (timer) { clearInterval(timer); timer = null; }
-    if (!autoRefreshEl.checked) return;
-    timer = setInterval(() => {
-      // 只在清單模式刷新
-      if (listEl.style.display !== "none") loadList();
-    }, 60000);
-  }
-
-  // --- helpers ---
-  function escapeHtml(s){
-    return String(s).replace(/[&<>"']/g, (c)=>({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-    }[c]));
-  }
-  function escapeAttr(s){ return escapeHtml(s); }
-
-  // --- events ---
-  $("btnSku").addEventListener("click", querySKU);
-  $("btnLoad").addEventListener("click", loadList);
-
-  qEl.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") querySKU();
-  });
-
-  qEl.addEventListener("input", () => {
-    if (listEl.style.display !== "none") renderList();
-  });
-
-  inStockOnlyEl.addEventListener("change", () => {
-    if (listEl.style.display !== "none") renderList();
-  });
-
-  sortEl.addEventListener("change", () => {
-    if (listEl.style.display !== "none") renderList();
-  });
-
-  autoRefreshEl.addEventListener("change", setupAutoRefresh);
-
-  // init
-  apiBaseEl.value = DEFAULT_API_BASE;
-  setMsg("muted", "準備就緒：輸入 SKU 後按「查 SKU」，或按「載入清單」。");
-</script>
+        document.getElementById('search').addEventListener('input', (e) => {
+            const k = e.target.value.toLowerCase();
+            render(allData.filter(p => (p.sku||'').toLowerCase().includes(k) || (p.title||'').toLowerCase().includes(k)));
+        });
+    </script>
 </body>
 </html>
+\`;
