@@ -64,20 +64,19 @@
   .mt-4{margin-top:16px}
   .btn-primary{margin-top:8px;padding:10px 14px;border-radius:999px;border:none;background:#22d3ee;color:#0f172a;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 10px 30px rgba(34,211,238,.35)}
   .btn-secondary{margin-top:8px;padding:8px 12px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:transparent;color:#e5e7eb;font-size:13px;cursor:pointer}
- /* 取貨登記旁小按鈕 */
-.pickup-wrap{display:flex;gap:6px;align-items:center}
-.pickup-wrap input{flex:1;min-width:0}
+ .pickup-wrap{display:flex;gap:6px;align-items:center}
+.pickup-wrap input{flex:1}
 .btn-mini{
-  padding:7px 10px;
+  width:auto;
+  padding:6px 10px;
   border-radius:10px;
   border:1px solid rgba(148,163,184,.7);
-  background:rgba(15,23,42,1);
-  color:#e5e7eb;
+  background:rgba(15,23,42,.9);
+  color:#e2e8f0;
   font-size:12px;
   cursor:pointer;
-  white-space:nowrap;
 }
-.btn-mini:active{transform:translateY(1px)}
+.btn-mini:hover{border-color:#22d3ee}
   .section-title{font-size:13px;font-weight:600;color:#e5e7eb;margin-top:4px;margin-bottom:2px}
   .pill{display:inline-block;padding:3px 7px;border-radius:999px;background:rgba(15,23,42,1);border:1px solid rgba(148,163,184,.6);font-size:11px;color:#cbd5f5;margin-right:4px;margin-top:2px}
   .pill.cod711 {
@@ -1201,16 +1200,16 @@ ${renderTailInfoBlock(f)}
   </div>
 
   <div>
-    <label>取貨登記</label>
-    <div class="pickup-wrap">
-      <input
-        id="d_pickup_reg"
-        value="${String(f['取貨登記'] ?? '').trim()}"
-        placeholder="輸入賣貨便取貨編號 / 寄件編號（可留空）"
-      />
-      <button type="button" class="btn-mini" id="btnSavePickupReg">存</button>
-    </div>
+  <label>取貨登記</label>
+  <div class="pickup-wrap">
+    <input
+      id="d_pickup_reg"
+      value="${String(f['取貨登記'] ?? '').trim()}"
+      placeholder="輸入賣貨便取貨編號 / 寄件編號（可留空）"
+    />
+    <button type="button" class="btn-mini" id="btnSavePickupReg">存</button>
   </div>
+</div>
 </div>
 <!-- ★ 新增結束 -->
 
@@ -1638,48 +1637,51 @@ async function cancelCurrentOrder() {
 }
 // ===== 只儲存：取貨登記（不重載、不跳單）=====
 async function savePickupRegOnly(){
-  if(!currentRecord){
-    alert('請先在左邊選一筆訂單');
-    return;
-  }
+  if(!currentRecord) { alert('請先選一筆訂單'); return; }
 
-  const msgEl = $('#detailMsg');
   const f = currentRecord.fields || currentRecord || {};
   const orderId = f.order_id;
+  if(!orderId) { alert('這筆訂單沒有 order_id'); return; }
 
-  if(!orderId){
-    alert('這筆訂單沒有 order_id，無法儲存');
-    return;
-  }
-
-  const val = ($('#d_pickup_reg')?.value || '').trim();
-
-  if (msgEl) msgEl.textContent = '儲存取貨登記中…';
+  const v = $('#d_pickup_reg') ? ($('#d_pickup_reg').value || '').trim() : '';
 
   const payload = {
-    order_id: orderId,
-    fields: { '取貨登記': val }
+    record_id: currentRecord.id || null,  // 有就帶，沒有也沒差
+    order_id : orderId,
+    fields: { '取貨登記': v }
   };
+
+  const msgEl = $('#detailMsg');
+  if (msgEl) msgEl.textContent = '儲存取貨登記中…';
 
   try{
     const r = await fetch(`${API}/admin/order/update?op_key=${encodeURIComponent(OP_KEY)}`,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
+      body:JSON.stringify(payload)
     });
-    const j = await r.json().catch(()=> ({}));
-    if(!r.ok || !j.ok){
-      throw new Error(j.error || j.message || ('HTTP ' + r.status));
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || !j.ok) throw new Error(j.message || j.error || ('HTTP ' + r.status));
+
+    // ✅ 只更新前端快取，不重載列表（就不會跳回首訂單）
+    if (!currentRecord.fields) currentRecord.fields = (currentRecord.fields || {});
+    currentRecord.fields['取貨登記'] = v;
+
+    const idx = currentOrders.findIndex(x=>{
+      const fx = x.fields || x || {};
+      return String(fx.order_id||'') === String(orderId);
+    });
+    if (idx >= 0){
+      if (!currentOrders[idx].fields) currentOrders[idx].fields = (currentOrders[idx].fields || {});
+      currentOrders[idx].fields['取貨登記'] = v;
     }
 
-    // 前端同步更新，讓你不用重載也看得到
-    if (currentRecord.fields) currentRecord.fields['取貨登記'] = val;
-
-    if (msgEl) msgEl.textContent = '✅ 取貨登記已存';
+    if (msgEl) msgEl.textContent = '取貨登記已儲存 ✅';
+   // ✅ 新增這行：只重畫左側列表（不打 API、不跳回首訂單）
+renderOrderList();
   }catch(e){
     console.error(e);
-    if (msgEl) msgEl.textContent = '❌ 取貨登記儲存失敗：' + (e.message || e);
-    alert('取貨登記儲存失敗：' + (e.message || e));
+    if (msgEl) msgEl.textContent = '取貨登記儲存失敗：' + (e.message || e);
   }
 }
  
