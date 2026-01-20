@@ -64,6 +64,20 @@
   .mt-4{margin-top:16px}
   .btn-primary{margin-top:8px;padding:10px 14px;border-radius:999px;border:none;background:#22d3ee;color:#0f172a;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 10px 30px rgba(34,211,238,.35)}
   .btn-secondary{margin-top:8px;padding:8px 12px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:transparent;color:#e5e7eb;font-size:13px;cursor:pointer}
+ /* 取貨登記旁小按鈕 */
+.pickup-wrap{display:flex;gap:6px;align-items:center}
+.pickup-wrap input{flex:1;min-width:0}
+.btn-mini{
+  padding:7px 10px;
+  border-radius:10px;
+  border:1px solid rgba(148,163,184,.7);
+  background:rgba(15,23,42,1);
+  color:#e5e7eb;
+  font-size:12px;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.btn-mini:active{transform:translateY(1px)}
   .section-title{font-size:13px;font-weight:600;color:#e5e7eb;margin-top:4px;margin-bottom:2px}
   .pill{display:inline-block;padding:3px 7px;border-radius:999px;background:rgba(15,23,42,1);border:1px solid rgba(148,163,184,.6);font-size:11px;color:#cbd5f5;margin-right:4px;margin-top:2px}
   .pill.cod711 {
@@ -1034,7 +1048,7 @@ const shipAtText = shipAtRaw
 
   if(currentRecord){
     const f = currentRecord.fields || currentRecord || {};
-    const key = currentRecord.id || f.order_id || '';
+const key = f.order_id || currentRecord.id || '';
     const row = $(`#orderList .order-row[data-id="${key}"]`);
     if(row){
       row.classList.add('active');
@@ -1182,17 +1196,20 @@ ${renderTailInfoBlock(f)}
       <option value="黃爸爸(黃玠銘)">黃爸爸(黃玠銘)</option>
       <option value="夏雪媽咪">夏雪媽咪</option>
       <option value="妹妹-京城">妹妹-京城</option>
-    </select>
+     </select>
     <div class="tag-small" id="d_vendor_stats"></div>
   </div>
 
   <div>
     <label>取貨登記</label>
-    <input
-      id="d_pickup_reg"
-      value="${String(f['取貨登記'] ?? '').trim()}"
-      placeholder="輸入賣貨便取貨編號 / 寄件編號（可留空）"
-    />
+    <div class="pickup-wrap">
+      <input
+        id="d_pickup_reg"
+        value="${String(f['取貨登記'] ?? '').trim()}"
+        placeholder="輸入賣貨便取貨編號 / 寄件編號（可留空）"
+      />
+      <button type="button" class="btn-mini" id="btnSavePickupReg">存</button>
+    </div>
   </div>
 </div>
 <!-- ★ 新增結束 -->
@@ -1284,6 +1301,11 @@ ${renderTailInfoBlock(f)}
     vendorSel.onchange = updateVendorStats;
   }
   updateVendorStats();
+ // 取貨登記旁「存」按鈕
+const btnPick = $('#btnSavePickupReg');
+if (btnPick) {
+  btnPick.addEventListener('click', savePickupRegOnly);
+}
  
    const btnSaveAndShip = $('#btnSaveAndShip');
 if (btnSaveAndShip) {
@@ -1614,7 +1636,52 @@ async function cancelCurrentOrder() {
     alert("取消訂單時發生錯誤，請稍後再試。");
   }
 }
+// ===== 只儲存：取貨登記（不重載、不跳單）=====
+async function savePickupRegOnly(){
+  if(!currentRecord){
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
 
+  const msgEl = $('#detailMsg');
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = f.order_id;
+
+  if(!orderId){
+    alert('這筆訂單沒有 order_id，無法儲存');
+    return;
+  }
+
+  const val = ($('#d_pickup_reg')?.value || '').trim();
+
+  if (msgEl) msgEl.textContent = '儲存取貨登記中…';
+
+  const payload = {
+    order_id: orderId,
+    fields: { '取貨登記': val }
+  };
+
+  try{
+    const r = await fetch(`${API}/admin/order/update?op_key=${encodeURIComponent(OP_KEY)}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const j = await r.json().catch(()=> ({}));
+    if(!r.ok || !j.ok){
+      throw new Error(j.error || j.message || ('HTTP ' + r.status));
+    }
+
+    // 前端同步更新，讓你不用重載也看得到
+    if (currentRecord.fields) currentRecord.fields['取貨登記'] = val;
+
+    if (msgEl) msgEl.textContent = '✅ 取貨登記已存';
+  }catch(e){
+    console.error(e);
+    if (msgEl) msgEl.textContent = '❌ 取貨登記儲存失敗：' + (e.message || e);
+    alert('取貨登記儲存失敗：' + (e.message || e));
+  }
+}
  
 /* ===== 儲存右側欄位 ===== */
 async function saveDetail(){
@@ -1678,7 +1745,7 @@ if (y_note)   fields.yufu_note   = (y_note.value || '').trim();
     msgEl.textContent = '已儲存 ✅';
 
     const keepF   = currentRecord.fields || currentRecord || {};
-    const keepKey = currentRecord.id || keepF.order_id || '';
+const keepKey = keepF.order_id || currentRecord.id || '';
     await reloadCurrentView();
     const found = currentOrders.find(x=>{
       if (x.id && x.id === keepKey) return true;
