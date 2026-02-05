@@ -503,6 +503,26 @@ function escapeHtml(s) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 }
+ function firstNonEmpty(...vals){
+  for (const v of vals) {
+    const s = String(v ?? '').trim();
+    if (s) return s;
+  }
+  return '';
+}
+
+function getLineName(f, shipInfo){
+  const lp = (shipInfo?.line_profile || shipInfo?.line || shipInfo?.lineProfile || {}) || {};
+  return firstNonEmpty(
+    f?.['LINE名稱'],
+    f?.['LINE 名稱'],
+    f?.line_name,
+    f?.['line_name'],
+    lp.displayName,
+    lp.display_name,
+    lp.name
+  );
+}
 
 // 從 OD（主單）的 fields 裡抓尾款資訊（優先 tail_* 欄位，其次 tail_paid_snapshot）
 function getTailInfoFromParentFields(f){
@@ -961,6 +981,7 @@ function renderOrderList(){
     const f = rec.fields || rec || {};
 
     const shipInfo = parseShippingInfo(f);
+   const lineName = getLineName(f, shipInfo);
 const ship  = shipInfo.ship  || {};
 const store = ship.store     || {};
 const post  = ship.post      || {};
@@ -1014,7 +1035,10 @@ const shipAtText = shipAtRaw
       <div class="order-row" data-id="${rowKey}">
         <div class="ord-top">
           <div>
-            <div class="ord-id">${f.order_id || '(無編號)'}</div>
+            <div class="ord-id">
+  ${escapeHtml(f.order_id || '(無編號)')}
+  ${lineName ? ' <span class="ln">｜' + escapeHtml(lineName) + '</span>' : ''}
+</div>
             <div class="tag-small">${created}</div>
           </div>
           <div style="text-align:right">
@@ -1078,6 +1102,7 @@ function renderDetail(rec){
   const dEl = $('#orderDetail');
 
   const shipInfo = parseShippingInfo(f);
+ const lineName = getLineName(f, shipInfo);
 const ship  = shipInfo.ship  || {};
 const store = ship.store     || {};
 const post  = ship.post      || {};
@@ -1128,7 +1153,9 @@ const addrText = (()=>{
     <div class="detail-grid">
       <div>
         <div class="section-title">訂單 / 客戶資訊</div>
-<div class="pill">訂單編號：<span>${f.order_id || ''}</span></div>
+<div class="pill">訂單編號：<span>${escapeHtml(f.order_id || '')}</span>${
+  lineName ? ' <span class="ln">｜' + escapeHtml(lineName) + '</span>' : ''
+}</div>
 <div class="pill ${f.payment_method === 'cod_711' ? 'cod711' : ''}">
   付款方式：<span>${displayPaymentMethod(f.payment_method || '')}</span>
 </div>
