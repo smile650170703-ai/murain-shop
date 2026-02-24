@@ -38,7 +38,10 @@
   .order-row:hover{border-color:rgba(148,163,184,.8);background:rgba(15,23,42,1)}
   .order-row.active{border-color:#22d3ee;background:rgba(15,23,42,1);box-shadow:0 8px 20px rgba(34,211,238,.25)}
 
-  .ord-top{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:13px}
+  .ord-top{display:flex;align-items:center;gap:6px;font-size:13px}
+.ord-right{margin-left:auto;text-align:right}
+.ord-check{display:flex;align-items:center;flex:0 0 auto}
+.ord-cb{width:18px;height:18px;cursor:pointer}
   .ord-id{font-weight:600}
   .ord-amount{font-weight:600}
   .ord-sub{font-size:12px;color:#94a3b8;margin-top:3px}
@@ -301,6 +304,22 @@ let currentFilter = 'all';
 let currentOrders = [];
 let currentRecord = null;
 let ORDERS_CACHE = []; // ← 匯出用，存純欄位物件
+
+ // ★ 列印出貨單：左邊勾選用
+let PRINT_SLIP_SELECTED = new Set();
+
+function getOrderKey(rec){
+  const f = rec?.fields || rec || {};
+  return String(f.order_id || rec?.id || '').trim();
+}
+
+function updatePrintSlipsBtn(){
+  const btn = $('#btnPrintSlipsRange');
+  if(!btn) return;
+  btn.textContent = PRINT_SLIP_SELECTED.size
+    ? `⭐列印出貨單（勾選${PRINT_SLIP_SELECTED.size}）`
+    : '⭐列印出貨單';
+}
 
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
@@ -971,36 +990,35 @@ function statusBadgeShip(st){
 /* ===== 左側列表渲染 ===== */
 function renderOrderList(){
   const listEl = $('#orderList');
-  if(!currentOrders.length){
-    listEl.innerHTML = '<div class="muted">目前沒有符合條件的訂單</div>';
-    updateSummary();
-    return;
+
+  // 清掉不在目前清單內的勾選（避免切篩選/日期後勾到舊的）
+  const keySet = new Set((currentOrders || []).map(getOrderKey).filter(Boolean));
+  for(const k of Array.from(PRINT_SLIP_SELECTED)){
+    if(!keySet.has(k)) PRINT_SLIP_SELECTED.delete(k);
   }
+  updatePrintSlipsBtn();
 
   const html = currentOrders.map(rec=>{
     const f = rec.fields || rec || {};
 
     const shipInfo = parseShippingInfo(f);
-   const lineName = getLineName(f, shipInfo);
-const ship  = shipInfo.ship  || {};
-const store = ship.store     || {};
-const post  = ship.post      || {};
-const note  = shipInfo.note  || '';
+    const lineName = getLineName(f, shipInfo);
+    const ship = shipInfo.ship || {};
+    const store = ship.store || {};
+    const post = ship.post || {};
+    const note = shipInfo.note || '';
 
-   // ✅ 訂金資訊：你的資料在 shipping_info.deposit 裡
-const dep = shipInfo.deposit || {};
-const depAmount = (f.deposit_amount ?? dep.amount ?? '');
-const depLast5  = (f.deposit_last5  ?? dep.last5  ?? '');
-const atmLast5 = String(shipInfo.atm_last5 || "").trim();
-const last5Show = String(depLast5 || atmLast5 || "").trim(); // 訂金匯款/尾款匯款共用顯示
-const holdUntil10 = (f.hold_until ?? dep.hold_until ?? '') ? String(f.hold_until ?? dep.hold_until).slice(0,10) : '';
-const depExpire10 = (f.deposit_expire_at ?? dep.deposit_expire_at ?? '') ? String(f.deposit_expire_at ?? dep.deposit_expire_at).slice(0,10) : '';
+    const dep = shipInfo.deposit || {};
+    const depAmount = (f.deposit_amount ?? dep.amount ?? dep.deposit_amount ?? '');
+    const depLast5 = (f.deposit_last5 ?? dep.last5 ?? dep.deposit_last5 ?? '');
+    const atmLast5 = String(shipInfo.atm_last5 || "").trim();
+    const last5Show = String(depLast5 || atmLast5 || "").trim(); // 訂金匯款/尾款匯款共用顯示
 
-// ✅ 出貨時間顯示用（唯讀）
-const shipAtRaw  = (f.shipped_at || f.ship_at || '');
-const shipAtText = shipAtRaw
-  ? new Date(shipAtRaw).toLocaleString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:true })
-  : '';
+    // ✅ 出貨時間顯示用（唯讀）
+    const shipAtRaw  = (f.shipped_at || f.ship_at || '');
+    const shipAtText = shipAtRaw
+      ? new Date(shipAtRaw).toLocaleString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:true })
+      : '';
 
     let addr = '';
     if (ship.type === '711') {
@@ -1014,6 +1032,7 @@ const shipAtText = shipAtRaw
       if (place) s += ` @ ${place}`;
       addr = s;
     }
+
     const line2   = [ship.name, ship.phone, addr].filter(Boolean).join(' / ');
     const pay_b   = statusBadgePay(f.pay_status);
     const ship_b  = statusBadgeShip(f.ship_status);
@@ -1021,19 +1040,25 @@ const shipAtText = shipAtRaw
     const created = f.CreatedAt || (f.created_at || '');
     const a = calcAmounts(f);
     const total   = money(a.net);
-    const creditTag = a.credit > 0
-  ? `<div class="tag-small credit-red">購物金折抵 ${money(a.credit)}</div>`
-  : ``;
 
-   const last5Tag = last5Show
-  ? `<div class="tag-small">後五碼：${escapeHtml(last5Show)}</div>`
-  : ``;
+    const creditTag = a.credit > 0
+      ? `<div class="tag-small credit-red">購物金折抵 ${money(a.credit)}</div>`
+      : ``;
+
+    const last5Tag = last5Show
+      ? `<div class="tag-small">後五碼：${escapeHtml(last5Show)}</div>`
+      : ``;
 
     const rowKey = f.order_id || rec.id || '';
+    const checked = PRINT_SLIP_SELECTED.has(String(rowKey)) ? 'checked' : '';
 
     return `
       <div class="order-row" data-id="${rowKey}">
         <div class="ord-top">
+          <label class="ord-check" title="勾選列印">
+            <input class="ord-cb" type="checkbox" data-id="${rowKey}" ${checked}>
+          </label>
+
           <div>
             <div class="ord-id">
   ${escapeHtml(f.order_id || '(無編號)')}
@@ -1041,13 +1066,15 @@ const shipAtText = shipAtRaw
 </div>
             <div class="tag-small">${created}</div>
           </div>
-          <div style="text-align:right">
+
+          <div class="ord-right">
             <div class="ord-amount">${total}</div>
             <div class="tag-small">${method}</div>
   ${last5Tag}
   ${creditTag}
 </div>
         </div>
+
         <div class="ord-sub">${line2 || '&nbsp;'}</div>
         <div class="badges">
           ${pay_b}
@@ -1059,6 +1086,19 @@ const shipAtText = shipAtRaw
 
   listEl.innerHTML = html;
 
+  // ✅ checkbox：點勾選不要觸發 row click（避免一直跳到右邊）
+  $$('#orderList .ord-cb').forEach(cb=>{
+    cb.addEventListener('click', (e)=> e.stopPropagation());
+    cb.addEventListener('change', ()=>{
+      const id = String(cb.dataset.id || '').trim();
+      if(!id) return;
+      if(cb.checked) PRINT_SLIP_SELECTED.add(id);
+      else PRINT_SLIP_SELECTED.delete(id);
+      updatePrintSlipsBtn();
+    });
+  });
+
+  // 原本 row click：維持
   $$('#orderList .order-row').forEach(row=>{
     row.addEventListener('click', ()=>{
       $$('#orderList .order-row').forEach(x=>x.classList.remove('active'));
@@ -1070,7 +1110,7 @@ const shipAtText = shipAtRaw
 
   if(currentRecord){
     const f = currentRecord.fields || currentRecord || {};
-const key = f.order_id || currentRecord.id || '';
+    const key = f.order_id || currentRecord.id || '';
     const row = $(`#orderList .order-row[data-id="${key}"]`);
     if(row){
       row.classList.add('active');
@@ -2124,17 +2164,31 @@ async function printShipSlipsRange(){
   }&kind=orders&format=json${queryDates}`;
 
   try {
-    const res = await fetch(url);
-    if (!res.ok) {
-      const txt = await res.text();
-      alert(`讀取出貨明細失敗（${res.status}）：${txt}`);
-      return;
+    // ✅ 有勾選 → 只印勾選；沒勾選 → 維持「日期區間全印」
+    const picked = Array.from(PRINT_SLIP_SELECTED || []);
+    let records = [];
+
+    if (picked.length) {
+      const set = new Set(picked.map(String));
+      records = (currentOrders || []).filter(rec => set.has(getOrderKey(rec)));
+    } else {
+      const res = await fetch(url);
+      if (!res.ok) {
+        const txt = await res.text();
+        alert(`讀取出貨明細失敗（${res.status}）：${txt}`);
+        return;
+      }
+
+      const data = await res.json();
+      records = data.records || [];
     }
 
-    const data    = await res.json();
-    const records = data.records || [];
     if (!records.length) {
-      alert('目前日期區間沒有訂單可以列印');
+      alert(
+        picked.length
+          ? '你有勾選訂單，但目前清單找不到可列印的訂單（可能剛切換篩選/日期），請重新勾選。'
+          : '目前日期區間沒有訂單可以列印'
+      );
       return;
     }
 
