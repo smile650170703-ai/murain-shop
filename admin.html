@@ -206,6 +206,26 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   <button class="filter-btn" id="btnPickupNeedTop" type="button">賣貨便登記</button>
 </div>
 <div class="filter-row">
+    <div class="field">
+    <label>開始日期</label>
+    <input id="date_from" type="date">
+  </div>
+
+  <div class="field">
+    <label>結束日期</label>
+    <input id="date_to" type="date">
+  </div>
+
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="small-btn" id="btnApplyDate" type="button">套用日期</button>
+  </div>
+
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="small-btn" id="btnClearDate" type="button">清除日期</button>
+  </div>
+
   <div class="field">
     <label>狀態（status）</label>
     <select id="status">
@@ -324,6 +344,30 @@ let ORDERS_CACHE = []; // ← 匯出用，存純欄位物件
  let ALL_ORDERS_CACHE = [];
 let LINE_SEARCH_TERM = '';
 
+function fmtDateInput(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function getLast30DaysRange(){
+  const to = new Date();
+  const from = new Date();
+  from.setDate(from.getDate() - 29); // 含今天共 30 天
+  return {
+    date_from: fmtDateInput(from),
+    date_to: fmtDateInput(to)
+  };
+}
+
+function getCurrentDateRange(){
+  return {
+    date_from: $('#date_from') ? ($('#date_from').value || '') : '',
+    date_to: $('#date_to') ? ($('#date_to').value || '') : ''
+  };
+}
+
 function monthKeyOfRecord(f){
   let month = String(f['賣貨便月份'] || '').trim();
   if (!month) {
@@ -397,9 +441,22 @@ function renderVendorMonthSummary(){
     .join('<br>');
 }
 
-async function applyFullView(mode, save = true){
+async function applyFullView(mode = 'all', save = true){
   await ensureOpKey();
-  await loadOrders('all');
+
+  const dateRange = getCurrentDateRange();
+  const statusVal = $('#status') ? ($('#status').value || '') : '';
+
+  if (save) {
+    saveViewState(mode || 'all', {
+      filter: 'all',
+      date_from: dateRange.date_from,
+      date_to: dateRange.date_to,
+      status: statusVal
+    });
+  }
+
+  await loadOrders('all', dateRange);
   ALL_ORDERS_CACHE = [...(currentOrders || [])];
 
   const hasFee = (f) => {
@@ -476,16 +533,7 @@ async function applyFullView(mode, save = true){
     okText = '';
   }
 
-  if (save) {
-    if (mode === 'all') {
-      saveViewState('filter', { filter: 'all', status: '' });
-      currentFilter = 'all';
-    } else {
-      saveViewState(mode, { filter: mode, status: $('#status') ? ($('#status').value || '') : '' });
-      currentFilter = mode;
-    }
-  }
-
+  currentFilter = 'all';
   finalizeOrderRows(rows, emptyText, okText);
 }
 
@@ -885,24 +933,32 @@ async function ensureOpKey(){
   }
 }
 
-/* ===== 依「快速分類 filter」載入訂單（原 admin.html） ===== */
-async function loadOrders(filter='all'){
+async function loadOrders(filter='all', extra = {}){
   currentFilter = filter;
   const listEl = $('#orderList');
   listEl.innerHTML = '<div class="muted">載入中…</div>';
   $('#msg').textContent = '';
 
+  const date_from = extra.date_from ?? ($('#date_from') ? ($('#date_from').value || '') : '');
+  const date_to   = extra.date_to   ?? ($('#date_to') ? ($('#date_to').value || '') : '');
+
   try{
-    const r = await fetch(
-      `${API}/admin/orders?filter=${encodeURIComponent(filter)}&op_key=${encodeURIComponent(OP_KEY)}`
-    );
+    const params = new URLSearchParams();
+    params.set('filter', filter);
+    params.set('op_key', OP_KEY);
+    if (date_from) params.set('date_from', date_from);
+    if (date_to)   params.set('date_to', date_to);
+
+    const r = await fetch(`${API}/admin/orders?` + params.toString());
     const j = await r.json();
+
     if(!r.ok || !j.ok){
       throw new Error(j.error || 'load_failed');
     }
+
     currentOrders = j.orders || j.records || [];
-ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {}); // ← 新增
-renderOrderList();
+    ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+    renderOrderList();
   }catch(e){
     console.error(e);
     listEl.innerHTML = '<div class="error">載入失敗：' + (e.message || e) + '</div>';
@@ -2604,13 +2660,14 @@ ${a.credit>0 ? `<tr><th>購物金折抵</th><td>-${creditUse}</td></tr>` : ``}
     });
   }
 
-  // ===== 不再使用日期欄位，全部改成全站撈 =====
+  // ===== 日期＋快捷篩選（保留目前日期，不再跳回全部） =====
 
 // 只讓真正有 data-filter 的按鈕跑原本 filter 邏輯
 $$('.filter-btn[data-filter]').forEach(btn=>{
   btn.addEventListener('click', async ()=>{
     const filter = btn.dataset.filter || 'all';
     if (filter === 'all') {
+      if ($('#status')) $('#status').value = '';
       await applyFullView('all');
     }
   });
@@ -2633,6 +2690,25 @@ if (statusEl){
     }
 
     await applyFullView('all');
+  });
+}
+
+// 日期按鈕：沿用目前 mode，不重置快捷條件
+const btnApplyDate = $('#btnApplyDate');
+if (btnApplyDate){
+  btnApplyDate.addEventListener('click', async ()=>{
+    const mode = VIEW_STATE.mode || 'all';
+    await applyFullView(mode === 'filter' ? 'all' : mode);
+  });
+}
+
+const btnClearDate = $('#btnClearDate');
+if (btnClearDate){
+  btnClearDate.addEventListener('click', async ()=>{
+    if ($('#date_from')) $('#date_from').value = '';
+    if ($('#date_to')) $('#date_to').value = '';
+    const mode = VIEW_STATE.mode || 'all';
+    await applyFullView(mode === 'filter' ? 'all' : mode);
   });
 }
 
@@ -2682,7 +2758,6 @@ if (btnPickupNeedTop){
     if (btn) btn.click();
   });
 }
-
 // LINE 名稱搜尋
 const lineSearchEl = $('#line_search');
 if (lineSearchEl){
@@ -2761,9 +2836,21 @@ if (meetupDoneTop) {
   proxyButton('btnDepositPayAndNoticeTop', 'btnDepositPayAndNotice');
   proxyButton('btnSaveDetailOnlyTop',      'btnSaveDetailOnly');
 
-  await ensureOpKey();
-  saveViewState('filter', { filter: 'all' });
-  await loadOrders('all');
+    await ensureOpKey();
+
+  const last30 = getLast30DaysRange();
+  if ($('#date_from')) $('#date_from').value = last30.date_from;
+  if ($('#date_to'))   $('#date_to').value   = last30.date_to;
+
+  saveViewState('all', {
+    filter: 'all',
+    date_from: last30.date_from,
+    date_to: last30.date_to,
+    status: $('#status') ? ($('#status').value || '') : ''
+  });
+
+  restoreViewInputs();
+  await applyFullView('all', false);
 });
 </script>
 </body>
