@@ -179,7 +179,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
       <div class="filter-group">
         <button class="filter-btn active" data-filter="all">全部訂單</button>
        <button class="filter-btn" data-filter="all_no_fail">📦未出貨訂單</button>
-        <button class="filter-btn" data-filter="pending_online">💰匯款待確認</button>
+        <button class="filter-btn" data-filter="pending_online">💰已收定金未出貨</button>
        <button class="filter-btn" data-filter="unshipped">未出貨訂單</button>
         <button class="filter-btn" data-filter="ready_to_ship"
           style="display:none;">待出貨列印</button>
@@ -215,7 +215,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
         </div>
        <div class="field">
           <label>&nbsp;</label>
-          <button class="small-btn" id="btnRemindToday" type="button">已收定金未出貨</button>
+          <button class="small-btn" id="btnRemindToday" type="button">匯款待確認</button>
         </div>
        <div class="field">
   <label>&nbsp;</label>
@@ -2679,37 +2679,37 @@ $$('.filter-btn').forEach(btn=>{
     await ensureOpKey();
 
     if (filter === 'pending_online') {
-      const msgEl = $('#msg');
-      if (msgEl) msgEl.textContent = '';
+  const msgEl = $('#msg');
+  if (msgEl) msgEl.textContent = '';
 
-      const today = new Date();
-      const yyyy = today.getFullYear();
-      const mm   = String(today.getMonth() + 1).padStart(2, '0');
-      const dd   = String(today.getDate()).padStart(2, '0');
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm   = String(today.getMonth() + 1).padStart(2, '0');
+  const dd   = String(today.getDate()).padStart(2, '0');
 
-      if ($('#date_from')) $('#date_from').value = '2024-01-01';
-      if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
-      if ($('#status')) $('#status').value = '';
+  if ($('#date_from')) $('#date_from').value = '2024-01-01';
+  if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
+  if ($('#status')) $('#status').value = '';
 
-      saveViewState('filter', { filter: 'pending_online' });
+  await loadOrdersByDate();
 
-      await loadOrdersByDate();
+  // ✅ 互換後：這顆改成「已收定金未出貨」
+  currentOrders = (currentOrders || []).filter(rec => {
+    const f = rec.fields || rec || {};
+    const isDepositOk = String(f.pay_status || '').toLowerCase() === 'deposit_ok';
+    const notShipped  = String(f.ship_status || '').toLowerCase() !== 'shipped';
+    return isDepositOk && notShipped;
+  });
 
-      currentOrders = (currentOrders || []).filter(rec => {
-        const f = rec.fields || rec || {};
-        return String(f.pay_status || '').toLowerCase() === 'pending';
-      });
+  ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+  renderOrderList();
 
-      ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
-      renderOrderList();
-
-      if (msgEl) {
-        msgEl.textContent = currentOrders.length
-          ? '僅顯示「付款狀態＝待確認(pay_status = pending)」的訂單。'
-          : '目前沒有「付款狀態＝待確認」的訂單。';
-      }
-
-    } else if (filter === 'all_no_fail') {
+  if (msgEl) {
+    msgEl.textContent = currentOrders.length
+      ? '僅顯示「訂金已收(pay_status = deposit_ok) ＋ 尚未出貨」的訂單。'
+      : '目前沒有「訂金已收 ＋ 尚未出貨」的訂單。';
+  }
+} else if (filter === 'all_no_fail') {
       saveViewState('filter', { filter: 'all_no_fail' });
 
       const msgEl = $('#msg');
@@ -2861,51 +2861,42 @@ if (btnLoadByDate){
     btnPrintSlips.addEventListener('click', printShipSlipsRange);
   }
 
-  const btnRemindToday = $('#btnRemindToday');
-  if (btnRemindToday){
-    btnRemindToday.addEventListener('click', async () => {
-      const msgEl = $('#msg');
-      if (msgEl) msgEl.textContent = '';
+const btnRemindToday = $('#btnRemindToday');
+if (btnRemindToday){
+  btnRemindToday.addEventListener('click', async () => {
+    const msgEl = $('#msg');
+    if (msgEl) msgEl.textContent = '';
 
-      // 1. 日期改成「很大一段範圍」：例如 2024-01-01 ~ 今天
-      const today = new Date();
-      const yyyy = today.getFullYear();
-      const mm   = String(today.getMonth() + 1).padStart(2, '0');
-      const dd   = String(today.getDate()).padStart(2, '0');
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm   = String(today.getMonth() + 1).padStart(2, '0');
+    const dd   = String(today.getDate()).padStart(2, '0');
 
-      if ($('#date_from')) $('#date_from').value = '2024-01-01';   // 你第一筆訂單之前的日期
-      if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
+    if ($('#date_from')) $('#date_from').value = '2024-01-01';
+    if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
+    if ($('#status')) $('#status').value = '';
 
-      // 2. 狀態清空（全部），後面用前端自己篩
-      if ($('#status')) $('#status').value = '';
+    await ensureOpKey();
+    await loadOrdersByDate();
 
-      // 3. 先照原本方式載入這段日期內的全部訂單
-      await ensureOpKey();
-      currentFilter = 'remind_today';
-      saveViewState('remind_today');
-      await loadOrdersByDate();
-
-      // 4. 前端再篩選：訂金已收 + 尚未出貨
-      currentOrders = (currentOrders || []).filter(rec => {
-        const f = rec.fields || rec || {};
-        const isDepositOk = (f.pay_status === 'deposit_ok');  // 訂金已收
-        const notShipped  = (f.ship_status !== 'shipped');    // 尚未出貨
-        return isDepositOk && notShipped;
-      });
-
-      // 5. 更新快取 & 畫面
-      ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
-      renderOrderList();
-
-       if (msgEl){
-        if (!currentOrders.length){
-          msgEl.textContent = '目前沒有「訂金已收 ＋ 尚未出貨」的訂單。';
-        } else {
-          msgEl.textContent = '僅顯示「訂金已收(pay_status = deposit_ok) ＋ 尚未出貨」的訂單。';
-        }
-      }
+    // ✅ 互換後：這顆改成「匯款待確認」
+    currentOrders = (currentOrders || []).filter(rec => {
+      const f = rec.fields || rec || {};
+      return String(f.pay_status || '').toLowerCase() === 'pending';
     });
-  }
+
+    ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+    renderOrderList();
+
+    if (msgEl){
+      if (!currentOrders.length){
+        msgEl.textContent = '目前沒有「付款狀態＝待確認」的訂單。';
+      } else {
+        msgEl.textContent = '僅顯示「付款狀態＝待確認(pay_status = pending)」的訂單。';
+      }
+    }
+  });
+}
  const btnPickupNeed = $('#btnPickupNeed');
 if (btnPickupNeed){
   btnPickupNeed.addEventListener('click', async () => {
