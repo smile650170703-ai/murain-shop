@@ -106,6 +106,11 @@
 #d_vendor_stats {
   color:#fecaca;   /* 你也可以換成 #f87171 或 red */
 }
+ #btnQuickPaid,
+#btnRemindToday,
+#btnPickupNeed{
+  display:none !important;
+}
   .label-inline{display:flex;align-items:center;gap:5px;font-size:12px;margin-top:4px}
   .label-inline input[type="checkbox"]{width:auto}
   .error{color:#fecaca;font-size:13px;margin-top:4px}
@@ -177,14 +182,11 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   <div class="toolbar-main">
     <div class="toolbar-left">
       <div class="filter-group">
-        <button class="filter-btn active" data-filter="all">全部訂單</button>
-       <button class="filter-btn" data-filter="all_no_fail">📦未出貨訂單</button>
-        <button class="filter-btn" data-filter="pending_online">💰已收定金未出貨</button>
-       <button class="filter-btn" data-filter="unshipped">未出貨訂單</button>
-        <button class="filter-btn" data-filter="ready_to_ship"
-          style="display:none;">待出貨列印</button>
-        <!-- <button class="filter-btn" data-filter="deposit">ATM / 訂金</button> -->
-      </div>
+  <button class="filter-btn active" data-filter="all">全部訂單</button>
+  <button class="filter-btn" id="btnQuickPaidTop" type="button">⭐待出貨訂單</button>
+  <button class="filter-btn" id="btnRemindTodayTop" type="button">匯款待確認</button>
+  <button class="filter-btn" id="btnPickupNeedTop" type="button">賣貨便登記</button>
+</div>
 
       <div class="filter-row">
         <div class="field">
@@ -198,12 +200,14 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
         <div class="field">
           <label>狀態（status）</label>
           <select id="status">
-            <option value="">全部</option>
-            <option value="submitted">submitted（已送出）</option>
-            <option value="paid">paid（已付款）</option>
-            <option value="shipped">shipped（已出貨）</option>
-            <option value="cancelled">cancelled（取消）</option>
-          </select>
+  <option value="">全部</option>
+  <option value="submitted">submitted（已送出）</option>
+  <option value="paid">paid（已付款）</option>
+  <option value="shipped">shipped（已出貨）</option>
+  <option value="cancelled">cancelled（取消）</option>
+  <option value="unshipped_custom">📦未出貨訂單</option>
+  <option value="deposit_unshipped_custom">💰已收定金未出貨</option>
+</select>
         </div>
         <div class="field">
           <label>&nbsp;</label>
@@ -836,6 +840,44 @@ async function reloadCurrentView(){
     }
     return;
   }
+
+ if (VIEW_STATE.mode === 'status_unshipped_custom') {
+  restoreViewInputs();
+  await loadOrdersByDate();
+
+  currentOrders = (currentOrders || []).filter(isUnshippedOrder);
+  ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+  renderOrderList();
+
+  if (msgEl) {
+    msgEl.textContent = currentOrders.length
+      ? `僅顯示「未出貨」訂單。共 ${currentOrders.length} 筆。`
+      : '目前沒有「未出貨」訂單。';
+  }
+  return;
+}
+
+if (VIEW_STATE.mode === 'status_deposit_unshipped_custom') {
+  restoreViewInputs();
+  await loadOrdersByDate();
+
+  currentOrders = (currentOrders || []).filter(rec => {
+    const f = rec.fields || rec || {};
+    const isDepositOk = String(f.pay_status || '').toLowerCase() === 'deposit_ok';
+    const notShipped  = String(f.ship_status || '').toLowerCase() !== 'shipped';
+    return isDepositOk && notShipped;
+  });
+
+  ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+  renderOrderList();
+
+  if (msgEl) {
+    msgEl.textContent = currentOrders.length
+      ? '僅顯示「訂金已收(pay_status = deposit_ok) ＋ 尚未出貨」的訂單。'
+      : '目前沒有「訂金已收 ＋ 尚未出貨」的訂單。';
+  }
+  return;
+}
 
   const filter = VIEW_STATE.filter || currentFilter || 'all';
   currentFilter = filter;
@@ -2784,11 +2826,55 @@ $$('.filter-btn').forEach(btn=>{
   if ($('#date_from') && !$('#date_from').value) $('#date_from').value = first;
   if ($('#date_to') && !$('#date_to').value) $('#date_to').value = todayStr;
 
-  // 日期載入 / 只看 paid / 匯出
   const btnLoadByDate = $('#btnLoadByDate');
 if (btnLoadByDate){
   btnLoadByDate.addEventListener('click', async ()=>{
     await ensureOpKey();
+
+    const st = $('#status') ? ($('#status').value || '') : '';
+
+    if (st === 'unshipped_custom'){
+      currentFilter = 'status_unshipped_custom';
+      saveViewState('status_unshipped_custom');
+      await loadOrdersByDate();
+
+      currentOrders = (currentOrders || []).filter(isUnshippedOrder);
+      ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+      renderOrderList();
+
+      const msgEl = $('#msg');
+      if (msgEl) {
+        msgEl.textContent = currentOrders.length
+          ? `僅顯示「未出貨」訂單。共 ${currentOrders.length} 筆。`
+          : '目前沒有「未出貨」訂單。';
+      }
+      return;
+    }
+
+    if (st === 'deposit_unshipped_custom'){
+      currentFilter = 'status_deposit_unshipped_custom';
+      saveViewState('status_deposit_unshipped_custom');
+      await loadOrdersByDate();
+
+      currentOrders = (currentOrders || []).filter(rec => {
+        const f = rec.fields || rec || {};
+        const isDepositOk = String(f.pay_status || '').toLowerCase() === 'deposit_ok';
+        const notShipped  = String(f.ship_status || '').toLowerCase() !== 'shipped';
+        return isDepositOk && notShipped;
+      });
+
+      ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+      renderOrderList();
+
+      const msgEl = $('#msg');
+      if (msgEl) {
+        msgEl.textContent = currentOrders.length
+          ? '僅顯示「訂金已收(pay_status = deposit_ok) ＋ 尚未出貨」的訂單。'
+          : '目前沒有「訂金已收 ＋ 尚未出貨」的訂單。';
+      }
+      return;
+    }
+
     currentFilter = 'by_date';
     saveViewState('by_date');
     await loadOrdersByDate();
@@ -2954,6 +3040,30 @@ if (btnPickupNeed){
         ? `僅顯示「已出貨 + 7-11 取貨 + 取貨登記≠已取貨」的訂單。共 ${currentOrders.length} 筆。`
         : '目前沒有「已出貨且尚未登記已取貨」的訂單。';
     }
+  });
+}
+
+ const btnQuickPaidTop = $('#btnQuickPaidTop');
+if (btnQuickPaidTop){
+  btnQuickPaidTop.addEventListener('click', ()=>{
+    const btn = $('#btnQuickPaid');
+    if (btn) btn.click();
+  });
+}
+
+const btnRemindTodayTop = $('#btnRemindTodayTop');
+if (btnRemindTodayTop){
+  btnRemindTodayTop.addEventListener('click', ()=>{
+    const btn = $('#btnRemindToday');
+    if (btn) btn.click();
+  });
+}
+
+const btnPickupNeedTop = $('#btnPickupNeedTop');
+if (btnPickupNeedTop){
+  btnPickupNeedTop.addEventListener('click', ()=>{
+    const btn = $('#btnPickupNeed');
+    if (btn) btn.click();
   });
 }
   // ★ 上方「取消訂單（補回庫存）」按鈕：直接走 cancelCurrentOrder()
