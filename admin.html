@@ -371,21 +371,24 @@ function renderVendorMonthSummary(){
     const name = String(f['賣貨便名稱'] || '').trim();
     if (!name) return;
 
+    // 只算已收款
+    const ps = String(f.pay_status || '').trim().toLowerCase();
+    if (ps !== 'paid_ok') return;
+
     const m = monthKeyOfRecord(f);
     if (month && m !== month) return;
 
-    let amount = f['賣貨便金額'];
-    if (amount === undefined || amount === null || amount === '') {
-      amount = f.ship_fee ?? f.shipping_fee ?? 0;
-    }
+    // 改成加總「應付金額」
+    const a = calcAmounts(f);
+    const amount = Number(a.net || 0);
 
-    map.set(name, (map.get(name) || 0) + Number(amount || 0));
+    map.set(name, (map.get(name) || 0) + amount);
   });
 
   const rows = Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
 
   if (!rows.length) {
-    panel.textContent = month ? `${month} 尚無資料` : '尚無資料';
+    panel.textContent = month ? `${month} 尚無已收款資料` : '尚無已收款資料';
     return;
   }
 
@@ -1617,13 +1620,12 @@ if (btnSaveOnly) {
     }
   });
 }
-// ★ 計算賣貨便在對應月份的累積金額，顯示在 detail 右側（改版：儲存後可以立刻重算）
 function updateVendorStats() {
   const sel    = $('#d_vendor_name');
   const infoEl = $('#d_vendor_stats');
   if (!sel || !infoEl) return;
 
-  const name = sel.value;
+  const name = String(sel.value || '').trim();
   if (!name) {
     infoEl.textContent = '';
     return;
@@ -1632,50 +1634,38 @@ function updateVendorStats() {
   // 目前這筆訂單的欄位
   const f = (currentRecord && (currentRecord.fields || currentRecord)) || {};
 
-  // 先用 Airtable 的「賣貨便月份」，沒有的話就用 ship_at 自己算 YYYY-MM
-  let month = f['賣貨便月份'] || '';
+  // 先用 Airtable 的「賣貨便月份」，沒有的話就用 shipped_at / ship_at 算 YYYY-MM
+  let month = String(f['賣貨便月份'] || '').trim();
   if (!month) {
-    const shipAt = (f.shipped_at || f.ship_at || '');
-    if (shipAt) {
-      month = String(shipAt).slice(0, 7); // 2025-12-06T... → 2025-12
-    }
+    const shipAt = String(f.shipped_at || f.ship_at || '').trim();
+    if (shipAt) month = shipAt.slice(0, 7);
   }
 
   if (!month) {
-    infoEl.textContent = '尚未有對應月份（請先填出貨時間 ship_at）';
+    infoEl.textContent = '尚未抓到賣貨便月份';
     return;
   }
 
-  let sum   = 0;
+  const source = ORDERS_CACHE || [];
   let count = 0;
+  let sum = 0;
 
-  (ORDERS_CACHE || []).forEach(o => {
-    if (!o) return;
-    const fo = o;
+  source.forEach(rec => {
+    const x = rec.fields || rec || {};
 
-    if (fo['賣貨便名稱'] !== name) return;
+    if (String(x['賣貨便名稱'] || '').trim() !== name) return;
+    if (monthKeyOfRecord(x) !== month) return;
 
-    // 這一筆的月份：一樣先看「賣貨便月份」，沒有就用 ship_at 算
-    let m2 = fo['賣貨便月份'] || '';
-    if (!m2) {
-      const shipAt2 = (fo.shipped_at || fo.ship_at || '');
-      if (shipAt2) {
-        m2 = String(shipAt2).slice(0, 7);
-      }
-    }
-    if (m2 !== month) return;
+    // 只算已收款
+    const ps = String(x.pay_status || '').trim().toLowerCase();
+    if (ps !== 'paid_ok') return;
 
-    // 優先用「賣貨便金額」，沒有就退而用 ship_fee / shipping_fee
-    let amount = fo['賣貨便金額'];
-    if (amount === undefined || amount === null || amount === '') {
-      amount = fo.ship_fee ?? fo.shipping_fee ?? 0;
-    }
-
-    sum   += Number(amount || 0);
+    const a = calcAmounts(x);
+    sum += Number(a.net || 0);
     count += 1;
   });
 
-  infoEl.textContent = `${month}，${name} 本月累積 ${count} 筆，合計 ${money(sum)}`;
+  infoEl.textContent = `${month}，${name} 已收款 ${count} 筆，應付金額合計 ${money(sum)}`;
 }
 
 
