@@ -971,24 +971,7 @@ function updateSummary(){
   if (btnExportZero) btnExportZero.disabled = false;
 }
 
-// 上方匯出按鈕：依目前的日期 / 狀態條件，叫後端 /admin/export-view
-function exportCSV(){
-  if (!OP_KEY){
-    alert('尚未登入後台，請重新整理頁面再試一次。');
-    return;
-  }
-
-  const params = new URLSearchParams();
-
-  // ★ 新版用 key，不是 op_key
-  params.set('key', OP_KEY);
-
-  // ★ 這顆是「出貨明細」匯出，所以 kind = orders
-  params.set('kind', 'orders');
-
-  // ★ 匯出 Excel（CSV）
-  params.set('format', 'csv');
-
+ // 上方匯出按鈕：不再使用日期欄位
 function exportCSV(){
   if (!OP_KEY){
     alert('尚未登入後台，請重新整理頁面再試一次。');
@@ -1012,7 +995,6 @@ function exportCSV(){
   const url = `${API}/admin/export-view?` + params.toString();
   window.open(url, '_blank');
 }
-
 
 function exportShipReport(){
   if (!OP_KEY){
@@ -2620,103 +2602,6 @@ ${a.credit>0 ? `<tr><th>購物金折抵</th><td>-${creditUse}</td></tr>` : ``}
   w.focus();
   w.print();
 }
-
-document.addEventListener('DOMContentLoaded', async ()=>{
-  // 上方快速分類按鈕
-$$('.filter-btn[data-filter]').forEach(btn=>{
-  btn.addEventListener('click', async ()=>{
-    $$('.filter-btn').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-
-    const filter = btn.dataset.filter || 'all';
-    currentFilter = filter;
-    await ensureOpKey();
-
-    if (filter === 'pending_online') {
-  const msgEl = $('#msg');
-  if (msgEl) msgEl.textContent = '';
-
-  const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm   = String(today.getMonth() + 1).padStart(2, '0');
-  const dd   = String(today.getDate()).padStart(2, '0');
-
-  if ($('#date_from')) $('#date_from').value = '2024-01-01';
-  if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
-  if ($('#status')) $('#status').value = '';
-
-  await loadOrdersByDate();
-
-  // ✅ 互換後：這顆改成「已收定金未出貨」
-  currentOrders = (currentOrders || []).filter(rec => {
-    const f = rec.fields || rec || {};
-    const isDepositOk = String(f.pay_status || '').toLowerCase() === 'deposit_ok';
-    const notShipped  = String(f.ship_status || '').toLowerCase() !== 'shipped';
-    return isDepositOk && notShipped;
-  });
-
-  ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
-  renderOrderList();
-
-  if (msgEl) {
-    msgEl.textContent = currentOrders.length
-      ? '僅顯示「訂金已收(pay_status = deposit_ok) ＋ 尚未出貨」的訂單。'
-      : '目前沒有「訂金已收 ＋ 尚未出貨」的訂單。';
-  }
-} else if (filter === 'all_no_fail') {
-      saveViewState('filter', { filter: 'all_no_fail' });
-
-      const msgEl = $('#msg');
-      if (msgEl) msgEl.textContent = '';
-
-      await loadOrders('all');
-      currentFilter = 'all_no_fail';
-
-      currentOrders = (currentOrders || []).filter(rec => {
-        const f  = rec.fields || rec || {};
-        const ps = String(f.pay_status || '').toLowerCase();
-        const st = String(f.status || '').toLowerCase();
-        const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
-
-        if (ps === 'failed' || ps === 'cancelled') return false;
-        if (st === 'cancelled') return false;
-        if (st === 'shipped') return false;
-        if (ss === 'shipped' || ss === 'arrived' || ss === 'picked_up' || ss === 'returned') return false;
-
-        return true;
-      });
-
-      ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
-      renderOrderList();
-
-      if (msgEl) msgEl.textContent = '未出貨訂單';
-
-    } else if (filter === 'unshipped') {
-      saveViewState('filter', { filter: 'unshipped' });
-
-      const msgEl = $('#msg');
-      if (msgEl) msgEl.textContent = '';
-
-      await loadOrders('all');
-      currentFilter = 'unshipped';
-
-      currentOrders = (currentOrders || []).filter(isUnshippedOrder);
-      ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
-      renderOrderList();
-
-      if (msgEl) {
-        msgEl.textContent = currentOrders.length
-          ? `僅顯示「未出貨」訂單。共 ${currentOrders.length} 筆。`
-          : '目前沒有「未出貨」訂單。';
-      }
-
-    } else {
-      saveViewState('filter', { filter });
-      await loadOrders(filter);
-    }
-  });
-});
-
 
   // OP_KEY 重設（如果你已經拿掉更改密碼那顆，可以保留這段但加保護）
   const btnChangeKey = $('#btnChangeKey');
