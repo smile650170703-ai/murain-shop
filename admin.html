@@ -308,6 +308,46 @@ let ORDERS_CACHE = []; // ← 匯出用，存純欄位物件
  // ★ 列印出貨單：左邊勾選用
 let PRINT_SLIP_SELECTED = new Set();
 
+ let VIEW_STATE = {
+  mode: 'filter', // filter / by_date / quick_paid / remind_today / pickup_need
+  filter: 'all',
+  date_from: '',
+  date_to: '',
+  status: ''
+};
+
+function saveViewState(mode, extra = {}){
+  VIEW_STATE = {
+    mode: mode || VIEW_STATE.mode || 'filter',
+    filter: extra.filter ?? VIEW_STATE.filter ?? currentFilter ?? 'all',
+    date_from: extra.date_from ?? ($('#date_from') ? ($('#date_from').value || '') : ''),
+    date_to: extra.date_to ?? ($('#date_to') ? ($('#date_to').value || '') : ''),
+    status: extra.status ?? ($('#status') ? ($('#status').value || '') : '')
+  };
+}
+
+function restoreViewInputs(){
+  if ($('#date_from')) $('#date_from').value = VIEW_STATE.date_from || '';
+  if ($('#date_to'))   $('#date_to').value   = VIEW_STATE.date_to || '';
+  if ($('#status'))    $('#status').value    = VIEW_STATE.status || '';
+}
+
+function restoreSelectedOrder(keepKey){
+  if (!keepKey) return;
+
+  const found = (currentOrders || []).find(x => {
+    if (x.id && String(x.id) === String(keepKey)) return true;
+    const fx = x.fields || x || {};
+    return fx.order_id && String(fx.order_id) === String(keepKey);
+  });
+  if (!found) return;
+
+  renderDetail(found);
+  $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
+  const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
+  if (row) row.classList.add('active');
+}
+
 function getOrderKey(rec){
   const f = rec?.fields || rec || {};
   return String(f.order_id || rec?.id || '').trim();
@@ -702,74 +742,168 @@ renderOrderList();
   }
 }
 
- async function reloadCurrentView(){
-  // pending_online：重跑同一套「日期全抓 + 前端篩 pending」邏輯
-  if (currentFilter === 'pending_online'){
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm   = String(today.getMonth()+1).padStart(2,'0');
-    const dd   = String(today.getDate()).padStart(2,'0');
+async function reloadCurrentView(){
+  const msgEl = $('#msg');
+  if (msgEl) msgEl.textContent = '';
 
-    if ($('#date_from')) $('#date_from').value = '2024-01-01';
-    if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
-    if ($('#status'))    $('#status').value    = '';
+  const hasFee = (f) => {
+    if (!f) return false;
+    const fee1 = f.shipping_fee;
+    const fee2 = f.ship_fee;
+    const filled1 = fee1 !== undefined && fee1 !== null && String(fee1) !== '';
+    const filled2 = fee2 !== undefined && fee2 !== null && String(fee2) !== '';
+    return filled1 || filled2;
+  };
 
+  if (VIEW_STATE.mode === 'by_date') {
+    restoreViewInputs();
+    await loadOrdersByDate();
+    return;
+  }
+
+  if (VIEW_STATE.mode === 'quick_paid') {
+    restoreViewInputs();
     await loadOrdersByDate();
 
-    currentOrders = (currentOrders || []).filter(rec=>{
+    currentOrders = (currentOrders || []).filter(rec => {
       const f = rec.fields || rec || {};
-      return String(f.pay_status||'').toLowerCase() === 'pending';
+      const feeMissing = !hasFee(f);
+      const isPaidOk   = (f.pay_status === 'paid_ok');
+      return feeMissing && isPaidOk;
+    });
+
+    ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+    renderOrderList();
+
+    if (msgEl) {
+      msgEl.textContent = currentOrders.length
+        ? '僅顯示「已收款(pay_status = paid_ok) 且 運費 TWD 未填寫」的訂單。'
+        : '目前沒有「已收款且運費未填寫」的訂單。';
+    }
+    return;
+  }
+
+  if (VIEW_STATE.mode === 'remind_today') {
+    restoreViewInputs();
+    await loadOrdersByDate();
+
+    currentOrders = (currentOrders || []).filter(rec => {
+      const f = rec.fields || rec || {};
+      const isDepositOk = (f.pay_status === 'deposit_ok');
+      const notShipped  = (f.ship_status !== 'shipped');
+      return isDepositOk && notShipped;
+    });
+
+    ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+    renderOrderList();
+
+    if (msgEl) {
+      msgEl.textContent = currentOrders.length
+        ? '僅顯示「訂金已收(pay_status = deposit_ok) ＋ 尚未出貨」的訂單。'
+        : '目前沒有「訂金已收 ＋ 尚未出貨」的訂單。';
+    }
+    return;
+  }
+
+  if (VIEW_STATE.mode === 'pickup_need') {
+    restoreViewInputs();
+    await loadOrdersByDate();
+
+    currentOrders = (currentOrders || []).filter(rec => {
+      const f  = rec.fields || rec || {};
+      const ps = String(f.pay_status || '').toLowerCase();
+      if (ps === 'failed' || ps === 'cancelled') return false;
+
+      const st = String(f.status || '').toLowerCase();
+      const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
+      const shipped = (st === 'shipped') || (ss === 'shipped') || (ss === 'arrived') || (ss === 'picked_up');
+
+      const shipInfo = (typeof parseShippingInfo === 'function') ? (parseShippingInfo(f) || {}) : {};
+      const ship = shipInfo.ship || {};
+      const is711 = String(ship.type || '').toLowerCase() === '711';
+
+      const pickReg = String(f['取貨登記'] || '').trim();
+      const notPicked = (pickReg !== '已取貨');
+
+      return shipped && is711 && notPicked;
+    });
+
+    ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+    renderOrderList();
+
+    if (msgEl) {
+      msgEl.textContent = currentOrders.length
+        ? `僅顯示「已出貨 + 7-11 取貨 + 取貨登記≠已取貨」的訂單。共 ${currentOrders.length} 筆。`
+        : '目前沒有「已出貨且尚未登記已取貨」的訂單。';
+    }
+    return;
+  }
+
+  const filter = VIEW_STATE.filter || currentFilter || 'all';
+  currentFilter = filter;
+
+  if (filter === 'pending_online'){
+    restoreViewInputs();
+    await loadOrdersByDate();
+
+    currentOrders = (currentOrders || []).filter(rec => {
+      const f = rec.fields || rec || {};
+      return String(f.pay_status || '').toLowerCase() === 'pending';
     });
 
     ORDERS_CACHE = currentOrders.map(r => r.fields || r || {});
     renderOrderList();
-    $('#orderDetail').innerHTML = '<div class="muted">請從左邊點選一筆訂單</div>';
+
+    if (msgEl) {
+      msgEl.textContent = currentOrders.length
+        ? '僅顯示「付款狀態＝待確認(pay_status = pending)」的訂單。'
+        : '目前沒有「付款狀態＝待確認」的訂單。';
+    }
     return;
   }
 
-  // all_no_fail：先載入全部，再前端排除 failed/cancelled
-if (currentFilter === 'all_no_fail') {
-  await loadOrders('all');
-  currentFilter = 'all_no_fail';
+  if (filter === 'all_no_fail') {
+    await loadOrders('all');
+    currentFilter = 'all_no_fail';
 
-  currentOrders = (currentOrders || []).filter(rec => {
-    const f  = rec.fields || rec || {};
-    const ps = String(f.pay_status || '').toLowerCase();
-    const st = String(f.status || '').toLowerCase();
-    const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
+    currentOrders = (currentOrders || []).filter(rec => {
+      const f  = rec.fields || rec || {};
+      const ps = String(f.pay_status || '').toLowerCase();
+      const st = String(f.status || '').toLowerCase();
+      const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
 
-    // 不含作廢/補回
-    if (ps === 'failed' || ps === 'cancelled') return false;
-    if (st === 'cancelled') return false;
+      if (ps === 'failed' || ps === 'cancelled') return false;
+      if (st === 'cancelled') return false;
+      if (st === 'shipped') return false;
+      if (ss === 'shipped' || ss === 'arrived' || ss === 'picked_up' || ss === 'returned') return false;
 
-    // 不含已出貨（含 shipped/arrived/picked_up/returned）
-    if (st === 'shipped') return false;
-    if (ss === 'shipped' || ss === 'arrived' || ss === 'picked_up' || ss === 'returned') return false;
+      return true;
+    });
 
-    return true;
-  });
+    ORDERS_CACHE = currentOrders.map(r => r.fields || r || {});
+    renderOrderList();
 
-  ORDERS_CACHE = currentOrders.map(r => r.fields || r || {});
-  renderOrderList();
-  $('#orderDetail').innerHTML = '<div class="muted">請從左邊點選一筆訂單</div>';
-  return;
-}
+    if (msgEl) msgEl.textContent = '未出貨訂單';
+    return;
+  }
 
-   // unshipped：先載入全部，再前端排除 shipped / failed / cancelled
-  if (currentFilter === 'unshipped') {
+  if (filter === 'unshipped') {
     await loadOrders('all');
     currentFilter = 'unshipped';
 
     currentOrders = (currentOrders || []).filter(isUnshippedOrder);
-
     ORDERS_CACHE = currentOrders.map(r => r.fields || r || {});
     renderOrderList();
-    $('#orderDetail').innerHTML = '<div class="muted">請從左邊點選一筆訂單</div>';
+
+    if (msgEl) {
+      msgEl.textContent = currentOrders.length
+        ? `僅顯示「未出貨」訂單。共 ${currentOrders.length} 筆。`
+        : '目前沒有「未出貨」訂單。';
+    }
     return;
   }
 
-  // 其他 view：照舊用 loadOrders
-  await loadOrders(currentFilter || 'all');
+  await loadOrders(filter);
 }
 
 /* ===== 依「日期 + status」載入訂單（原 admin_orders.html 縮小版） ===== */
@@ -1769,51 +1903,50 @@ renderOrderList();
 }
  
 /* ===== 儲存右側欄位 ===== */
-async function saveDetail(){
-  if(!currentRecord) return;
+async function saveDetail(opts = {}){
+  if(!currentRecord) return false;
+
+  const skipReload = !!opts.skipReload;
   const msgEl = $('#detailMsg');
   msgEl.textContent = '儲存中…';
 
   const fields = {};
 
-// ★ 新增：賣貨便名稱（對應 Airtable 的「賣貨便名稱」欄位）
-  fields['賣貨便名稱']   = $('#d_vendor_name') ? $('#d_vendor_name').value || '' : '';
- // ★ 取貨登記（新增這行）
-fields['取貨登記'] = $('#d_pickup_reg') ? ($('#d_pickup_reg').value || '').trim() : '';
+  fields['賣貨便名稱'] = $('#d_vendor_name') ? $('#d_vendor_name').value || '' : '';
+  fields['取貨登記'] = $('#d_pickup_reg') ? ($('#d_pickup_reg').value || '').trim() : '';
 
- 
- // 物流單號 / 運費 → 用 Orders 的欄位名
-const tracking = $('#d_ship_tracking').value.trim();
-fields.tracking_no = tracking || '';
+  const tracking = $('#d_ship_tracking').value.trim();
+  fields.tracking_no = tracking || '';
 
-const fee = $('#d_ship_fee').value.trim();
-fields.shipping_fee = fee ? Number(fee) : null;
-  fields.deposit_received  = $('#d_deposit_received').checked;
-  fields.pay_notice_sent   = $('#d_pay_notice_sent').checked;
-  fields.internal_note     = $('#d_internal_note').value || '';
- // ✅ 裕富（手動申請欄位）— 有元素才讀，沒元素就不送
-const y_name   = $('#d_yufu_name');
-const y_idno   = $('#d_yufu_idno');
-const y_phone  = $('#d_yufu_phone');
-const y_email  = $('#d_yufu_email');
-const y_period = $('#d_yufu_period');
-const y_status = $('#d_yufu_status');
-const y_case   = $('#d_yufu_case_no');
-const y_note   = $('#d_yufu_note');
+  const fee = $('#d_ship_fee').value.trim();
+  fields.shipping_fee = fee ? Number(fee) : null;
 
-if (y_name)   fields.yufu_name   = (y_name.value || '').trim();
-if (y_idno)   fields.yufu_idno   = (y_idno.value || '').trim();
-if (y_phone)  fields.yufu_phone  = (y_phone.value || '').trim();
-if (y_email)  fields.yufu_email  = (y_email.value || '').trim();
-if (y_period) fields.yufu_period = (y_period.value || '').trim();
-if (y_status) fields.yufu_status = (y_status.value || '').trim();
-if (y_case)   fields.yufu_case_no= (y_case.value || '').trim();
-if (y_note)   fields.yufu_note   = (y_note.value || '').trim();
+  fields.deposit_received = $('#d_deposit_received').checked;
+  fields.pay_notice_sent  = $('#d_pay_notice_sent').checked;
+  fields.internal_note    = $('#d_internal_note').value || '';
+
+  const y_name   = $('#d_yufu_name');
+  const y_idno   = $('#d_yufu_idno');
+  const y_phone  = $('#d_yufu_phone');
+  const y_email  = $('#d_yufu_email');
+  const y_period = $('#d_yufu_period');
+  const y_status = $('#d_yufu_status');
+  const y_case   = $('#d_yufu_case_no');
+  const y_note   = $('#d_yufu_note');
+
+  if (y_name)   fields.yufu_name    = (y_name.value || '').trim();
+  if (y_idno)   fields.yufu_idno    = (y_idno.value || '').trim();
+  if (y_phone)  fields.yufu_phone   = (y_phone.value || '').trim();
+  if (y_email)  fields.yufu_email   = (y_email.value || '').trim();
+  if (y_period) fields.yufu_period  = (y_period.value || '').trim();
+  if (y_status) fields.yufu_status  = (y_status.value || '').trim();
+  if (y_case)   fields.yufu_case_no = (y_case.value || '').trim();
+  if (y_note)   fields.yufu_note    = (y_note.value || '').trim();
 
   const f = currentRecord.fields || currentRecord || {};
   const payload = {
-    record_id: currentRecord.id || null,  // Airtable recID（有就用）
-    order_id : f.order_id || null,        // 或用 order_id 找
+    record_id: currentRecord.id || null,
+    order_id : f.order_id || null,
     fields
   };
 
@@ -1827,24 +1960,21 @@ if (y_note)   fields.yufu_note   = (y_note.value || '').trim();
     if(!r.ok || !j.ok){
       throw new Error(j.error || 'update_error');
     }
+
     msgEl.textContent = '已儲存 ✅';
 
-    const keepF   = currentRecord.fields || currentRecord || {};
-const keepKey = keepF.order_id || currentRecord.id || '';
+    if (skipReload) return true;
+
+    const keepF = currentRecord.fields || currentRecord || {};
+    const keepKey = keepF.order_id || currentRecord.id || '';
+
     await reloadCurrentView();
-    const found = currentOrders.find(x=>{
-      if (x.id && x.id === keepKey) return true;
-      const fx = x.fields || x || {};
-      return fx.order_id && fx.order_id === keepKey;
-    });
-    if(found){
-      renderDetail(found);
-      const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
-      if(row) row.classList.add('active');
-    }
+    restoreSelectedOrder(keepKey);
+    return true;
   }catch(e){
     console.error(e);
     msgEl.textContent = '儲存失敗：' + (e.message || e);
+    return false;
   }
 }
 /* ===== 一鍵：先儲存，再出貨＋發 LINE（上面那顆大按鈕用） ===== */
@@ -1857,15 +1987,9 @@ async function saveDetailAndShip(){
   const msgEl = $('#detailMsg');
   if (msgEl) msgEl.textContent = '儲存出貨 / 付款資料中…';
 
-  // 1. 先儲存右側欄位
-  await saveDetail();
+  const ok = await saveDetail({ skipReload: true });
+  if (!ok) return;
 
-  // 如果儲存失敗（訊息裡有「失敗」），就不要繼續出貨
-  if (msgEl && String(msgEl.textContent || '').includes('失敗')) {
-    return;
-  }
-
-  // 2. 儲存成功後，再出貨＋發 LINE 通知
   await shipAndLine();
 }
 
@@ -1938,15 +2062,9 @@ async function saveAndShipAndLine() {
   const msgEl = $('#detailMsg');
   if (msgEl) msgEl.textContent = '儲存出貨 / 付款資料中…';
 
-  // 1. 先儲存右側出貨 / 付款欄位
-  await saveDetail();
+  const ok = await saveDetail({ skipReload: true });
+  if (!ok) return;
 
-  // 如果儲存有失敗訊息，就不要往下出貨
-  if (msgEl && msgEl.textContent.includes('失敗')) {
-    return;
-  }
-
-  // 2. 再出貨＋發 LINE 通知
   await shipAndLine();
 }
 
@@ -2011,23 +2129,14 @@ async function depositReceivedAndNotify() {
     return;
   }
 
-  // 1) 自動勾選「已收到訂金」＋「已發出款/保留通知」
   const depChk    = $('#d_deposit_received');
   const noticeChk = $('#d_pay_notice_sent');
   if (depChk)    depChk.checked    = true;
   if (noticeChk) noticeChk.checked = true;
 
-  // 2) 先存右邊欄位（包含勾勾、內部備註等等）
-  await saveDetail();
+  const ok = await saveDetail({ skipReload: true });
+  if (!ok) return;
 
-  const msgEl = $('#detailMsg');
-  if (msgEl && msgEl.textContent.includes('❌')) {
-    // 如果儲存失敗，就不要往下跑確認付款
-    return;
-  }
-
-  // 3) 再走一次原本的「確認已收款」流程
-  //    → 後端會依付款方式：線上支付 / 中租 / 匯款 / 訂金 自己決定 pay_status / status
   await confirmPay('ok');
 }
  /* ===== 面交付現：完成收款（已收款 + 出貨完成） ===== */
@@ -2562,7 +2671,6 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   // 上方快速分類按鈕
 $$('.filter-btn').forEach(btn=>{
   btn.addEventListener('click', async ()=>{
-    // 先把按鈕外觀切換
     $$('.filter-btn').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
 
@@ -2570,12 +2678,10 @@ $$('.filter-btn').forEach(btn=>{
     currentFilter = filter;
     await ensureOpKey();
 
-    // ⭐「線上付款待確認」特別處理：全部日期 + pay_status = pending
     if (filter === 'pending_online') {
       const msgEl = $('#msg');
       if (msgEl) msgEl.textContent = '';
 
-      // 日期自動改成 2024-01-01 ~ 今天
       const today = new Date();
       const yyyy = today.getFullYear();
       const mm   = String(today.getMonth() + 1).padStart(2, '0');
@@ -2583,14 +2689,12 @@ $$('.filter-btn').forEach(btn=>{
 
       if ($('#date_from')) $('#date_from').value = '2024-01-01';
       if ($('#date_to'))   $('#date_to').value   = `${yyyy}-${mm}-${dd}`;
-
-      // 狀態清空
       if ($('#status')) $('#status').value = '';
 
-      // 先載入日期內全部
+      saveViewState('filter', { filter: 'pending_online' });
+
       await loadOrdersByDate();
 
-      // 前端只留 pending
       currentOrders = (currentOrders || []).filter(rec => {
         const f = rec.fields || rec || {};
         return String(f.pay_status || '').toLowerCase() === 'pending';
@@ -2606,53 +2710,43 @@ $$('.filter-btn').forEach(btn=>{
       }
 
     } else if (filter === 'all_no_fail') {
+      saveViewState('filter', { filter: 'all_no_fail' });
+
       const msgEl = $('#msg');
       if (msgEl) msgEl.textContent = '';
 
-      // 先載入全部（不動後端）
       await loadOrders('all');
-
-      // loadOrders('all') 會把 currentFilter 改成 all，這裡切回來
       currentFilter = 'all_no_fail';
 
-      // 前端排除 failed/cancelled
       currentOrders = (currentOrders || []).filter(rec => {
-  const f  = rec.fields || rec || {};
-  const ps = String(f.pay_status || '').toLowerCase();
-  const st = String(f.status || '').toLowerCase();
-  const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
+        const f  = rec.fields || rec || {};
+        const ps = String(f.pay_status || '').toLowerCase();
+        const st = String(f.status || '').toLowerCase();
+        const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
 
-  // 不含作廢/補回
-  if (ps === 'failed' || ps === 'cancelled') return false;
-  if (st === 'cancelled') return false;
+        if (ps === 'failed' || ps === 'cancelled') return false;
+        if (st === 'cancelled') return false;
+        if (st === 'shipped') return false;
+        if (ss === 'shipped' || ss === 'arrived' || ss === 'picked_up' || ss === 'returned') return false;
 
-  // 不含已出貨
-  if (st === 'shipped') return false;
-  if (ss === 'shipped' || ss === 'arrived' || ss === 'picked_up' || ss === 'returned') return false;
-
-  return true;
-});
+        return true;
+      });
 
       ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
       renderOrderList();
 
-      if (msgEl) {
-        msgEl.textContent = '未出貨訂單';
-      }
+      if (msgEl) msgEl.textContent = '未出貨訂單';
 
     } else if (filter === 'unshipped') {
+      saveViewState('filter', { filter: 'unshipped' });
+
       const msgEl = $('#msg');
       if (msgEl) msgEl.textContent = '';
 
-      // 先載入全部（不動後端）
       await loadOrders('all');
-
-      // 切回 unshipped
       currentFilter = 'unshipped';
 
-      // 前端過濾未出貨
       currentOrders = (currentOrders || []).filter(isUnshippedOrder);
-
       ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
       renderOrderList();
 
@@ -2663,7 +2757,7 @@ $$('.filter-btn').forEach(btn=>{
       }
 
     } else {
-      // 其他按鈕維持原本行為
+      saveViewState('filter', { filter });
       await loadOrders(filter);
     }
   });
@@ -2676,7 +2770,7 @@ $$('.filter-btn').forEach(btn=>{
     btnChangeKey.addEventListener('click', ()=>{
       localStorage.removeItem(STORAGE_KEY);
       OP_KEY = '';
-      ensureOpKey().then(()=>loadOrders(currentFilter));
+      ensureOpKey().then(()=>reloadCurrentView());
     });
   }
 
@@ -2692,12 +2786,14 @@ $$('.filter-btn').forEach(btn=>{
 
   // 日期載入 / 只看 paid / 匯出
   const btnLoadByDate = $('#btnLoadByDate');
-  if (btnLoadByDate){
-    btnLoadByDate.addEventListener('click', async ()=>{
-      await ensureOpKey();
-      await loadOrdersByDate();
-    });
-  }
+if (btnLoadByDate){
+  btnLoadByDate.addEventListener('click', async ()=>{
+    await ensureOpKey();
+    currentFilter = 'by_date';
+    saveViewState('by_date');
+    await loadOrdersByDate();
+  });
+}
 
     const btnQuickPaid = $('#btnQuickPaid');
   if (btnQuickPaid){
@@ -2705,8 +2801,10 @@ $$('.filter-btn').forEach(btn=>{
       // 不再只看 paid，改成「只看運費未填寫」
       $('#status').value = '';      // 狀態清空，後端回傳全部狀態
 
-      await ensureOpKey();
-      await loadOrdersByDate();     // 先載入這段日期內的全部訂單
+    await ensureOpKey();
+    currentFilter = 'quick_paid';
+    saveViewState('quick_paid');
+    await loadOrdersByDate();
 
       // 判斷這筆訂單是否已經有運費
       const hasFee = (f) => {
@@ -2783,6 +2881,8 @@ $$('.filter-btn').forEach(btn=>{
 
       // 3. 先照原本方式載入這段日期內的全部訂單
       await ensureOpKey();
+      currentFilter = 'remind_today';
+      saveViewState('remind_today');
       await loadOrdersByDate();
 
       // 4. 前端再篩選：訂金已收 + 尚未出貨
@@ -2826,6 +2926,8 @@ if (btnPickupNeed){
 
     // 3) 先照原本方式載入
     await ensureOpKey();
+    currentFilter = 'pickup_need';
+    saveViewState('pickup_need');
     await loadOrdersByDate();
 
     // 4) 前端再篩選：已出貨 +（7-11 類型）+「取貨登記」不是「已取貨」
@@ -2907,6 +3009,7 @@ if (meetupDoneTop) {
   proxyButton('btnSaveDetailOnlyTop',      'btnSaveDetailOnly');
 
   await ensureOpKey();
+  saveViewState('filter', { filter: 'all' });
   await loadOrders('all');
 });
 </script>
