@@ -1416,6 +1416,38 @@ var lineUserIdFromPay = ""; // ✅ 先宣告，避免 initLiffAndMember 先用�
 let LINE_PROFILE = null;
 let MEMBER_INFO  = null;
 
+  function getBindReturnUrl() {
+  try {
+    return window.location.href;
+  } catch (e) {
+    return location.href;
+  }
+}
+
+function buildMemberBindUrl(returnUrl) {
+  // ✅ 這裡請換成你的會員綁定頁實際路徑
+  const bindPage = "/line_bind_member.html";
+
+  const url = new URL(bindPage, window.location.origin);
+  if (returnUrl) {
+    url.searchParams.set("return_url", returnUrl);
+  }
+  return url.toString();
+}
+
+function redirectToMemberBind() {
+  try { saveCheckoutState(); } catch (e) {}
+
+  const returnUrl = getBindReturnUrl();
+  const bindUrl = buildMemberBindUrl(returnUrl);
+
+  try {
+    location.replace(bindUrl);
+  } catch (e) {
+    location.href = bindUrl;
+  }
+}
+
 // 更新購物金 UI（避免「閃一下又變 0」）
 function updateCreditUIFromMember(info){
   // 兼容不同欄位名：credit / balance / member.credit...
@@ -1484,16 +1516,23 @@ async function initLiffAndMember() {
   // ✅ 存起來：回購物車/重試時更穩
   try { localStorage.setItem('murain_line_user_id', uidForApi); } catch (e) {}
 
-  // 1) 會員資料（名字/電話/地址）用 member-info（照舊）
+  // 1) 會員資料（名字/電話/地址）用 member-info
   try {
     const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(uidForApi)}`);
-    const j = await r.json();
-    console.log("member-info 回來長這樣:", j); // ✅ 放這
-    if (j && j.ok) {
-  j._from = 'member-info';
-  MEMBER_INFO = j;
-  applyMemberInfoToForm(j);
-}
+    const j = await r.json().catch(() => ({}));
+    console.log("member-info 回來長這樣:", j);
+
+    if (r.ok && j && j.ok) {
+      j._from = 'member-info';
+      MEMBER_INFO = j;
+      applyMemberInfoToForm(j);
+    } else if (r.status === 404 || j?.error === "not_found") {
+      // ✅ 未綁定：先去綁定，再回原頁
+      redirectToMemberBind();
+      return;
+    } else {
+      console.log("member-info not ok:", r.status, j);
+    }
   } catch (e) {
     console.log('member-info error', e);
   }
