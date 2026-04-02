@@ -111,7 +111,15 @@
       <button id="btn-search-line" class="ghost">查詢會員</button>
     </div>
     <div class="muted" id="line_search_info" style="margin-top:4px"></div>
-    <div class="muted" id="cartmap_info" style="margin-top:4px"></div>
+<div class="muted" id="cartmap_info" style="margin-top:4px"></div>
+
+<div class="row" style="margin-top:10px">
+  <button id="btn-load-user-cart" class="ghost">載入此客人購物車</button>
+  <button id="btn-create-new-cart" class="ghost">建立新購物車</button>
+  <button id="btn-next-customer" class="ghost">下一位客人</button>
+</div>
+
+<div class="muted" id="current_customer_info" style="margin-top:6px"></div>
 
     <!-- 新增：貼客人的 LineUserId + 一鍵發卡片 -->
     <div class="row" style="margin-top:10px">
@@ -198,19 +206,104 @@
     try { return JSON.parse(txt); } catch { return {raw:txt}; }
   }
   function money(n){ n = +n||0; return 'NT$ ' + n.toLocaleString(); }
-  function guardCart(){ if(!CART){ alert('請先建立購物車'); return false; } return true; }
-  function setLoginUI(on){
-    $('#card-login').classList.toggle('hidden', !!on);
-    $('#card-app').classList.toggle('hidden', !on);
-    $('#card-add').classList.toggle('hidden', !on);
-    $('#card-list').classList.toggle('hidden', !on);
+
+function guardCart(){
+  if(!CART){
+    alert('請先建立或載入購物車');
+    return false;
   }
-  function setCartToken(t) {
-    CART = t||'';
-    $('#cart_token').textContent = t||'尚未建立';
-    $('#btn-clear').disabled = !OP;
-    try { rememberCartForUser(CART); } catch(e) {}
+  return true;
+}
+
+function hasSelectedCustomer(){
+  return !!(getLineUserId() && getCustomerName());
+}
+
+function guardCustomer(){
+  if(!hasSelectedCustomer()){
+    alert('請先查詢並選擇客人，再操作購物車');
+    return false;
   }
+  return true;
+}
+
+function setLoginUI(on){
+  $('#card-login').classList.toggle('hidden', !!on);
+  $('#card-app').classList.toggle('hidden', !on);
+  $('#card-add').classList.toggle('hidden', !on);
+  $('#card-list').classList.toggle('hidden', !on);
+  syncMainButtons();
+}
+
+function setCartToken(t) {
+  CART = t||'';
+  $('#cart_token').textContent = t||'尚未建立';
+  $('#btn-clear').disabled = !OP || !CART;
+  try { rememberCartForUser(CART); } catch(e) {}
+  syncMainButtons();
+  updateCurrentCustomerInfo();
+}
+
+function clearCurrentCartView(){
+  setCartToken('');
+  const ul = $('#items');
+  if (ul) ul.innerHTML = '';
+  if ($('#total')) $('#total').textContent = 'NT$ 0';
+  if ($('#link_out')) $('#link_out').value = '';
+}
+
+function resetForNextCustomer(){
+  clearCurrentCartView();
+  if ($('#line_search_name')) $('#line_search_name').value = '';
+  if ($('#line_user_id')) $('#line_user_id').value = '';
+  if ($('#line_search_info')) $('#line_search_info').textContent = '';
+  if ($('#cartmap_info')) $('#cartmap_info').textContent = '';
+  if ($('#sku')) $('#sku').value = '';
+  if ($('#qty')) $('#qty').value = '1';
+  if ($('#override_price')) $('#override_price').value = '';
+  updateCurrentCustomerInfo();
+  syncMainButtons();
+}
+
+function switchCustomerSafely(nextLineUserId, nextName){
+  const currentUid  = getLineUserId();
+  const currentName = getCustomerName();
+
+  if (
+    CART &&
+    currentUid &&
+    nextLineUserId &&
+    currentUid !== nextLineUserId
+  ) {
+    clearCurrentCartView();
+    alert(`已切換客人：\n${currentName || currentUid}\n→ ${nextName || nextLineUserId}\n\n已自動清空目前畫面的購物車選擇，請重新按「載入此客人購物車」或「建立新購物車」。`);
+  }
+}
+
+function updateCurrentCustomerInfo(){
+  const name = getCustomerName();
+  const uid  = getLineUserId();
+  const el   = $('#current_customer_info');
+  if (!el) return;
+
+  if (!name && !uid) {
+    el.textContent = '目前尚未選擇客人';
+    return;
+  }
+
+  el.textContent = `目前客人：${name || '(未命名)'}${uid ? ' / ' + uid : ''}${CART ? ' / 購物車：' + CART : ' / 尚未建立購物車'}`;
+}
+
+function syncMainButtons(){
+  const hasCustomer = hasSelectedCustomer();
+  const hasCart = !!CART;
+
+  if ($('#btn-add')) $('#btn-add').disabled = !(hasCustomer && hasCart);
+  if ($('#btn-link')) $('#btn-link').disabled = !hasCart;
+  if ($('#btn-send-link')) $('#btn-send-link').disabled = !(hasCustomer && hasCart);
+  if ($('#btn-clear')) $('#btn-clear').disabled = !hasCart;
+  if ($('#btn-load-user-cart')) $('#btn-load-user-cart').disabled = !hasCustomer;
+}
 
   // ====== ★ 客人購物車記憶（只存在這台 OP 裝置的 localStorage） ======
   const CART_MAP_KEY = 'OP_CART_MAP_V1';
@@ -278,43 +371,63 @@
   }
 
   async function createCart() {
-    const streamer = ($('#streamer').value||'').trim();
-    const customer_type = $('#customer_type').value || 'live';
-    const payload = {
-  streamer_name: streamer || '未命名',
-  customer_type,
-  line_user_id: getLineUserId(),
-  customer_name: getCustomerName()
-};
+  if (!guardCustomer()) return;
 
-const res = await jfetch(API+'/cart/create', {
-  method:'POST',
-  body: JSON.stringify(payload)
-});
-    if(!res.ok) return alert('建立失敗：'+(res.error||''));
-    setCartToken(res.cart_token);
-    try { showCartHintIfExists(); } catch(e) {}
-    await refreshList();
-  }
+  const streamer = ($('#streamer').value||'').trim();
+  const customer_type = $('#customer_type').value || 'live';
+
+  const payload = {
+    streamer_name: streamer || '未命名',
+    customer_type,
+    line_user_id: getLineUserId(),
+    customer_name: getCustomerName()
+  };
+
+  const res = await jfetch(API+'/cart/create', {
+    method:'POST',
+    body: JSON.stringify(payload)
+  });
+
+  if(!res.ok) return alert('建立失敗：'+(res.error||''));
+
+  setCartToken(res.cart_token);
+  try { showCartHintIfExists(); } catch(e) {}
+  await refreshList();
+}
 
   async function addItem() {
-    if(!guardCart()) return;
-    const sku = ($('#sku').value||'').trim();
-    const qty = parseInt($('#qty').value||'1',10)||1;
-    const price = ($('#override_price').value||'').trim();
-    const body = { 
-  cart_token: CART,
-  sku,
-  qty,
-  line_user_id: getLineUserId(),
-  customer_name: getCustomerName()
-};
-    if(price) { body.price = parseInt(price,10)||0; body.op_key = OP; }
-    const res = await jfetch(API+'/cart/add', { method:'POST', body: JSON.stringify(body) });
-    if(!res.ok) return alert('加入失敗：'+(res.error||''));
-    $('#sku').value='';
-    await refreshList();
+  if (!guardCustomer()) return;
+  if (!guardCart()) return;
+
+  const sku = ($('#sku').value||'').trim();
+  const qty = parseInt($('#qty').value||'1',10)||1;
+  const price = ($('#override_price').value||'').trim();
+
+  if (!sku) return alert('請先輸入條碼');
+
+  const body = {
+    cart_token: CART,
+    sku,
+    qty,
+    line_user_id: getLineUserId(),
+    customer_name: getCustomerName()
+  };
+
+  if(price) {
+    body.price = parseInt(price,10)||0;
+    body.op_key = OP;
   }
+
+  const res = await jfetch(API+'/cart/add', {
+    method:'POST',
+    body: JSON.stringify(body)
+  });
+
+  if(!res.ok) return alert('加入失敗：'+(res.error||''));
+
+  $('#sku').value='';
+  await refreshList();
+}
 
   async function saveNote() {
     if(!guardCart()) return;
@@ -325,19 +438,49 @@ const res = await jfetch(API+'/cart/create', {
   }
 
   async function refreshList() {
-    if(!guardCart()) return;
-    const res = await jfetch(API+'/cart/'+encodeURIComponent(CART));
-    const list = res.items||[];
-    const ul = $('#items'); ul.innerHTML='';
-    let sum = 0;
-    list.forEach(it=>{
-      sum += (+it.price||0) * (+it.qty||0);
-      const li = document.createElement('li');
-      li.innerHTML = `<span class="mono">${it.sku}</span><span class="mono right">${it.qty} × ${money(it.price||0)}</span>`;
-      ul.appendChild(li);
+  if(!guardCart()) return;
+
+  const res = await jfetch(API+'/cart/'+encodeURIComponent(CART));
+  const list = res.items||[];
+  const ul = $('#items');
+  ul.innerHTML = '';
+
+  let sum = 0;
+
+  list.forEach(it=>{
+    sum += (+it.price||0) * (+it.qty||0);
+
+    const li = document.createElement('li');
+    li.style.display = 'flex';
+    li.style.justifyContent = 'space-between';
+    li.style.alignItems = 'center';
+    li.style.gap = '10px';
+
+    li.innerHTML = `
+      <div style="flex:1; min-width:0;">
+        <div class="mono" style="font-weight:700;">${escHtml(it.sku || '')}</div>
+        <div class="mono muted" style="margin-top:4px;">${it.qty} × ${money(it.price||0)}</div>
+      </div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button class="ghost btn-del-item" data-sku="${escHtml(it.sku || '')}" style="max-width:110px;">刪除此商品</button>
+      </div>
+    `;
+
+    ul.appendChild(li);
+  });
+
+  ul.querySelectorAll('.btn-del-item').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const sku = (btn.dataset.sku || '').trim();
+      if (!sku) return;
+      await removeItemBySku(sku);
     });
-    $('#total').textContent = money(sum);
-  }
+  });
+
+  $('#total').textContent = money(sum);
+  syncMainButtons();
+  updateCurrentCustomerInfo();
+}
 
   async function clearCart() {
     if(!guardCart()) return;
@@ -347,6 +490,28 @@ const res = await jfetch(API+'/cart/create', {
     if(!res.ok) return alert('清空失敗：'+(res.error||''));
     await refreshList();
   }
+  async function removeItemBySku(sku) {
+  if (!guardCart()) return;
+  if (!OP) return alert('請先登入 OP Key');
+  if (!sku) return alert('缺少 SKU');
+
+  if (!confirm(`確定移除商品：${sku}？`)) return;
+
+  const res = await jfetch(API + '/cart/remove', {
+    method:'POST',
+    body: JSON.stringify({
+      cart_token: CART,
+      sku,
+      op_key: OP
+    })
+  });
+
+  if (!res || res.ok !== true) {
+    return alert('移除失敗：' + ((res && res.error) || 'unknown'));
+  }
+
+  await refreshList();
+}
 
 // 共用：組出這一車的結帳網址（✅ 統一走 LIFF + url= 進入正確 Endpoint）
 function buildCheckoutUrl() {
@@ -420,59 +585,60 @@ async function linkCheckout() {
     // ✅ 保險：發送成功後再記一次（此時一定有 LineUserId）
     try { rememberCartForUser(CART); } catch(e) {}
   }
-  // ★ 新增：用 LINE 名稱 / 本名查詢會員，找到就自動帶 LineUserId
-  async function searchLineMember() {
-    if (!OP) {
-      alert('請先登入 OP Key');
-      return;
-    }
-
-    const q = ($('#line_search_name').value || '').trim();
-    if (!q) {
-      alert('請先輸入要查的 LINE 名稱或本名');
-      return;
-    }
-
-    try {
-      const res = await jfetch(API + '/op/line-member/search', {
-        method: 'POST',
-        body: JSON.stringify({
-          op_key: OP,
-          keyword: q
-        })
-      });
-
-      if (!res || res.ok !== true) {
-        if (res && res.error === 'not_found') {
-          alert('找不到相符的會員（名稱要跟 Airtable 上的一模一樣）');
-        } else {
-          alert('搜尋失敗：' + (res && res.error || 'unknown'));
-        }
-        return;
-      }
-
-      const m = res.member || {};
-
-      // 自動帶入 LineUserId
-      $('#line_user_id').value = m.lineUserId || '';
-      // ✅ 把查到的名字回填，讓 createCart() 能直接拿來當 customer_name
-$('#line_search_name').value = (m.displayName || m.name || q || '').trim();
-      try { showCartHintIfExists(); } catch(e) {}
-
-      // 顯示一下找到的是誰
-      const infoEl = $('#line_search_info');
-      if (infoEl) {
-        const namePart =
-          (m.displayName || '') ||
-          (m.name || '');
-        const phonePart = m.phone ? ` / ${m.phone}` : '';
-        infoEl.textContent = `已選擇：${namePart}${phonePart}`;
-      }
-    } catch (e) {
-      console.error(e);
-      alert('搜尋失敗：' + e.message);
-    }
+async function searchLineMember() {
+  if (!OP) {
+    alert('請先登入 OP Key');
+    return;
   }
+
+  const q = ($('#line_search_name').value || '').trim();
+  if (!q) {
+    alert('請先輸入要查的 LINE 名稱或本名');
+    return;
+  }
+
+  try {
+    const res = await jfetch(API + '/op/line-member/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        op_key: OP,
+        keyword: q
+      })
+    });
+
+    if (!res || res.ok !== true) {
+      if (res && res.error === 'not_found') {
+        alert('找不到相符的會員（名稱要跟 Airtable 上的一模一樣）');
+      } else {
+        alert('搜尋失敗：' + ((res && res.error) || 'unknown'));
+      }
+      return;
+    }
+
+    const m = res.member || {};
+    const nextUid  = (m.lineUserId || '').trim();
+    const nextName = (m.displayName || m.name || q || '').trim();
+
+    switchCustomerSafely(nextUid, nextName);
+
+    $('#line_user_id').value = nextUid;
+    $('#line_search_name').value = nextName;
+
+    try { showCartHintIfExists(); } catch(e) {}
+
+    const infoEl = $('#line_search_info');
+    if (infoEl) {
+      const phonePart = m.phone ? ` / ${m.phone}` : '';
+      infoEl.textContent = `已選擇：${nextName}${phonePart}`;
+    }
+
+    updateCurrentCustomerInfo();
+    syncMainButtons();
+  } catch (e) {
+    console.error(e);
+    alert('搜尋失敗：' + e.message);
+  }
+}
 
 // 新增：複製一整段要貼給客人的 LINE 訊息（更穩：先用 clipboard，失敗再 fallback）
 async function copyLineMessage() {
@@ -884,13 +1050,22 @@ setCartAdminMsg(`找到 ${carts.length} 台購物車（只顯示有商品）`);
     $('#override_price').value = String(Math.max(0, cur + v));
   }
 
-    // ★ 新增：手動貼上 LineUserId 時，即時提示是否有記住的購物車
     const lineUserInput = $('#line_user_id');
-    if (lineUserInput) {
-      lineUserInput.addEventListener('input', () => {
-        try { showCartHintIfExists(); } catch(e) {}
-      });
-    }
+if (lineUserInput) {
+  lineUserInput.addEventListener('input', () => {
+    try { showCartHintIfExists(); } catch(e) {}
+    updateCurrentCustomerInfo();
+    syncMainButtons();
+  });
+}
+
+const lineNameInput = $('#line_search_name');
+if (lineNameInput) {
+  lineNameInput.addEventListener('input', () => {
+    updateCurrentCustomerInfo();
+    syncMainButtons();
+  });
+}
 
   // ---------- init ----------
   window.addEventListener('DOMContentLoaded', async ()=>{
@@ -912,6 +1087,29 @@ setCartAdminMsg(`找到 ${carts.length} 台購物車（只顯示有商品）`);
     if (btnSendLink) {
       btnSendLink.addEventListener('click', sendCheckoutLinkByLine);
     }
+    const btnLoadUserCart = $('#btn-load-user-cart');
+if (btnLoadUserCart) {
+  btnLoadUserCart.addEventListener('click', async ()=>{
+    if (!guardCustomer()) return;
+    await loadCartForUser();
+  });
+}
+
+const btnCreateNewCart = $('#btn-create-new-cart');
+if (btnCreateNewCart) {
+  btnCreateNewCart.addEventListener('click', async ()=>{
+    if (!guardCustomer()) return;
+    clearCurrentCartView();
+    await createCart();
+  });
+}
+
+const btnNextCustomer = $('#btn-next-customer');
+if (btnNextCustomer) {
+  btnNextCustomer.addEventListener('click', ()=>{
+    resetForNextCustomer();
+  });
+}
      // ====== 綁定你新 UI：cartAdminBlock ======
     const _btnListOpen = document.getElementById('btnListOpen');
     if (_btnListOpen) _btnListOpen.addEventListener('click', adminListOpenCarts);
@@ -949,6 +1147,8 @@ setCartAdminMsg(`找到 ${carts.length} 台購物車（只顯示有商品）`);
     // 自動帶回 OP（若有存）
     const saved = localStorage.getItem('OP_KEY');
     if(saved) { $('#op_key').value = saved; OP = saved; setLoginUI(true); }
+    updateCurrentCustomerInfo();
+syncMainButtons();
   });
 })();
 </script>
