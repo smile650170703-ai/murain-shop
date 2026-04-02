@@ -530,6 +530,30 @@
   const CREDITS_API = API_BASE + "/member/credits";
   const MEMBER_INFO_API = API_BASE + "/line/member-info";
   const LIFF_ID     = "2008430261-EGZPg3Qp";
+  function getBindReturnUrl() {
+  try {
+    return window.location.href;
+  } catch (e) {
+    return location.href;
+  }
+}
+
+function buildMemberBindUrl(returnUrl) {
+  const bindLiffId = "2008430261-kOeNLR9x";
+  const pageUrl = `https://murain.tw/line_bind_member.html?return_url=${encodeURIComponent(returnUrl || "")}`;
+  return `https://liff.line.me/${bindLiffId}?url=${encodeURIComponent(pageUrl)}`;
+}
+
+function redirectToMemberBind() {
+  const returnUrl = getBindReturnUrl();
+  const bindUrl = buildMemberBindUrl(returnUrl);
+
+  try {
+    window.location.replace(bindUrl);
+  } catch (e) {
+    window.location.href = bindUrl;
+  }
+}
 
   let currentUserId = null;
   let orders = [];
@@ -1496,18 +1520,32 @@ async function loadCredits() {
     }
   }
 }
-  async function loadMemberInfo() {
-    if (!currentUserId) return;
-    try {
-      const res = await fetch(MEMBER_INFO_API + "?user_id=" + encodeURIComponent(currentUserId));
-      const json = await res.json();
-      if (res.ok && json.ok) {
-        memberInfo = json;
-        const c = Number(memberInfo.credit || 0);
-        creditValue.textContent = "NT$ " + c.toLocaleString("zh-TW");
-      }
-    } catch (e) { console.error(e); }
+async function loadMemberInfo() {
+  if (!currentUserId) return false;
+
+  try {
+    const res = await fetch(MEMBER_INFO_API + "?user_id=" + encodeURIComponent(currentUserId));
+    const json = await res.json().catch(() => ({}));
+
+    if (res.ok && json.ok) {
+      memberInfo = json;
+      const c = Number(memberInfo.credit || 0);
+      creditValue.textContent = "NT$ " + c.toLocaleString("zh-TW");
+      return true;
+    }
+
+    if (res.status === 404 || json?.error === "not_found") {
+      redirectToMemberBind();
+      return false;
+    }
+
+    console.log("[loadMemberInfo] not ok", res.status, json);
+    return false;
+  } catch (e) {
+    console.error(e);
+    return false;
   }
+}
 
   async function loadOrders() {
   if (!currentUserId) {
@@ -1573,30 +1611,38 @@ orders = normalizeOrdersWithTail(raw); // ✅ 列表只剩主單，每張主單�
   }
 }
 
-  async function initLiff() {
-    if (!window.liff) return;
-    try {
-      await liff.init({ liffId: LIFF_ID });
-      if (!liff.isLoggedIn()) {
-        liff.login(); return;
-      }
-      const profile = await liff.getProfile();
-      currentUserId = profile.userId;
-      userName.textContent = profile.displayName;
-      if(profile.pictureUrl){
-        defaultAvatar.style.display = "none";
-        userAvatarImg.style.display = "block";
-        userAvatarImg.src = profile.pictureUrl;
-      }
-      statusText.textContent = "歡迎回來";
-      loadMemberInfo();
-      loadOrders();
-      loadCredits();
-    } catch (e) {
-      infoMsg.textContent = "請從 LINE 官方帳號開啟";
-      infoMsg.style.display = "block";
+async function initLiff() {
+  if (!window.liff) return;
+  try {
+    await liff.init({ liffId: LIFF_ID });
+
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return;
     }
+
+    const profile = await liff.getProfile();
+    currentUserId = profile.userId;
+    userName.textContent = profile.displayName;
+
+    if (profile.pictureUrl) {
+      defaultAvatar.style.display = "none";
+      userAvatarImg.style.display = "block";
+      userAvatarImg.src = profile.pictureUrl;
+    }
+
+    statusText.textContent = "歡迎回來";
+
+    const ok = await loadMemberInfo();
+    if (!ok) return; // ✅ 未綁定就會先跳去綁定，先不要往下跑
+
+    loadOrders();
+    loadCredits();
+  } catch (e) {
+    infoMsg.textContent = "請從 LINE 官方帳號開啟";
+    infoMsg.style.display = "block";
   }
+}
 
   /* --- Init --- */
   document.addEventListener("DOMContentLoaded", () => {
