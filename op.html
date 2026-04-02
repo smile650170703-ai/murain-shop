@@ -71,12 +71,6 @@
     <div class="muted" id="line_search_info" style="margin-top:4px"></div>
     <div class="muted" id="cartmap_info" style="margin-top:4px"></div>
 
-    <div class="row" style="margin-top:10px">
-      <button id="btn-load-user-cart" class="ghost">載入此客人購物車</button>
-      <button id="btn-create-new-cart" class="ghost">建立新購物車</button>
-      <button id="btn-next-customer" class="ghost">下一位客人</button>
-    </div>
-
     <div class="muted" id="current_customer_info" style="margin-top:6px"></div>
 
     <div class="row" style="margin-top:10px">
@@ -314,6 +308,25 @@ function resetForNextCustomer(){
   syncMainButtons();
 }
 
+  function resetAfterSendSuccess(){
+  clearCurrentCartView();
+
+  if ($('#line_search_name')) $('#line_search_name').value = '';
+  if ($('#line_user_id')) $('#line_user_id').value = '';
+  if ($('#line_search_info')) $('#line_search_info').textContent = '';
+  if ($('#cartmap_info')) $('#cartmap_info').textContent = '';
+
+  if ($('#sku')) $('#sku').value = '';
+  if ($('#qty')) $('#qty').value = '1';
+  if ($('#override_price')) $('#override_price').value = '';
+
+  // ✅ 保留直播主名稱，不清 #streamer
+  // ✅ 保留客群，不清 #customer_type
+
+  updateCurrentCustomerInfo();
+  syncMainButtons();
+}
+
 function switchCustomerSafely(nextLineUserId, nextName){
   const currentUid  = getLineUserId();
   const currentName = getCustomerName();
@@ -346,12 +359,13 @@ function updateCurrentCustomerInfo(){
 function syncMainButtons(){
   const hasCustomer = hasSelectedCustomer();
   const hasCart = !!CART;
+  const hasStreamer = !!(($('#streamer').value || '').trim());
 
+  if ($('#btn-create')) $('#btn-create').disabled = !(hasCustomer && hasStreamer);
   if ($('#btn-add')) $('#btn-add').disabled = !(hasCustomer && hasCart);
   if ($('#btn-link')) $('#btn-link').disabled = !hasCart;
   if ($('#btn-send-link')) $('#btn-send-link').disabled = !(hasCustomer && hasCart);
   if ($('#btn-clear')) $('#btn-clear').disabled = !hasCart;
-  if ($('#btn-load-user-cart')) $('#btn-load-user-cart').disabled = !hasCustomer;
 }
 
   // ====== ★ 客人購物車記憶（只存在這台 OP 裝置的 localStorage） ======
@@ -423,14 +437,16 @@ function syncMainButtons(){
   if (!guardCustomer()) return;
 
   const streamer = ($('#streamer').value||'').trim();
-  const customer_type = $('#customer_type').value || 'live';
+if (!streamer) return alert('請先輸入直播主名稱');
 
-  const payload = {
-    streamer_name: streamer || '未命名',
-    customer_type,
-    line_user_id: getLineUserId(),
-    customer_name: getCustomerName()
-  };
+const customer_type = $('#customer_type').value || 'live';
+
+const payload = {
+  streamer_name: streamer,
+  customer_type,
+  line_user_id: getLineUserId(),
+  customer_name: getCustomerName()
+};
 
   const res = await jfetch(API+'/cart/create', {
     method:'POST',
@@ -631,8 +647,12 @@ async function linkCheckout() {
     }
 
     alert('已從官方 LINE 發送結帳卡片');
-    // ✅ 保險：發送成功後再記一次（此時一定有 LineUserId）
-    try { rememberCartForUser(CART); } catch(e) {}
+
+// ✅ 保險：發送成功後再記一次（此時一定有 LineUserId）
+try { rememberCartForUser(CART); } catch(e) {}
+
+// ✅ 發送完成後，自動清掉本次會員與購物車畫面，只保留直播主名稱
+resetAfterSendSuccess();
   }
 async function searchLineMember() {
   if (!OP) {
@@ -1130,6 +1150,12 @@ if (lineNameInput) {
     if (btnModeSimple) {
       btnModeSimple.addEventListener('click', ()=> setMode('simple'));
     }
+    const streamerInput = $('#streamer');
+if (streamerInput) {
+  streamerInput.addEventListener('input', () => {
+    syncMainButtons();
+  });
+}
 
     const btnModeManage = document.getElementById('btn-mode-manage');
     if (btnModeManage) {
