@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>入庫表｜自有 / 寄賣</title>
+  <style>
+    :root {
+      --bg: #f5f6f8;
+      --card: #ffffff;
+      --line: #d9dde5;
+      --line-dark: #c4cad6;
+      --text: #1f2937;
+      --sub: #6b7280;
+      --primary: #111827;
+      --primary-2: #374151;
+      --blue: #2563eb;
+      --blue-weak: #eaf2ff;
+      --green: #059669;
+      --green-weak: #ecfdf5;
+      --orange: #b45309;
+      --orange-weak: #fff7ed;
+      --red: #dc2626;
+      --red-weak: #fef2f2;
+      --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      --radius: 18px;
+      --radius-sm: 12px;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif;
+    }
+
+    .page {
+      max-width: 1500px;
+      margin: 24px auto 48px;
+      padding: 0 18px;
+    }
+
+    .header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .title-wrap h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+      line-height: 1.2;
+    }
+
+    .title-wrap p {
+      margin: 0;
+      color: var(--sub);
+      font-size: 14px;
+    }
+
+    .mode-bar {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+
+    .mode-btn {
+      border: 1px solid var(--line-dark);
+      background: #fff;
+      color: var(--text);
+      padding: 14px 18px;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      min-width: 160px;
+      transition: 0.18s ease;
+    }
+
+    .mode-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+    }
+
+    .mode-btn.active.own {
+      background: var(--blue-weak);
+      color: var(--blue);
+      border-color: #bfd4ff;
+    }
+
+    .mode-btn.active.consign {
+      background: var(--orange-weak);
+      color: var(--orange);
+      border-color: #fed7aa;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid #e6e8ee;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+      margin-bottom: 18px;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 800;
+      margin: 0;
+    }
+
+    .hint {
+      font-size: 13px;
+      color: var(--sub);
+      margin: 0;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: #f3f4f6;
+      color: #374151;
+    }
+
+    .badge.green {
+      background: var(--green-weak);
+      color: var(--green);
+    }
+
+    .badge.orange {
+      background: var(--orange-weak);
+      color: var(--orange);
+    }
+
+    .badge.blue {
+      background: var(--blue-weak);
+      color: var(--blue);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+
+    .field { grid-column: span 3; }
+    .field.span-2 { grid-column: span 2; }
+    .field.span-4 { grid-column: span 4; }
+    .field.span-6 { grid-column: span 6; }
+    .field.span-8 { grid-column: span 8; }
+    .field.span-12 { grid-column: span 12; }
+
+    label {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 13px;
+      font-weight: 800;
+      color: #374151;
+    }
+
+    input, select, textarea, button {
+      font: inherit;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    input[type="date"],
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line-dark);
+      border-radius: 12px;
+      background: #fff;
+      color: var(--text);
+      padding: 11px 12px;
+      min-height: 46px;
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: #7aa2ff;
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+    }
+
+    textarea {
+      min-height: 90px;
+      resize: vertical;
+    }
+
+    input[readonly] {
+      background: #f9fafb;
+      color: #374151;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .btn {
+      border: 1px solid transparent;
+      border-radius: 12px;
+      min-height: 46px;
+      padding: 0 16px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: #000;
+    }
+
+    .btn-secondary {
+      background: #fff;
+      border-color: var(--line-dark);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover {
+      background: #f9fafb;
+    }
+
+    .btn-success {
+      background: var(--green);
+      color: #fff;
+    }
+
+    .btn-success:hover {
+      background: #047857;
+    }
+
+    .btn-danger {
+      background: var(--red);
+      color: #fff;
+    }
+
+    .btn-danger:hover {
+      background: #b91c1c;
+    }
+
+    .btn-search {
+      background: #111827;
+      color: #fff;
+      width: 100%;
+    }
+
+    .search-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .member-box {
+      display: none;
+      border: 1px dashed #d6b16b;
+      background: linear-gradient(180deg, #fffbf5 0%, #fff 100%);
+    }
+
+    .member-box.active { display: block; }
+
+    .member-results {
+      margin-top: 12px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .member-item {
+      border: 1px solid #ead5b4;
+      background: #fff;
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .member-meta {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .member-meta .name {
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .member-meta .sub {
+      color: var(--sub);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 16px;
+      background: #fff;
+    }
+
+    table {
+      width: max-content;
+      min-width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      background: #f8fafc;
+      z-index: 1;
+      font-size: 12px;
+      color: #374151;
+      border-bottom: 1px solid #e5e7eb;
+      padding: 12px 10px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    tbody td {
+      border-bottom: 1px solid #edf0f4;
+      padding: 8px;
+      vertical-align: top;
+      background: #fff;
+    }
+
+    tbody tr:hover td {
+      background: #fcfcfd;
+    }
+
+    .table-input, .table-select {
+      min-width: 120px;
+      min-height: 40px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid #d1d5db;
+      background: #fff;
+    }
+
+    .table-input.name { min-width: 260px; }
+    .table-input.barcode { min-width: 140px; }
+    .table-input.small { min-width: 90px; }
+    .table-input.medium { min-width: 150px; }
+    .table-input.long { min-width: 180px; }
+
+    .empty {
+      padding: 24px 16px;
+      color: var(--sub);
+      text-align: center;
+      font-size: 14px;
+    }
+
+    .summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .summary-box {
+      min-width: 160px;
+      border: 1px solid #e5e7eb;
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: #fff;
+    }
+
+    .summary-box .k {
+      font-size: 12px;
+      color: var(--sub);
+      margin-bottom: 6px;
+    }
+
+    .summary-box .v {
+      font-size: 22px;
+      font-weight: 900;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .status {
+      font-size: 13px;
+      color: var(--sub);
+    }
+
+    .error {
+      color: var(--red);
+      font-size: 13px;
+      margin-top: 8px;
+      display: none;
+    }
+
+    .error.active { display: block; }
+
+    .muted {
+      color: var(--sub);
+      font-size: 12px;
+    }
+
+    .right {
+      text-align: right;
+    }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 1200px) {
+      .field { grid-column: span 4; }
+      .field.span-6 { grid-column: span 6; }
+      .field.span-8 { grid-column: span 8; }
+      .field.span-12 { grid-column: span 12; }
+    }
+
+    @media (max-width: 860px) {
+      .field, .field.span-2, .field.span-4, .field.span-6, .field.span-8 { grid-column: span 12; }
+      .search-grid { grid-template-columns: 1fr; }
+      .mode-btn { flex: 1 1 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div class="title-wrap">
+        <h1>入庫表</h1>
+        <p>上方輸入 → 加入本次清單 → 下方逐筆確認與修改 → 最後一次送出</p>
+      </div>
+      <div class="badge-row">
+        <div class="badge blue">自有：手動輸入 SKU</div>
+        <div class="badge orange">寄賣：SKU = C + 原條碼後五碼</div>
+      </div>
+    </div>
+
+    <div class="mode-bar">
+      <button id="btnModeOwn" class="mode-btn own active" type="button">自有入庫</button>
+      <button id="btnModeConsign" class="mode-btn consign" type="button">寄賣入庫</button>
+    </div>
+
+    <div id="memberSearchCard" class="card member-box">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">1️⃣ 查詢會員</h2>
+          <p class="hint">寄賣模式才會顯示。查到後可直接帶入「寄賣人」。</p>
+        </div>
+      </div>
+
+      <div class="search-grid">
+        <input id="memberKeyword" type="text" placeholder="輸入客人的 LINE 名稱 / 手機 / Email" />
+        <button id="btnSearchMember" class="btn btn-search" type="button">查詢會員</button>
+      </div>
+      <div id="memberSearchError" class="error"></div>
+      <div id="memberResults" class="member-results"></div>
+      <div class="muted" style="margin-top:10px;">若查不到，可直接在下方「寄賣人」手動輸入。</div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">2️⃣ 入庫表輸入</h2>
+          <p class="hint">加入本次清單前，都還可以修改。</p>
+        </div>
+        <div class="badge-row">
+          <div id="sourceBadge" class="badge blue">目前模式：自有</div>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div id="originBarcodeField" class="field span-4 hidden">
+          <label for="originBarcode">原本包包條碼</label>
+          <input id="originBarcode" type="text" placeholder="寄賣才需要，例如 1236478915" />
+        </div>
+
+        <div class="field span-4">
+          <label for="sku">SKU</label>
+          <input id="sku" type="text" placeholder="自有可手動輸入；寄賣會自動帶入 C+後五碼" />
+        </div>
+
+        <div class="field span-4">
+          <label for="location">庫存位置</label>
+          <input id="location" type="text" placeholder="例如：11號櫃 / A-2 / 倉庫6號" />
+        </div>
+
+        <div class="field span-4">
+          <label for="name">Name</label>
+          <input id="name" type="text" placeholder="輸入商品名稱" />
+        </div>
+
+        <div class="field span-3">
+          <label for="price">Price</label>
+          <input id="price" type="number" inputmode="decimal" min="0" step="1" placeholder="0" />
+        </div>
+
+        <div class="field span-3">
+          <label for="stockQty">StockQty</label>
+          <input id="stockQty" type="number" inputmode="numeric" min="0" step="1" value="1" />
+        </div>
+
+        <div class="field span-3">
+          <label for="cost">Cost</label>
+          <input id="cost" type="number" inputmode="decimal" min="0" step="1" placeholder="0" />
+        </div>
+
+        <div class="field span-3">
+          <label for="sourceType">商品來源</label>
+          <input id="sourceType" type="text" readonly value="自有" />
+        </div>
+
+        <div id="consignorField" class="field span-4 hidden">
+          <label for="consignor">寄賣人</label>
+          <input id="consignor" type="text" placeholder="可由上方查詢帶入，也可手動輸入" />
+        </div>
+
+        <div class="field span-4">
+          <label for="stockInDate">入庫日期</label>
+          <input id="stockInDate" type="date" />
+        </div>
+
+        <div class="field span-4">
+          <label for="subCategory">sub_category</label>
+          <input id="subCategory" type="text" placeholder="例如：COACH / KATE SPADE / TOP" />
+        </div>
+      </div>
+
+      <div class="actions" style="margin-top: 18px;">
+        <button id="btnAddDraft" class="btn btn-primary" type="button">加入本次清單</button>
+        <button id="btnClearForm" class="btn btn-secondary" type="button">清空輸入</button>
+      </div>
+
+      <div id="formError" class="error"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">3️⃣ 當次輸入內容</h2>
+          <p class="hint">下方每筆都可以直接改每個欄位，確認沒問題再送出。</p>
+        </div>
+      </div>
+
+      <div class="summary" id="summaryBoxes"></div>
+
+      <div class="toolbar">
+        <div id="statusText" class="status">目前尚未加入任何品項。</div>
+        <div class="actions" style="margin-top:0;">
+          <button id="btnSubmitAll" class="btn btn-success" type="button">確認送出</button>
+          <button id="btnClearDrafts" class="btn btn-danger" type="button">清空本次清單</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>操作</th>
+              <th>商品來源</th>
+              <th>原本包包條碼</th>
+              <th>SKU</th>
+              <th>寄賣人</th>
+              <th>庫存位置</th>
+              <th>Name</th>
+              <th>Price</th>
+              <th>StockQty</th>
+              <th>Cost</th>
+              <th>入庫日期</th>
+              <th>sub_category</th>
+            </tr>
+          </thead>
+          <tbody id="draftTableBody">
+            <tr><td colspan="12" class="empty">目前尚無資料</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="submitError" class="error"></div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * 你只要先改這裡就好
+     * 1. memberSearchUrl：寄賣查詢會員 API
+     * 2. createBatchUrl：批次新增 Products API（若沒有可留空）
+     * 3. createItemUrl：單筆新增 Products API（若沒有批次，就用這支逐筆送）
+     *
+     * 建議後端收這些欄位：
+     * SKU, 庫存位置, Name, Price, StockQty, Cost, 商品來源, 寄賣人, 入庫日期, sub_category
+     */
+    const CONFIG = {
+      memberSearchUrl: '',
+      createBatchUrl: '',
+      createItemUrl: '',
+      requestHeaders: {
+        'Content-Type': 'application/json'
+      }
+    };
+
+    const STORAGE_KEY = 'stock_in_drafts_v1';
+    const MODE_KEY = 'stock_in_mode_v1';
+
+    const state = {
+      mode: localStorage.getItem(MODE_KEY) || 'own',
+      drafts: loadDrafts(),
+      memberResults: []
+    };
+
+    const $ = (id) => document.getElementById(id);
+
+    const el = {
+      btnModeOwn: $('btnModeOwn'),
+      btnModeConsign: $('btnModeConsign'),
+      memberSearchCard: $('memberSearchCard'),
+      memberKeyword: $('memberKeyword'),
+      btnSearchMember: $('btnSearchMember'),
+      memberResults: $('memberResults'),
+      memberSearchError: $('memberSearchError'),
+      sourceBadge: $('sourceBadge'),
+      originBarcodeField: $('originBarcodeField'),
+      originBarcode: $('originBarcode'),
+      sku: $('sku'),
+      location: $('location'),
+      name: $('name'),
+      price: $('price'),
+      stockQty: $('stockQty'),
+      cost: $('cost'),
+      sourceType: $('sourceType'),
+      consignorField: $('consignorField'),
+      consignor: $('consignor'),
+      stockInDate: $('stockInDate'),
+      subCategory: $('subCategory'),
+      btnAddDraft: $('btnAddDraft'),
+      btnClearForm: $('btnClearForm'),
+      formError: $('formError'),
+      summaryBoxes: $('summaryBoxes'),
+      statusText: $('statusText'),
+      draftTableBody: $('draftTableBody'),
+      btnSubmitAll: $('btnSubmitAll'),
+      btnClearDrafts: $('btnClearDrafts'),
+      submitError: $('submitError')
+    };
+
+    function loadDrafts() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch {
+        return [];
+      }
+    }
+
+    function saveDrafts() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.drafts));
+    }
+
+    function todayStr() {
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function showError(target, msg) {
+      target.textContent = msg || '';
+      target.classList.toggle('active', !!msg);
+    }
+
+    function setMode(mode) {
+      state.mode = mode;
+      localStorage.setItem(MODE_KEY, mode);
+
+      const isOwn = mode === 'own';
+      el.btnModeOwn.classList.toggle('active', isOwn);
+      el.btnModeConsign.classList.toggle('active', !isOwn);
+      el.memberSearchCard.classList.toggle('active', !isOwn);
+      el.originBarcodeField.classList.toggle('hidden', isOwn);
+      el.consignorField.classList.toggle('hidden', isOwn);
+      el.sourceType.value = isOwn ? '自有' : '寄賣';
+      el.sourceBadge.textContent = `目前模式：${isOwn ? '自有' : '寄賣'}`;
+      el.sourceBadge.className = `badge ${isOwn ? 'blue' : 'orange'}`;
+      if (isOwn) {
+        el.originBarcode.value = '';
+        el.consignor.value = '';
+      }
+      maybeAutofillConsignSku();
+    }
+
+    function makeConsignSku(originBarcode) {
+      const raw = String(originBarcode || '').trim();
+      if (!raw) return '';
+      const cleaned = raw.replace(/\s+/g, '');
+      const tail = cleaned.slice(-5);
+      return tail ? `C${tail}` : '';
+    }
+
+    function maybeAutofillConsignSku() {
+      if (state.mode !== 'consign') return;
+      if (!el.originBarcode.value.trim()) return;
+      const autoSku = makeConsignSku(el.originBarcode.value);
+      if (!el.sku.value.trim() || el.sku.dataset.auto === '1') {
+        el.sku.value = autoSku;
+        el.sku.dataset.auto = '1';
+      }
+    }
+
+    function normalizeNumber(v, fallback = 0) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function getFormData() {
+      return {
+        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+        商品來源: state.mode === 'own' ? '自有' : '寄賣',
+        原本包包條碼: state.mode === 'consign' ? el.originBarcode.value.trim() : '',
+        SKU: el.sku.value.trim(),
+        寄賣人: state.mode === 'consign' ? el.consignor.value.trim() : '',
+        庫存位置: el.location.value.trim(),
+        Name: el.name.value.trim(),
+        Price: normalizeNumber(el.price.value, 0),
+        StockQty: normalizeNumber(el.stockQty.value, 0),
+        Cost: normalizeNumber(el.cost.value, 0),
+        入庫日期: el.stockInDate.value || todayStr(),
+        sub_category: el.subCategory.value.trim()
+      };
+    }
+
+    function validateItem(item) {
+      if (!item.SKU) return '請填寫 SKU';
+      if (!item.Name) return '請填寫 Name';
+      if (!item.庫存位置) return '請填寫 庫存位置';
+      if (!item.入庫日期) return '請填寫 入庫日期';
+      if (item.商品來源 === '寄賣') {
+        if (!item.原本包包條碼) return '寄賣請填寫 原本包包條碼';
+        if (!item.寄賣人) return '寄賣請填寫 寄賣人';
+      }
+      return '';
+    }
+
+    function isDuplicateSkuInDrafts(sku, currentId = '') {
+      const s = String(sku || '').trim().toUpperCase();
+      if (!s) return false;
+      return state.drafts.some(row => row.id !== currentId && String(row.SKU || '').trim().toUpperCase() === s);
+    }
+
+    function clearForm(keepMode = true) {
+      el.originBarcode.value = '';
+      el.sku.value = '';
+      delete el.sku.dataset.auto;
+      el.location.value = '';
+      el.name.value = '';
+      el.price.value = '';
+      el.stockQty.value = '1';
+      el.cost.value = '';
+      el.consignor.value = '';
+      el.stockInDate.value = todayStr();
+      el.subCategory.value = '';
+      showError(el.formError, '');
+      if (!keepMode) setMode('own');
+    }
+
+    function addDraft() {
+      const item = getFormData();
+      const err = validateItem(item);
+      if (err) {
+        showError(el.formError, err);
+        return;
+      }
+      if (isDuplicateSkuInDrafts(item.SKU)) {
+        showError(el.formError, `本次清單內 SKU 已重複：${item.SKU}`);
+        return;
+      }
+      state.drafts.unshift(item);
+      saveDrafts();
+      renderDrafts();
+      clearForm(true);
+    }
+
+    function updateDraft(id, key, value) {
+      const row = state.drafts.find(x => x.id === id);
+      if (!row) return;
+      row[key] = value;
+      if (key === '商品來源') {
+        if (value === '自有') {
+          row.原本包包條碼 = '';
+          row.寄賣人 = '';
+        }
+      }
+      if (key === '原本包包條碼' && row.商品來源 === '寄賣') {
+        const autoSku = makeConsignSku(value);
+        if (!row.SKU || row.SKU === makeConsignSku(row.原本包包條碼)) {
+          row.SKU = autoSku;
+        }
+      }
+      saveDrafts();
+      renderSummary();
+    }
+
+    function removeDraft(id) {
+      state.drafts = state.drafts.filter(x => x.id !== id);
+      saveDrafts();
+      renderDrafts();
+    }
+
+    function clearDrafts() {
+      if (!state.drafts.length) return;
+      if (!window.confirm('確定要清空本次清單嗎？')) return;
+      state.drafts = [];
+      saveDrafts();
+      renderDrafts();
+      showError(el.submitError, '');
+    }
+
+    function renderSummary() {
+      const totalItems = state.drafts.length;
+      const totalQty = state.drafts.reduce((sum, x) => sum + normalizeNumber(x.StockQty, 0), 0);
+      const totalPrice = state.drafts.reduce((sum, x) => sum + normalizeNumber(x.Price, 0), 0);
+      const ownCount = state.drafts.filter(x => x.商品來源 === '自有').length;
+      const consignCount = state.drafts.filter(x => x.商品來源 === '寄賣').length;
+
+      el.summaryBoxes.innerHTML = `
+        <div class="summary-box"><div class="k">筆數</div><div class="v">${totalItems}</div></div>
+        <div class="summary-box"><div class="k">總數量</div><div class="v">${totalQty}</div></div>
+        <div class="summary-box"><div class="k">Price 合計</div><div class="v">${formatMoney(totalPrice)}</div></div>
+        <div class="summary-box"><div class="k">自有</div><div class="v">${ownCount}</div></div>
+        <div class="summary-box"><div class="k">寄賣</div><div class="v">${consignCount}</div></div>
+      `;
+
+      el.statusText.textContent = totalItems
+        ? `目前共 ${totalItems} 筆，送出前可直接在下方逐筆修改。`
+        : '目前尚未加入任何品項。';
+    }
+
+    function formatMoney(n) {
+      return Number(n || 0).toLocaleString('zh-TW');
+    }
+
+    function renderDrafts() {
+      renderSummary();
+
+      if (!state.drafts.length) {
+        el.draftTableBody.innerHTML = '<tr><td colspan="12" class="empty">目前尚無資料</td></tr>';
+        return;
+      }
+
+      el.draftTableBody.innerHTML = state.drafts.map((row) => {
+        const isConsign = row.商品來源 === '寄賣';
+        return `
+          <tr>
+            <td>
+              <button class="btn btn-danger" style="min-height:40px;padding:0 12px;" type="button" onclick="window.__removeDraft('${escapeHtml(row.id)}')">刪除</button>
+            </td>
+            <td>
+              <select class="table-select" onchange="window.__updateDraft('${escapeHtml(row.id)}','商品來源',this.value)">
+                <option value="自有" ${row.商品來源 === '自有' ? 'selected' : ''}>自有</option>
+                <option value="寄賣" ${row.商品來源 === '寄賣' ? 'selected' : ''}>寄賣</option>
+              </select>
+            </td>
+            <td>
+              <input class="table-input barcode" type="text" value="${escapeHtml(row.原本包包條碼 || '')}" ${!isConsign ? 'readonly' : ''}
+                oninput="window.__updateDraft('${escapeHtml(row.id)}','原本包包條碼',this.value)" />
+            </td>
+            <td>
+              <input class="table-input barcode" type="text" value="${escapeHtml(row.SKU || '')}"
+                oninput="window.__updateDraft('${escapeHtml(row.id)}','SKU',this.value)" />
+            </td>
+            <td>
+              <input class="table-input medium" type="text" value="${escapeHtml(row.寄賣人 || '')}" ${!isConsign ? 'readonly' : ''}
+                oninput="window.__updateDraft('${escapeHtml(row.id)}','寄賣人',this.value)" />
+            </td>
+            <td>
+              <input class="table-input medium" type="text" value="${escapeHtml(row.庫存位置 || '')}"
+                oninput="window.__updateDraft('${escapeHtml(row.id)}','庫存位置',this.value)" />
+            </td>
+            <td>
+              <input class="table-input name" type="text" value="${escapeHtml(row.Name || '')}"
+                oninput="window.__updateDraft('${escapeHtml(row.id)}','Name',this.value)" />
+            </td>
+            <td>
+              <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row.Price ?? 0)}"
+                oninput="window.__updateDraft('${escapeHtml(row.id)}','Price',Number(this.value || 0))" />
+            </td>
+            <td>
+              <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row.StockQty ?? 0)}"
+                oninput="window.__updateDraft('${escapeHtml(row.id)}','StockQty',Number(this.value || 0))" />
+            </td>
+            <td>
+              <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row.Cost ?? 0)}"
+                oninput="window.__updateDraft('${escapeHtml(row.id)}','Cost',Number(this.value || 0))" />
+            </td>
+            <td>
+              <input class="table-input long" type="date" value="${escapeHtml(row.入庫日期 || todayStr())}"
+                oninput="window.__updateDraft('${escapeHtml(row.id)}','入庫日期',this.value)" />
+            </td>
+            <td>
+              <input class="table-input medium" type="text" value="${escapeHtml(row.sub_category || '')}"
+                oninput="window.__updateDraft('${escapeHtml(row.id)}','sub_category',this.value)" />
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function buildPayload(row) {
+      return {
+        SKU: String(row.SKU || '').trim(),
+        '庫存位置': String(row.庫存位置 || '').trim(),
+        Name: String(row.Name || '').trim(),
+        Price: normalizeNumber(row.Price, 0),
+        StockQty: normalizeNumber(row.StockQty, 0),
+        Cost: normalizeNumber(row.Cost, 0),
+        '商品來源': String(row.商品來源 || '').trim(),
+        '寄賣人': String(row.寄賣人 || '').trim(),
+        '入庫日期': String(row.入庫日期 || '').trim(),
+        sub_category: String(row.sub_category || '').trim()
+      };
+    }
+
+    async function submitAll() {
+      showError(el.submitError, '');
+
+      if (!state.drafts.length) {
+        showError(el.submitError, '目前沒有可送出的資料');
+        return;
+      }
+
+      for (const row of state.drafts) {
+        const err = validateItem(row);
+        if (err) {
+          showError(el.submitError, `送出前請先修正：${row.SKU || row.Name || '未命名品項'}｜${err}`);
+          return;
+        }
+        if (isDuplicateSkuInDrafts(row.SKU, row.id)) {
+          showError(el.submitError, `本次清單內 SKU 重複：${row.SKU}`);
+          return;
+        }
+      }
+
+      const ok = window.confirm(`確定要送出 ${state.drafts.length} 筆入庫資料嗎？`);
+      if (!ok) return;
+
+      el.btnSubmitAll.disabled = true;
+      el.btnSubmitAll.textContent = '送出中...';
+
+      try {
+        if (CONFIG.createBatchUrl) {
+          const resp = await fetch(CONFIG.createBatchUrl, {
+            method: 'POST',
+            headers: CONFIG.requestHeaders,
+            body: JSON.stringify({ items: state.drafts.map(buildPayload) })
+          });
+          if (!resp.ok) throw new Error(`批次送出失敗：HTTP ${resp.status}`);
+        } else if (CONFIG.createItemUrl) {
+          for (const row of state.drafts) {
+            const resp = await fetch(CONFIG.createItemUrl, {
+              method: 'POST',
+              headers: CONFIG.requestHeaders,
+              body: JSON.stringify(buildPayload(row))
+            });
+            if (!resp.ok) throw new Error(`單筆送出失敗：${row.SKU}｜HTTP ${resp.status}`);
+          }
+        } else {
+          throw new Error('尚未設定 createBatchUrl 或 createItemUrl');
+        }
+
+        alert(`已送出 ${state.drafts.length} 筆資料`);
+        state.drafts = [];
+        saveDrafts();
+        renderDrafts();
+      } catch (err) {
+        showError(el.submitError, err.message || '送出失敗');
+      } finally {
+        el.btnSubmitAll.disabled = false;
+        el.btnSubmitAll.textContent = '確認送出';
+      }
+    }
+
+    async function searchMember() {
+      const keyword = el.memberKeyword.value.trim();
+      showError(el.memberSearchError, '');
+      el.memberResults.innerHTML = '';
+
+      if (!keyword) {
+        showError(el.memberSearchError, '請先輸入查詢文字');
+        return;
+      }
+
+      if (!CONFIG.memberSearchUrl) {
+        showError(el.memberSearchError, '尚未設定 memberSearchUrl，請先改上方 CONFIG');
+        return;
+      }
+
+      el.btnSearchMember.disabled = true;
+      el.btnSearchMember.textContent = '查詢中...';
+
+      try {
+        const url = new URL(CONFIG.memberSearchUrl, location.origin);
+        url.searchParams.set('keyword', keyword);
+        const resp = await fetch(url.toString(), { method: 'GET' });
+        if (!resp.ok) throw new Error(`查詢失敗：HTTP ${resp.status}`);
+        const data = await resp.json();
+
+        // 支援幾種常見回傳：{items:[...]} / {records:[...]} / [...] 
+        const list = Array.isArray(data) ? data : (data.items || data.records || []);
+        state.memberResults = list;
+        renderMemberResults(list);
+      } catch (err) {
+        showError(el.memberSearchError, err.message || '查詢失敗');
+      } finally {
+        el.btnSearchMember.disabled = false;
+        el.btnSearchMember.textContent = '查詢會員';
+      }
+    }
+
+    function pickMember(member) {
+      const name = member.name || member.displayName || member.full_name || member.姓名 || member.會員名稱 || member.nickname || '';
+      const phone = member.phone || member.mobile || member.手機 || '';
+      const email = member.email || member.Email || '';
+      const label = name || phone || email;
+      if (label) {
+        el.consignor.value = label;
+      }
+    }
+
+    function renderMemberResults(list) {
+      if (!list.length) {
+        el.memberResults.innerHTML = '<div class="empty" style="border:1px dashed #ead5b4;border-radius:12px;">查無會員，請直接手動輸入寄賣人</div>';
+        return;
+      }
+
+      el.memberResults.innerHTML = list.map((m, i) => {
+        const name = escapeHtml(m.name || m.displayName || m.full_name || m.姓名 || m.會員名稱 || m.nickname || '未命名會員');
+        const phone = escapeHtml(m.phone || m.mobile || m.手機 || '');
+        const email = escapeHtml(m.email || m.Email || '');
+        const lineUserId = escapeHtml(m.lineUserId || m.LineUserId || m.line_user_id || '');
+
+        return `
+          <div class="member-item">
+            <div class="member-meta">
+              <div class="name">${name}</div>
+              <div class="sub">${phone || '無手機'} ${email ? '｜' + email : ''}</div>
+              <div class="sub">${lineUserId ? 'LineUserId：' + lineUserId : ''}</div>
+            </div>
+            <button class="btn btn-secondary" type="button" onclick="window.__pickMember(${i})">帶入寄賣人</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    window.__pickMember = (idx) => pickMember(state.memberResults[idx] || {});
+    window.__updateDraft = (id, key, value) => updateDraft(id, key, value);
+    window.__removeDraft = (id) => removeDraft(id);
+
+    el.btnModeOwn.addEventListener('click', () => setMode('own'));
+    el.btnModeConsign.addEventListener('click', () => setMode('consign'));
+    el.btnAddDraft.addEventListener('click', addDraft);
+    el.btnClearForm.addEventListener('click', () => clearForm(true));
+    el.btnClearDrafts.addEventListener('click', clearDrafts);
+    el.btnSubmitAll.addEventListener('click', submitAll);
+    el.btnSearchMember.addEventListener('click', searchMember);
+    el.memberKeyword.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') searchMember();
+    });
+    el.originBarcode.addEventListener('input', maybeAutofillConsignSku);
+    el.sku.addEventListener('input', () => { el.sku.dataset.auto = '0'; });
+
+    el.stockInDate.value = todayStr();
+    setMode(state.mode);
+    renderDrafts();
+  </script>
+</body>
+</html>
