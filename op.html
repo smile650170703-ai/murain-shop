@@ -382,8 +382,8 @@
     <div>
       <label class="muted">申請類型</label>
       <select id="benefit_type">
-        <option value="credit">購物金</option>
-        <option value="discount">折扣金</option>
+        <option value="credit">客戶資金</option>
+        <option value="discount">公司補貼</option>
       </select>
     </div>
     <div>
@@ -626,7 +626,7 @@ function updateCurrentCustomerInfo(){
 
   el.textContent = `目前客人：${name || '(未命名)'}${uid ? ' / ' + uid : ''}${CART ? ' / 購物車：' + CART : ' / 尚未建立購物車'}`;
 }
-  function syncBenefitPanel(){
+async function syncBenefitPanel(){
   const customerName = getCustomerName();
   const lineUserId = getLineUserId();
 
@@ -637,6 +637,35 @@ function updateCurrentCustomerInfo(){
 
   if ($('#benefit_customer_phone')) {
     $('#benefit_customer_phone').value = CURRENT_MEMBER_PHONE || '';
+  }
+
+  const creditEl = $('#benefit_credit_available');
+  if (!creditEl) return;
+
+  if (!lineUserId) {
+    creditEl.value = '請先查詢會員';
+    return;
+  }
+
+  creditEl.value = '讀取中...';
+
+  try {
+    const res = await jfetch(
+      API + '/member/credit-balance?line_user_id=' + encodeURIComponent(lineUserId),
+      { method:'GET' }
+    );
+
+    if (!res || res.ok !== true) {
+      creditEl.value = '讀取失敗';
+      return;
+    }
+
+    const balance =
+      Number(res.balance ?? res.credit ?? res.total ?? 0) || 0;
+
+    creditEl.value = money(balance);
+  } catch (e) {
+    creditEl.value = '讀取失敗';
   }
 }
 
