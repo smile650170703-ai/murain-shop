@@ -307,8 +307,11 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
       <div id="msg"></div>
     </div>
 
-    <div class="toolbar-side">
+<div class="toolbar-side">
   <span id="opLabel" class="tag-small"></span>
+  <button id="btnBenefitReviewTop" class="small-btn" type="button">
+    💰 審核購物金
+  </button>
   <button id="btnCancelOrderTop" class="small-btn" type="button">
     🚫 棄標(請勿亂按)
   </button>
@@ -325,6 +328,11 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   </div>
 </div>
   </div>
+
+ <div class="side-box hidden" id="benefitReviewPanel">
+  <label>待審核購物金</label>
+  <div id="benefitReviewList" class="tag-small">尚未載入</div>
+</div>
 
   <div class="layout">
     <div class="card" id="orderList">
@@ -965,6 +973,102 @@ async function ensureOpKey(){
       console.error(e);
       alert('驗證失敗，請稍後再試');
     }
+  }
+}
+
+ async function loadBenefitRequests(){
+  await ensureOpKey();
+
+  const panel = $('#benefitReviewPanel');
+  const listEl = $('#benefitReviewList');
+  if (!panel || !listEl) return;
+
+  panel.classList.remove('hidden');
+  listEl.innerHTML = '載入中...';
+
+  try {
+    const r = await fetch(`${API}/admin/benefit-requests?op_key=${encodeURIComponent(OP_KEY)}&status=pending`);
+    const j = await r.json();
+
+    if (!r.ok || !j.ok) {
+      listEl.innerHTML = `讀取失敗：${j?.error || 'unknown'}`;
+      return;
+    }
+
+    const rows = j.requests || [];
+    if (!rows.length) {
+      listEl.innerHTML = '目前沒有待審核申請';
+      return;
+    }
+
+    listEl.innerHTML = rows.map(x => `
+      <div style="padding:8px 0;border-bottom:1px solid rgba(148,163,184,.2);">
+        <div><b>${x.customer_name || '(未填姓名)'}</b> / ${x.request_type === 'credit' ? '購物金' : '折扣金'}</div>
+        <div>${Number(x.amount || 0).toLocaleString()} / ${x.reason || '-'}</div>
+        <div class="tag-small">${x.fund_kind || '-'} / ${x.applicant || '-'}</div>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <button class="small-btn btnBenefitApprove" data-id="${x.record_id}" data-amount="${x.amount}">核准</button>
+          <button class="small-btn btnBenefitReject" data-id="${x.record_id}">拒絕</button>
+        </div>
+      </div>
+    `).join('');
+
+    listEl.querySelectorAll('.btnBenefitApprove').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id || '';
+        const amt = btn.dataset.amount || '';
+        const approved = prompt('核准金額', amt);
+        if (approved == null) return;
+        const note = prompt('審核備註（可空白）', '') || '';
+        await reviewBenefitRequest(id, 'approve', approved, note);
+      });
+    });
+
+    listEl.querySelectorAll('.btnBenefitReject').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id || '';
+        const note = prompt('拒絕原因 / 備註', '') || '';
+        await reviewBenefitRequest(id, 'reject', 0, note);
+      });
+    });
+
+  } catch (e) {
+    listEl.innerHTML = `讀取失敗：${e.message || e}`;
+  }
+}
+
+async function reviewBenefitRequest(recordId, action, approvedAmount, reviewNote){
+  await ensureOpKey();
+
+  const r = await fetch(`${API}/admin/benefit-request/review`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({
+      op_key: OP_KEY,
+      record_id: recordId,
+      action,
+      approved_amount: approvedAmount,
+      review_note: reviewNote || ''
+    })
+  });
+
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) {
+    alert('審核失敗：' + (j?.error || 'unknown'));
+    return;
+  }
+
+  alert(action === 'approve' ? '已核准並入帳' : '已更新狀態');
+  await loadBenefitRequests();
+}
+
+function toggleBenefitReviewPanel(){
+  const panel = $('#benefitReviewPanel');
+  if (!panel) return;
+  if (panel.classList.contains('hidden')) {
+    loadBenefitRequests();
+  } else {
+    panel.classList.add('hidden');
   }
 }
 
@@ -2696,6 +2800,10 @@ ${a.credit>0 ? `<tr><th>購物金折抵</th><td>-${creditUse}</td></tr>` : ``}
       ensureOpKey().then(()=>reloadCurrentView());
     });
   }
+  const btnBenefitReviewTop = $('#btnBenefitReviewTop');
+if (btnBenefitReviewTop) {
+  btnBenefitReviewTop.addEventListener('click', toggleBenefitReviewPanel);
+}
 
   // ===== 日期＋快捷篩選（保留目前日期，不再跳回全部） =====
 
