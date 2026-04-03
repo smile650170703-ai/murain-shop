@@ -101,6 +101,62 @@
   font-weight:700;
 }
 
+.hidden{display:none !important;}
+
+.btn-badge-wrap{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
+
+.count-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:18px;
+  height:18px;
+  padding:0 6px;
+  border-radius:999px;
+  background:#ef4444;
+  color:#fff;
+  font-size:11px;
+  line-height:1;
+  font-weight:700;
+}
+
+.btn-arrow{
+  font-size:11px;
+  color:#cbd5e1;
+}
+
+.side-box-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  margin-bottom:6px;
+}
+
+.side-box-head label{
+  margin:0;
+}
+
+.panel-close{
+  width:auto;
+  padding:2px 8px;
+  border-radius:999px;
+  border:1px solid rgba(148,163,184,.7);
+  background:transparent;
+  color:#e2e8f0;
+  font-size:12px;
+  cursor:pointer;
+}
+
+.benefit-alert-text{
+  color:#f87171;
+  font-weight:700;
+}
+
  .toolbar-side{
   min-width:260px;
   display:flex;
@@ -204,11 +260,23 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 
   <div class="toolbar-main">
     <div class="toolbar-left">
-      <div class="filter-group">
+<div class="filter-group">
   <button class="filter-btn active" data-filter="all">全部訂單</button>
-  <button class="filter-btn" id="btnQuickPaidTop" type="button">⭐待出貨訂單</button>
-  <button class="filter-btn" id="btnRemindTodayTop" type="button">匯款待確認</button>
-  <button class="filter-btn" id="btnPickupNeedTop" type="button">賣貨便登記</button>
+
+  <button class="filter-btn btn-badge-wrap" id="btnQuickPaidTop" type="button">
+    <span>⭐待出貨訂單</span>
+    <span id="quickPaidBadge" class="count-badge" style="display:none;">0</span>
+  </button>
+
+  <button class="filter-btn btn-badge-wrap" id="btnRemindTodayTop" type="button">
+    <span>匯款待確認</span>
+    <span id="remindTodayBadge" class="count-badge" style="display:none;">0</span>
+  </button>
+
+  <button class="filter-btn btn-badge-wrap" id="btnPickupNeedTop" type="button">
+    <span>賣貨便登記</span>
+    <span id="pickupNeedBadge" class="count-badge" style="display:none;">0</span>
+  </button>
 </div>
 <div class="filter-row">
     <div class="field">
@@ -309,8 +377,10 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 
 <div class="toolbar-side">
   <span id="opLabel" class="tag-small"></span>
-<button id="btnBenefitReviewTop" class="small-btn" type="button">
-  💰 審核購物金 <span id="benefitBadge" style="display:none;margin-left:6px;background:#ef4444;color:#fff;border-radius:999px;padding:0 6px;font-size:11px;">0</span>
+<button id="btnBenefitReviewTop" class="small-btn btn-badge-wrap" type="button">
+  <span>💰 審核購物金</span>
+  <span id="benefitArrow" class="btn-arrow">▶</span>
+  <span id="benefitBadge" class="count-badge" style="display:none;">0</span>
 </button>
   <button id="btnCancelOrderTop" class="small-btn" type="button">
     🚫 棄標(請勿亂按)
@@ -327,10 +397,13 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     <input id="line_search" type="text" placeholder="輸入 LINE 名稱" />
   </div>
 
-  <div class="side-box hidden" id="benefitReviewPanel">
+<div class="side-box hidden" id="benefitReviewPanel">
+  <div class="side-box-head">
     <label>待審核購物金</label>
-    <div id="benefitReviewList" class="tag-small">尚未載入</div>
+    <button type="button" class="panel-close" id="btnBenefitReviewClose">✕</button>
   </div>
+  <div id="benefitReviewList" class="tag-small">尚未載入</div>
+</div>
 </div>
   </div>
 
@@ -365,12 +438,10 @@ function fmtDateInput(d){
 }
 
 function getLast30DaysRange(){
-  const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - 29); // 含今天共 30 天
+  const today = fmtDateInput(new Date());
   return {
-    date_from: fmtDateInput(from),
-    date_to: fmtDateInput(to)
+    date_from: today,
+    date_to: today
   };
 }
 
@@ -470,7 +541,8 @@ async function applyFullView(mode = 'all', save = true){
   }
 
   await loadOrders('all', dateRange);
-  ALL_ORDERS_CACHE = [...(currentOrders || [])];
+ ALL_ORDERS_CACHE = [...(currentOrders || [])];
+refreshTopShortcutBadges();
 
   const hasFee = (f) => {
     if (!f) return false;
@@ -989,6 +1061,57 @@ async function ensureOpKey(){
   }catch(e){}
 }
 
+ function setCountBadge(el, n){
+  if (!el) return;
+  const count = Number(n || 0);
+  el.textContent = String(count);
+  el.style.display = count > 0 ? 'inline-flex' : 'none';
+}
+
+function refreshTopShortcutBadges(){
+  const rows = ALL_ORDERS_CACHE || [];
+
+  const hasFee = (f) => {
+    if (!f) return false;
+    const fee1 = f.shipping_fee;
+    const fee2 = f.ship_fee;
+    const filled1 = fee1 !== undefined && fee1 !== null && String(fee1) !== '';
+    const filled2 = fee2 !== undefined && fee2 !== null && String(fee2) !== '';
+    return filled1 || filled2;
+  };
+
+  const quickCount = rows.filter(rec => {
+    const f = rec.fields || rec || {};
+    return String(f.pay_status || '').toLowerCase() === 'paid_ok' && !hasFee(f);
+  }).length;
+
+  const remindCount = rows.filter(rec => {
+    const f = rec.fields || rec || {};
+    return String(f.pay_status || '').toLowerCase() === 'pending';
+  }).length;
+
+  const pickupCount = rows.filter(rec => {
+    const f  = rec.fields || rec || {};
+    const ps = String(f.pay_status || '').toLowerCase();
+    if (ps === 'failed' || ps === 'cancelled') return false;
+
+    const st = String(f.status || '').toLowerCase();
+    const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
+    const shipped = (st === 'shipped') || (ss === 'shipped') || (ss === 'arrived') || (ss === 'picked_up');
+
+    const shipInfo = parseShippingInfo(f) || {};
+    const ship = shipInfo.ship || {};
+    const is711 = String(ship.type || '').toLowerCase() === '711';
+
+    const pickReg = String(f['取貨登記'] || '').trim();
+    return shipped && is711 && pickReg !== '已取貨';
+  }).length;
+
+  setCountBadge($('#quickPaidBadge'), quickCount);
+  setCountBadge($('#remindTodayBadge'), remindCount);
+  setCountBadge($('#pickupNeedBadge'), pickupCount);
+}
+
  async function loadBenefitRequests(){
   await ensureOpKey();
 
@@ -1016,11 +1139,19 @@ if (!rows.length) {
   return;
 }
 
+const highlightBenefitMeta = (v) => {
+  const text = String(v || '-').trim() || '-';
+  if (text.includes('公司補貼') || text.includes('客戶資金')) {
+    return `<span class="benefit-alert-text">${escapeHtml(text)}</span>`;
+  }
+  return escapeHtml(text);
+};
+
 listEl.innerHTML = rows.map(x => `
-  <div style="padding:8px 0;border-bottom:1px solid rgba(148,163,184,2);">
-    <div><b>${x.customer_name || '(未填姓名)'}</b> / ${x.request_type === 'credit' ? '購物金' : '折扣金'}</div>
-    <div>${Number(x.amount || 0).toLocaleString()} / ${x.reason || '-'}</div>
-    <div class="tag-small">${x.fund_kind || '-'} / ${x.applicant || '-'}</div>
+  <div style="padding:8px 0;border-bottom:1px solid rgba(148,163,184,.2);">
+    <div><b>${escapeHtml(x.customer_name || '(未填姓名)')}</b> / ${x.request_type === 'credit' ? '購物金' : '折扣金'}</div>
+    <div>${Number(x.amount || 0).toLocaleString()} / ${escapeHtml(x.reason || '-')}</div>
+    <div class="tag-small">${highlightBenefitMeta(x.fund_kind)} / ${highlightBenefitMeta(x.applicant)}</div>
     <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
       <button class="small-btn btnBenefitApprove" data-id="${x.record_id}" data-amount="${x.amount}">核准</button>
       <button class="small-btn btnBenefitReject" data-id="${x.record_id}">拒絕</button>
@@ -1095,17 +1226,22 @@ await loadBenefitRequests();
 refreshBenefitBadge();
 }
 
-function toggleBenefitReviewPanel(){
+function toggleBenefitReviewPanel(forceOpen = null){
   const panel = $('#benefitReviewPanel');
-  const btn = $('#btnBenefitReviewTop');
+  const arrow = $('#benefitArrow');
   if (!panel) return;
 
-  if (panel.classList.contains('hidden')) {
+  const shouldOpen = (forceOpen === null)
+    ? panel.classList.contains('hidden')
+    : !!forceOpen;
+
+  if (shouldOpen) {
+    panel.classList.remove('hidden');
     loadBenefitRequests();
-    if (btn) btn.textContent = '💰 審核購物金 ▼';
+    if (arrow) arrow.textContent = '▼';
   } else {
     panel.classList.add('hidden');
-    if (btn) btn.textContent = '💰 審核購物金 ▶';
+    if (arrow) arrow.textContent = '▶';
   }
 }
 
@@ -2837,9 +2973,17 @@ ${a.credit>0 ? `<tr><th>購物金折抵</th><td>-${creditUse}</td></tr>` : ``}
       ensureOpKey().then(()=>reloadCurrentView());
     });
   }
-  const btnBenefitReviewTop = $('#btnBenefitReviewTop');
+const btnBenefitReviewTop = $('#btnBenefitReviewTop');
 if (btnBenefitReviewTop) {
-  btnBenefitReviewTop.addEventListener('click', toggleBenefitReviewPanel);
+  btnBenefitReviewTop.addEventListener('click', ()=> toggleBenefitReviewPanel());
+}
+
+const btnBenefitReviewClose = $('#btnBenefitReviewClose');
+if (btnBenefitReviewClose) {
+  btnBenefitReviewClose.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    toggleBenefitReviewPanel(false);
+  });
 }
 
   // ===== 日期＋快捷篩選（保留目前日期，不再跳回全部） =====
