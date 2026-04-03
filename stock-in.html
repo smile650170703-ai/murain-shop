@@ -500,7 +500,7 @@
       </div>
       <div id="memberSearchError" class="error"></div>
       <div id="memberResults" class="member-results"></div>
-      <div class="muted" style="margin-top:10px;">若查不到，可直接在下方「寄賣人」手動輸入。</div>
+      <div class="muted" style="margin-top:10px;">需先查到會員並帶入，寄賣品才能正式送出。</div>
     </div>
 
     <div class="card">
@@ -557,7 +557,7 @@
 
         <div id="consignorField" class="field span-4 hidden">
           <label for="consignor">寄賣人</label>
-          <input id="consignor" type="text" placeholder="可由上方查詢帶入，也可手動輸入" />
+          <input id="consignor" type="text" placeholder="請由上方查詢會員後帶入" />
         </div>
 
         <div class="field span-4">
@@ -635,23 +635,25 @@
      * 建議後端收這些欄位：
      * SKU, 庫存位置, Name, Price, StockQty, Cost, 商品來源, 寄賣人, 入庫日期, sub_category
      */
-    const CONFIG = {
-      memberSearchUrl: '',
-      createBatchUrl: '',
-      createItemUrl: '',
-      requestHeaders: {
-        'Content-Type': 'application/json'
-      }
-    };
+const CONFIG = {
+  opKey: '88',
+  memberSearchUrl: 'https://api.murain.tw/op/line-member/search',
+  createBatchUrl: 'https://api.murain.tw/op/products/stock-in/batch',
+  createItemUrl: '',
+  requestHeaders: {
+    'Content-Type': 'application/json'
+  }
+};
 
     const STORAGE_KEY = 'stock_in_drafts_v1';
     const MODE_KEY = 'stock_in_mode_v1';
 
-    const state = {
-      mode: localStorage.getItem(MODE_KEY) || 'own',
-      drafts: loadDrafts(),
-      memberResults: []
-    };
+const state = {
+  mode: localStorage.getItem(MODE_KEY) || 'own',
+  drafts: loadDrafts(),
+  memberResults: [],
+  selectedConsignorRecordId: ''
+};
 
     const $ = (id) => document.getElementById(id);
 
@@ -736,10 +738,11 @@
       el.sourceType.value = isOwn ? '自有' : '寄賣';
       el.sourceBadge.textContent = `目前模式：${isOwn ? '自有' : '寄賣'}`;
       el.sourceBadge.className = `badge ${isOwn ? 'blue' : 'orange'}`;
-      if (isOwn) {
-        el.originBarcode.value = '';
-        el.consignor.value = '';
-      }
+if (isOwn) {
+  el.originBarcode.value = '';
+  el.consignor.value = '';
+  state.selectedConsignorRecordId = '';
+}
       maybeAutofillConsignSku();
     }
 
@@ -766,34 +769,38 @@
       return Number.isFinite(n) ? n : fallback;
     }
 
-    function getFormData() {
-      return {
-        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`,
-        商品來源: state.mode === 'own' ? '自有' : '寄賣',
-        原本包包條碼: state.mode === 'consign' ? el.originBarcode.value.trim() : '',
-        SKU: el.sku.value.trim(),
-        寄賣人: state.mode === 'consign' ? el.consignor.value.trim() : '',
-        庫存位置: el.location.value.trim(),
-        Name: el.name.value.trim(),
-        Price: normalizeNumber(el.price.value, 0),
-        StockQty: normalizeNumber(el.stockQty.value, 0),
-        Cost: normalizeNumber(el.cost.value, 0),
-        入庫日期: el.stockInDate.value || todayStr(),
-        sub_category: el.subCategory.value.trim()
-      };
-    }
+function getFormData() {
+  return {
+    id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    商品來源: state.mode === 'own' ? '自有' : '寄賣',
+    原本包包條碼: state.mode === 'consign' ? el.originBarcode.value.trim() : '',
+    SKU: el.sku.value.trim(),
+    寄賣人: state.mode === 'consign' ? el.consignor.value.trim() : '',
+    consignorRecordId: state.mode === 'consign' ? String(state.selectedConsignorRecordId || '').trim() : '',
+    庫存位置: el.location.value.trim(),
+    Name: el.name.value.trim(),
+    Price: normalizeNumber(el.price.value, 0),
+    StockQty: normalizeNumber(el.stockQty.value, 0),
+    Cost: normalizeNumber(el.cost.value, 0),
+    入庫日期: el.stockInDate.value || todayStr(),
+    sub_category: el.subCategory.value.trim()
+  };
+}
 
-    function validateItem(item) {
-      if (!item.SKU) return '請填寫 SKU';
-      if (!item.Name) return '請填寫 Name';
-      if (!item.庫存位置) return '請填寫 庫存位置';
-      if (!item.入庫日期) return '請填寫 入庫日期';
-      if (item.商品來源 === '寄賣') {
-        if (!item.原本包包條碼) return '寄賣請填寫 原本包包條碼';
-        if (!item.寄賣人) return '寄賣請填寫 寄賣人';
-      }
-      return '';
-    }
+function validateItem(item) {
+  if (!item.SKU) return '請填寫 SKU';
+  if (!item.Name) return '請填寫 Name';
+  if (!item.庫存位置) return '請填寫 庫存位置';
+  if (!item.入庫日期) return '請填寫 入庫日期';
+
+  if (item.商品來源 === '寄賣') {
+    if (!item.原本包包條碼) return '寄賣請填寫 原本包包條碼';
+    if (!item.寄賣人) return '寄賣請先帶入寄賣人';
+    if (!item.consignorRecordId) return '寄賣請先用會員查詢並選擇寄賣人';
+  }
+
+  return '';
+}
 
     function isDuplicateSkuInDrafts(sku, currentId = '') {
       const s = String(sku || '').trim().toUpperCase();
@@ -801,21 +808,22 @@
       return state.drafts.some(row => row.id !== currentId && String(row.SKU || '').trim().toUpperCase() === s);
     }
 
-    function clearForm(keepMode = true) {
-      el.originBarcode.value = '';
-      el.sku.value = '';
-      delete el.sku.dataset.auto;
-      el.location.value = '';
-      el.name.value = '';
-      el.price.value = '';
-      el.stockQty.value = '1';
-      el.cost.value = '';
-      el.consignor.value = '';
-      el.stockInDate.value = todayStr();
-      el.subCategory.value = '';
-      showError(el.formError, '');
-      if (!keepMode) setMode('own');
-    }
+function clearForm(keepMode = true) {
+  el.originBarcode.value = '';
+  el.sku.value = '';
+  delete el.sku.dataset.auto;
+  el.location.value = '';
+  el.name.value = '';
+  el.price.value = '';
+  el.stockQty.value = '1';
+  el.cost.value = '';
+  el.consignor.value = '';
+  state.selectedConsignorRecordId = '';
+  el.stockInDate.value = todayStr();
+  el.subCategory.value = '';
+  showError(el.formError, '');
+  if (!keepMode) setMode('own');
+}
 
     function addDraft() {
       const item = getFormData();
@@ -834,25 +842,29 @@
       clearForm(true);
     }
 
-    function updateDraft(id, key, value) {
-      const row = state.drafts.find(x => x.id === id);
-      if (!row) return;
-      row[key] = value;
-      if (key === '商品來源') {
-        if (value === '自有') {
-          row.原本包包條碼 = '';
-          row.寄賣人 = '';
-        }
-      }
-      if (key === '原本包包條碼' && row.商品來源 === '寄賣') {
-        const autoSku = makeConsignSku(value);
-        if (!row.SKU || row.SKU === makeConsignSku(row.原本包包條碼)) {
-          row.SKU = autoSku;
-        }
-      }
-      saveDrafts();
-      renderSummary();
+   function updateDraft(id, key, value) {
+  const row = state.drafts.find(x => x.id === id);
+  if (!row) return;
+  row[key] = value;
+
+  if (key === '商品來源') {
+    if (value === '自有') {
+      row.原本包包條碼 = '';
+      row.寄賣人 = '';
+      row.consignorRecordId = '';
     }
+  }
+
+  if (key === '原本包包條碼' && row.商品來源 === '寄賣') {
+    const autoSku = makeConsignSku(value);
+    if (!row.SKU || row.SKU === makeConsignSku(row.原本包包條碼)) {
+      row.SKU = autoSku;
+    }
+  }
+
+  saveDrafts();
+  renderDrafts();
+}
 
     function removeDraft(id) {
       state.drafts = state.drafts.filter(x => x.id !== id);
@@ -923,8 +935,7 @@
                 oninput="window.__updateDraft('${escapeHtml(row.id)}','SKU',this.value)" />
             </td>
             <td>
-              <input class="table-input medium" type="text" value="${escapeHtml(row.寄賣人 || '')}" ${!isConsign ? 'readonly' : ''}
-                oninput="window.__updateDraft('${escapeHtml(row.id)}','寄賣人',this.value)" />
+              <input class="table-input medium" type="text" value="${escapeHtml(row.寄賣人 || '')}" readonly />
             </td>
             <td>
               <input class="table-input medium" type="text" value="${escapeHtml(row.庫存位置 || '')}"
@@ -959,20 +970,21 @@
       }).join('');
     }
 
-    function buildPayload(row) {
-      return {
-        SKU: String(row.SKU || '').trim(),
-        '庫存位置': String(row.庫存位置 || '').trim(),
-        Name: String(row.Name || '').trim(),
-        Price: normalizeNumber(row.Price, 0),
-        StockQty: normalizeNumber(row.StockQty, 0),
-        Cost: normalizeNumber(row.Cost, 0),
-        '商品來源': String(row.商品來源 || '').trim(),
-        '寄賣人': String(row.寄賣人 || '').trim(),
-        '入庫日期': String(row.入庫日期 || '').trim(),
-        sub_category: String(row.sub_category || '').trim()
-      };
-    }
+function buildPayload(row) {
+  return {
+    SKU: String(row.SKU || '').trim(),
+    '庫存位置': String(row.庫存位置 || '').trim(),
+    Name: String(row.Name || '').trim(),
+    Price: normalizeNumber(row.Price, 0),
+    StockQty: normalizeNumber(row.StockQty, 0),
+    Cost: normalizeNumber(row.Cost, 0),
+    '商品來源': String(row.商品來源 || '').trim(),
+    '寄賣人': String(row.寄賣人 || '').trim(),
+    consignorRecordId: String(row.consignorRecordId || '').trim(),
+    '入庫日期': String(row.入庫日期 || '').trim(),
+    sub_category: String(row.sub_category || '').trim()
+  };
+}
 
     async function submitAll() {
       showError(el.submitError, '');
@@ -1005,7 +1017,10 @@
           const resp = await fetch(CONFIG.createBatchUrl, {
             method: 'POST',
             headers: CONFIG.requestHeaders,
-            body: JSON.stringify({ items: state.drafts.map(buildPayload) })
+            body: JSON.stringify({
+  op_key: CONFIG.opKey,
+  items: state.drafts.map(buildPayload)
+})
           });
           if (!resp.ok) throw new Error(`批次送出失敗：HTTP ${resp.status}`);
         } else if (CONFIG.createItemUrl) {
@@ -1033,56 +1048,67 @@
       }
     }
 
-    async function searchMember() {
-      const keyword = el.memberKeyword.value.trim();
-      showError(el.memberSearchError, '');
-      el.memberResults.innerHTML = '';
+async function searchMember() {
+  const keyword = el.memberKeyword.value.trim();
+  showError(el.memberSearchError, '');
+  el.memberResults.innerHTML = '';
 
-      if (!keyword) {
-        showError(el.memberSearchError, '請先輸入查詢文字');
-        return;
-      }
+  if (!keyword) {
+    showError(el.memberSearchError, '請先輸入查詢文字');
+    return;
+  }
 
-      if (!CONFIG.memberSearchUrl) {
-        showError(el.memberSearchError, '尚未設定 memberSearchUrl，請先改上方 CONFIG');
-        return;
-      }
+  if (!CONFIG.memberSearchUrl) {
+    showError(el.memberSearchError, '尚未設定 memberSearchUrl');
+    return;
+  }
 
-      el.btnSearchMember.disabled = true;
-      el.btnSearchMember.textContent = '查詢中...';
+  el.btnSearchMember.disabled = true;
+  el.btnSearchMember.textContent = '查詢中...';
 
-      try {
-        const url = new URL(CONFIG.memberSearchUrl, location.origin);
-        url.searchParams.set('keyword', keyword);
-        const resp = await fetch(url.toString(), { method: 'GET' });
-        if (!resp.ok) throw new Error(`查詢失敗：HTTP ${resp.status}`);
-        const data = await resp.json();
+  try {
+    const resp = await fetch(CONFIG.memberSearchUrl, {
+      method: 'POST',
+      headers: CONFIG.requestHeaders,
+      body: JSON.stringify({
+        op_key: CONFIG.opKey,
+        keyword
+      })
+    });
 
-        // 支援幾種常見回傳：{items:[...]} / {records:[...]} / [...] 
-        const list = Array.isArray(data) ? data : (data.items || data.records || []);
-        state.memberResults = list;
-        renderMemberResults(list);
-      } catch (err) {
-        showError(el.memberSearchError, err.message || '查詢失敗');
-      } finally {
-        el.btnSearchMember.disabled = false;
-        el.btnSearchMember.textContent = '查詢會員';
-      }
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || `查詢失敗：HTTP ${resp.status}`);
     }
 
-    function pickMember(member) {
-      const name = member.name || member.displayName || member.full_name || member.姓名 || member.會員名稱 || member.nickname || '';
-      const phone = member.phone || member.mobile || member.手機 || '';
-      const email = member.email || member.Email || '';
-      const label = name || phone || email;
-      if (label) {
-        el.consignor.value = label;
-      }
-    }
+    const member = data.member || null;
+    state.memberResults = member ? [member] : [];
+    renderMemberResults(state.memberResults);
+  } catch (err) {
+    showError(el.memberSearchError, err.message || '查詢失敗');
+  } finally {
+    el.btnSearchMember.disabled = false;
+    el.btnSearchMember.textContent = '查詢會員';
+  }
+}
+
+function pickMember(member) {
+  const name = member.name || member.displayName || '';
+  const phone = member.phone || '';
+  const email = member.email || '';
+
+  const label = name || phone || email;
+  if (label) {
+    el.consignor.value = label;
+  }
+
+  state.selectedConsignorRecordId = member.recordId || '';
+}
 
     function renderMemberResults(list) {
       if (!list.length) {
-        el.memberResults.innerHTML = '<div class="empty" style="border:1px dashed #ead5b4;border-radius:12px;">查無會員，請直接手動輸入寄賣人</div>';
+        el.memberResults.innerHTML = '<div class="empty" style="border:1px dashed #ead5b4;border-radius:12px;">查無會員，請先建立會員資料後再做寄賣入庫</div>';
         return;
       }
 
