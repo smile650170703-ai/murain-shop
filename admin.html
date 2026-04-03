@@ -322,17 +322,17 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     <div id="vendor_month_summary" class="tag-small"></div>
   </div>
 
-  <div class="side-box">
+    <div class="side-box">
     <label>LINE 名稱搜尋</label>
     <input id="line_search" type="text" placeholder="輸入 LINE 名稱" />
   </div>
+
+  <div class="side-box hidden" id="benefitReviewPanel">
+    <label>待審核購物金</label>
+    <div id="benefitReviewList" class="tag-small">尚未載入</div>
+  </div>
 </div>
   </div>
-
- <div class="side-box hidden" id="benefitReviewPanel">
-  <label>待審核購物金</label>
-  <div id="benefitReviewList" class="tag-small">尚未載入</div>
-</div>
 
   <div class="layout">
     <div class="card" id="orderList">
@@ -1001,17 +1001,18 @@ async function ensureOpKey(){
       return;
     }
 
-    listEl.innerHTML = rows.map(x => `
-      <div style="padding:8px 0;border-bottom:1px solid rgba(148,163,184,.2);">
-        <div><b>${x.customer_name || '(未填姓名)'}</b> / ${x.request_type === 'credit' ? '購物金' : '折扣金'}</div>
-        <div>${Number(x.amount || 0).toLocaleString()} / ${x.reason || '-'}</div>
-        <div class="tag-small">${x.fund_kind || '-'} / ${x.applicant || '-'}</div>
-        <div style="display:flex;gap:6px;margin-top:6px;">
-          <button class="small-btn btnBenefitApprove" data-id="${x.record_id}" data-amount="${x.amount}">核准</button>
-          <button class="small-btn btnBenefitReject" data-id="${x.record_id}">拒絕</button>
-        </div>
-      </div>
-    `).join('');
+listEl.innerHTML = rows.map(x => `
+  <div style="padding:8px 0;border-bottom:1px solid rgba(148,163,184,.2);">
+    <div><b>${x.customer_name || '(未填姓名)'}</b> / ${x.request_type === 'credit' ? '購物金' : '折扣金'}</div>
+    <div>${Number(x.amount || 0).toLocaleString()} / ${x.reason || '-'}</div>
+    <div class="tag-small">${x.fund_kind || '-'} / ${x.applicant || '-'}</div>
+    <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+      <button class="small-btn btnBenefitApprove" data-id="${x.record_id}" data-amount="${x.amount}">核准</button>
+      <button class="small-btn btnBenefitReject" data-id="${x.record_id}">拒絕</button>
+      <button class="small-btn btnBenefitVoid" data-id="${x.record_id}">作廢</button>
+    </div>
+  </div>
+`).join('');
 
     listEl.querySelectorAll('.btnBenefitApprove').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -1031,6 +1032,14 @@ async function ensureOpKey(){
         await reviewBenefitRequest(id, 'reject', 0, note);
       });
     });
+
+   listEl.querySelectorAll('.btnBenefitVoid').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const id = btn.dataset.id || '';
+    const note = prompt('作廢原因 / 備註', '') || '';
+    await reviewBenefitRequest(id, 'void', 0, note);
+  });
+});
 
   } catch (e) {
     listEl.innerHTML = `讀取失敗：${e.message || e}`;
@@ -1058,7 +1067,15 @@ async function reviewBenefitRequest(recordId, action, approvedAmount, reviewNote
     return;
   }
 
-  alert(action === 'approve' ? '已核准並入帳' : '已更新狀態');
+  if (action === 'approve') {
+  alert('已核准並入帳');
+} else if (action === 'reject') {
+  alert('已拒絕申請');
+} else if (action === 'void') {
+  alert('已作廢申請');
+} else {
+  alert('已更新狀態');
+}
   await loadBenefitRequests();
 }
 
