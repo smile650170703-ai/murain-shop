@@ -209,14 +209,14 @@
     </div>
     <div class="muted" style="margin-top:6px">成功後會緩存於此裝置，關閉視窗後需重新登入。</div>
   </div>
-    <!-- 功能切換 -->
   <div class="card hidden" id="card-mode-switch">
-    <h2>功能切換</h2>
-    <div class="row">
-      <button id="btn-mode-simple">簡單開單</button>
-      <button id="btn-mode-manage" class="ghost">購物車管理</button>
-    </div>
+  <h2>功能切換</h2>
+  <div class="row">
+    <button id="btn-mode-simple">簡單開單</button>
+    <button id="btn-mode-manage" class="ghost">購物車管理</button>
+    <button id="btn-mode-benefit" class="ghost">購物金操作</button>
   </div>
+</div>
 
   <!-- 1. 查詢會員 / 選客人 -->
   <div class="card hidden" id="card-list">
@@ -350,6 +350,70 @@
     </div>
   </div>
 
+  <div class="card hidden" id="card-benefit">
+  <h2>購物金操作</h2>
+
+  <div class="row">
+    <div>
+      <label class="muted">客人</label>
+      <input id="benefit_customer" readonly />
+    </div>
+    <div>
+      <label class="muted">客人手機</label>
+      <input id="benefit_customer_phone" readonly />
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:10px;">
+    <div>
+      <label class="muted">可用購物金</label>
+      <input id="benefit_credit_available" readonly value="待接後端" />
+    </div>
+    <div>
+      <label class="muted">可用折扣金</label>
+      <input id="benefit_discount_available" readonly value="待接後端" />
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:10px;">
+    <div>
+      <label class="muted">申請類型</label>
+      <select id="benefit_type">
+        <option value="credit">購物金</option>
+        <option value="discount">折扣金</option>
+      </select>
+    </div>
+    <div>
+      <label class="muted">申請金額</label>
+      <input id="benefit_amount" type="number" min="1" step="1" placeholder="請填金額" />
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:10px;">
+    <div>
+      <label class="muted">申請原因</label>
+      <select id="benefit_reason">
+        <option value="">請選擇原因</option>
+        <option value="直播補償">直播補償</option>
+        <option value="客訴補貼">客訴補貼</option>
+        <option value="老客優惠">老客優惠</option>
+        <option value="活動折扣">活動折扣</option>
+        <option value="其他">其他</option>
+      </select>
+    </div>
+    <div style="flex:2 1 320px;">
+      <label class="muted">備註</label>
+      <input id="benefit_note" placeholder="可填補充說明" />
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:14px;">
+    <button id="btn-submit-benefit-request">送出申請</button>
+  </div>
+
+  <div class="muted" id="benefit_submit_msg" style="margin-top:10px;"></div>
+</div>
+
   <!-- 3. 加商品 -->
   <div class="card hidden" id="card-add">
     <h2>3️⃣加入商品</h2>
@@ -403,30 +467,36 @@
   const API = window.API_BASE;
   const $  = (s)=>document.querySelector(s);
 
-  let OP = '';
-  let CART = '';
+let OP = '';
+let CART = '';
 
-    let CURRENT_MODE = 'simple';
+let CURRENT_MODE = 'simple';
+let CURRENT_MEMBER_PHONE = '';
 
-  function setMode(mode){
-    CURRENT_MODE = mode || 'simple';
+function setMode(mode){
+  CURRENT_MODE = mode || 'simple';
 
-    const simpleBlock = document.getElementById('simple-list-block');
-    const manageBlock = document.getElementById('manage-list-block');
-    const btnSimple   = document.getElementById('btn-mode-simple');
-    const btnManage   = document.getElementById('btn-mode-manage');
+  const simpleBlock = document.getElementById('simple-list-block');
+  const manageBlock = document.getElementById('manage-list-block');
+  const btnSimple   = document.getElementById('btn-mode-simple');
+  const btnManage   = document.getElementById('btn-mode-manage');
+  const btnBenefit  = document.getElementById('btn-mode-benefit');
 
-    const isSimple = CURRENT_MODE === 'simple';
+  const isSimple  = CURRENT_MODE === 'simple';
+  const isManage  = CURRENT_MODE === 'manage';
+  const isBenefit = CURRENT_MODE === 'benefit';
 
-    if (simpleBlock) simpleBlock.classList.toggle('hidden', !isSimple);
-    if (manageBlock) manageBlock.classList.toggle('hidden', isSimple);
+  if (simpleBlock) simpleBlock.classList.toggle('hidden', !(isSimple || isBenefit));
+  if (manageBlock) manageBlock.classList.toggle('hidden', !isManage);
 
-    if ($('#card-app')) $('#card-app').classList.toggle('hidden', !isSimple);
-    if ($('#card-add')) $('#card-add').classList.toggle('hidden', !isSimple);
+  if ($('#card-app')) $('#card-app').classList.toggle('hidden', !isSimple);
+  if ($('#card-benefit')) $('#card-benefit').classList.toggle('hidden', !isBenefit);
+  if ($('#card-add')) $('#card-add').classList.toggle('hidden', !isSimple);
 
-    if (btnSimple) btnSimple.classList.toggle('ghost', !isSimple);
-    if (btnManage) btnManage.classList.toggle('ghost', isSimple);
-  }
+  if (btnSimple) btnSimple.classList.toggle('ghost', !isSimple);
+  if (btnManage) btnManage.classList.toggle('ghost', !isManage);
+  if (btnBenefit) btnBenefit.classList.toggle('ghost', !isBenefit);
+}
 
   // ---------- helpers ----------
   async function jfetch(url, opt) {
@@ -461,12 +531,13 @@ function setLoginUI(on){
   $('#card-mode-switch').classList.toggle('hidden', !on);
   $('#card-list').classList.toggle('hidden', !on);
 
-  if (!on) {
-    $('#card-app').classList.add('hidden');
-    $('#card-add').classList.add('hidden');
-  } else {
-    setMode(CURRENT_MODE || 'simple');
-  }
+if (!on) {
+  $('#card-app').classList.add('hidden');
+  $('#card-benefit').classList.add('hidden');
+  $('#card-add').classList.add('hidden');
+} else {
+  setMode(CURRENT_MODE || 'simple');
+}
 
   syncMainButtons();
 }
@@ -477,7 +548,8 @@ function setCartToken(t) {
   $('#btn-clear').disabled = !OP || !CART;
   try { rememberCartForUser(CART); } catch(e) {}
   syncMainButtons();
-  updateCurrentCustomerInfo();
+updateCurrentCustomerInfo();
+syncBenefitPanel();
 }
 
 function clearCurrentCartView(){
@@ -517,7 +589,8 @@ function resetForNextCustomer(){
   // ✅ 保留客群，不清 #customer_type
 
   updateCurrentCustomerInfo();
-  syncMainButtons();
+syncMainButtons();
+syncBenefitPanel();
 }
 
 function switchCustomerSafely(nextLineUserId, nextName){
@@ -548,17 +621,86 @@ function updateCurrentCustomerInfo(){
 
   el.textContent = `目前客人：${name || '(未命名)'}${uid ? ' / ' + uid : ''}${CART ? ' / 購物車：' + CART : ' / 尚未建立購物車'}`;
 }
+  function syncBenefitPanel(){
+  const customerName = getCustomerName();
+  const lineUserId = getLineUserId();
+
+  if ($('#benefit_customer')) {
+    $('#benefit_customer').value =
+      customerName || (lineUserId ? `LINE：${lineUserId}` : '');
+  }
+
+  if ($('#benefit_customer_phone')) {
+    $('#benefit_customer_phone').value = CURRENT_MEMBER_PHONE || '';
+  }
+}
+
+async function submitBenefitRequest(){
+  if (!OP) return alert('請先登入 OP Key');
+  if (!getLineUserId()) return alert('請先查詢已綁定完成的會員');
+
+  const type = ($('#benefit_type')?.value || '').trim();
+  const amount = parseInt(($('#benefit_amount')?.value || '0').trim(), 10) || 0;
+  const reason = ($('#benefit_reason')?.value || '').trim();
+  const note = ($('#benefit_note')?.value || '').trim();
+
+  if (!type) return alert('請選擇申請類型');
+  if (!amount || amount <= 0) return alert('請填正確金額');
+  if (!reason) return alert('請選擇申請原因');
+
+  const payload = {
+    op_key: OP,
+    request_type: type,
+    amount,
+    reason,
+    note,
+    applicant: OP,
+    linked_customer_name: getCustomerName(),
+    linked_line_user_id: getLineUserId(),
+    status: 'pending'
+  };
+
+  const msgEl = $('#benefit_submit_msg');
+  if (msgEl) msgEl.textContent = '申請送出中...';
+
+  try {
+    const res = await jfetch(API + '/op/benefit-request', {
+      method:'POST',
+      body: JSON.stringify(payload)
+    });
+
+    if (!res || res.ok !== true) {
+      if (msgEl) msgEl.textContent = '尚未接好申請 API，前台區塊已做好。';
+      alert('目前前台區塊已完成，但後端申請 API 尚未接好。');
+      return;
+    }
+
+    if (msgEl) msgEl.textContent = '此申請已送出，待主管審核。';
+
+    $('#benefit_amount').value = '';
+    $('#benefit_reason').value = '';
+    $('#benefit_note').value = '';
+  } catch (e) {
+    if (msgEl) msgEl.textContent = '申請送出失敗，請稍後再試。';
+    alert('申請送出失敗：' + e.message);
+  }
+}
 
 function syncMainButtons(){
   const hasCustomer = hasSelectedCustomer();
   const hasCart = !!CART;
   const hasStreamer = !!(($('#streamer').value || '').trim());
 
-if ($('#btn-create')) $('#btn-create').disabled = !hasStreamer;
-if ($('#btn-add')) $('#btn-add').disabled = !hasCart;
+  if ($('#btn-create')) $('#btn-create').disabled = !hasStreamer;
+  if ($('#btn-add')) $('#btn-add').disabled = !hasCart;
   if ($('#btn-link')) $('#btn-link').disabled = !hasCart;
   if ($('#btn-send-link')) $('#btn-send-link').disabled = !(hasCustomer && hasCart);
   if ($('#btn-clear')) $('#btn-clear').disabled = !hasCart;
+
+  const canSubmitBenefit = !!OP && !!getLineUserId();
+  if ($('#btn-submit-benefit-request')) {
+    $('#btn-submit-benefit-request').disabled = !canSubmitBenefit;
+  }
 }
 
   // ====== ★ 客人購物車記憶（只存在這台 OP 裝置的 localStorage） ======
@@ -899,8 +1041,10 @@ async function searchLineMember() {
       infoEl.textContent = `已選擇：${nextName}${phonePart}`;
     }
 
-    updateCurrentCustomerInfo();
-    syncMainButtons();
+    CURRENT_MEMBER_PHONE = m.phone || '';
+updateCurrentCustomerInfo();
+syncMainButtons();
+syncBenefitPanel();
   } catch (e) {
     console.error(e);
     alert('搜尋失敗：' + e.message);
@@ -1429,12 +1573,13 @@ setCartAdminMsg(`找到 ${carts.length} 台購物車（只顯示有商品）`);
     $('#override_price').value = String(Math.max(0, cur + v));
   }
 
-    const lineUserInput = $('#line_user_id');
+const lineUserInput = $('#line_user_id');
 if (lineUserInput) {
   lineUserInput.addEventListener('input', () => {
     try { showCartHintIfExists(); } catch(e) {}
     updateCurrentCustomerInfo();
     syncMainButtons();
+    syncBenefitPanel();
   });
 }
 
@@ -1443,6 +1588,7 @@ if (lineNameInput) {
   lineNameInput.addEventListener('input', () => {
     updateCurrentCustomerInfo();
     syncMainButtons();
+    syncBenefitPanel();
   });
 }
 
@@ -1481,6 +1627,15 @@ if (cartManageKwInput) {
     if (btnModeManage) {
       btnModeManage.addEventListener('click', ()=> setMode('manage'));
     }
+    const btnModeBenefit = document.getElementById('btn-mode-benefit');
+if (btnModeBenefit) {
+  btnModeBenefit.addEventListener('click', ()=> setMode('benefit'));
+}
+
+const btnSubmitBenefitRequest = $('#btn-submit-benefit-request');
+if (btnSubmitBenefitRequest) {
+  btnSubmitBenefitRequest.addEventListener('click', ()=> submitBenefitRequest());
+}
     // ★ 新增：搜尋會員（用 LINE 名稱 / 本名）
   const btnSearchLine = $('#btn-search-line');
   if (btnSearchLine) {
@@ -1550,9 +1705,10 @@ if (btnNextCustomer) {
     });
     // 自動帶回 OP（若有存）
     const saved = localStorage.getItem('OP_KEY');
-    if(saved) { $('#op_key').value = saved; OP = saved; setLoginUI(true); }
-    updateCurrentCustomerInfo();
+if(saved) { $('#op_key').value = saved; OP = saved; setLoginUI(true); }
+updateCurrentCustomerInfo();
 syncMainButtons();
+syncBenefitPanel();
   });
 })();
 </script>
