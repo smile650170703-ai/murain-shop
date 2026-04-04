@@ -494,13 +494,24 @@
         </div>
       </div>
 
-      <div class="search-grid">
-        <input id="memberKeyword" type="text" placeholder="輸入客人的 LINE 名稱 / 手機 / Email" />
-        <button id="btnSearchMember" class="btn btn-search" type="button">查詢會員</button>
-      </div>
-      <div id="memberSearchError" class="error"></div>
-      <div id="memberResults" class="member-results"></div>
-      <div class="muted" style="margin-top:10px;">需先查到會員並帶入，寄賣品才能正式送出。</div>
+<div class="search-grid">
+  <input id="memberKeyword" type="text" placeholder="輸入客人的 LINE 名稱 / 手機 / Email" />
+  <button id="btnSearchMember" class="btn btn-search" type="button">查詢會員</button>
+</div>
+
+<div class="actions" style="margin-top:10px;">
+  <button id="btnNewConsignor" class="btn btn-secondary" type="button">新增寄賣人資料</button>
+  <button id="btnEditConsignor" class="btn btn-secondary hidden" type="button">查看 / 編輯寄賣人資料</button>
+</div>
+
+<div id="memberSearchError" class="error"></div>
+<div id="memberResults" class="member-results"></div>
+
+<div id="consignorStatusBox" class="card hidden" style="margin-top:12px;padding:14px;border:1px dashed #ead5b4;background:linear-gradient(180deg,#fffbf5 0%,#fff 100%);box-shadow:none;">
+  <div class="muted">尚未查詢寄賣人主檔</div>
+</div>
+
+<div class="muted" style="margin-top:10px;">需先查到會員，再確認是否已有寄賣人主檔，寄賣品才能正式送出。</div>
     </div>
 
     <div class="card">
@@ -638,6 +649,9 @@
 const CONFIG = {
   opKey: '88',
   memberSearchUrl: 'https://api.murain.tw/op/line-member/search',
+  consignorByMemberUrl: 'https://api.murain.tw/op/consignor/by-member',
+  consignorUpsertUrl: 'https://api.murain.tw/op/consignor/upsert',
+  imageUploadUrl: 'https://api.murain.tw/op/upload/image',
   createBatchUrl: 'https://api.murain.tw/op/products/stock-in/batch',
   createItemUrl: '',
   requestHeaders: {
@@ -652,6 +666,8 @@ const state = {
   mode: localStorage.getItem(MODE_KEY) || 'own',
   drafts: loadDrafts(),
   memberResults: [],
+  selectedLineMember: null,
+  selectedConsignor: null,
   selectedConsignorRecordId: ''
 };
 
@@ -687,7 +703,29 @@ const state = {
       draftTableBody: $('draftTableBody'),
       btnSubmitAll: $('btnSubmitAll'),
       btnClearDrafts: $('btnClearDrafts'),
-      submitError: $('submitError')
+      submitError: $('submitError'),
+            btnNewConsignor: $('btnNewConsignor'),
+      btnEditConsignor: $('btnEditConsignor'),
+      consignorStatusBox: $('consignorStatusBox'),
+
+      consignorModal: $('consignorModal'),
+      btnCloseConsignorModal: $('btnCloseConsignorModal'),
+      btnSaveConsignor: $('btnSaveConsignor'),
+      consignorModalError: $('consignorModalError'),
+
+      consignorName: $('consignorName'),
+      consignorNationalId: $('consignorNationalId'),
+      consignorPhone: $('consignorPhone'),
+      consignorEmail: $('consignorEmail'),
+      consignorBankCode: $('consignorBankCode'),
+      consignorBankName: $('consignorBankName'),
+      consignorAccountName: $('consignorAccountName'),
+      consignorAccountNo: $('consignorAccountNo'),
+      consignorNote: $('consignorNote'),
+      consignorIdFront: $('consignorIdFront'),
+      consignorIdBack: $('consignorIdBack'),
+      consignorIdFrontPreview: $('consignorIdFrontPreview'),
+      consignorIdBackPreview: $('consignorIdBackPreview')
     };
 
     function loadDrafts() {
@@ -1093,7 +1131,9 @@ async function searchMember() {
   }
 }
 
-function pickMember(member) {
+async function pickMember(member) {
+  state.selectedLineMember = member || null;
+
   const name = member.name || member.displayName || '';
   const phone = member.phone || '';
   const email = member.email || '';
@@ -1103,7 +1143,10 @@ function pickMember(member) {
     el.consignor.value = label;
   }
 
-  state.selectedConsignorRecordId = member.recordId || '';
+  state.selectedConsignor = null;
+  state.selectedConsignorRecordId = '';
+
+  await loadConsignorByMember(member.recordId || '');
 }
 
     function renderMemberResults(list) {
@@ -1131,6 +1174,171 @@ function pickMember(member) {
       }).join('');
     }
 
+    function openConsignorModal(prefill = {}) {
+  el.consignorModal.classList.remove('hidden');
+  showError(el.consignorModalError, '');
+
+  el.consignorName.value = prefill.name || state.selectedLineMember?.name || state.selectedLineMember?.displayName || '';
+  el.consignorNationalId.value = prefill.nationalId || '';
+  el.consignorPhone.value = prefill.phone || state.selectedLineMember?.phone || '';
+  el.consignorEmail.value = prefill.email || state.selectedLineMember?.email || '';
+  el.consignorBankCode.value = prefill.bankCode || '';
+  el.consignorBankName.value = prefill.bankName || '';
+  el.consignorAccountName.value = prefill.accountName || '';
+  el.consignorAccountNo.value = prefill.accountNo || '';
+  el.consignorNote.value = prefill.note || '';
+
+  el.consignorIdFrontPreview.textContent = prefill.idFrontUrl ? `已存在：${prefill.idFrontUrl}` : '';
+  el.consignorIdBackPreview.textContent = prefill.idBackUrl ? `已存在：${prefill.idBackUrl}` : '';
+}
+
+function closeConsignorModal() {
+  el.consignorModal.classList.add('hidden');
+}
+
+function renderConsignorStatus(consignor) {
+  el.consignorStatusBox.classList.remove('hidden');
+
+  if (!consignor) {
+    el.consignorStatusBox.innerHTML = `
+      <div style="font-weight:800;margin-bottom:6px;">寄賣人主檔狀態</div>
+      <div class="muted">此會員尚未建立寄賣人資料，請先按「新增寄賣人資料」。</div>
+    `;
+    el.btnEditConsignor.classList.add('hidden');
+    return;
+  }
+
+  el.consignorStatusBox.innerHTML = `
+    <div style="font-weight:800;margin-bottom:6px;">寄賣人主檔狀態</div>
+    <div class="muted">姓名：${escapeHtml(consignor.name || '')}</div>
+    <div class="muted">手機：${escapeHtml(consignor.phone || '')}</div>
+    <div class="muted">Email：${escapeHtml(consignor.email || '')}</div>
+    <div class="muted">匯款資料：${escapeHtml(consignor.bankCode || '')} ${escapeHtml(consignor.bankName || '')} / ${escapeHtml(consignor.accountLast5 || '')}</div>
+    <div class="muted">身分證圖：${consignor.idFrontUrl ? '正面已上傳' : '正面未上傳'}｜${consignor.idBackUrl ? '反面已上傳' : '反面未上傳'}</div>
+  `;
+  el.btnEditConsignor.classList.remove('hidden');
+}
+
+async function loadConsignorByMember(lineMemberRecordId) {
+  if (!lineMemberRecordId) {
+    renderConsignorStatus(null);
+    return;
+  }
+
+  try {
+    const resp = await fetch(CONFIG.consignorByMemberUrl, {
+      method: 'POST',
+      headers: CONFIG.requestHeaders,
+      body: JSON.stringify({
+        op_key: CONFIG.opKey,
+        lineMemberRecordId
+      })
+    });
+
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || `查詢寄賣主檔失敗：HTTP ${resp.status}`);
+    }
+
+    if (data.exists && data.consignor) {
+      state.selectedConsignor = data.consignor;
+      state.selectedConsignorRecordId = data.consignor.recordId || '';
+      renderConsignorStatus(data.consignor);
+    } else {
+      state.selectedConsignor = null;
+      state.selectedConsignorRecordId = '';
+      renderConsignorStatus(null);
+    }
+  } catch (err) {
+    renderConsignorStatus(null);
+    showError(el.memberSearchError, err.message || '查詢寄賣主檔失敗');
+  }
+}
+
+async function uploadSingleImage(file) {
+  if (!file) return '';
+  const form = new FormData();
+  form.append('file', file);
+  form.append('op_key', CONFIG.opKey);
+
+  const resp = await fetch(CONFIG.imageUploadUrl, {
+    method: 'POST',
+    body: form
+  });
+  const data = await resp.json().catch(() => ({}));
+
+  if (!resp.ok || !data.ok) {
+    throw new Error(data.error || `圖片上傳失敗：HTTP ${resp.status}`);
+  }
+
+  return data.url || '';
+}
+
+async function saveConsignor() {
+  if (!state.selectedLineMember?.recordId) {
+    showError(el.consignorModalError, '請先查詢並選擇會員');
+    return;
+  }
+
+  const payload = {
+    op_key: CONFIG.opKey,
+    recordId: state.selectedConsignor?.recordId || '',
+    lineMemberRecordId: state.selectedLineMember.recordId || '',
+    lineUserId: state.selectedLineMember.lineUserId || '',
+    name: el.consignorName.value.trim(),
+    nationalId: el.consignorNationalId.value.trim(),
+    phone: el.consignorPhone.value.trim(),
+    email: el.consignorEmail.value.trim(),
+    bankCode: el.consignorBankCode.value.trim(),
+    bankName: el.consignorBankName.value.trim(),
+    accountName: el.consignorAccountName.value.trim(),
+    accountNo: el.consignorAccountNo.value.trim(),
+    accountLast5: el.consignorAccountNo.value.trim().slice(-5),
+    note: el.consignorNote.value.trim(),
+    idFrontUrl: state.selectedConsignor?.idFrontUrl || '',
+    idBackUrl: state.selectedConsignor?.idBackUrl || ''
+  };
+
+  if (!payload.name) {
+    showError(el.consignorModalError, '請填寫姓名');
+    return;
+  }
+
+  try {
+    el.btnSaveConsignor.disabled = true;
+    el.btnSaveConsignor.textContent = '儲存中...';
+
+    if (el.consignorIdFront.files?.[0]) {
+      payload.idFrontUrl = await uploadSingleImage(el.consignorIdFront.files[0]);
+    }
+    if (el.consignorIdBack.files?.[0]) {
+      payload.idBackUrl = await uploadSingleImage(el.consignorIdBack.files[0]);
+    }
+
+    const resp = await fetch(CONFIG.consignorUpsertUrl, {
+      method: 'POST',
+      headers: CONFIG.requestHeaders,
+      body: JSON.stringify(payload)
+    });
+
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || `寄賣人資料儲存失敗：HTTP ${resp.status}`);
+    }
+
+    state.selectedConsignor = data.consignor || null;
+    state.selectedConsignorRecordId = data.consignor?.recordId || '';
+    renderConsignorStatus(state.selectedConsignor);
+    closeConsignorModal();
+    alert('寄賣人資料已儲存');
+  } catch (err) {
+    showError(el.consignorModalError, err.message || '寄賣人資料儲存失敗');
+  } finally {
+    el.btnSaveConsignor.disabled = false;
+    el.btnSaveConsignor.textContent = '儲存寄賣人資料';
+  }
+}
+
     window.__pickMember = (idx) => pickMember(state.memberResults[idx] || {});
     window.__updateDraft = (id, key, value) => updateDraft(id, key, value);
     window.__removeDraft = (id) => removeDraft(id);
@@ -1145,6 +1353,24 @@ function pickMember(member) {
     el.memberKeyword.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') searchMember();
     });
+        el.btnNewConsignor.addEventListener('click', () => {
+      if (!state.selectedLineMember) {
+        showError(el.memberSearchError, '請先查詢並選擇會員');
+        return;
+      }
+      openConsignorModal();
+    });
+
+    el.btnEditConsignor.addEventListener('click', () => {
+      if (!state.selectedConsignor) {
+        showError(el.memberSearchError, '目前沒有寄賣人主檔可查看');
+        return;
+      }
+      openConsignorModal(state.selectedConsignor);
+    });
+
+    el.btnCloseConsignorModal.addEventListener('click', closeConsignorModal);
+    el.btnSaveConsignor.addEventListener('click', saveConsignor);
     el.originBarcode.addEventListener('input', maybeAutofillConsignSku);
     el.sku.addEventListener('input', () => { el.sku.dataset.auto = '0'; });
 
@@ -1152,5 +1378,84 @@ function pickMember(member) {
     setMode(state.mode);
     renderDrafts();
   </script>
+
+  <div id="consignorModal" class="hidden" style="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;padding:20px;overflow:auto;">
+  <div style="max-width:900px;margin:32px auto;background:#fff;border-radius:20px;padding:20px;box-shadow:0 20px 50px rgba(15,23,42,.25);">
+    <div class="card-header" style="margin-bottom:18px;">
+      <div>
+        <h2 class="card-title">寄賣人資料建檔</h2>
+        <p class="hint">同一位寄賣人只需建一次，之後入庫直接帶入。</p>
+      </div>
+      <button id="btnCloseConsignorModal" class="btn btn-secondary" type="button">關閉</button>
+    </div>
+
+    <div class="grid">
+      <div class="field span-4">
+        <label for="consignorName">姓名</label>
+        <input id="consignorName" type="text" placeholder="請輸入姓名" />
+      </div>
+
+      <div class="field span-4">
+        <label for="consignorNationalId">身分證字號</label>
+        <input id="consignorNationalId" type="text" placeholder="請輸入身分證字號" />
+      </div>
+
+      <div class="field span-4">
+        <label for="consignorPhone">手機</label>
+        <input id="consignorPhone" type="text" placeholder="請輸入手機" />
+      </div>
+
+      <div class="field span-4">
+        <label for="consignorEmail">Email</label>
+        <input id="consignorEmail" type="text" placeholder="請輸入 Email" />
+      </div>
+
+      <div class="field span-4">
+        <label for="consignorBankCode">銀行代碼</label>
+        <input id="consignorBankCode" type="text" placeholder="例如 822" />
+      </div>
+
+      <div class="field span-4">
+        <label for="consignorBankName">銀行名稱</label>
+        <input id="consignorBankName" type="text" placeholder="例如 中國信託" />
+      </div>
+
+      <div class="field span-4">
+        <label for="consignorAccountName">匯款戶名</label>
+        <input id="consignorAccountName" type="text" placeholder="請輸入匯款戶名" />
+      </div>
+
+      <div class="field span-4">
+        <label for="consignorAccountNo">匯款帳號</label>
+        <input id="consignorAccountNo" type="text" placeholder="請輸入匯款帳號" />
+      </div>
+
+      <div class="field span-4">
+        <label for="consignorNote">備註</label>
+        <input id="consignorNote" type="text" placeholder="可不填" />
+      </div>
+
+      <div class="field span-6">
+        <label for="consignorIdFront">身分證正面</label>
+        <input id="consignorIdFront" type="file" accept="image/*" />
+        <div class="muted" style="margin-top:6px;">可直接選圖，下一步再補貼上功能。</div>
+        <div id="consignorIdFrontPreview" class="muted" style="margin-top:6px;"></div>
+      </div>
+
+      <div class="field span-6">
+        <label for="consignorIdBack">身分證反面</label>
+        <input id="consignorIdBack" type="file" accept="image/*" />
+        <div class="muted" style="margin-top:6px;">可直接選圖，下一步再補貼上功能。</div>
+        <div id="consignorIdBackPreview" class="muted" style="margin-top:6px;"></div>
+      </div>
+    </div>
+
+    <div class="actions" style="margin-top:18px;">
+      <button id="btnSaveConsignor" class="btn btn-primary" type="button">儲存寄賣人資料</button>
+    </div>
+
+    <div id="consignorModalError" class="error"></div>
+  </div>
+</div>
 </body>
 </html>
