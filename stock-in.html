@@ -555,22 +555,31 @@
           <label for="name">商品名稱</label>
           <input id="name" type="text" placeholder="輸入商品名稱" />
         </div>
+<div class="field span-3">
+  <label for="price">建議售價</label>
+  <input id="price" type="number" inputmode="decimal" min="0" step="1" placeholder="0" />
+</div>
 
-        <div class="field span-3">
-          <label for="price">建議售價</label>
-          <input id="price" type="number" inputmode="decimal" min="0" step="1" placeholder="0" />
-        </div>
+<div id="auctionStartPriceField" class="field span-3 hidden">
+  <label for="auctionStartPrice">起標價格</label>
+  <input id="auctionStartPrice" type="number" inputmode="decimal" min="0" step="1" placeholder="0" />
+</div>
 
-        <div class="field span-3">
-          <label for="stockQty">數量</label>
-          <input id="stockQty" type="number" inputmode="numeric" min="0" step="1" value="1" />
-        </div>
+<div id="bidStepField" class="field span-3 hidden">
+  <label for="bidStep">一標多少</label>
+  <input id="bidStep" type="number" inputmode="decimal" min="0" step="1" placeholder="0" />
+</div>
 
-        <div class="field span-3">
-          <label for="cost">成本</label>
-          <input id="cost" type="number" inputmode="decimal" min="0" step="1" placeholder="0" />
-        </div>
+<div class="field span-3">
+  <label for="stockQty">數量</label>
+  <input id="stockQty" type="number" inputmode="numeric" min="0" step="1" value="1" />
+</div>
 
+<div class="field span-3">
+  <label for="cost">成本</label>
+  <input id="cost" type="number" inputmode="decimal" min="0" step="1" placeholder="0" />
+</div>
+        
         <div class="field span-3">
           <label for="sourceType">商品來源</label>
           <input id="sourceType" type="text" readonly value="自有" />
@@ -636,14 +645,16 @@
               <th>庫存位置</th>
               <th>Name</th>
               <th>Price</th>
-              <th>StockQty</th>
-              <th>Cost</th>
-              <th>入庫日期</th>
-              <th>sub_category</th>
+<th>起標價格</th>
+<th>一標多少</th>
+<th>StockQty</th>
+<th>Cost</th>
+<th>入庫日期</th>
+<th>sub_category</th>
             </tr>
           </thead>
           <tbody id="draftTableBody">
-            <tr><td colspan="12" class="empty">目前尚無資料</td></tr>
+            <tr><td colspan="14" class="empty">目前尚無資料</td></tr>
           </tbody>
         </table>
       </div>
@@ -782,10 +793,14 @@ const state = {
       sku: $('sku'),
       location: $('location'),
       name: $('name'),
-      price: $('price'),
-      stockQty: $('stockQty'),
-      cost: $('cost'),
-      sourceType: $('sourceType'),
+price: $('price'),
+auctionStartPriceField: $('auctionStartPriceField'),
+auctionStartPrice: $('auctionStartPrice'),
+bidStepField: $('bidStepField'),
+bidStep: $('bidStep'),
+stockQty: $('stockQty'),
+cost: $('cost'),
+sourceType: $('sourceType'),
       consignorField: $('consignorField'),
       consignor: $('consignor'),
       stockInDate: $('stockInDate'),
@@ -867,20 +882,24 @@ submitError: $('submitError'),
       el.btnModeOwn.classList.toggle('active', isOwn);
       el.btnModeConsign.classList.toggle('active', !isOwn);
       el.memberSearchCard.classList.toggle('active', !isOwn);
-      el.originBarcodeField.classList.toggle('hidden', isOwn);
-      el.consignorField.classList.toggle('hidden', isOwn);
-      el.sourceType.value = isOwn ? '自有' : '寄賣';
+el.originBarcodeField.classList.toggle('hidden', isOwn);
+el.consignorField.classList.toggle('hidden', isOwn);
+el.auctionStartPriceField.classList.toggle('hidden', isOwn);
+el.bidStepField.classList.toggle('hidden', isOwn);
+el.sourceType.value = isOwn ? '自有' : '寄賣';
       el.sourceBadge.textContent = `目前模式：${isOwn ? '自有' : '寄賣'}`;
       el.sourceBadge.className = `badge ${isOwn ? 'blue' : 'orange'}`;
 if (isOwn) {
   el.originBarcode.value = '';
   el.consignor.value = '';
+  el.auctionStartPrice.value = '';
+  el.bidStep.value = '';
   state.selectedConsignorRecordId = '';
   state.selectedLineMember = null;
-state.selectedConsignor = null;
-el.consignorStatusBox.classList.add('hidden');
-el.consignorStatusBox.innerHTML = '<div class="muted">尚未查詢寄賣人主檔</div>';
-el.btnEditConsignor.classList.add('hidden');
+  state.selectedConsignor = null;
+  el.consignorStatusBox.classList.add('hidden');
+  el.consignorStatusBox.innerHTML = '<div class="muted">尚未查詢寄賣人主檔</div>';
+  el.btnEditConsignor.classList.add('hidden');
 }
       maybeAutofillConsignSku();
     }
@@ -919,6 +938,8 @@ function getFormData() {
     庫存位置: el.location.value.trim(),
     Name: el.name.value.trim(),
     Price: normalizeNumber(el.price.value, 0),
+    起標價格: state.mode === 'consign' ? normalizeNumber(el.auctionStartPrice.value, 0) : 0,
+    一標多少: state.mode === 'consign' ? normalizeNumber(el.bidStep.value, 0) : 0,
     StockQty: normalizeNumber(el.stockQty.value, 0),
     Cost: normalizeNumber(el.cost.value, 0),
     入庫日期: el.stockInDate.value || todayStr(),
@@ -932,11 +953,13 @@ function validateItem(item) {
   if (!item.庫存位置) return '請填寫 庫存位置';
   if (!item.入庫日期) return '請填寫 入庫日期';
 
-  if (item.商品來源 === '寄賣') {
-    if (!item.原本包包條碼) return '寄賣請填寫 原本包包條碼';
-    if (!item.寄賣人) return '寄賣請先帶入寄賣人';
-    if (!item.consignorRecordId) return '寄賣請先用會員查詢並選擇寄賣人';
-  }
+if (item.商品來源 === '寄賣') {
+  if (!item.原本包包條碼) return '寄賣請填寫 原本包包條碼';
+  if (!item.寄賣人) return '寄賣請先帶入寄賣人';
+  if (!item.consignorRecordId) return '寄賣請先用會員查詢並選擇寄賣人';
+  if (normalizeNumber(item['起標價格'], 0) <= 0) return '寄賣請填寫 起標價格';
+  if (normalizeNumber(item['一標多少'], 0) <= 0) return '寄賣請填寫 一標多少';
+}
 
   return '';
 }
@@ -953,10 +976,12 @@ function clearForm(keepMode = true) {
   delete el.sku.dataset.auto;
   el.location.value = '';
   el.name.value = '';
-  el.price.value = '';
-  el.stockQty.value = '1';
-  el.cost.value = '';
-  el.consignor.value = '';
+el.price.value = '';
+el.auctionStartPrice.value = '';
+el.bidStep.value = '';
+el.stockQty.value = '1';
+el.cost.value = '';
+el.consignor.value = '';
   state.selectedConsignorRecordId = '';
   el.stockInDate.value = todayStr();
   el.subCategory.value = '';
@@ -986,13 +1011,15 @@ function clearForm(keepMode = true) {
   if (!row) return;
   row[key] = value;
 
-  if (key === '商品來源') {
-    if (value === '自有') {
-      row.原本包包條碼 = '';
-      row.寄賣人 = '';
-      row.consignorRecordId = '';
-    }
+if (key === '商品來源') {
+  if (value === '自有') {
+    row.原本包包條碼 = '';
+    row.寄賣人 = '';
+    row.consignorRecordId = '';
+    row['起標價格'] = 0;
+    row['一標多少'] = 0;
   }
+}
 
   if (key === '原本包包條碼' && row.商品來源 === '寄賣') {
     const autoSku = makeConsignSku(value);
@@ -1048,7 +1075,7 @@ function clearForm(keepMode = true) {
       renderSummary();
 
       if (!state.drafts.length) {
-        el.draftTableBody.innerHTML = '<tr><td colspan="12" class="empty">目前尚無資料</td></tr>';
+        el.draftTableBody.innerHTML = '<tr><td colspan="14" class="empty">目前尚無資料</td></tr>';
         return;
       }
 
@@ -1084,14 +1111,22 @@ function clearForm(keepMode = true) {
               <input class="table-input name" type="text" value="${escapeHtml(row.Name || '')}"
                 oninput="window.__updateDraft('${escapeHtml(row.id)}','Name',this.value)" />
             </td>
-            <td>
-              <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row.Price ?? 0)}"
-                oninput="window.__updateDraft('${escapeHtml(row.id)}','Price',Number(this.value || 0))" />
-            </td>
-            <td>
-              <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row.StockQty ?? 0)}"
-                oninput="window.__updateDraft('${escapeHtml(row.id)}','StockQty',Number(this.value || 0))" />
-            </td>
+           <td>
+  <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row.Price ?? 0)}"
+    oninput="window.__updateDraft('${escapeHtml(row.id)}','Price',Number(this.value || 0))" />
+</td>
+<td>
+  <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row['起標價格'] ?? 0)}" ${!isConsign ? 'readonly' : ''}
+    oninput="window.__updateDraft('${escapeHtml(row.id)}','起標價格',Number(this.value || 0))" />
+</td>
+<td>
+  <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row['一標多少'] ?? 0)}" ${!isConsign ? 'readonly' : ''}
+    oninput="window.__updateDraft('${escapeHtml(row.id)}','一標多少',Number(this.value || 0))" />
+</td>
+<td>
+  <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row.StockQty ?? 0)}"
+    oninput="window.__updateDraft('${escapeHtml(row.id)}','StockQty',Number(this.value || 0))" />
+</td>
             <td>
               <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row.Cost ?? 0)}"
                 oninput="window.__updateDraft('${escapeHtml(row.id)}','Cost',Number(this.value || 0))" />
@@ -1115,6 +1150,8 @@ function buildPayload(row) {
     '庫存位置': String(row.庫存位置 || '').trim(),
     Name: String(row.Name || '').trim(),
     Price: normalizeNumber(row.Price, 0),
+    '起標價格': normalizeNumber(row['起標價格'], 0),
+    '一標多少': normalizeNumber(row['一標多少'], 0),
     StockQty: normalizeNumber(row.StockQty, 0),
     Cost: normalizeNumber(row.Cost, 0),
     '商品來源': String(row.商品來源 || '').trim(),
