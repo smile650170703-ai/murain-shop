@@ -180,9 +180,10 @@
 #d_vendor_stats {
   color:#fecaca;   /* 你也可以換成 #f87171 或 red */
 }
- #btnQuickPaid,
+#btnQuickPaid,
 #btnRemindToday,
-#btnPickupNeed{
+#btnPickupNeed,
+#btnConsign{
   display:none !important;
 }
   .label-inline{display:flex;align-items:center;gap:5px;font-size:12px;margin-top:4px}
@@ -272,6 +273,10 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     <span>賣貨便登記</span>
     <span id="pickupNeedBadge" class="count-badge" style="display:none;">0</span>
   </button>
+ <button class="filter-btn btn-badge-wrap" id="btnConsignTop" type="button">
+  <span>寄賣</span>
+  <span id="consignBadge" class="count-badge" style="display:none;">0</span>
+</button>
 </div>
 <div class="filter-row">
     <div class="field">
@@ -316,6 +321,10 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     <label>&nbsp;</label>
     <button class="small-btn" id="btnPickupNeed" type="button">賣貨便登記</button>
   </div>
+ <div class="field">
+  <label>&nbsp;</label>
+  <button class="small-btn" id="btnConsign" type="button">寄賣</button>
+</div>
 
   <div class="field">
     <label>&nbsp;</label>
@@ -421,8 +430,12 @@ let currentFilter = 'all';
 let currentOrders = [];
 let currentRecord = null;
 let ORDERS_CACHE = []; // ← 匯出用，存純欄位物件
- let ALL_ORDERS_CACHE = [];
+let ALL_ORDERS_CACHE = [];
 let LINE_SEARCH_TERM = '';
+
+let currentPanelMode = 'orders';      // orders / consign
+let currentConsignRows = [];
+let currentConsignRecord = null;
 
 function fmtDateInput(d){
   const y = d.getFullYear();
@@ -520,6 +533,7 @@ function renderVendorMonthSummary(){
 }
 
 async function applyFullView(mode = 'all', save = true){
+  currentPanelMode = 'orders';
   await ensureOpKey();
 
   const dateRange = getCurrentDateRange();
@@ -644,13 +658,14 @@ function restoreViewInputs(){
   if ($('#status'))    $('#status').value    = VIEW_STATE.status || '';
 }
 
- function setTopFilterActive(mode){
-  const btnAll    = $('.filter-btn[data-filter="all"]');
-  const btnQuick  = $('#btnQuickPaidTop');
-  const btnRemind = $('#btnRemindTodayTop');
-  const btnPickup = $('#btnPickupNeedTop');
+function setTopFilterActive(mode){
+  const btnAll     = $('.filter-btn[data-filter="all"]');
+  const btnQuick   = $('#btnQuickPaidTop');
+  const btnRemind  = $('#btnRemindTodayTop');
+  const btnPickup  = $('#btnPickupNeedTop');
+  const btnConsign = $('#btnConsignTop');
 
-  [btnAll, btnQuick, btnRemind, btnPickup].forEach(btn => {
+  [btnAll, btnQuick, btnRemind, btnPickup, btnConsign].forEach(btn => {
     if (btn) btn.classList.remove('active');
   });
 
@@ -669,7 +684,11 @@ function restoreViewInputs(){
     return;
   }
 
-  // 其他都回到「全部訂單」
+  if (mode === 'consign_settlement') {
+    if (btnConsign) btnConsign.classList.add('active');
+    return;
+  }
+
   if (btnAll) btnAll.classList.add('active');
 }
 
@@ -1062,7 +1081,7 @@ async function ensureOpKey(){
   el.style.display = count > 0 ? 'inline-flex' : 'none';
 }
 
-function refreshTopShortcutBadges(){
+async function refreshTopShortcutBadges(){
   const rows = ALL_ORDERS_CACHE || [];
 
   const hasFee = (f) => {
@@ -1101,9 +1120,31 @@ function refreshTopShortcutBadges(){
     return shipped && is711 && pickReg !== '已取貨';
   }).length;
 
+  let consignCount = 0;
+  try {
+    if (OP_KEY) {
+      const r = await fetch(`${API}/op/consign/settlement/list`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          op_key: OP_KEY,
+          status: 'all'
+        })
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok) {
+        const items = j.items || [];
+        consignCount = items.filter(x => String(x.status || '') !== 'settled').length;
+      }
+    }
+  } catch (e) {
+    console.warn('consign badge load failed', e);
+  }
+
   setCountBadge($('#quickPaidBadge'), quickCount);
   setCountBadge($('#remindTodayBadge'), remindCount);
   setCountBadge($('#pickupNeedBadge'), pickupCount);
+  setCountBadge($('#consignBadge'), consignCount);
 }
 
  async function loadBenefitRequests(){
@@ -1270,9 +1311,239 @@ async function loadOrders(filter='all', extra = {}){
   }
 }
 
+ async function loadConsignSettlementList(){
+  currentPanelMode = 'consign';
+  currentConsignRecord = null;
+
+    saveViewState('consign_settlement', {
+    filter: 'all',
+    date_from: $('#date_from') ? ($('#date_from').value || '') : '',
+    date_to: $('#date_to') ? ($('#date_to').value || '') : '',
+    status: $('#status') ? ($('#status').value || '') : ''
+  });
+
+  const listEl = $('#orderList');
+  const detailEl = $('#orderDetail');
+  const msgEl = $('#msg');
+
+  listEl.innerHTML = '<div class="muted">寄賣資料載入中…</div>';
+  detailEl.innerHTML = '<div class="muted">請從左邊點選一筆寄賣售出資料</div>';
+  if (msgEl) msgEl.textContent = '';
+
+  try{
+    await ensureOpKey();
+
+    const r = await fetch(`${API}/op/consign/settlement/list`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        status: 'all'
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok || !j.ok){
+      throw new Error(j.error || 'consign_list_failed');
+    }
+
+    currentConsignRows = j.items || [];
+    renderConsignList();
+    setTopFilterActive('consign_settlement');
+
+    if (msgEl) {
+      msgEl.textContent = currentConsignRows.length
+        ? `僅顯示寄賣待處理資料，共 ${currentConsignRows.length} 筆。`
+        : '目前沒有待處理的寄賣售出資料。';
+    }
+  }catch(e){
+    console.error(e);
+    listEl.innerHTML = '<div class="error">寄賣資料載入失敗：' + (e.message || e) + '</div>';
+    currentConsignRows = [];
+  }
+}
+
+function renderConsignList(){
+  const listEl = $('#orderList');
+  if (!currentConsignRows.length){
+    listEl.innerHTML = '<div class="muted">目前沒有待處理的寄賣售出資料。</div>';
+    return;
+  }
+
+  listEl.innerHTML = currentConsignRows.map(row => {
+    return `
+      <div class="order-row" data-id="${row.orderItemId}">
+        <div class="ord-top">
+          <div>
+            <div class="ord-id">${escapeHtml(row.orderId || '')}｜${escapeHtml(row.sku || '')}</div>
+            <div class="tag-small">${escapeHtml(row.name || '')}</div>
+          </div>
+
+          <div class="ord-right">
+            <div class="ord-amount">${money(row.saleAmount || 0)}</div>
+            <div class="tag-small">${escapeHtml(row.method || '未選擇')}</div>
+          </div>
+        </div>
+
+        <div class="ord-sub">
+          ${escapeHtml(row.consignorName || '')}
+          ｜匯款 ${money(row.bankAmount || 0)}
+          ｜購物金 ${money(row.creditAmount || 0)}
+        </div>
+
+        <div class="badges">
+          <span class="badge yellow">${escapeHtml(row.status || '')}</span>
+          <span class="badge blue">${escapeHtml(row.notifyStatus || 'pending')}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  $$('#orderList .order-row').forEach(rowEl => {
+    rowEl.addEventListener('click', () => {
+      $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
+      rowEl.classList.add('active');
+      const id = rowEl.getAttribute('data-id');
+      const rec = currentConsignRows.find(x => String(x.orderItemId) === String(id));
+      if (rec) renderConsignDetail(rec);
+    });
+  });
+}
+
+function renderConsignDetail(item){
+  currentConsignRecord = item;
+  const dEl = $('#orderDetail');
+
+  const bankInfo = item.bankInfo || {};
+  const accounting = item.accounting || {};
+
+  dEl.innerHTML = `
+    <div class="section-title">寄賣結算資料</div>
+
+    <div class="pill">訂單編號：<span>${escapeHtml(item.orderId || '')}</span></div>
+    <div class="pill">SKU：<span>${escapeHtml(item.sku || '')}</span></div>
+    <div class="pill">寄賣人：<span>${escapeHtml(item.consignorName || '')}</span></div>
+
+    <div class="mt-3">
+      <label>品名</label>
+      <div class="ro-field">${escapeHtml(item.name || '')}</div>
+    </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>售出金額</label>
+        <div class="ro-field">${money(item.saleAmount || 0)}</div>
+      </div>
+      <div>
+        <label>匯款金額（80%）</label>
+        <div class="ro-field">${money(item.bankAmount || 0)}</div>
+      </div>
+    </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>購物金金額（85%）</label>
+        <div class="ro-field">${money(item.creditAmount || 0)}</div>
+      </div>
+      <div>
+        <label>目前方式</label>
+        <div class="ro-field">${escapeHtml(item.method || '未選擇')}</div>
+      </div>
+    </div>
+
+    <div class="mt-3 section-title">匯款資料</div>
+    <div class="ro-field">${escapeHtml(bankInfo.accountName || '')}</div>
+    <div class="ro-field mt-2">${escapeHtml(bankInfo.bankCode || '')} ${escapeHtml(bankInfo.bankName || '')}</div>
+    <div class="ro-field mt-2">${escapeHtml(bankInfo.accountNo || '')}</div>
+
+    <div class="mt-3 section-title">一時貿易資料</div>
+    <div class="ro-field">${escapeHtml(accounting.name || '')}</div>
+    <div class="ro-field mt-2">${escapeHtml(accounting.nationalId || '')}</div>
+
+    <div class="top-order-actions mt-3">
+      <button class="btn-primary" id="btnConsignNotify" type="button">📣 一鍵通知客人</button>
+      <button class="btn-secondary" id="btnConsignBank" type="button">🏦 設為匯款</button>
+      <button class="btn-secondary" id="btnConsignCredit" type="button">💳 設為購物金</button>
+      <button class="btn-secondary" id="btnConsignBankDone" type="button">✅ 標記已匯款</button>
+      <button class="btn-secondary" id="btnConsignCreditDone" type="button">✅ 確認轉購物金</button>
+      <button class="btn-secondary" id="btnCopyConsignBank" type="button">📋 複製匯款資料</button>
+      <button class="btn-secondary" id="btnCopyConsignAccounting" type="button">📋 複製一時貿易資料</button>
+    </div>
+  `;
+
+  $('#btnConsignNotify')?.addEventListener('click', () => consignNotify(item.orderItemId));
+  $('#btnConsignBank')?.addEventListener('click', () => consignAction(item.orderItemId, 'set_bank_transfer'));
+  $('#btnConsignCredit')?.addEventListener('click', () => consignAction(item.orderItemId, 'set_store_credit'));
+  $('#btnConsignBankDone')?.addEventListener('click', () => consignAction(item.orderItemId, 'mark_bank_done'));
+  $('#btnConsignCreditDone')?.addEventListener('click', () => consignAction(item.orderItemId, 'mark_credit_done'));
+
+  $('#btnCopyConsignBank')?.addEventListener('click', async () => {
+    const txt = [
+      `戶名：${bankInfo.accountName || ''}`,
+      `銀行代碼：${bankInfo.bankCode || ''}`,
+      `銀行名稱：${bankInfo.bankName || ''}`,
+      `匯款帳號：${bankInfo.accountNo || ''}`
+    ].join('\n');
+    await navigator.clipboard.writeText(txt);
+    alert('已複製匯款資料');
+  });
+
+  $('#btnCopyConsignAccounting')?.addEventListener('click', async () => {
+    const txt = [
+      `姓名：${accounting.name || ''}`,
+      `身分證字號：${accounting.nationalId || ''}`,
+      `售出金額：${item.saleAmount || 0}`,
+      `匯款金額：${item.bankAmount || 0}`,
+      `購物金金額：${item.creditAmount || 0}`
+    ].join('\n');
+    await navigator.clipboard.writeText(txt);
+    alert('已複製一時貿易資料');
+  });
+}
+
+async function consignNotify(orderItemId){
+  await ensureOpKey();
+  const r = await fetch(`${API}/op/consign/notify-choice`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ op_key: OP_KEY, orderItemId })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) {
+    alert('通知失敗：' + (j.error || 'unknown'));
+    return;
+  }
+  alert('已通知客人');
+  await loadConsignSettlementList();
+  await refreshTopShortcutBadges();
+}
+
+async function consignAction(orderItemId, action){
+  await ensureOpKey();
+  const r = await fetch(`${API}/op/consign/settlement/action`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ op_key: OP_KEY, orderItemId, action })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) {
+    alert('操作失敗：' + (j.error || 'unknown'));
+    return;
+  }
+  alert('已更新');
+  await loadConsignSettlementList();
+  await refreshTopShortcutBadges();
+}
+
 async function reloadCurrentView(){
   restoreViewInputs();
+
   const mode = VIEW_STATE.mode || 'all';
+
+  if (mode === 'consign_settlement' || currentPanelMode === 'consign') {
+    return loadConsignSettlementList();
+  }
+
   return applyFullView(mode, false);
 }
 
@@ -3048,6 +3319,20 @@ const btnPickupNeed = $('#btnPickupNeed');
 if (btnPickupNeed){
   btnPickupNeed.addEventListener('click', async ()=>{
     await applyFullView('pickup_need');
+  });
+}
+
+  const btnConsign = $('#btnConsign');
+if (btnConsign){
+  btnConsign.addEventListener('click', async ()=>{
+    await loadConsignSettlementList();
+  });
+}
+
+const btnConsignTop = $('#btnConsignTop');
+if (btnConsignTop){
+  btnConsignTop.addEventListener('click', ()=>{
+    $('#btnConsign')?.click();
   });
 }
 
