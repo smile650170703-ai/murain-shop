@@ -431,6 +431,7 @@ let currentOrders = [];
 let currentRecord = null;
 let ORDERS_CACHE = []; // ← 匯出用，存純欄位物件
 let ALL_ORDERS_CACHE = [];
+let VENDOR_SUMMARY_CACHE = [];
 let LINE_SEARCH_TERM = '';
 
 let currentPanelMode = 'orders';      // orders / consign
@@ -498,7 +499,7 @@ function renderVendorMonthSummary(){
   if (!panel || !monthEl) return;
 
   const month = String(monthEl.value || '').trim();
-  const source = ALL_ORDERS_CACHE || [];
+  const source = VENDOR_SUMMARY_CACHE || [];
   const map = new Map();
 
   source.forEach(rec => {
@@ -535,6 +536,9 @@ function renderVendorMonthSummary(){
 async function applyFullView(mode = 'all', save = true){
   currentPanelMode = 'orders';
   await ensureOpKey();
+ if (!VENDOR_SUMMARY_CACHE.length) {
+  await loadVendorSummaryCache();
+}
 
   const dateRange = getCurrentDateRange();
   const statusVal = $('#status') ? ($('#status').value || '') : '';
@@ -1311,6 +1315,26 @@ async function loadOrders(filter='all', extra = {}){
   }
 }
 
+ async function loadVendorSummaryCache(){
+  try{
+    const params = new URLSearchParams();
+    params.set('filter', 'all');
+    params.set('op_key', OP_KEY);
+
+    const r = await fetch(`${API}/admin/orders?` + params.toString());
+    const j = await r.json();
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.error || 'vendor_summary_load_failed');
+    }
+
+    VENDOR_SUMMARY_CACHE = j.orders || j.records || [];
+  }catch(e){
+    console.error('loadVendorSummaryCache failed', e);
+    VENDOR_SUMMARY_CACHE = [];
+  }
+}
+
  async function loadConsignSettlementList(){
   currentPanelMode = 'consign';
   currentConsignRecord = null;
@@ -1536,15 +1560,28 @@ async function consignAction(orderItemId, action){
 }
 
 async function reloadCurrentView(){
-  restoreViewInputs();
-
   const mode = VIEW_STATE.mode || 'all';
+  const st = $('#status') ? ($('#status').value || '') : '';
 
   if (mode === 'consign_settlement' || currentPanelMode === 'consign') {
+    saveViewState('consign_settlement', {
+      filter: 'all',
+      date_from: $('#date_from') ? ($('#date_from').value || '') : '',
+      date_to: $('#date_to') ? ($('#date_to').value || '') : '',
+      status: st
+    });
     return loadConsignSettlementList();
   }
 
-  return applyFullView(mode, false);
+  if (st === 'unshipped_custom') {
+    return applyFullView('status_unshipped_custom');
+  }
+
+  if (st === 'deposit_unshipped_custom') {
+    return applyFullView('status_deposit_unshipped_custom');
+  }
+
+  return applyFullView(mode || 'all');
 }
 
 
