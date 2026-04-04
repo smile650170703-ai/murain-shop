@@ -467,6 +467,16 @@
       .mode-btn { flex: 1 1 100%; }
     }
   </style>
+  <style>
+  .btn-excel {
+    background: #1d6f42;
+    color: #fff;
+  }
+
+  .btn-excel:hover {
+    background: #155233;
+  }
+</style>
 </head>
 <body>
   <div class="page">
@@ -605,13 +615,14 @@
 
       <div class="summary" id="summaryBoxes"></div>
 
-      <div class="toolbar">
-        <div id="statusText" class="status">目前尚未加入任何品項。</div>
-        <div class="actions" style="margin-top:0;">
-          <button id="btnSubmitAll" class="btn btn-success" type="button">確認送出</button>
-          <button id="btnClearDrafts" class="btn btn-danger" type="button">清空本次清單</button>
-        </div>
-      </div>
+<div class="toolbar">
+  <div id="statusText" class="status">目前尚未加入任何品項。</div>
+  <div class="actions" style="margin-top:0;">
+    <button id="btnDownloadLabelExcel" class="btn btn-excel" type="button">下載標籤 Excel</button>
+    <button id="btnSubmitAll" class="btn btn-success" type="button">確認送出</button>
+    <button id="btnClearDrafts" class="btn btn-danger" type="button">清空本次清單</button>
+  </div>
+</div>
 
       <div class="table-wrap">
         <table>
@@ -784,10 +795,11 @@ const state = {
       formError: $('formError'),
       summaryBoxes: $('summaryBoxes'),
       statusText: $('statusText'),
-      draftTableBody: $('draftTableBody'),
-      btnSubmitAll: $('btnSubmitAll'),
-      btnClearDrafts: $('btnClearDrafts'),
-      submitError: $('submitError'),
+draftTableBody: $('draftTableBody'),
+btnDownloadLabelExcel: $('btnDownloadLabelExcel'),
+btnSubmitAll: $('btnSubmitAll'),
+btnClearDrafts: $('btnClearDrafts'),
+submitError: $('submitError'),
             btnNewConsignor: $('btnNewConsignor'),
       btnEditConsignor: $('btnEditConsignor'),
       consignorStatusBox: $('consignorStatusBox'),
@@ -1113,6 +1125,167 @@ function buildPayload(row) {
   };
 }
 
+    function excelEscape(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function labelFileDate() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${y}${m}${day}_${hh}${mm}`;
+}
+
+function buildOwnLabelRows(rows) {
+  const output = [];
+
+  for (const row of rows) {
+    const qty = Math.max(0, Math.floor(normalizeNumber(row.StockQty, 0)));
+
+    for (let i = 0; i < qty; i++) {
+      output.push({
+        SKU: String(row.SKU || '').trim(),
+        Name: String(row.Name || '').trim(),
+        Price: normalizeNumber(row.Price, 0),
+        StockQty: normalizeNumber(row.StockQty, 0),
+        sub_category: String(row.sub_category || '').trim()
+      });
+    }
+  }
+
+  return output;
+}
+
+function buildConsignLabelRows(rows) {
+  return rows.map((row) => ({
+    SKU: String(row.SKU || '').trim(),
+    Name: String(row.Name || '').trim(),
+    Price: normalizeNumber(row.Price, 0),
+    起標價格: normalizeNumber(row['起標價格'], 0),
+    一標多少: normalizeNumber(row['一標多少'], 0)
+  }));
+}
+
+function buildExcelHtml(headers, rows, title) {
+  const thead = `
+    <tr>
+      ${headers.map(h => `<th style="border:1px solid #000;padding:8px;background:#f3f4f6;font-weight:700;">${excelEscape(h)}</th>`).join('')}
+    </tr>
+  `;
+
+  const tbody = rows.map(row => `
+    <tr>
+      ${headers.map(h => `<td style="border:1px solid #000;padding:8px;mso-number-format:'\\@';">${excelEscape(row[h])}</td>`).join('')}
+    </tr>
+  `).join('');
+
+  return `
+  <html xmlns:o="urn:schemas-microsoft-com:office:office"
+        xmlns:x="urn:schemas-microsoft-com:office:excel"
+        xmlns="http://www.w3.org/TR/REC-html40">
+    <head>
+      <meta charset="UTF-8">
+      <!--[if gte mso 9]>
+      <xml>
+        <x:ExcelWorkbook>
+          <x:ExcelWorksheets>
+            <x:ExcelWorksheet>
+              <x:Name>${excelEscape(title)}</x:Name>
+              <x:WorksheetOptions>
+                <x:DisplayGridlines/>
+              </x:WorksheetOptions>
+            </x:ExcelWorksheet>
+          </x:ExcelWorksheets>
+        </x:ExcelWorkbook>
+      </xml>
+      <![endif]-->
+      <style>
+        body {
+          font-family: Arial, "Microsoft JhengHei", sans-serif;
+          font-size: 12pt;
+        }
+        table {
+          border-collapse: collapse;
+        }
+      </style>
+    </head>
+    <body>
+      <table>
+        <tr>
+          <td colspan="${headers.length}" style="font-size:16pt;font-weight:700;padding:10px 8px;">${excelEscape(title)}</td>
+        </tr>
+        ${thead}
+        ${tbody}
+      </table>
+    </body>
+  </html>
+  `;
+}
+
+function downloadExcelFile(filename, html) {
+  const blob = new Blob(
+    ['\ufeff' + html],
+    { type: 'application/vnd.ms-excel;charset=utf-8;' }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function downloadLabelExcel() {
+  showError(el.submitError, '');
+
+  if (!state.drafts.length) {
+    showError(el.submitError, '目前沒有可下載的標籤資料');
+    return;
+  }
+
+  const isOwnMode = state.mode === 'own';
+
+  if (isOwnMode) {
+    const ownRows = state.drafts.filter(row => String(row.商品來源 || '') === '自有');
+    if (!ownRows.length) {
+      showError(el.submitError, '目前沒有自有入庫資料可下載');
+      return;
+    }
+
+    const expandedRows = buildOwnLabelRows(ownRows);
+    if (!expandedRows.length) {
+      showError(el.submitError, '自有入庫的數量需大於 0 才能產生標籤');
+      return;
+    }
+
+    const headers = ['SKU', 'Name', 'Price', 'StockQty', 'sub_category'];
+    const html = buildExcelHtml(headers, expandedRows, '自有入庫標籤');
+    downloadExcelFile(`自有入庫標籤_${labelFileDate()}.xls`, html);
+    return;
+  }
+
+  const consignRows = state.drafts.filter(row => String(row.商品來源 || '') === '寄賣');
+  if (!consignRows.length) {
+    showError(el.submitError, '目前沒有寄賣入庫資料可下載');
+    return;
+  }
+
+  const exportRows = buildConsignLabelRows(consignRows);
+  const headers = ['SKU', 'Name', 'Price', '起標價格', '一標多少'];
+  const html = buildExcelHtml(headers, exportRows, '寄賣入庫標籤');
+  downloadExcelFile(`寄賣入庫標籤_${labelFileDate()}.xls`, html);
+}
+
     async function submitAll() {
       showError(el.submitError, '');
 
@@ -1434,10 +1607,11 @@ if (!resp.ok || !data.ok) {
 
     el.btnModeOwn.addEventListener('click', () => setMode('own'));
     el.btnModeConsign.addEventListener('click', () => setMode('consign'));
-    el.btnAddDraft.addEventListener('click', addDraft);
-    el.btnClearForm.addEventListener('click', () => clearForm(true));
-    el.btnClearDrafts.addEventListener('click', clearDrafts);
-    el.btnSubmitAll.addEventListener('click', submitAll);
+el.btnAddDraft.addEventListener('click', addDraft);
+el.btnClearForm.addEventListener('click', () => clearForm(true));
+el.btnClearDrafts.addEventListener('click', clearDrafts);
+el.btnDownloadLabelExcel.addEventListener('click', downloadLabelExcel);
+el.btnSubmitAll.addEventListener('click', submitAll);
     el.btnSearchMember.addEventListener('click', searchMember);
     el.memberKeyword.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') searchMember();
