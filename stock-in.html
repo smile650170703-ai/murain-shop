@@ -1350,17 +1350,26 @@ function downloadLabelExcel() {
       el.btnSubmitAll.textContent = '送出中...';
 
       try {
-        if (CONFIG.createBatchUrl) {
-          const resp = await fetch(CONFIG.createBatchUrl, {
-            method: 'POST',
-            headers: CONFIG.requestHeaders,
-            body: JSON.stringify({
-  op_key: CONFIG.opKey,
-  items: state.drafts.map(buildPayload)
-})
-          });
-          if (!resp.ok) throw new Error(`批次送出失敗：HTTP ${resp.status}`);
-        } else if (CONFIG.createItemUrl) {
+if (CONFIG.createBatchUrl) {
+  const resp = await fetch(CONFIG.createBatchUrl, {
+    method: 'POST',
+    headers: CONFIG.requestHeaders,
+    body: JSON.stringify({
+      op_key: CONFIG.opKey,
+      items: state.drafts.map(buildPayload)
+    })
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || data.ok === false) {
+    throw new Error(
+      data.detail ||
+      data.message ||
+      data.error ||
+      `批次送出失敗：HTTP ${resp.status}`
+    );
+  }
+} else if (CONFIG.createItemUrl) {
           for (const row of state.drafts) {
             const resp = await fetch(CONFIG.createItemUrl, {
               method: 'POST',
