@@ -836,7 +836,12 @@ submitError: $('submitError'),
       consignorIdFront: $('consignorIdFront'),
       consignorIdBack: $('consignorIdBack'),
       consignorIdFrontPreview: $('consignorIdFrontPreview'),
-      consignorIdBackPreview: $('consignorIdBackPreview')
+      consignorIdBackPreview: $('consignorIdBackPreview'),
+      consignorContractPhotos: $('consignorContractPhotos'),
+consignorContractPhotosPreview: $('consignorContractPhotosPreview'),
+liveScreenshotField: $('liveScreenshotField'),
+liveScreenshot: $('liveScreenshot'),
+liveScreenshotPreview: $('liveScreenshotPreview')
     };
 
     function loadDrafts() {
@@ -886,6 +891,7 @@ el.originBarcodeField.classList.toggle('hidden', isOwn);
 el.consignorField.classList.toggle('hidden', isOwn);
 el.auctionStartPriceField.classList.toggle('hidden', isOwn);
 el.bidStepField.classList.toggle('hidden', isOwn);
+el.liveScreenshotField.classList.toggle('hidden', isOwn);
 el.sourceType.value = isOwn ? '自有' : '寄賣';
       el.sourceBadge.textContent = `目前模式：${isOwn ? '自有' : '寄賣'}`;
       el.sourceBadge.className = `badge ${isOwn ? 'blue' : 'orange'}`;
@@ -894,6 +900,8 @@ if (isOwn) {
   el.consignor.value = '';
   el.auctionStartPrice.value = '';
   el.bidStep.value = '';
+  el.liveScreenshot.value = '';
+el.liveScreenshotPreview.textContent = '';
   state.selectedConsignorRecordId = '';
   state.selectedLineMember = null;
   state.selectedConsignor = null;
@@ -943,7 +951,8 @@ function getFormData() {
     StockQty: normalizeNumber(el.stockQty.value, 0),
     Cost: normalizeNumber(el.cost.value, 0),
     入庫日期: el.stockInDate.value || todayStr(),
-    sub_category: el.subCategory.value.trim()
+    sub_category: el.subCategory.value.trim(),
+直播截圖Url: ''
   };
 }
 
@@ -976,6 +985,8 @@ function clearForm(keepMode = true) {
   delete el.sku.dataset.auto;
   el.location.value = '';
   el.name.value = '';
+  el.liveScreenshot.value = '';
+el.liveScreenshotPreview.textContent = '';
 el.price.value = '';
 el.auctionStartPrice.value = '';
 el.bidStep.value = '';
@@ -989,22 +1000,38 @@ el.consignor.value = '';
   if (!keepMode) setMode('own');
 }
 
-    function addDraft() {
-      const item = getFormData();
-      const err = validateItem(item);
-      if (err) {
-        showError(el.formError, err);
-        return;
-      }
-      if (isDuplicateSkuInDrafts(item.SKU)) {
-        showError(el.formError, `本次清單內 SKU 已重複：${item.SKU}`);
-        return;
-      }
-      state.drafts.unshift(item);
-      saveDrafts();
-      renderDrafts();
-      clearForm(true);
+async function addDraft() {
+  const item = getFormData();
+  const err = validateItem(item);
+  if (err) {
+    showError(el.formError, err);
+    return;
+  }
+  if (isDuplicateSkuInDrafts(item.SKU)) {
+    showError(el.formError, `本次清單內 SKU 已重複：${item.SKU}`);
+    return;
+  }
+
+  try {
+    el.btnAddDraft.disabled = true;
+    el.btnAddDraft.textContent = '加入中...';
+
+    if (state.mode === 'consign' && el.liveScreenshot.files?.[0]) {
+      item['直播截圖Url'] = await uploadSingleImage(el.liveScreenshot.files[0]);
+      el.liveScreenshotPreview.textContent = '已上傳直播截圖';
     }
+
+    state.drafts.unshift(item);
+    saveDrafts();
+    renderDrafts();
+    clearForm(true);
+  } catch (e) {
+    showError(el.formError, e.message || '直播截圖上傳失敗');
+  } finally {
+    el.btnAddDraft.disabled = false;
+    el.btnAddDraft.textContent = '加入本次清單';
+  }
+}
 
    function updateDraft(id, key, value) {
   const row = state.drafts.find(x => x.id === id);
@@ -1158,7 +1185,8 @@ function buildPayload(row) {
     '寄賣人': String(row.寄賣人 || '').trim(),
     consignorRecordId: String(row.consignorRecordId || '').trim(),
     '入庫日期': String(row.入庫日期 || '').trim(),
-    sub_category: String(row.sub_category || '').trim()
+    sub_category: String(row.sub_category || '').trim(),
+'直播截圖Url': String(row['直播截圖Url'] || '').trim()
   };
 }
 
@@ -1498,6 +1526,10 @@ async function pickMember(member) {
 
   el.consignorIdFrontPreview.textContent = prefill.idFrontUrl ? `已存在：${prefill.idFrontUrl}` : '';
   el.consignorIdBackPreview.textContent = prefill.idBackUrl ? `已存在：${prefill.idBackUrl}` : '';
+      el.consignorContractPhotosPreview.textContent =
+  Array.isArray(prefill.contractPhotoUrls) && prefill.contractPhotoUrls.length
+    ? `已存在：${prefill.contractPhotoUrls.length} 張`
+    : '';
 }
 
 function closeConsignorModal() {
@@ -1523,6 +1555,7 @@ function renderConsignorStatus(consignor) {
     <div class="muted">Email：${escapeHtml(consignor.email || '')}</div>
     <div class="muted">匯款資料：${escapeHtml(consignor.bankCode || '')} ${escapeHtml(consignor.bankName || '')} / ${escapeHtml(consignor.accountLast5 || '')}</div>
     <div class="muted">身分證圖：${consignor.idFrontUrl ? '正面已上傳' : '正面未上傳'}｜${consignor.idBackUrl ? '反面已上傳' : '反面未上傳'}</div>
+<div class="muted">合約照片：${Array.isArray(consignor.contractPhotoUrls) && consignor.contractPhotoUrls.length ? `已上傳 ${consignor.contractPhotoUrls.length} 張` : '未上傳'}</div>
   `;
   el.btnEditConsignor.classList.remove('hidden');
 }
@@ -1582,6 +1615,18 @@ if (!resp.ok || !data.ok) {
   return data.url || '';
 }
 
+    async function uploadMultipleImages(fileList) {
+  const files = Array.from(fileList || []).filter(Boolean);
+  const urls = [];
+
+  for (const file of files) {
+    const url = await uploadSingleImage(file);
+    if (url) urls.push(url);
+  }
+
+  return urls;
+}
+
 async function saveConsignor() {
   if (!state.selectedLineMember?.recordId) {
     showError(el.consignorModalError, '請先查詢並選擇會員');
@@ -1602,9 +1647,12 @@ async function saveConsignor() {
     accountName: el.consignorAccountName.value.trim(),
     accountNo: el.consignorAccountNo.value.trim(),
     accountLast5: el.consignorAccountNo.value.trim().slice(-5),
-    note: el.consignorNote.value.trim(),
-    idFrontUrl: state.selectedConsignor?.idFrontUrl || '',
-    idBackUrl: state.selectedConsignor?.idBackUrl || ''
+note: el.consignorNote.value.trim(),
+idFrontUrl: state.selectedConsignor?.idFrontUrl || '',
+idBackUrl: state.selectedConsignor?.idBackUrl || '',
+contractPhotoUrls: Array.isArray(state.selectedConsignor?.contractPhotoUrls)
+  ? [...state.selectedConsignor.contractPhotoUrls]
+  : []
   };
 
   if (!payload.name) {
