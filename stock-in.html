@@ -586,9 +586,16 @@
         </div>
 
         <div id="consignorField" class="field span-4 hidden">
-          <label for="consignor">寄賣人</label>
-          <input id="consignor" type="text" placeholder="請由上方查詢會員後帶入" />
-        </div>
+  <label for="consignor">寄賣人</label>
+  <input id="consignor" type="text" placeholder="請由上方查詢會員後帶入" />
+</div>
+
+<div id="liveScreenshotField" class="field span-4 hidden">
+  <label for="liveScreenshot">直播截圖</label>
+  <input id="liveScreenshot" type="file" accept="image/*" />
+  <div class="muted" style="margin-top:6px;">寄賣模式可上傳一張直播截圖</div>
+  <div id="liveScreenshotPreview" class="muted" style="margin-top:6px;"></div>
+</div>
 
         <div class="field span-4">
           <label for="stockInDate">入庫日期</label>
@@ -727,11 +734,18 @@
       </div>
 
       <div class="field span-6">
-        <label for="consignorIdBack">身分證反面</label>
-        <input id="consignorIdBack" type="file" accept="image/*" />
-        <div class="muted" style="margin-top:6px;">可直接選圖，下一步再補貼上功能。</div>
-        <div id="consignorIdBackPreview" class="muted" style="margin-top:6px;"></div>
-      </div>
+  <label for="consignorIdBack">身分證反面</label>
+  <input id="consignorIdBack" type="file" accept="image/*" />
+  <div class="muted" style="margin-top:6px;">可直接選圖，下一步再補貼上功能。</div>
+  <div id="consignorIdBackPreview" class="muted" style="margin-top:6px;"></div>
+</div>
+
+<div class="field span-12">
+  <label for="consignorContractPhotos">合約照片</label>
+  <input id="consignorContractPhotos" type="file" accept="image/*" multiple />
+  <div class="muted" style="margin-top:6px;">可一次選多張圖片</div>
+  <div id="consignorContractPhotosPreview" class="muted" style="margin-top:6px;"></div>
+</div>
     </div>
 
     <div class="actions" style="margin-top:18px;">
@@ -1190,7 +1204,7 @@ function buildPayload(row) {
   };
 }
 
-    function excelEscape(value) {
+  function excelEscape(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -1510,7 +1524,7 @@ async function pickMember(member) {
       }).join('');
     }
 
-    function openConsignorModal(prefill = {}) {
+function openConsignorModal(prefill = {}) {
   el.consignorModal.classList.remove('hidden');
   showError(el.consignorModalError, '');
 
@@ -1526,10 +1540,10 @@ async function pickMember(member) {
 
   el.consignorIdFrontPreview.textContent = prefill.idFrontUrl ? `已存在：${prefill.idFrontUrl}` : '';
   el.consignorIdBackPreview.textContent = prefill.idBackUrl ? `已存在：${prefill.idBackUrl}` : '';
-      el.consignorContractPhotosPreview.textContent =
-  Array.isArray(prefill.contractPhotoUrls) && prefill.contractPhotoUrls.length
-    ? `已存在：${prefill.contractPhotoUrls.length} 張`
-    : '';
+  el.consignorContractPhotosPreview.textContent =
+    Array.isArray(prefill.contractPhotoUrls) && prefill.contractPhotoUrls.length
+      ? `已存在：${prefill.contractPhotoUrls.length} 張`
+      : '';
 }
 
 function closeConsignorModal() {
@@ -1555,7 +1569,7 @@ function renderConsignorStatus(consignor) {
     <div class="muted">Email：${escapeHtml(consignor.email || '')}</div>
     <div class="muted">匯款資料：${escapeHtml(consignor.bankCode || '')} ${escapeHtml(consignor.bankName || '')} / ${escapeHtml(consignor.accountLast5 || '')}</div>
     <div class="muted">身分證圖：${consignor.idFrontUrl ? '正面已上傳' : '正面未上傳'}｜${consignor.idBackUrl ? '反面已上傳' : '反面未上傳'}</div>
-<div class="muted">合約照片：${Array.isArray(consignor.contractPhotoUrls) && consignor.contractPhotoUrls.length ? `已上傳 ${consignor.contractPhotoUrls.length} 張` : '未上傳'}</div>
+    <div class="muted">合約照片：${Array.isArray(consignor.contractPhotoUrls) && consignor.contractPhotoUrls.length ? `已上傳 ${consignor.contractPhotoUrls.length} 張` : '未上傳'}</div>
   `;
   el.btnEditConsignor.classList.remove('hidden');
 }
@@ -1627,6 +1641,18 @@ if (!resp.ok || !data.ok) {
   return urls;
 }
 
+    async function uploadMultipleImages(fileList) {
+  const files = Array.from(fileList || []).filter(Boolean);
+  const urls = [];
+
+  for (const file of files) {
+    const url = await uploadSingleImage(file);
+    if (url) urls.push(url);
+  }
+
+  return urls;
+}
+
 async function saveConsignor() {
   if (!state.selectedLineMember?.recordId) {
     showError(el.consignorModalError, '請先查詢並選擇會員');
@@ -1647,12 +1673,12 @@ async function saveConsignor() {
     accountName: el.consignorAccountName.value.trim(),
     accountNo: el.consignorAccountNo.value.trim(),
     accountLast5: el.consignorAccountNo.value.trim().slice(-5),
-note: el.consignorNote.value.trim(),
-idFrontUrl: state.selectedConsignor?.idFrontUrl || '',
-idBackUrl: state.selectedConsignor?.idBackUrl || '',
-contractPhotoUrls: Array.isArray(state.selectedConsignor?.contractPhotoUrls)
-  ? [...state.selectedConsignor.contractPhotoUrls]
-  : []
+    note: el.consignorNote.value.trim(),
+    idFrontUrl: state.selectedConsignor?.idFrontUrl || '',
+    idBackUrl: state.selectedConsignor?.idBackUrl || '',
+    contractPhotoUrls: Array.isArray(state.selectedConsignor?.contractPhotoUrls)
+      ? [...state.selectedConsignor.contractPhotoUrls]
+      : []
   };
 
   if (!payload.name) {
@@ -1671,6 +1697,11 @@ contractPhotoUrls: Array.isArray(state.selectedConsignor?.contractPhotoUrls)
       payload.idBackUrl = await uploadSingleImage(el.consignorIdBack.files[0]);
     }
 
+    const newContractUrls = await uploadMultipleImages(el.consignorContractPhotos.files);
+    if (newContractUrls.length) {
+      payload.contractPhotoUrls = [...payload.contractPhotoUrls, ...newContractUrls];
+    }
+
     const resp = await fetch(CONFIG.consignorUpsertUrl, {
       method: 'POST',
       headers: CONFIG.requestHeaders,
@@ -1678,9 +1709,9 @@ contractPhotoUrls: Array.isArray(state.selectedConsignor?.contractPhotoUrls)
     });
 
     const data = await resp.json().catch(() => ({}));
-if (!resp.ok || !data.ok) {
-  throw new Error(data.detail || data.error || `寄賣人資料儲存失敗：HTTP ${resp.status}`);
-}
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.detail || data.error || `寄賣人資料儲存失敗：HTTP ${resp.status}`);
+    }
 
     state.selectedConsignor = data.consignor || null;
     state.selectedConsignorRecordId = data.consignor?.recordId || '';
