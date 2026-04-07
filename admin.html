@@ -2062,15 +2062,21 @@ ${renderTailInfoBlock(f)}
 <!-- ★ 新增結束 -->
 
         <div class="row mt-2">
-          <div>
-            <label>物流單號</label>
-            <input id="d_ship_tracking" value="${f.ship_tracking || f.tracking_no || ''}">
-          </div>
-          <div>
-            <label>運費 TWD</label>
-            <input id="d_ship_fee" type="number" step="1" value="${(f.ship_fee ?? f.shipping_fee ?? '')}">
-          </div>
-        </div>
+  <div>
+    <label>物流單號</label>
+    <input id="d_ship_tracking" value="${f.ship_tracking || f.tracking_no || ''}">
+
+    <label class="label-inline mt-2">
+      <input id="d_consign_only" type="checkbox" ${f['寄賣專用欄位'] ? 'checked' : ''}>
+      <span>寄賣專用欄位</span>
+    </label>
+  </div>
+
+  <div>
+    <label>運費 TWD</label>
+    <input id="d_ship_fee" type="number" step="1" value="${(f.ship_fee ?? f.shipping_fee ?? '')}">
+  </div>
+</div>
 
         <label class="mt-2">出貨時間</label>
 <div class="ro-field ${shipAtText ? '' : 'ro-empty'}" id="d_ship_at_ro">${shipAtText || '—'}</div>
@@ -2534,10 +2540,11 @@ async function saveDetail(opts = {}){
   const fields = {};
 
   fields['賣貨便名稱'] = $('#d_vendor_name') ? $('#d_vendor_name').value || '' : '';
-  fields['取貨登記'] = $('#d_pickup_reg') ? ($('#d_pickup_reg').value || '').trim() : '';
+fields['取貨登記'] = $('#d_pickup_reg') ? ($('#d_pickup_reg').value || '').trim() : '';
+fields['寄賣專用欄位'] = $('#d_consign_only') ? $('#d_consign_only').checked : false;
 
-  const tracking = $('#d_ship_tracking').value.trim();
-  fields.tracking_no = tracking || '';
+const tracking = $('#d_ship_tracking').value.trim();
+fields.tracking_no = tracking || '';
 
   const fee = $('#d_ship_fee').value.trim();
   fields.shipping_fee = fee ? Number(fee) : null;
@@ -2693,6 +2700,10 @@ async function saveAndShipAndLine() {
 async function confirmPay(mode){
   if (!currentRecord) return;
   const msgEl = $('#detailMsg');
+
+  const ok = await saveDetail({ skipReload: true });
+  if (!ok) return;
+
   const f = currentRecord.fields || currentRecord || {};
   const orderId = f.order_id;
   if (!orderId){
@@ -2760,12 +2771,14 @@ async function depositReceivedAndNotify() {
 
   await confirmPay('ok');
 }
- /* ===== 面交付現：完成收款（已收款 + 出貨完成） ===== */
 async function markMeetupCashDone(){
   if (!currentRecord) {
     alert('請先在左邊選一筆訂單');
     return;
   }
+
+  const ok = await saveDetail({ skipReload: true });
+  if (!ok) return;
 
   const f = currentRecord.fields || currentRecord || {};
   const pm = String(f.payment_method || '');
