@@ -222,13 +222,16 @@
 <header>
   <h1>庫存查詢系統 <small style="font-size: 12px; color: var(--text-muted); font-weight: normal;"></small></h1>
 
-  <!-- ✅ 已移除 API Base 欄位：固定打 https://api.murain.tw -->
-  <div class="row">
-    <input id="op" type="password" style="flex: 1; min-width: 150px" placeholder="OP_KEY (網頁密碼)" />
-    <input id="q" type="text" style="flex: 2; min-width: 200px" placeholder="搜尋 SKU / 關鍵字（至少 2 碼，例如 A0、A08）" />
-    <button id="btnSearch">搜尋</button>
-    <button id="btnAll" class="secondary">全部庫存</button>
-  </div>
+<div class="row">
+  <input id="op" type="password" style="flex:1; min-width:150px" placeholder="OP_KEY (網頁密碼)" />
+  <input id="costPw" type="password" style="flex:1; min-width:150px" placeholder="成本查看密碼" />
+  <input id="q" type="text" style="flex:2; min-width:200px" placeholder="搜尋 SKU / 關鍵字（至少 2 碼，例如 A0、A08）" />
+  <select id="consignor" style="flex:1; min-width:180px">
+    <option value="">全部寄賣人</option>
+  </select>
+  <button id="btnSearch">搜尋</button>
+  <button id="btnAll" class="secondary">全部庫存</button>
+</div>
 
   <div class="row" style="margin-top: 16px; justify-content: space-between;">
     <div style="display: flex; gap: 20px;">
@@ -255,16 +258,18 @@
   <div class="card" style="padding: 0; overflow: hidden;">
     <div class="table-container">
       <table>
-        <thead>
-          <tr>
-            <th style="width:180px">SKU 商品編號</th>
-<th>商品名稱</th>
-<th style="width:160px">庫存位置</th>
-<th class="right" style="width:140px">在庫數量</th>
-<th class="right" style="width:120px">建議售價</th>
-<th style="width:100px; text-align: center;">上架狀態</th>
-          </tr>
-        </thead>
+<thead>
+  <tr>
+    <th style="width:180px">SKU 商品編號</th>
+    <th>商品名稱</th>
+    <th style="width:140px">寄賣人</th>
+    <th style="width:160px">庫存位置</th>
+    <th class="right" style="width:140px">在庫數量</th>
+    <th class="right" style="width:120px">成本</th>
+    <th class="right" style="width:120px">建議售價</th>
+    <th style="width:100px; text-align: center;">上架狀態</th>
+  </tr>
+</thead>
         <tbody id="tb"></tbody>
       </table>
     </div>
@@ -277,9 +282,9 @@
 
   const $ = (id)=>document.getElementById(id);
 
-  const opEl = $("op"), qEl = $("q");
-  const onlyStockEl = $("onlyStock"), limitEl = $("limit");
-  const tb = $("tb"), msg = $("msg"), stat = $("stat");
+const opEl = $("op"), costPwEl = $("costPw"), qEl = $("q"), consignorEl = $("consignor");
+const onlyStockEl = $("onlyStock"), limitEl = $("limit");
+const tb = $("tb"), msg = $("msg"), stat = $("stat");
 
   opEl.value = localStorage.getItem("stock_op") || "";
   qEl.value  = localStorage.getItem("stock_q")  || "";
@@ -318,6 +323,22 @@
     return String(s).replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
   }
 
+  async function loadConsignors(){
+  const api = normApi();
+  const op = normOp();
+  if (!op) return;
+
+  const r = await fetch(`${api}/op/stock/consignors?op_key=${encodeURIComponent(op)}`, { method:"GET" });
+  const data = await r.json().catch(()=>({}));
+
+  if (!r.ok || !data.ok) return;
+
+  const items = Array.isArray(data.items) ? data.items : [];
+  consignorEl.innerHTML =
+    `<option value="">全部寄賣人</option>` +
+    items.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+}
+
   async function fetchList(q){
     const api = normApi();
     const op  = normOp();
@@ -326,9 +347,14 @@
     const in_stock = onlyStockEl.checked ? "1" : "0";
     const limit = String(limitEl.value || "2000");
 
-    const url =
-      `${api}/op/stock/search?op_key=${encodeURIComponent(op)}&in_stock=${in_stock}&limit=${encodeURIComponent(limit)}`
-      + (q ? `&q=${encodeURIComponent(q)}` : "");
+const cost_key = String(costPwEl?.value || "").trim();
+const consignor = String(consignorEl?.value || "").trim();
+
+const url =
+  `${api}/op/stock/search?op_key=${encodeURIComponent(op)}&in_stock=${in_stock}&limit=${encodeURIComponent(limit)}`
+  + (q ? `&q=${encodeURIComponent(q)}` : "")
+  + (consignor ? `&consignor=${encodeURIComponent(consignor)}` : "")
+  + (cost_key ? `&cost_key=${encodeURIComponent(cost_key)}` : "");
 
     const r = await fetch(url, { method:"GET" });
     const data = await r.json().catch(()=> ({}));
@@ -340,16 +366,20 @@
   }
 
   function render(){
-    tb.innerHTML = rows.map(r=>`
-      <tr>
-        <td><code style="color:var(--primary); font-weight:600">${esc(r.sku||"-")}</code></td>
-<td style="font-weight:500">${esc(r.name||"-")}</td>
-<td>${esc(r.location || "-")}</td>
-<td class="right">${badgeStock(r.stock)}</td>
-        <td class="right" style="font-family: monospace; font-size: 15px;">${esc(money(r.price))}</td>
-        <td style="text-align: center;">${r.active ? `<span class="badge ok">銷售中</span>` : `<span class="badge">已下架</span>`}</td>
-      </tr>
-    `).join("");
+tb.innerHTML = rows.map(r=>`
+  <tr>
+    <td><code style="color:var(--primary); font-weight:600">${esc(r.sku||"-")}</code></td>
+    <td style="font-weight:500">${esc(r.name||"-")}</td>
+    <td>${esc(r.consignor_name || "-")}</td>
+    <td>${esc(r.location || "-")}</td>
+    <td class="right">${badgeStock(r.stock)}</td>
+    <td class="right" style="font-family: monospace; font-size: 15px;">
+      ${r.cost == null ? "🔒" : esc(money(r.cost))}
+    </td>
+    <td class="right" style="font-family: monospace; font-size: 15px;">${esc(money(r.price))}</td>
+    <td style="text-align: center;">${r.active ? `<span class="badge ok">銷售中</span>` : `<span class="badge">已下架</span>`}</td>
+  </tr>
+`).join("");
     stat.textContent = `顯示：${rows.length} 筆資料`;
   }
 
@@ -392,39 +422,69 @@
     if (q.length >= 2) run(q).catch(()=>{});
     else run("").catch(()=>{});
   });
+  consignorEl.addEventListener("change", ()=> {
+  const q = (qEl.value || "").trim();
+  if (q.length >= 2) run(q).catch(()=>{});
+  else run("").catch(()=>{});
+});
 
-  // CSV 匯出（保留 BOM，Excel 不亂碼）
-  $("btnCSV").addEventListener("click", ()=>{
-    if (!rows.length) return setMsg("err", "目前沒有資料可供匯出");
-    const lines = [
-      ["sku","name","stock","price","active"].join(","),
-      ...rows.map(r=>[
-        `"${String(r.sku||"").replace(/"/g,'""')}"`,
-        `"${String(r.name||"").replace(/"/g,'""')}"`,
-        String(Number(r.stock||0)||0),
-        String(Number(r.price||0)||0),
-        r.active ? "1" : "0"
-      ].join(","))
-    ].join("\n");
+opEl.addEventListener("change", ()=> {
+  loadConsignors().catch(()=>{});
+});
 
-    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), lines], {type:"text/csv;charset=utf-8"});
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
+function safeFileName(s){
+  return String(s || "").replace(/[\\/:*?"<>|]/g, "_").trim();
+}
+
+$("btnCSV").addEventListener("click", ()=>{
+  if (!rows.length) return setMsg("err", "目前沒有資料可供匯出");
+
+  const currentConsignor = String(consignorEl?.value || "").trim();
+
+  const headers = ["寄賣人","SKU","商品名稱","庫存位置","在庫數量","成本","建議售價","上架狀態"];
+  const lines = [
+    headers.join(","),
+    ...rows.map(r => [
+      `"${String(r.consignor_name || "").replace(/"/g,'""')}"`,
+      `"${String(r.sku || "").replace(/"/g,'""')}"`,
+      `"${String(r.name || "").replace(/"/g,'""')}"`,
+      `"${String(r.location || "").replace(/"/g,'""')}"`,
+      String(Number(r.stock || 0) || 0),
+      r.cost == null ? "" : String(Number(r.cost || 0) || 0),
+      String(Number(r.price || 0) || 0),
+      r.active ? "銷售中" : "已下架"
+    ].join(","))
+  ].join("\n");
+
+  const blob = new Blob(
+    [new Uint8Array([0xEF, 0xBB, 0xBF]), lines],
+    { type: "text/csv;charset=utf-8" }
+  );
+
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+
+  if (currentConsignor) {
+    a.download = `寄賣清冊_${safeFileName(currentConsignor)}_${new Date().toISOString().slice(0,10)}.csv`;
+  } else {
     a.download = `庫存匯出_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-    setMsg("good", `匯出成功：已下載 ${rows.length} 筆資料至 CSV。`);
-  });
+  }
 
-  // 初始：不強制自動載入（避免手機一開就大量查詢）
-  (async ()=>{
-    try{
-      if (!opEl.value.trim()) throw new Error("need op_key");
-      setMsg("muted", "已記住 OP_KEY，可直接按「全部庫存」或輸入關鍵字搜尋。");
-    } catch {
-      setMsg("muted", "請輸入 OP_KEY（網頁密碼），再按「全部庫存」或輸入關鍵字搜尋。");
-    }
-  })();
+  a.click();
+  URL.revokeObjectURL(a.href);
+
+  setMsg("good", `匯出成功：已下載 ${rows.length} 筆資料。`);
+});
+
+(async ()=>{
+  try{
+    if (!opEl.value.trim()) throw new Error("need op_key");
+    await loadConsignors().catch(()=>{});
+    setMsg("muted", "已記住 OP_KEY，可直接按「全部庫存」或輸入關鍵字搜尋。");
+  } catch {
+    setMsg("muted", "請輸入 OP_KEY（網頁密碼），再按「全部庫存」或輸入關鍵字搜尋。");
+  }
+})();
 </script>
 </body>
 </html>
