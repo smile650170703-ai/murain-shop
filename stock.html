@@ -146,26 +146,32 @@
     .muted { color: var(--text-muted); font-size: 13px; }
     .small { font-size: 12px; }
 
-    .table-container { overflow-x: auto; }
+.table-container {
+  overflow: auto;
+  max-height: calc(100vh - 280px);
+}
 
-    table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
-      margin-top: 10px;
-    }
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin-top: 10px;
+}
 
-    th {
-      background: rgba(255,255,255,0.02);
-      color: var(--text-muted);
-      font-weight: 600;
-      text-transform: uppercase;
-      font-size: 12px;
-      letter-spacing: 1px;
-      padding: 14px 12px;
-      border-bottom: 2px solid var(--border-color);
-      text-align: left;
-    }
+th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: #16181d;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 1px;
+  padding: 14px 12px;
+  border-bottom: 2px solid var(--border-color);
+  text-align: left;
+}
 
     td {
       padding: 14px 12px;
@@ -245,10 +251,11 @@
         </select>
       </label>
     </div>
-    <div style="display: flex; align-items: center; gap: 12px;">
-      <span id="stat" class="muted"></span>
-      <button id="btnCSV" class="secondary" style="padding: 6px 12px; font-size: 12px;">匯出 CSV</button>
-    </div>
+ <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end;">
+  <span id="stockTotal" class="muted"></span>
+  <span id="stat" class="muted"></span>
+  <button id="btnCSV" class="secondary" style="padding: 6px 12px; font-size: 12px;">匯出 CSV</button>
+</div>
   </div>
 </header>
 
@@ -287,7 +294,7 @@
 
 const opEl = $("op"), costPwEl = $("costPw"), qEl = $("q"), consignorEl = $("consignor");
 const onlyStockEl = $("onlyStock"), limitEl = $("limit");
-const tb = $("tb"), msg = $("msg"), stat = $("stat");
+const tb = $("tb"), msg = $("msg"), stat = $("stat"), stockTotalEl = $("stockTotal");
 
   opEl.value = localStorage.getItem("stock_op") || "";
   qEl.value  = localStorage.getItem("stock_q")  || "";
@@ -321,6 +328,14 @@ const tb = $("tb"), msg = $("msg"), stat = $("stat");
     if (!Number.isFinite(v)) return "-";
     return "NT$ " + Math.round(v).toLocaleString("zh-TW");
   }
+
+  function calcTotalInventoryAmount(list){
+  return (Array.isArray(list) ? list : []).reduce((sum, r) => {
+    const stock = Number(r?.stock || 0) || 0;
+    const price = Number(r?.price || 0) || 0;
+    return sum + (stock * price);
+  }, 0);
+}
 
   function esc(s){
     return String(s).replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
@@ -378,15 +393,26 @@ function render(){
       <td>${esc(r.location || "-")}</td>
       <td class="right">${badgeStock(r.stock)}</td>
       <td class="right" style="font-family: monospace; font-size: 15px;">
-        ${r.cost == null ? "🔒" : esc(money(r.cost))}
-      </td>
+  ${(String(costPwEl?.value || "").trim() && r.cost != null) ? esc(money(r.cost)) : "🔒"}
+</td>
       <td class="right" style="font-family: monospace; font-size: 15px;">${esc(money(r.start_price))}</td>
       <td class="right" style="font-family: monospace; font-size: 15px;">${esc(money(r.bid_step))}</td>
       <td class="right" style="font-family: monospace; font-size: 15px;">${esc(money(r.price))}</td>
       <td style="text-align: center;">${r.active ? `<span class="badge ok">銷售中</span>` : `<span class="badge">已下架</span>`}</td>
     </tr>
   `).join("");
+
   stat.textContent = `顯示：${rows.length} 筆資料`;
+
+const hasCostPw = String(costPwEl?.value || "").trim().length > 0;
+const canSeeTotal = hasCostPw && Array.isArray(rows) && rows.some(r => r.cost !== null);
+
+if (canSeeTotal) {
+  const totalAmount = calcTotalInventoryAmount(rows);
+  stockTotalEl.textContent = `總庫存金額：${money(totalAmount)}`;
+} else {
+  stockTotalEl.textContent = "總庫存金額：🔒";
+}
 }
 
   async function run(q){
@@ -459,6 +485,26 @@ opEl.addEventListener("change", ()=> {
 qEl.addEventListener("input", ()=> {
   const q = (qEl.value || "").trim();
   if (q.length > 0) consignorEl.value = "";
+});
+
+costPwEl.addEventListener("input", ()=> {
+  rows = rows.map(r => ({ ...r, cost: null }));
+  render();
+});
+
+costPwEl.addEventListener("change", ()=> {
+  const q = (qEl.value || "").trim();
+  const consignor = String(consignorEl?.value || "").trim();
+
+  if (q.length >= 2) {
+    run(q).catch(()=>{});
+  } else if (consignor) {
+    run("").catch(()=>{});
+  } else if (rows.length) {
+    run("").catch(()=>{});
+  } else {
+    render();
+  }
 });
 
 function safeFileName(s){
