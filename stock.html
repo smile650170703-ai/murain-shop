@@ -273,7 +273,11 @@ th {
         </select>
       </label>
     </div>
- <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end;">
+<div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: flex-end;">
+  <label class="muted" style="gap:8px;">
+    寄賣出庫日期：
+    <input id="consignOutDate" type="date" style="padding:6px 10px; min-width:160px;" />
+  </label>
   <span id="stockTotal" class="total-pill is-locked">總庫存成本：🔒</span>
   <span id="stat" class="muted"></span>
   <button id="btnCSV" class="secondary" style="padding: 6px 12px; font-size: 12px;">匯出 CSV</button>
@@ -300,6 +304,7 @@ th {
     <th class="right" style="width:120px">一標多少</th>
     <th class="right" style="width:120px">建議售價</th>
     <th style="width:100px; text-align: center;">上架狀態</th>
+<th style="width:130px; text-align: center;">寄賣出庫</th>
   </tr>
 </thead>
         <tbody id="tb"></tbody>
@@ -315,7 +320,7 @@ th {
   const $ = (id)=>document.getElementById(id);
 
 const opEl = $("op"), costPwEl = $("costPw"), qEl = $("q"), consignorEl = $("consignor");
-const onlyStockEl = $("onlyStock"), limitEl = $("limit");
+const onlyStockEl = $("onlyStock"), limitEl = $("limit"), consignOutDateEl = $("consignOutDate");
 const tb = $("tb"), msg = $("msg"), stat = $("stat"), stockTotalEl = $("stockTotal");
 
   opEl.value = localStorage.getItem("stock_op") || "";
@@ -357,6 +362,18 @@ const tb = $("tb"), msg = $("msg"), stat = $("stat"), stockTotalEl = $("stockTot
     const cost = Number(r?.cost || 0) || 0;
     return sum + (stock * cost);
   }, 0);
+}
+
+  function todayLocal(){
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function canUseConsignOut(){
+  return String(costPwEl?.value || "").trim().length > 0;
 }
 
   function esc(s){
@@ -406,6 +423,8 @@ const url =
   }
 
 function render(){
+  const allowConsignOut = canUseConsignOut();
+
   tb.innerHTML = rows.map(r=>`
     <tr>
       <td><code style="color:var(--primary); font-weight:600">${esc(r.sku||"-")}</code></td>
@@ -421,22 +440,27 @@ function render(){
       <td class="right" style="font-family: monospace; font-size: 15px;">${esc(money(r.bid_step))}</td>
       <td class="right" style="font-family: monospace; font-size: 15px;">${esc(money(r.price))}</td>
       <td style="text-align: center;">${r.active ? `<span class="badge ok">銷售中</span>` : `<span class="badge">已下架</span>`}</td>
+      <td style="text-align:center;">
+        ${(String(r.consignor_name || "").trim() && (Number(r.stock || 0) > 0))
+          ? `<button class="secondary btn-consign-out" data-sku="${esc(r.sku || "")}" ${allowConsignOut ? "" : "disabled"} style="padding:6px 10px; font-size:12px;">寄賣出庫</button>`
+          : `<span class="muted small">-</span>`}
+      </td>
     </tr>
   `).join("");
 
   stat.textContent = `顯示：${rows.length} 筆資料`;
 
-const hasCostPw = String(costPwEl?.value || "").trim().length > 0;
-const canSeeTotal = hasCostPw && Array.isArray(rows) && rows.some(r => r.cost !== null);
+  const hasCostPw = String(costPwEl?.value || "").trim().length > 0;
+  const canSeeTotal = hasCostPw && Array.isArray(rows) && rows.some(r => r.cost !== null);
 
-if (canSeeTotal) {
-  const totalAmount = calcTotalInventoryAmount(rows);
-  stockTotalEl.textContent = `總庫存成本：${money(totalAmount)}`;
-  stockTotalEl.classList.remove("is-locked");
-} else {
-  stockTotalEl.textContent = "總庫存成本：🔒";
-  stockTotalEl.classList.add("is-locked");
-}
+  if (canSeeTotal) {
+    const totalAmount = calcTotalInventoryAmount(rows);
+    stockTotalEl.textContent = `總庫存成本：${money(totalAmount)}`;
+    stockTotalEl.classList.remove("is-locked");
+  } else {
+    stockTotalEl.textContent = "總庫存成本：🔒";
+    stockTotalEl.classList.add("is-locked");
+  }
 }
 
   async function run(q){
@@ -449,6 +473,36 @@ if (canSeeTotal) {
     render();
     setMsg("good", `查詢成功：共 ${data.count} 筆記錄 (最後更新時間：${data.updated_at || "-"})`);
   }
+
+  async function consignOutSku(sku){
+  const api = normApi();
+  const op = normOp();
+  const cost_key = String(costPwEl?.value || "").trim();
+  const out_date = String(consignOutDateEl?.value || "").trim() || todayLocal();
+
+  if (!op) throw new Error("請先輸入 OP_KEY（網頁密碼）");
+  if (!cost_key) throw new Error("請先輸入成本查看密碼");
+  if (!sku) throw new Error("缺少 SKU");
+
+  const r = await fetch(`${api}/op/stock/consign-out`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      op_key: op,
+      cost_key,
+      sku,
+      out_date
+    })
+  });
+
+  const data = await r.json().catch(()=>({}));
+  if (!r.ok || !data.ok) {
+    const err = data?.error ? `${data.error}` : `HTTP ${r.status}`;
+    throw new Error(err + (data?.detail ? `\n${data.detail}` : ""));
+  }
+
+  return data;
+}
 
 $("btnSearch").addEventListener("click", async ()=>{
   try{
@@ -531,6 +585,36 @@ costPwEl.addEventListener("change", ()=> {
   }
 });
 
+  tb.addEventListener("click", async (e) => {
+  const btn = e.target.closest(".btn-consign-out");
+  if (!btn) return;
+
+  const sku = String(btn.dataset.sku || "").trim();
+  const outDate = String(consignOutDateEl?.value || "").trim() || todayLocal();
+
+  if (!sku) return;
+  if (!canUseConsignOut()) {
+    return setMsg("err", "請先輸入成本查看密碼，才能使用寄賣出庫功能");
+  }
+
+  if (!confirm(`確認將 SKU：${sku} 做寄賣出庫？\n日期：${outDate}\n\n送出後會把該商品庫存改為 0。`)) {
+    return;
+  }
+
+  try {
+    btn.disabled = true;
+    await consignOutSku(sku);
+    setMsg("good", `寄賣出庫成功：${sku}，日期 ${outDate}`);
+    const q = (qEl.value || "").trim();
+    if (q.length >= 2) await run(q);
+    else await run("");
+  } catch (e2) {
+    setMsg("err", String(e2?.message || e2));
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 function safeFileName(s){
   return String(s || "").replace(/[\\/:*?"<>|]/g, "_").trim();
 }
@@ -575,7 +659,7 @@ const lines = [
 
   setMsg("good", `匯出成功：已下載 ${rows.length} 筆資料。`);
 });
-
+consignOutDateEl.value = todayLocal();
 (async ()=>{
   try{
     if (!opEl.value.trim()) throw new Error("need op_key");
