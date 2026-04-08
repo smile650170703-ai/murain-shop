@@ -235,7 +235,7 @@
 
   <div class="row" style="margin-top: 16px; justify-content: space-between;">
     <div style="display: flex; gap: 20px;">
-      <label class="muted"><input id="onlyStock" type="checkbox" checked /> 只看庫存 &gt; 0</label>
+      <label class="muted"><input id="onlyStock" type="checkbox" /> 只看庫存 &gt; 0</label>
       <label class="muted">顯示上限：
         <select id="limit">
           <option value="500">500</option>
@@ -405,18 +405,20 @@ $("btnSearch").addEventListener("click", async ()=>{
     const q = (qEl.value || "").trim();
     const consignor = String(consignorEl?.value || "").trim();
 
-    // 有選寄賣人：允許不輸入條碼，直接查這位寄賣人的全部清單
-    if (consignor) {
-      await run(q.length >= 2 ? q : "");
+    // 有輸入條碼 / 關鍵字：自動切回全部寄賣人
+    if (q.length >= 2) {
+      consignorEl.value = "";
+      await run(q);
       return;
     }
 
-    // 沒選寄賣人：才維持原本至少 2 碼的限制
-    if (q.length < 2) {
-      return setMsg("err", "請輸入至少 2 碼，或先選擇寄賣人");
+    // 沒輸入條碼，但有選寄賣人：查這位寄賣人的全部清單
+    if (consignor) {
+      await run("");
+      return;
     }
 
-    await run(q);
+    return setMsg("err", "請輸入至少 2 碼，或先選擇寄賣人");
   }catch(e){
     setMsg("err", String(e?.message || e));
     stat.textContent = "";
@@ -439,14 +441,22 @@ $("btnSearch").addEventListener("click", async ()=>{
     if (q.length >= 2) run(q).catch(()=>{});
     else run("").catch(()=>{});
   });
-  consignorEl.addEventListener("change", ()=> {
-  const q = (qEl.value || "").trim();
-  if (q.length >= 2) run(q).catch(()=>{});
+ consignorEl.addEventListener("change", ()=> {
+  qEl.value = "";
+  localStorage.setItem("stock_q", "");
+
+  const consignor = String(consignorEl?.value || "").trim();
+  if (consignor) run("").catch(()=>{});
   else run("").catch(()=>{});
 });
 
 opEl.addEventListener("change", ()=> {
   loadConsignors().catch(()=>{});
+});
+
+qEl.addEventListener("input", ()=> {
+  const q = (qEl.value || "").trim();
+  if (q.length > 0) consignorEl.value = "";
 });
 
 function safeFileName(s){
