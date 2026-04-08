@@ -225,7 +225,7 @@
 <div class="row">
   <input id="op" type="password" style="flex:1; min-width:150px" placeholder="OP_KEY (網頁密碼)" />
   <input id="costPw" type="password" style="flex:1; min-width:150px" placeholder="成本查看密碼" />
-  <input id="q" type="text" style="flex:2; min-width:200px" placeholder="搜尋 SKU / 關鍵字（至少 2 碼，例如 A0、A08）" />
+  <input id="q" type="text" style="flex:2; min-width:200px" placeholder="可輸入 SKU / 關鍵字；若已選寄賣人可留空" />
   <select id="consignor" style="flex:1; min-width:180px">
     <option value="">全部寄賣人</option>
   </select>
@@ -263,9 +263,10 @@
     <th style="width:180px">SKU 商品編號</th>
     <th>商品名稱</th>
     <th style="width:140px">寄賣人</th>
-    <th style="width:160px">庫存位置</th>
-    <th class="right" style="width:140px">在庫數量</th>
-    <th class="right" style="width:120px">成本</th>
+    <th style="width:140px">品牌</th>
+    <th class="right" style="width:120px">在庫數量</th>
+    <th class="right" style="width:120px">起標價格</th>
+    <th class="right" style="width:120px">一標多少</th>
     <th class="right" style="width:120px">建議售價</th>
     <th style="width:100px; text-align: center;">上架狀態</th>
   </tr>
@@ -365,23 +366,22 @@ const url =
     return data;
   }
 
-  function render(){
-tb.innerHTML = rows.map(r=>`
-  <tr>
-    <td><code style="color:var(--primary); font-weight:600">${esc(r.sku||"-")}</code></td>
-    <td style="font-weight:500">${esc(r.name||"-")}</td>
-    <td>${esc(r.consignor_name || "-")}</td>
-    <td>${esc(r.location || "-")}</td>
-    <td class="right">${badgeStock(r.stock)}</td>
-    <td class="right" style="font-family: monospace; font-size: 15px;">
-      ${r.cost == null ? "🔒" : esc(money(r.cost))}
-    </td>
-    <td class="right" style="font-family: monospace; font-size: 15px;">${esc(money(r.price))}</td>
-    <td style="text-align: center;">${r.active ? `<span class="badge ok">銷售中</span>` : `<span class="badge">已下架</span>`}</td>
-  </tr>
-`).join("");
-    stat.textContent = `顯示：${rows.length} 筆資料`;
-  }
+function render(){
+  tb.innerHTML = rows.map(r=>`
+    <tr>
+      <td><code style="color:var(--primary); font-weight:600">${esc(r.sku||"-")}</code></td>
+      <td style="font-weight:500">${esc(r.name||"-")}</td>
+      <td>${esc(r.consignor_name || "-")}</td>
+      <td>${esc(r.brand || "-")}</td>
+      <td class="right">${badgeStock(r.stock)}</td>
+      <td class="right" style="font-family: monospace; font-size: 15px;">${esc(money(r.start_price))}</td>
+      <td class="right" style="font-family: monospace; font-size: 15px;">${esc(money(r.bid_step))}</td>
+      <td class="right" style="font-family: monospace; font-size: 15px;">${esc(money(r.price))}</td>
+      <td style="text-align: center;">${r.active ? `<span class="badge ok">銷售中</span>` : `<span class="badge">已下架</span>`}</td>
+    </tr>
+  `).join("");
+  stat.textContent = `顯示：${rows.length} 筆資料`;
+}
 
   async function run(q){
     localStorage.setItem("stock_q", q || "");
@@ -394,17 +394,28 @@ tb.innerHTML = rows.map(r=>`
     setMsg("good", `查詢成功：共 ${data.count} 筆記錄 (最後更新時間：${data.updated_at || "-"})`);
   }
 
-  // ✅ 搜尋：至少 2 碼（支援 A08 這種短碼）
-  $("btnSearch").addEventListener("click", async ()=>{
-    try{
-      const q = (qEl.value || "").trim();
-      if (q.length < 2) return setMsg("err", "請輸入至少 2 碼再搜尋（例如 A0、A08）");
-      await run(q);
-    }catch(e){
-      setMsg("err", String(e?.message || e));
-      stat.textContent = "";
+$("btnSearch").addEventListener("click", async ()=>{
+  try{
+    const q = (qEl.value || "").trim();
+    const consignor = String(consignorEl?.value || "").trim();
+
+    // 有選寄賣人：允許不輸入條碼，直接查這位寄賣人的全部清單
+    if (consignor) {
+      await run(q.length >= 2 ? q : "");
+      return;
     }
-  });
+
+    // 沒選寄賣人：才維持原本至少 2 碼的限制
+    if (q.length < 2) {
+      return setMsg("err", "請輸入至少 2 碼，或先選擇寄賣人");
+    }
+
+    await run(q);
+  }catch(e){
+    setMsg("err", String(e?.message || e));
+    stat.textContent = "";
+  }
+});
 
   // ✅ 全部庫存（保留）
   $("btnAll").addEventListener("click", async ()=>{
@@ -441,20 +452,21 @@ $("btnCSV").addEventListener("click", ()=>{
 
   const currentConsignor = String(consignorEl?.value || "").trim();
 
-  const headers = ["寄賣人","SKU","商品名稱","庫存位置","在庫數量","成本","建議售價","上架狀態"];
-  const lines = [
-    headers.join(","),
-    ...rows.map(r => [
-      `"${String(r.consignor_name || "").replace(/"/g,'""')}"`,
-      `"${String(r.sku || "").replace(/"/g,'""')}"`,
-      `"${String(r.name || "").replace(/"/g,'""')}"`,
-      `"${String(r.location || "").replace(/"/g,'""')}"`,
-      String(Number(r.stock || 0) || 0),
-      r.cost == null ? "" : String(Number(r.cost || 0) || 0),
-      String(Number(r.price || 0) || 0),
-      r.active ? "銷售中" : "已下架"
-    ].join(","))
-  ].join("\n");
+  const headers = ["寄賣人","SKU","商品名稱","品牌","在庫數量","起標價格","一標多少","建議售價","上架狀態"];
+const lines = [
+  headers.join(","),
+  ...rows.map(r => [
+    `"${String(r.consignor_name || "").replace(/"/g,'""')}"`,
+    `"${String(r.sku || "").replace(/"/g,'""')}"`,
+    `"${String(r.name || "").replace(/"/g,'""')}"`,
+    `"${String(r.brand || "").replace(/"/g,'""')}"`,
+    String(Number(r.stock || 0) || 0),
+    String(Number(r.start_price || 0) || 0),
+    String(Number(r.bid_step || 0) || 0),
+    String(Number(r.price || 0) || 0),
+    r.active ? "銷售中" : "已下架"
+  ].join(","))
+].join("\n");
 
   const blob = new Blob(
     [new Uint8Array([0xEF, 0xBB, 0xBF]), lines],
