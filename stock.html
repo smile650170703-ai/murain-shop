@@ -243,6 +243,62 @@ th {
       input, select, button { width: 100%; }
       header { position: relative; }
     }
+    .toast-wrap{
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast{
+  min-width: 260px;
+  max-width: 360px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(212,175,55,.28);
+  background: linear-gradient(135deg, rgba(18,20,25,.98), rgba(34,28,16,.96));
+  color: #f3e2a0;
+  box-shadow: 0 12px 30px rgba(0,0,0,.35);
+  backdrop-filter: blur(10px);
+  transform: translateY(-8px);
+  opacity: 0;
+  transition: all .22s ease;
+  pointer-events: none;
+}
+
+.toast.show{
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.toast.success{
+  border-color: rgba(212,175,55,.35);
+  color: #f6df8b;
+}
+
+.toast.error{
+  border-color: rgba(248,113,113,.35);
+  color: #ffd2d2;
+  background: linear-gradient(135deg, rgba(35,18,18,.98), rgba(52,24,24,.96));
+}
+
+.toast .t-title{
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .4px;
+  margin-bottom: 4px;
+}
+
+.toast .t-text{
+  font-size: 13px;
+  line-height: 1.45;
+  color: inherit;
+  word-break: break-word;
+}
   </style>
 </head>
 <body>
@@ -332,6 +388,29 @@ const tb = $("tb"), msg = $("msg"), stat = $("stat"), stockTotalEl = $("stockTot
     msg.className = "card " + (type==="err" ? "err" : type==="good" ? "good" : "muted");
     msg.textContent = text;
   }
+
+  function showToast(type, title, text){
+  const wrap = $("toastWrap");
+  if (!wrap) return;
+
+  const el = document.createElement("div");
+  el.className = `toast ${type === "error" ? "error" : "success"}`;
+  el.innerHTML = `
+    <div class="t-title">${esc(title || "")}</div>
+    <div class="t-text">${esc(text || "")}</div>
+  `;
+
+  wrap.appendChild(el);
+
+  requestAnimationFrame(() => {
+    el.classList.add("show");
+  });
+
+  setTimeout(() => {
+    el.classList.remove("show");
+    setTimeout(() => el.remove(), 220);
+  }, 2200);
+}
 
   function normApi(){
     return DEFAULT_API;
@@ -565,6 +644,36 @@ qEl.addEventListener("input", ()=> {
   if (q.length > 0) consignorEl.value = "";
 });
 
+qEl.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  $("btnSearch").click();
+});
+
+consignorEl.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  $("btnSearch").click();
+});
+
+costPwEl.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  $("btnSearch").click();
+});
+
+opEl.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  $("btnSearch").click();
+});
+
+consignOutDateEl.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  $("btnSearch").click();
+});
+
 costPwEl.addEventListener("input", ()=> {
   rows = rows.map(r => ({ ...r, cost: null }));
   render();
@@ -585,7 +694,7 @@ costPwEl.addEventListener("change", ()=> {
   }
 });
 
-  tb.addEventListener("click", async (e) => {
+tb.addEventListener("click", async (e) => {
   const btn = e.target.closest(".btn-consign-out");
   if (!btn) return;
 
@@ -594,7 +703,9 @@ costPwEl.addEventListener("change", ()=> {
 
   if (!sku) return;
   if (!canUseConsignOut()) {
-    return setMsg("err", "請先輸入成本查看密碼，才能使用寄賣出庫功能");
+    setMsg("err", "請先輸入成本查看密碼，才能使用寄賣出庫功能");
+    showToast("error", "無法寄賣出庫", "請先輸入成本查看密碼");
+    return;
   }
 
   if (!confirm(`確認將 SKU：${sku} 做寄賣出庫？\n日期：${outDate}\n\n送出後會把該商品庫存改為 0。`)) {
@@ -603,13 +714,20 @@ costPwEl.addEventListener("change", ()=> {
 
   try {
     btn.disabled = true;
+    setMsg("muted", `寄賣出庫送出中：${sku}...`);
+
     await consignOutSku(sku);
-    setMsg("good", `寄賣出庫成功：${sku}，日期 ${outDate}`);
+
     const q = (qEl.value || "").trim();
     if (q.length >= 2) await run(q);
     else await run("");
+
+    setMsg("good", `✅ 寄賣出庫完成：${sku}，日期 ${outDate}`);
+    showToast("success", "寄賣出庫完成", `SKU：${sku}｜日期：${outDate}`);
   } catch (e2) {
-    setMsg("err", String(e2?.message || e2));
+    const errText = String(e2?.message || e2 || "未知錯誤");
+    setMsg("err", errText);
+    showToast("error", "寄賣出庫失敗", errText);
   } finally {
     btn.disabled = false;
   }
@@ -671,5 +789,6 @@ consignOutDateEl.value = todayLocal();
   }
 })();
 </script>
+<div id="toastWrap" class="toast-wrap"></div>
 </body>
 </html>
