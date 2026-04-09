@@ -315,10 +315,10 @@
       <div class="muted" style="margin:14px 0 8px;">購物車內容</div>
       <div id="cartItemsPanel"></div>
 
-      <details style="margin-top:12px;">
-        <summary class="muted" style="cursor:pointer;">查看原始 JSON</summary>
-        <textarea id="cartJsonView" style="width:100%; height:220px; padding:10px; margin-top:8px;"></textarea>
-      </details>
+      <details style="display:none;">
+  <summary class="muted" style="cursor:pointer;">查看原始 JSON</summary>
+  <textarea id="cartJsonView" style="width:100%; height:220px; padding:10px; margin-top:8px;"></textarea>
+</details>
     </div>
   </div>
 </section>
@@ -1300,29 +1300,25 @@ if (sentAt) sendState = '已正式發送';
 else if (copiedAt) sendState = '已複製待確認';
 
       return `
-        <div style="padding:10px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;margin-bottom:10px;">
-          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-            <div style="min-width:260px;">
-              <div style="font-weight:800;">
-                ${name || '(未填名字)'} <span class="muted">(${cnt} 件)</span>
-              </div>
-              <div class="muted" style="margin-top:2px;">
-  status: <b>${st || '-'}</b> ｜ 發送狀態: <b>${sendState}</b> ｜ updated: ${up || '-'}
-</div>
-<div class="muted" style="margin-top:4px;">
-  copied: ${copiedAt || '-'} ｜ sent: ${sentAt || '-'}
-</div>
-              <div class="muted mono" style="margin-top:6px;word-break:break-all;">
-                cart_token: ${token}<br/>
-                line_user_id: ${uid || '-'}
-              </div>
-            </div>
-            <div style="display:flex;gap:8px;align-items:flex-start;">
-              <button class="ghost btnPickCart" data-token="${token}" style="max-width:140px;">選取</button>
-            </div>
-          </div>
+  <div style="padding:10px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;margin-bottom:10px;">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+      <div style="min-width:260px;">
+        <div style="font-weight:800;">
+          ${name || '(未填名字)'} <span class="muted">(${cnt} 件)</span>
         </div>
-      `;
+        <div class="muted" style="margin-top:4px;">
+          發送狀態：<b>${sendState}</b>
+        </div>
+        <div class="muted" style="margin-top:4px;">
+          最後更新：${up || '-'}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-start;">
+        <button class="ghost btnPickCart" data-token="${token}" style="max-width:140px;">選取</button>
+      </div>
+    </div>
+  </div>
+`;
     }).join('');
 
     showOpenCartHtml(list || `<div class="muted">沒有資料</div>`);
@@ -1459,6 +1455,17 @@ clearManageEditState();
 await adminReloadCart();
   }
 
+  let ADMIN_LIST_LOADING = false;
+
+function syncCartManageButtons() {
+  const btn = document.getElementById('btnListOpen');
+  if (!btn) return;
+
+  const hasAdminKey = !!getAdminKeyUI();
+
+  btn.disabled = ADMIN_LIST_LOADING || !hasAdminKey;
+  btn.textContent = ADMIN_LIST_LOADING ? '搜尋中...' : '未完成結單購物車清單';
+}
 async function adminListOpenCarts(){
   const ak = getAdminKeyUI();
   if (!ak) return alert('請輸入 Admin Key');
@@ -1466,34 +1473,49 @@ async function adminListOpenCarts(){
   const kw = v('cartManageKw');
   let r;
 
-  // 有輸入關鍵字：直接用 search
-  if (kw) {
-    r = await safeJsonFetch(
-      API + '/admin/cart/search?kw=' + encodeURIComponent(kw) + '&admin_key=' + encodeURIComponent(ak),
-      { method:'GET' }
-    );
-  } else {
-    // 沒輸入：優先列全部未結單購物車
-    r = await safeJsonFetch(
-      API + '/admin/cart/open?admin_key=' + encodeURIComponent(ak),
-      { method:'GET' }
-    );
+  try {
+    ADMIN_LIST_LOADING = true;
+    syncCartManageButtons();
+
+    if (kw) {
+      r = await safeJsonFetch(
+        API + '/admin/cart/search?kw=' + encodeURIComponent(kw) + '&admin_key=' + encodeURIComponent(ak),
+        { method:'GET' }
+      );
+    } else {
+      r = await safeJsonFetch(
+        API + '/admin/cart/open?admin_key=' + encodeURIComponent(ak),
+        { method:'GET' }
+      );
+    }
+
+    if (!r.ok || !r.json || r.json.ok !== true) {
+      console.log('list open carts fail', r);
+
+      const err = (r.json && (r.json.error || r.json.message)) || 'unknown';
+
+      if (String(err) === 'not_found') {
+        showOpenCartHtml(`<div class="muted">沒有找到符合條件的購物車</div>`);
+        alert('搜尋完成，沒有找到符合條件的購物車');
+      } else {
+        showOpenCartHtml(`<div class="muted">讀取失敗：${escHtml(err)}</div>`);
+        alert('讀取失敗：' + err);
+      }
+      return;
+    }
+
+    const cartsRaw = (r.json.carts || []);
+    const hasItemCount = cartsRaw.some(c => c && c.item_count != null);
+    const carts = hasItemCount
+      ? cartsRaw.filter(c => (Number(c.item_count || 0) || 0) > 0)
+      : cartsRaw;
+
+    renderOpenCarts(carts);
+    alert(`搜尋完成，共找到 ${carts.length} 台購物車`);
+  } finally {
+    ADMIN_LIST_LOADING = false;
+    syncCartManageButtons();
   }
-
-  if (!r.ok || !r.json || r.json.ok !== true) {
-    console.log('list open carts fail', r);
-    showOpenCartHtml(`<div class="muted">讀取失敗：${escHtml((r.json && (r.json.error || r.json.message)) || 'unknown')}</div>`);
-    return;
-  }
-
-  const cartsRaw = (r.json.carts || []);
-const hasItemCount = cartsRaw.some(c => c && c.item_count != null);
-const carts = hasItemCount
-  ? cartsRaw.filter(c => (Number(c.item_count || 0) || 0) > 0)
-  : cartsRaw;
-
-renderOpenCarts(carts);
-alert(`搜尋完成，共找到 ${carts.length} 台購物車`);
 }
 
   function getAdminKey(){
@@ -1760,16 +1782,19 @@ if (btnNextCustomer) {
     if (_btnReloadCart2) _btnReloadCart2.addEventListener('click', adminReloadCart);
 
 
-    // ======（這裡開始貼：購物車管理 Admin 事件）======
-    const adminKeyInput = $('#adminKey');
-    if (adminKeyInput) {
-      // 記住 Admin Key（存在本機，不寫死在程式碼）
-      const savedAk = localStorage.getItem('ADMIN_KEY') || '';
-      if (savedAk) adminKeyInput.value = savedAk;
-      adminKeyInput.addEventListener('change', ()=> {
-        localStorage.setItem('ADMIN_KEY', adminKeyInput.value || '');
-      });
-    }
+   const adminKeyInput = $('#adminKey');
+if (adminKeyInput) {
+  // 記住 Admin Key（存在本機，不寫死在程式碼）
+  const savedAk = localStorage.getItem('ADMIN_KEY') || '';
+  if (savedAk) adminKeyInput.value = savedAk;
+
+  adminKeyInput.addEventListener('change', ()=> {
+    localStorage.setItem('ADMIN_KEY', adminKeyInput.value || '');
+  });
+
+  // ✅ 新增：一輸入就更新按鈕狀態
+  adminKeyInput.addEventListener('input', syncCartManageButtons);
+}
 
     // ======（這裡結束貼上）======
    
@@ -1783,6 +1808,7 @@ if(saved) { $('#op_key').value = saved; OP = saved; setLoginUI(true); }
 updateCurrentCustomerInfo();
 syncMainButtons();
 syncBenefitPanel();
+syncCartManageButtons();
   });
 })();
 </script>
