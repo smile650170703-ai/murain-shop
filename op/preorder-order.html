@@ -550,8 +550,19 @@
     // 之後改成真的 call 後端：
     // GET /op/preorder/next-barcode
     async function fetchNextPreBarcode() {
-      return nextBarcodeFromList(preProductMaster);
-    }
+  const resp = await fetch("/op/preorder/next-barcode", {
+    method: "GET",
+    credentials: "same-origin",
+    cache: "no-store"
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data?.ok) {
+    throw new Error(data?.error || "取得下一號條碼失敗");
+  }
+
+  return String(data.barcode || "D000001");
+}
 
     async function resetPreProductForm() {
       document.getElementById("pre_barcode").value = await fetchNextPreBarcode();
@@ -899,54 +910,85 @@
       return created;
     }
 
-    // 之後改成真的 POST 到後端，由後端決定條碼
-    async function createPreProductLocal() {
-      const name = String(document.getElementById("pre_name").value || "").trim();
-      const qty = Number(document.getElementById("pre_qty").value || 0);
-      const suggestPrice = Number(document.getElementById("pre_suggest_price").value || 0);
-      const note = String(document.getElementById("pre_note").value || "").trim();
+ async function createPreProductLocal() {
+  const name = String(document.getElementById("pre_name").value || "").trim();
+  const qty = Number(document.getElementById("pre_qty").value || 0);
+  const suggestPrice = Number(document.getElementById("pre_suggest_price").value || 0);
+  const note = String(document.getElementById("pre_note").value || "").trim();
+  const inDate = String(document.getElementById("pre_in_date").value || "").trim();
 
-      if (!name) {
-        alert("請輸入品牌+商品名稱");
-        return;
-      }
-      if (qty <= 0) {
-        alert("請輸入正確數量");
-        return;
-      }
+  if (!name) {
+    alert("請輸入品牌+商品名稱");
+    return;
+  }
+  if (!qty || qty <= 0) {
+    alert("請輸入正確數量");
+    return;
+  }
 
-      const savedBarcode = await fetchNextPreBarcode();
+  const btn = document.getElementById("btnCreatePreProduct");
+  const oldText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "新增中...";
 
-      const newProduct = {
-        product_id: "rec_pre_" + Date.now(),
-        barcode: savedBarcode,
+  try {
+    const resp = await fetch("/op/preorder/create-product", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
         name,
-        suggest_price: suggestPrice,
-        stock: qty,
-        source: "預購",
-        category: "預購",
-        pre_status: "預購中",
+        qty,
+        suggestPrice,
+        inDate,
         note
-      };
+      })
+    });
 
-      preProductMaster.push(newProduct);
-
-      arrivalMaster.push({
-        barcode: savedBarcode,
-        name,
-        preorder_qty: qty,
-        sold_qty: 0,
-        cost: "",
-        arrival_date: "",
-        pre_status: "預購中"
-      });
-
-      await resetPreProductForm();
-      mockSearchProducts();
-      mockSearchArrivalList();
-
-      alert(`已新增預購商品：${savedBarcode}`);
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data?.ok) {
+      throw new Error(data?.error || "新增預購商品失敗");
     }
+
+    const product = data.product || {
+      product_id: "",
+      barcode: data.barcode || "",
+      name,
+      suggest_price: suggestPrice,
+      stock: qty,
+      source: "預購",
+      category: "預購",
+      pre_status: "預購中",
+      note
+    };
+
+    // 先更新目前頁面的假清單，讓你不用重整就看得到
+    preProductMaster.push(product);
+
+    arrivalMaster.push({
+      barcode: product.barcode,
+      name: product.name,
+      preorder_qty: qty,
+      sold_qty: 0,
+      cost: "",
+      arrival_date: "",
+      pre_status: "預購中"
+    });
+
+    await resetPreProductForm();
+    mockSearchProducts();
+    mockSearchArrivalList();
+
+    alert(`已新增預購商品：${product.barcode}`);
+  } catch (err) {
+    alert(String(err?.message || err || "新增失敗"));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText;
+  }
+}
 
     document.getElementById("btnReloadPage").addEventListener("click", ()=>location.reload());
 
