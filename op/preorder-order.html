@@ -822,22 +822,25 @@
       renderMemberResults(rows);
     }
 
-    async function mockSearchProducts() {
-      const kw = String(document.getElementById("product_keyword").value || "").trim();
+ async function loadPreProducts() {
+  const kw = String(document.getElementById("product_keyword").value || "").trim();
 
-      const rows = preProductMaster
-        .filter(x =>
-          String(x.barcode || "").startsWith("D") &&
-          Number(x.stock || 0) > 0 &&
-          x.source === "預購" &&
-          x.category === "預購" &&
-          x.pre_status === "預購中" &&
-          (!kw || [x.barcode, x.name].join(" ").includes(kw))
-        )
-        .sort((a,b) => String(a.barcode).localeCompare(String(b.barcode)));
+  const qs = new URLSearchParams();
+  if (kw) qs.set("keyword", kw);
 
-      renderPreProductResults(rows);
-    }
+  const resp = await fetch(`/op/preorder/products?${qs.toString()}`, {
+    method: "GET",
+    credentials: "same-origin",
+    cache: "no-store"
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok || !data?.ok) {
+    throw new Error(data?.error || "載入預購清單失敗");
+  }
+
+  renderPreProductResults(Array.isArray(data.items) ? data.items : []);
+}
 
     async function mockSearchArrivalList() {
       const kw = String(document.getElementById("arrival_keyword").value || "").trim();
@@ -964,9 +967,6 @@
       note
     };
 
-    // 先更新目前頁面的假清單，讓你不用重整就看得到
-    preProductMaster.push(product);
-
     arrivalMaster.push({
       barcode: product.barcode,
       name: product.name,
@@ -978,7 +978,7 @@
     });
 
     await resetPreProductForm();
-    mockSearchProducts();
+    await loadPreProducts();
     mockSearchArrivalList();
 
     alert(`已新增預購商品：${product.barcode}`);
@@ -1008,14 +1008,24 @@
       document.getElementById("memberResultBody").innerHTML = `<tr><td colspan="6" class="hint">尚未搜尋</td></tr>`;
     });
 
-    document.getElementById("btnSearchPreProducts").addEventListener("click", mockSearchProducts);
+    document.getElementById("btnSearchPreProducts").addEventListener("click", async () => {
+  try {
+    await loadPreProducts();
+  } catch (err) {
+    alert(String(err?.message || err || "載入預購清單失敗"));
+  }
+});
 
     document.getElementById("btnClearProductSearch").addEventListener("click", ()=>{
       document.getElementById("product_keyword").value = "";
       document.getElementById("pick_qty").value = 1;
       document.getElementById("pick_price").value = "";
       document.getElementById("pick_note").value = "";
-      mockSearchProducts();
+      try {
+  await loadPreProducts();
+} catch (err) {
+  alert(String(err?.message || err || "載入預購清單失敗"));
+}
     });
 
     document.getElementById("btnClearCurrentOrder").addEventListener("click", ()=>{
@@ -1078,13 +1088,13 @@
     });
 
     (async () => {
-      await resetPreProductForm();
-      renderSelectedMember();
-      renderCurrentItems();
-      setCreatedOrder(null);
-      mockSearchProducts();
-      mockSearchArrivalList();
-    })();
+  await resetPreProductForm();
+  renderSelectedMember();
+  renderCurrentItems();
+  setCreatedOrder(null);
+  await loadPreProducts();
+  mockSearchArrivalList();
+})();
   </script>
 </body>
 </html>
