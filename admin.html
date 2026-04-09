@@ -569,39 +569,186 @@ function renderConsignAccountingDetail(bucket, rows){
     return;
   }
 
-  const lines = rows.map((item, idx) => {
-    return [
-      `【${idx + 1}】`,
-      `姓名：${item.accounting?.name || ''}`,
-      `身分證字號：${item.accounting?.nationalId || ''}`,
-      `訂單編號：${item.orderId || ''}`,
-      `商品名稱：${item.name || ''}`,
-      `售出金額：${item.saleAmount || 0}`,
-      `匯款金額：${item.bankAmount || 0}`,
-      `購物金金額：${item.creditAmount || 0}`,
-      `結算方式：${displayConsignMethod(item.method)}`,
-      ''
-    ].join('\n');
-  }).join('\n');
+  const previewHtml = rows.map((item, idx) => {
+    const acc = item.accounting || {};
+    const methodText = displayConsignMethod(item.method);
+    const actualAmount = String(item.method || '').trim() === 'bank_transfer'
+      ? Number(item.bankAmount || 0)
+      : Number(item.creditAmount || 0);
+
+    const idFront = String(acc.idFrontUrl || '').trim();
+    const idBack  = String(acc.idBackUrl || '').trim();
+
+    return `
+      <div style="border:1px solid rgba(148,163,184,.25);border-radius:12px;padding:12px;margin-bottom:12px;background:rgba(2,6,23,.55);">
+        <div style="font-weight:800;font-size:15px;margin-bottom:8px;">第 ${idx + 1} 筆｜${escapeHtml(bucket)} 一時貿易資料</div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><b>姓名：</b>${escapeHtml(acc.name || '')}</div>
+          <div><b>身分證字號：</b>${escapeHtml(acc.nationalId || '')}</div>
+          <div><b>訂單編號：</b>${escapeHtml(item.orderId || '')}</div>
+          <div><b>商品名稱：</b>${escapeHtml(item.name || '')}</div>
+          <div><b>售出金額：</b>${money(item.saleAmount || 0)}</div>
+          <div><b>結算方式：</b>${escapeHtml(methodText)}</div>
+          <div><b>實際給付金額：</b>${money(actualAmount || 0)}</div>
+          <div><b>匯款金額：</b>${money(item.bankAmount || 0)} ／ <b>購物金：</b>${money(item.creditAmount || 0)}</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+          <div>
+            <div style="font-weight:700;margin-bottom:6px;">身分證正面</div>
+            ${
+              idFront
+                ? `<img src="${idFront}" style="width:100%;max-height:240px;object-fit:contain;background:#fff;border-radius:8px;padding:6px;" />`
+                : `<div style="height:240px;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(148,163,184,.5);border-radius:8px;color:#94a3b8;">未提供身分證正面</div>`
+            }
+          </div>
+
+          <div>
+            <div style="font-weight:700;margin-bottom:6px;">身分證反面</div>
+            ${
+              idBack
+                ? `<img src="${idBack}" style="width:100%;max-height:240px;object-fit:contain;background:#fff;border-radius:8px;padding:6px;" />`
+                : `<div style="height:240px;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(148,163,184,.5);border-radius:8px;color:#94a3b8;">未提供身分證反面</div>`
+            }
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
 
   detailEl.innerHTML = `
     <div class="section-title">${bucket} 一時貿易資料</div>
-    <textarea id="consignAccountingText" style="min-height:420px;">${escapeHtml(lines)}</textarea>
-    <button class="btn-primary" id="btnCopyConsignAccountingBucket" type="button">📋 複製本區資料</button>
-    <button class="btn-secondary" id="btnPrintConsignAccountingBucket" type="button">🖨️ 列印本區資料</button>
+    <div class="tag-small">共 ${rows.length} 筆；列印時會一筆一頁，並附身分證正反面。</div>
+    <button class="btn-primary" id="btnPrintConsignAccountingBucket" type="button">🖨️ 列印本區資料</button>
+    <div style="margin-top:12px;max-height:70vh;overflow:auto;">${previewHtml}</div>
   `;
 
-  $('#btnCopyConsignAccountingBucket')?.addEventListener('click', async () => {
-    const txt = $('#consignAccountingText')?.value || '';
-    await navigator.clipboard.writeText(txt);
-    alert('已複製本區一時貿易資料');
-  });
-
   $('#btnPrintConsignAccountingBucket')?.addEventListener('click', () => {
-    const txt = $('#consignAccountingText')?.value || '';
+    const printPages = rows.map((item, idx) => {
+      const acc = item.accounting || {};
+      const methodText = displayConsignMethod(item.method);
+      const actualAmount = String(item.method || '').trim() === 'bank_transfer'
+        ? Number(item.bankAmount || 0)
+        : Number(item.creditAmount || 0);
+
+      const idFront = String(acc.idFrontUrl || '').trim();
+      const idBack  = String(acc.idBackUrl || '').trim();
+
+      return `
+        <div class="trade-page">
+          <div class="trade-title">一時貿易資料</div>
+          <div class="trade-sub">第 ${idx + 1} 筆 / ${escapeHtml(bucket)}</div>
+
+          <table class="trade-table">
+            <tr><th>姓名</th><td>${escapeHtml(acc.name || '')}</td><th>身分證字號</th><td>${escapeHtml(acc.nationalId || '')}</td></tr>
+            <tr><th>訂單編號</th><td>${escapeHtml(item.orderId || '')}</td><th>商品名稱</th><td>${escapeHtml(item.name || '')}</td></tr>
+            <tr><th>售出金額</th><td>${money(item.saleAmount || 0)}</td><th>結算方式</th><td>${escapeHtml(methodText)}</td></tr>
+            <tr><th>實際給付金額</th><td>${money(actualAmount || 0)}</td><th>備註</th><td></td></tr>
+          </table>
+
+          <div class="id-wrap">
+            <div class="id-box">
+              <div class="id-title">身分證正面</div>
+              ${
+                idFront
+                  ? `<img src="${idFront}" />`
+                  : `<div class="id-empty">未提供身分證正面</div>`
+              }
+            </div>
+            <div class="id-box">
+              <div class="id-title">身分證反面</div>
+              ${
+                idBack
+                  ? `<img src="${idBack}" />`
+                  : `<div class="id-empty">未提供身分證反面</div>`
+              }
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
     const win = window.open('', '_blank');
     if (!win) return;
-    win.document.write(`<pre style="white-space:pre-wrap;font-size:14px;padding:24px;">${txt.replace(/</g,'&lt;')}</pre>`);
+
+    win.document.write(`
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${bucket} 一時貿易資料</title>
+        <style>
+          @page { size: A4 portrait; margin: 12mm; }
+          body { font-family: Arial, "Noto Sans TC", sans-serif; color:#111; }
+          .trade-page {
+            page-break-after: always;
+            break-after: page;
+            min-height: 260mm;
+          }
+          .trade-page:last-child {
+            page-break-after: auto;
+            break-after: auto;
+          }
+          .trade-title {
+            font-size: 20px;
+            font-weight: 800;
+            margin-bottom: 4px;
+          }
+          .trade-sub {
+            font-size: 12px;
+            color: #555;
+            margin-bottom: 12px;
+          }
+          .trade-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+          }
+          .trade-table th,
+          .trade-table td {
+            border: 1px solid #333;
+            padding: 8px;
+            font-size: 13px;
+            vertical-align: top;
+          }
+          .trade-table th {
+            width: 16%;
+            background: #f5f5f5;
+            text-align: left;
+          }
+          .id-wrap {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+          }
+          .id-box {
+            border: 1px solid #333;
+            padding: 8px;
+            min-height: 320px;
+          }
+          .id-title {
+            font-weight: 700;
+            margin-bottom: 8px;
+          }
+          .id-box img {
+            width: 100%;
+            max-height: 280px;
+            object-fit: contain;
+          }
+          .id-empty {
+            height: 280px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #777;
+            border: 1px dashed #999;
+          }
+        </style>
+      </head>
+      <body>${printPages}</body>
+      </html>
+    `);
+
     win.document.close();
     win.focus();
     win.print();
