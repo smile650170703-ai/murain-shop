@@ -487,7 +487,7 @@
       </div>
       <div class="badge-row">
         <div class="badge blue">條碼：系統自動流水號</div>
-<div class="badge orange">寄賣：仍需填原本包包條碼</div>
+<div class="badge orange">寄賣：分類固定為寄賣 / 不需成本 / 不需原本包包條碼</div>
       </div>
     </div>
 
@@ -542,9 +542,9 @@
         </div>
 
         <div class="field span-4">
-          <label for="sku">條碼</label>
-          <input id="sku" type="text" readonly placeholder="系統自動帶入 C000001 起，加入後自動跳下一號" />
-        </div>
+  <label for="sku">條碼</label>
+  <input id="sku" type="text" placeholder="請手動輸入條碼" />
+</div>
 
         <div class="field span-4">
           <label for="location">庫存位置</label>
@@ -575,7 +575,7 @@
   <input id="stockQty" type="number" inputmode="numeric" min="0" step="1" value="1" />
 </div>
 
-<div class="field span-3">
+<div id="costField" class="field span-3">
   <label for="cost">成本</label>
   <input id="cost" type="number" inputmode="decimal" min="0" step="1" placeholder="0" />
 </div>
@@ -820,6 +820,7 @@ bidStepField: $('bidStepField'),
 bidStep: $('bidStep'),
 stockQty: $('stockQty'),
 cost: $('cost'),
+costField: $('costField'),
 sourceType: $('sourceType'),
       consignorField: $('consignorField'),
       consignor: $('consignor'),
@@ -899,42 +900,62 @@ liveScreenshotPreview: $('liveScreenshotPreview')
       target.classList.toggle('active', !!msg);
     }
 
-    function setMode(mode) {
-      state.mode = mode;
-      localStorage.setItem(MODE_KEY, mode);
+function setMode(mode) {
+  state.mode = mode;
+  localStorage.setItem(MODE_KEY, mode);
 
-      const isOwn = mode === 'own';
-      el.btnModeOwn.classList.toggle('active', isOwn);
-      el.btnModeConsign.classList.toggle('active', !isOwn);
-      el.memberSearchCard.classList.toggle('active', !isOwn);
-el.originBarcodeField.classList.toggle('hidden', isOwn);
-el.consignorField.classList.toggle('hidden', isOwn);
-el.auctionStartPriceField.classList.toggle('hidden', isOwn);
-el.bidStepField.classList.toggle('hidden', isOwn);
-el.liveScreenshotField.classList.toggle('hidden', isOwn);
-el.sourceType.value = isOwn ? '自有' : '寄賣';
-      el.sourceBadge.textContent = `目前模式：${isOwn ? '自有' : '寄賣'}`;
-      el.sourceBadge.className = `badge ${isOwn ? 'blue' : 'orange'}`;
-if (isOwn) {
-  el.originBarcode.value = '';
-  el.consignor.value = '';
-  el.auctionStartPrice.value = '';
-  el.bidStep.value = '';
-  el.liveScreenshot.value = '';
-el.liveScreenshotPreview.textContent = '';
-  state.selectedConsignorRecordId = '';
-  state.selectedLineMember = null;
-  state.selectedConsignor = null;
-  el.consignorStatusBox.classList.add('hidden');
-  el.consignorStatusBox.innerHTML = '<div class="muted">尚未查詢寄賣人主檔</div>';
-  el.btnEditConsignor.classList.add('hidden');
-}
-      el.sku.value = '';
-showError(el.formError, '');
-fillNextSku(true).catch(err => {
-  showError(el.formError, err.message || '取得下一個條碼失敗');
-});
+  const isOwn = mode === 'own';
+  const isConsign = mode === 'consign';
+
+  el.btnModeOwn.classList.toggle('active', isOwn);
+  el.btnModeConsign.classList.toggle('active', isConsign);
+  el.memberSearchCard.classList.toggle('active', isConsign);
+
+  // 原本包包條碼：目前兩種模式都不顯示
+  el.originBarcodeField.classList.add('hidden');
+
+  // 寄賣模式不要顯示成本
+  el.costField.classList.toggle('hidden', isConsign);
+
+  // 寄賣模式要顯示的欄位
+  el.consignorField.classList.toggle('hidden', isOwn);
+  el.auctionStartPriceField.classList.toggle('hidden', isOwn);
+  el.bidStepField.classList.toggle('hidden', isOwn);
+  el.liveScreenshotField.classList.toggle('hidden', isOwn);
+
+  el.sourceType.value = isOwn ? '自有' : '寄賣';
+  el.sourceBadge.textContent = `目前模式：${isOwn ? '自有' : '寄賣'}`;
+  el.sourceBadge.className = `badge ${isOwn ? 'blue' : 'orange'}`;
+
+  if (isConsign) {
+    el.originBarcode.value = '';
+    el.cost.value = '';
+    el.subCategory.value = '寄賣';
+    el.subCategory.readOnly = true;
+  } else {
+    el.subCategory.readOnly = false;
+    if (el.subCategory.value === '寄賣') {
+      el.subCategory.value = '';
     }
+  }
+
+  if (isOwn) {
+    el.originBarcode.value = '';
+    el.consignor.value = '';
+    el.auctionStartPrice.value = '';
+    el.bidStep.value = '';
+    el.liveScreenshot.value = '';
+    el.liveScreenshotPreview.textContent = '';
+    state.selectedConsignorRecordId = '';
+    state.selectedLineMember = null;
+    state.selectedConsignor = null;
+    el.consignorStatusBox.classList.add('hidden');
+    el.consignorStatusBox.innerHTML = '<div class="muted">尚未查詢寄賣人主檔</div>';
+    el.btnEditConsignor.classList.add('hidden');
+  }
+
+  showError(el.formError, '');
+}
 
     function formatCSku(no) {
   return `C${String(no).padStart(6, '0')}`;
@@ -983,39 +1004,39 @@ async function fillNextSku(force = false) {
     }
 
 function getFormData() {
+  const isConsign = state.mode === 'consign';
+
   return {
     id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`,
-    商品來源: state.mode === 'own' ? '自有' : '寄賣',
-    原本包包條碼: state.mode === 'consign' ? el.originBarcode.value.trim() : '',
+    商品來源: isConsign ? '寄賣' : '自有',
+    原本包包條碼: '',
     SKU: el.sku.value.trim(),
-    寄賣人: state.mode === 'consign' ? el.consignor.value.trim() : '',
-    consignorRecordId: state.mode === 'consign' ? String(state.selectedConsignorRecordId || '').trim() : '',
+    寄賣人: isConsign ? el.consignor.value.trim() : '',
+    consignorRecordId: isConsign ? String(state.selectedConsignorRecordId || '').trim() : '',
     庫存位置: el.location.value.trim(),
     Name: el.name.value.trim(),
     Price: normalizeNumber(el.price.value, 0),
-    起標價格: state.mode === 'consign' ? normalizeNumber(el.auctionStartPrice.value, 0) : 0,
-    一標多少: state.mode === 'consign' ? normalizeNumber(el.bidStep.value, 0) : 0,
+    起標價格: isConsign ? normalizeNumber(el.auctionStartPrice.value, 0) : 0,
+    一標多少: isConsign ? normalizeNumber(el.bidStep.value, 0) : 0,
     StockQty: normalizeNumber(el.stockQty.value, 0),
-    Cost: normalizeNumber(el.cost.value, 0),
+    Cost: isConsign ? 0 : normalizeNumber(el.cost.value, 0),
     入庫日期: el.stockInDate.value || todayStr(),
-    sub_category: el.subCategory.value.trim(),
-直播截圖Url: ''
+    sub_category: isConsign ? '寄賣' : el.subCategory.value.trim(),
+    直播截圖Url: ''
   };
 }
 
 function validateItem(item) {
   if (!item.SKU) return '請填寫 SKU';
   if (!item.Name) return '請填寫 Name';
-  if (!item.庫存位置) return '請填寫 庫存位置';
   if (!item.入庫日期) return '請填寫 入庫日期';
 
-if (item.商品來源 === '寄賣') {
-  if (!item.原本包包條碼) return '寄賣請填寫 原本包包條碼';
-  if (!item.寄賣人) return '寄賣請先帶入寄賣人';
-  if (!item.consignorRecordId) return '寄賣請先用會員查詢並選擇寄賣人';
-  if (normalizeNumber(item['起標價格'], 0) <= 0) return '寄賣請填寫 起標價格';
-  if (normalizeNumber(item['一標多少'], 0) <= 0) return '寄賣請填寫 一標多少';
-}
+  if (item.商品來源 === '寄賣') {
+    if (!item.寄賣人) return '寄賣請先帶入寄賣人';
+    if (!item.consignorRecordId) return '寄賣請先用會員查詢並選擇寄賣人';
+    if (normalizeNumber(item['起標價格'], 0) <= 0) return '寄賣請填寫 起標價格';
+    if (normalizeNumber(item['一標多少'], 0) <= 0) return '寄賣請填寫 一標多少';
+  }
 
   return '';
 }
@@ -1041,18 +1062,13 @@ async function clearForm(keepMode = true) {
   el.consignor.value = '';
   state.selectedConsignorRecordId = '';
   el.stockInDate.value = todayStr();
-  el.subCategory.value = '';
+  el.subCategory.value = state.mode === 'consign' ? '寄賣' : '';
+  el.subCategory.readOnly = state.mode === 'consign';
   showError(el.formError, '');
 
   if (!keepMode) {
     setMode('own');
     return;
-  }
-
-  try {
-    await fillNextSku(true);
-  } catch (err) {
-    showError(el.formError, err.message || '取得下一個條碼失敗');
   }
 }
 
@@ -1062,10 +1078,6 @@ async function addDraft() {
   try {
     el.btnAddDraft.disabled = true;
     el.btnAddDraft.textContent = '加入中...';
-
-    if (!el.sku.value.trim()) {
-      await fillNextSku(true);
-    }
 
     const item = getFormData();
     const err = validateItem(item);
@@ -1236,21 +1248,23 @@ if (key === '商品來源') {
     }
 
 function buildPayload(row) {
+  const isConsign = String(row.商品來源 || '').trim() === '寄賣';
+
   return {
     SKU: String(row.SKU || '').trim(),
     '庫存位置': String(row.庫存位置 || '').trim(),
     Name: String(row.Name || '').trim(),
     Price: normalizeNumber(row.Price, 0),
-    '起標價格': normalizeNumber(row['起標價格'], 0),
-    '一標多少': normalizeNumber(row['一標多少'], 0),
+    '起標價格': isConsign ? normalizeNumber(row['起標價格'], 0) : 0,
+    '一標多少': isConsign ? normalizeNumber(row['一標多少'], 0) : 0,
     StockQty: normalizeNumber(row.StockQty, 0),
-    Cost: normalizeNumber(row.Cost, 0),
-    '商品來源': String(row.商品來源 || '').trim(),
-    '寄賣人': String(row.寄賣人 || '').trim(),
-    consignorRecordId: String(row.consignorRecordId || '').trim(),
+    Cost: isConsign ? 0 : normalizeNumber(row.Cost, 0),
+    '商品來源': isConsign ? '寄賣' : '自有',
+    '寄賣人': isConsign ? String(row.寄賣人 || '').trim() : '',
+    consignorRecordId: isConsign ? String(row.consignorRecordId || '').trim() : '',
     '入庫日期': String(row.入庫日期 || '').trim(),
-    sub_category: String(row.sub_category || '').trim(),
-'直播截圖Url': String(row['直播截圖Url'] || '').trim()
+    sub_category: isConsign ? '寄賣' : String(row.sub_category || '').trim(),
+    '直播截圖Url': String(row['直播截圖Url'] || '').trim()
   };
 }
 
