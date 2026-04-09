@@ -647,30 +647,12 @@
 </div>
 
       <div class="table-wrap">
-        <table>
-          <thead>
-  <tr>
-    <th>操作</th>
-    <th>商品來源</th>
-    <th class="col-always-hidden">原本包包條碼</th>
-    <th>SKU</th>
-    <th class="col-consign-only">寄賣人</th>
-    <th>庫存位置</th>
-    <th>商品名稱</th>
-    <th>建議售價</th>
-    <th class="col-consign-only">起標價格</th>
-    <th class="col-consign-only">一標多少</th>
-    <th>數量</th>
-    <th class="col-own-only">成本</th>
-    <th>入庫日期</th>
-    <th>分類</th>
-    <th class="col-consign-only">直播截圖</th>
-  </tr>
-</thead>
-          <tbody id="draftTableBody">
-            <tr><td colspan="15" class="empty">目前尚無資料</td></tr>
-          </tbody>
-        </table>
+      <table id="draftInputTable">
+  <thead id="draftTableHead"></thead>
+  <tbody id="draftTableBody">
+    <tr><td colspan="15" class="empty">請先選模式，再按「新增一列」開始批次輸入</td></tr>
+  </tbody>
+</table>
       </div>
 
       <div id="submitError" class="error"></div>
@@ -833,6 +815,7 @@ sourceType: $('sourceType'),
       formError: $('formError'),
       summaryBoxes: $('summaryBoxes'),
       statusText: $('statusText'),
+draftTableHead: $('draftTableHead'),
 draftTableBody: $('draftTableBody'),
 btnAddRow: $('btnAddRow'),
 btnDownloadLabelExcel: $('btnDownloadLabelExcel'),
@@ -903,20 +886,6 @@ liveScreenshotPreview: $('liveScreenshotPreview')
       target.classList.toggle('active', !!msg);
     }
 
-function toggleTableColumns(selector, shouldHide) {
-  document.querySelectorAll(selector).forEach(node => {
-    node.classList.toggle('hidden-col', shouldHide);
-  });
-}
-
-function applyTableMode() {
-  const isConsign = state.mode === 'consign';
-
-  toggleTableColumns('.col-always-hidden', true);
-  toggleTableColumns('.col-consign-only', !isConsign);
-  toggleTableColumns('.col-own-only', isConsign);
-}
-
 function setMode(mode) {
   state.mode = mode;
   localStorage.setItem(MODE_KEY, mode);
@@ -932,7 +901,7 @@ function setMode(mode) {
   el.sourceBadge.textContent = `目前模式：${isOwn ? '自有' : '寄賣'}`;
   el.sourceBadge.className = `badge ${isOwn ? 'blue' : 'orange'}`;
 
-  // 上方單筆區雖然隱藏，資料狀態還是一起同步
+  // 上方單筆區雖然隱藏，資料狀態還是同步
   el.originBarcodeField.classList.add('hidden');
   el.costField.classList.toggle('hidden', isConsign);
   el.consignorField.classList.toggle('hidden', isOwn);
@@ -971,12 +940,10 @@ function setMode(mode) {
     el.btnEditConsignor.classList.add('hidden');
   }
 
-  applyTableMode();
   renderDrafts();
   showError(el.formError, '');
   showError(el.submitError, '');
 }
-
     function formatCSku(no) {
   return `C${String(no).padStart(6, '0')}`;
 }
@@ -1242,140 +1209,164 @@ if (key === '商品來源') {
       return Number(n || 0).toLocaleString('zh-TW');
     }
 
+function getDraftColumns(mode = state.mode) {
+  if (mode === 'consign') {
+    return [
+      { key: '__action', label: '操作', type: 'action' },
+      { key: '商品來源', label: '商品來源', type: 'text', readonly: true },
+      { key: 'SKU', label: 'SKU', type: 'text', readonly: true },
+      { key: '寄賣人', label: '寄賣人', type: 'text', readonly: true },
+      { key: '庫存位置', label: '庫存位置', type: 'text', placeholder: '可不填', paste: true },
+      { key: 'Name', label: '商品名稱', type: 'text', placeholder: '輸入品牌+商品名稱', paste: true },
+      { key: 'Price', label: '建議售價', type: 'number', paste: true },
+      { key: '起標價格', label: '起標價格', type: 'number', paste: true },
+      { key: '一標多少', label: '一標多少', type: 'number', paste: true },
+      { key: 'StockQty', label: '數量', type: 'number', paste: true },
+      { key: '入庫日期', label: '入庫日期', type: 'date', paste: true },
+      { key: 'sub_category', label: '分類', type: 'text', readonly: true }
+    ];
+  }
+
+  return [
+    { key: '__action', label: '操作', type: 'action' },
+    { key: '商品來源', label: '商品來源', type: 'text', readonly: true },
+    { key: 'SKU', label: 'SKU', type: 'text', placeholder: '請手動輸入條碼', paste: true },
+    { key: '庫存位置', label: '庫存位置', type: 'text', placeholder: '可不填', paste: true },
+    { key: 'Name', label: '商品名稱', type: 'text', placeholder: '輸入商品名稱', paste: true },
+    { key: 'Price', label: '建議售價', type: 'number', paste: true },
+    { key: 'StockQty', label: '數量', type: 'number', paste: true },
+    { key: 'Cost', label: '成本', type: 'number', paste: true },
+    { key: '入庫日期', label: '入庫日期', type: 'date', paste: true },
+    { key: 'sub_category', label: '分類', type: 'text', placeholder: '請輸入分類', paste: true }
+  ];
+}
+
+function getPasteKeys(mode = state.mode) {
+  return getDraftColumns(mode)
+    .filter(col => col.paste)
+    .map(col => col.key);
+}
+
+function renderDraftTableHead() {
+  const cols = getDraftColumns();
+  el.draftTableHead.innerHTML = `
+    <tr>
+      ${cols.map(col => `<th>${escapeHtml(col.label)}</th>`).join('')}
+    </tr>
+  `;
+}
+
+function coerceDraftValue(key, value) {
+  const numKeys = ['Price', '起標價格', '一標多少', 'StockQty', 'Cost'];
+  if (numKeys.includes(key)) {
+    return Number(value || 0);
+  }
+  return String(value || '').trim();
+}
+
+async function ensureDraftRows(targetCount) {
+  while (state.drafts.length < targetCount) {
+    const row = await createEmptyDraftRow(state.mode);
+    state.drafts.push(row);
+  }
+}
+
+function renderDraftCell(row, rowIndex, col) {
+  if (col.type === 'action') {
+    return `
+      <button class="btn btn-danger" style="min-height:40px;padding:0 12px;" type="button"
+        onclick="window.__removeDraft('${escapeHtml(row.id)}')">刪除</button>
+    `;
+  }
+
+  const value = row[col.key] ?? '';
+  const inputClass =
+    col.type === 'number'
+      ? 'table-input small right'
+      : (col.key === 'Name' ? 'table-input name' : 'table-input medium');
+
+  const attrs = [
+    `class="${inputClass}"`,
+    `type="${col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}"`,
+    `value="${escapeHtml(value)}"`,
+    col.placeholder ? `placeholder="${escapeHtml(col.placeholder)}"` : '',
+    col.readonly ? 'readonly' : '',
+    col.type === 'number' ? 'min="0" step="1"' : '',
+    col.paste ? `data-row-index="${rowIndex}" data-paste-key="${col.key}"` : '',
+    !col.readonly
+      ? `oninput="window.__updateDraft('${escapeHtml(row.id)}','${col.key}',${col.type === 'number' ? 'Number(this.value || 0)' : 'this.value'})"`
+      : ''
+  ].filter(Boolean).join(' ');
+
+  return `<input ${attrs} />`;
+}
+
 function renderDrafts() {
   renderSummary();
-  applyTableMode();
+  renderDraftTableHead();
 
   if (!state.drafts.length) {
-    el.draftTableBody.innerHTML = '<tr><td colspan="15" class="empty">請先選模式，再按「新增一列」開始批次輸入</td></tr>';
+    el.draftTableBody.innerHTML = '<tr><td colspan="20" class="empty">請先選模式，再按「新增一列」開始批次輸入</td></tr>';
     return;
   }
 
-  el.draftTableBody.innerHTML = state.drafts.map((row) => {
-    const isConsign = String(row.商品來源 || '') === '寄賣';
-    const namePlaceholder = isConsign ? '輸入品牌+商品名稱' : '輸入商品名稱';
+  const cols = getDraftColumns();
 
-    return `
-      <tr>
-        <td>
-          <button class="btn btn-danger" style="min-height:40px;padding:0 12px;" type="button" onclick="window.__removeDraft('${escapeHtml(row.id)}')">刪除</button>
-        </td>
-        <td>
-          <input class="table-input medium" type="text" value="${escapeHtml(row.商品來源 || '')}" readonly />
-        </td>
-        <td class="col-always-hidden">
-          <input class="table-input barcode" type="text" value="${escapeHtml(row.原本包包條碼 || '')}" readonly />
-        </td>
-        <td>
-          <input
-            class="table-input barcode"
-            type="text"
-            value="${escapeHtml(row.SKU || '')}"
-            ${isConsign ? 'readonly' : ''}
-            placeholder="${isConsign ? '寄賣自動帶入' : '請手動輸入條碼'}"
-            oninput="window.__updateDraft('${escapeHtml(row.id)}','SKU',this.value)"
-          />
-        </td>
-        <td class="col-consign-only">
-          <input class="table-input medium" type="text" value="${escapeHtml(row.寄賣人 || '')}" readonly />
-        </td>
-        <td>
-          <input
-            class="table-input medium"
-            type="text"
-            value="${escapeHtml(row.庫存位置 || '')}"
-            placeholder="可不填"
-            oninput="window.__updateDraft('${escapeHtml(row.id)}','庫存位置',this.value)"
-          />
-        </td>
-        <td>
-          <input
-            class="table-input name"
-            type="text"
-            value="${escapeHtml(row.Name || '')}"
-            placeholder="${namePlaceholder}"
-            oninput="window.__updateDraft('${escapeHtml(row.id)}','Name',this.value)"
-          />
-        </td>
-        <td>
-          <input
-            class="table-input small right"
-            type="number"
-            min="0"
-            step="1"
-            value="${escapeHtml(row.Price ?? 0)}"
-            oninput="window.__updateDraft('${escapeHtml(row.id)}','Price',Number(this.value || 0))"
-          />
-        </td>
-        <td class="col-consign-only">
-          <input
-            class="table-input small right"
-            type="number"
-            min="0"
-            step="1"
-            value="${escapeHtml(row['起標價格'] ?? 0)}"
-            oninput="window.__updateDraft('${escapeHtml(row.id)}','起標價格',Number(this.value || 0))"
-          />
-        </td>
-        <td class="col-consign-only">
-          <input
-            class="table-input small right"
-            type="number"
-            min="0"
-            step="1"
-            value="${escapeHtml(row['一標多少'] ?? 0)}"
-            oninput="window.__updateDraft('${escapeHtml(row.id)}','一標多少',Number(this.value || 0))"
-          />
-        </td>
-        <td>
-          <input
-            class="table-input small right"
-            type="number"
-            min="0"
-            step="1"
-            value="${escapeHtml(row.StockQty ?? 1)}"
-            oninput="window.__updateDraft('${escapeHtml(row.id)}','StockQty',Number(this.value || 0))"
-          />
-        </td>
-        <td class="col-own-only">
-          <input
-            class="table-input small right"
-            type="number"
-            min="0"
-            step="1"
-            value="${escapeHtml(row.Cost ?? 0)}"
-            oninput="window.__updateDraft('${escapeHtml(row.id)}','Cost',Number(this.value || 0))"
-          />
-        </td>
-        <td>
-          <input
-            class="table-input long"
-            type="date"
-            value="${escapeHtml(row.入庫日期 || todayStr())}"
-            oninput="window.__updateDraft('${escapeHtml(row.id)}','入庫日期',this.value)"
-          />
-        </td>
-        <td>
-          <input
-            class="table-input medium"
-            type="text"
-            value="${escapeHtml(row.sub_category || '')}"
-            ${isConsign ? 'readonly' : ''}
-            placeholder="${isConsign ? '寄賣' : '請輸入分類'}"
-            oninput="window.__updateDraft('${escapeHtml(row.id)}','sub_category',this.value)"
-          />
-        </td>
-        <td class="col-consign-only">
-          <input
-            class="table-input medium"
-            type="text"
-            value="${row['直播截圖Url'] ? '已上傳' : '未上傳'}"
-            readonly
-          />
-        </td>
-      </tr>
-    `;
-  }).join('');
+  el.draftTableBody.innerHTML = state.drafts.map((row, rowIndex) => `
+    <tr>
+      ${cols.map(col => `<td>${renderDraftCell(row, rowIndex, col)}</td>`).join('')}
+    </tr>
+  `).join('');
+}
+
+async function handleDraftTablePaste(e) {
+  const target = e.target;
+  if (!target || !target.dataset || !target.dataset.pasteKey) return;
+
+  const pasteText = (e.clipboardData || window.clipboardData).getData('text');
+  if (!pasteText) return;
+
+  e.preventDefault();
+
+  const startRow = Number(target.dataset.rowIndex || 0);
+  const startKey = String(target.dataset.pasteKey || '');
+  const pasteKeys = getPasteKeys(state.mode);
+  const startCol = pasteKeys.indexOf(startKey);
+
+  if (startCol < 0) return;
+
+  const rows = pasteText
+    .replace(/\r/g, '')
+    .split('\n')
+    .filter((row, idx, arr) => !(idx === arr.length - 1 && row === ''))
+    .map(row => row.split('\t'));
+
+  await ensureDraftRows(startRow + rows.length);
+
+  rows.forEach((cells, r) => {
+    cells.forEach((cell, c) => {
+      const key = pasteKeys[startCol + c];
+      if (!key) return;
+
+      const row = state.drafts[startRow + r];
+      if (!row) return;
+
+      row[key] = coerceDraftValue(key, cell);
+
+      if (state.mode === 'consign') {
+        row.商品來源 = '寄賣';
+        row.寄賣人 = el.consignor.value.trim();
+        row.consignorRecordId = String(state.selectedConsignorRecordId || '').trim();
+        row.Cost = 0;
+        row.sub_category = '寄賣';
+      } else {
+        row.商品來源 = '自有';
+      }
+    });
+  });
+
+  saveDrafts();
+  renderDrafts();
 }
 
 function buildPayload(row) {
@@ -1921,6 +1912,11 @@ el.btnClearForm.addEventListener('click', () => clearForm(true));
 el.btnClearDrafts.addEventListener('click', clearDrafts);
 el.btnDownloadLabelExcel.addEventListener('click', downloadLabelExcel);
 el.btnSubmitAll.addEventListener('click', submitAll);
+el.draftTableBody.addEventListener('paste', (e) => {
+  handleDraftTablePaste(e).catch(err => {
+    showError(el.submitError, err.message || '貼上失敗');
+  });
+});
     el.btnSearchMember.addEventListener('click', searchMember);
     el.memberKeyword.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') searchMember();
