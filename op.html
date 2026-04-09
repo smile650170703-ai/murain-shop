@@ -970,8 +970,23 @@ function buildCheckoutUrl() {
 
   return `https://liff.line.me/${LIFF_ID}?url=${encodeURIComponent(endpoint)}`;
 }
+async function markCartCopied() {
+  if (!OP || !CART) return;
 
-  // 原本「複製結帳連結」按鈕（更穩：clipboard 優先）
+  try {
+    await jfetch(API + '/op/cart/mark-copied', {
+      method: 'POST',
+      body: JSON.stringify({
+        op_key: OP,
+        cart_token: CART,
+        line_user_id: getLineUserId(),
+        customer_name: getCustomerName()
+      })
+    });
+  } catch (e) {
+    console.log('mark copied fail', e);
+  }
+}
 async function linkCheckout() {
   if (!guardCart()) return;
 
@@ -983,6 +998,7 @@ async function linkCheckout() {
   try {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(url);
+      await markCartCopied();
       alert('已複製結帳連結');
       return;
     }
@@ -996,6 +1012,7 @@ async function linkCheckout() {
       out.setSelectionRange(0, out.value.length);
     }
     document.execCommand('copy');
+    await markCartCopied();
     alert('已複製結帳連結');
   } catch (e) {
     alert('複製失敗，請手動長按複製連結');
