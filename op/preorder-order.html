@@ -243,7 +243,7 @@
     <div class="topbar">
       <div>
         <div class="brand">MURAIN｜預購開單</div>
-        <div class="sub">先搜尋客人 LINE 名稱，再從 D 開頭預購清單選商品，直接產生購物車連結 / 發送 LINE 卡片</div>
+        <div class="sub">先搜尋客人 LINE 名稱，再從 D 開頭預購清單選商品，複製購物車連結或直接發送 LINE 預購卡片</div>
       </div>
       <div class="actions">
         <button class="btn btn-dark" id="btnReloadPage">重新整理</button>
@@ -260,7 +260,7 @@
           <div>
             <label for="pre_barcode">條碼（D + 六碼數字）</label>
             <input id="pre_barcode" type="text" readonly />
-            <div class="hint">此版本先用 localStorage 自動遞增：D000001、D000002…</div>
+            <div class="hint">此格之後改成由後端 / Airtable 查目前最大 D 條碼後回傳下一號</div>
           </div>
           <div>
             <label for="pre_name">品牌 + 商品名稱</label>
@@ -416,7 +416,7 @@
         </div>
       </section>
 
-      <!-- 4. 本次訂單清單 -->
+      <!-- 4. 本次清單 -->
       <section class="card" id="secCurrentCart">
         <h2>4. 本次清單</h2>
 
@@ -455,7 +455,7 @@
         </div>
       </section>
 
-      <!-- 6. 發送 -->
+      <!-- 5. 購物車連結 / LINE 發送 -->
       <section class="card" id="secSendLine">
         <h2>5. 購物車連結 / LINE 發送</h2>
 
@@ -478,23 +478,24 @@
           </div>
         </div>
 
-      <div class="actions">
-  <button class="btn btn-dark" id="btnCopyCheckoutLink">複製購物車連結</button>
-  <button class="btn btn-gold" id="btnSendLineFlex">發送 LINE 預購卡片（含購物車按鈕）</button>
-  <button class="btn btn-dark" id="btnClearOrderForm">清空本次資料</button>
-</div>
+        <div class="actions">
+          <button class="btn btn-dark" id="btnCopyCheckoutLink">複製購物車連結</button>
+          <button class="btn btn-gold" id="btnSendLineFlex">發送 LINE 預購卡片（含購物車按鈕）</button>
+          <button class="btn btn-dark" id="btnClearOrderForm">清空本次資料</button>
+        </div>
 
-        <div class="hint">產生購物車連結後再啟用這三顆按鈕</div>
+        <div class="hint">按複製或發送時，若還沒有購物車連結，會先自動產生</div>
       </section>
 
-      <!-- 7. 預購清單管理 -->
+      <!-- 6. 預購清單管理 -->
       <section class="card" id="secArrivalList">
-        <h2>7. 預購清單管理</h2>
+        <h2>6. 預購清單管理</h2>
 
         <div class="actions" style="margin-bottom:12px;">
           <button class="btn btn-gold" id="btnViewWaitingPreorders">待補成本 / 待到貨</button>
           <button class="btn btn-dark" id="btnViewArrivedPreorders">已到貨待出貨</button>
           <button class="btn btn-dark" id="btnViewCompletedPreorders">結單完成的預購清單</button>
+          <button class="btn btn-dark" id="btnViewAllPreorders">全部預購清單</button>
         </div>
 
         <div class="row-3">
@@ -557,11 +558,6 @@
       createdOrder: null
     };
 
-    // ===== 這裡是前端版流水號 =====
-    // 同一台電腦 / 同一瀏覽器會記住，從 D000001 一直往下加
-    // 之後若要多人共用不撞號，要改成後端抓目前最大 D 條碼 +1
-    const PRE_BARCODE_SEQ_KEY = "murain_preorder_barcode_seq";
-
     function todayStr() {
       const d = new Date();
       const y = d.getFullYear();
@@ -570,37 +566,27 @@
       return `${y}-${m}-${day}`;
     }
 
-    function getBarcodeSeq() {
-      const raw = Number(localStorage.getItem(PRE_BARCODE_SEQ_KEY) || 0);
-      return Number.isFinite(raw) && raw > 0 ? raw : 1;
+    // ===== 這段之後改成真的 call 後端 =====
+    // 建議之後做：
+    // GET /op/preorder/next-barcode
+    async function fetchNextPreBarcode() {
+      return "D000001";
     }
 
-    function setBarcodeSeq(n) {
-      localStorage.setItem(PRE_BARCODE_SEQ_KEY, String(n));
-    }
-
-    function formatPreBarcode(n) {
-      return "D" + String(n).padStart(6, "0");
-    }
-
-    function getNextPreBarcodePreview() {
-      return formatPreBarcode(getBarcodeSeq());
-    }
-
-    function consumeNextPreBarcode() {
-      const now = getBarcodeSeq();
-      const code = formatPreBarcode(now);
-      setBarcodeSeq(now + 1);
-      return code;
-    }
-
-    function resetPreProductForm() {
-      document.getElementById("pre_barcode").value = getNextPreBarcodePreview();
+    async function resetPreProductForm() {
+      document.getElementById("pre_barcode").value = await fetchNextPreBarcode();
       document.getElementById("pre_name").value = "";
       document.getElementById("pre_qty").value = 1;
       document.getElementById("pre_suggest_price").value = "";
       document.getElementById("pre_in_date").value = todayStr();
       document.getElementById("pre_note").value = "";
+    }
+
+    function setCreatedOrder(order) {
+      state.createdOrder = order || null;
+      document.getElementById("created_order_id").value = order?.order_id || "";
+      document.getElementById("created_checkout_link").value = order?.checkout_link || "";
+      document.getElementById("created_order_amount").value = order?.amount ? TWD(order.amount) : "";
     }
 
     function renderSelectedMember() {
@@ -611,6 +597,7 @@
           <div><span class="badge badge-red">尚未選取客人</span></div>
           <div class="hint" style="margin-top:8px;">請先搜尋並選取客人</div>
         `;
+        document.getElementById("created_member_name").value = "";
         return;
       }
       box.innerHTML = `
@@ -654,8 +641,9 @@
     }
 
     function removeCurrentItem(idx) {
-      state.currentItems.splice(idx,1);
+      state.currentItems.splice(idx, 1);
       renderCurrentItems();
+      setCreatedOrder(null);
     }
     window.removeCurrentItem = removeCurrentItem;
 
@@ -689,6 +677,7 @@
       const rows = window.__memberRows || [];
       state.selectedMember = rows[idx] || null;
       renderSelectedMember();
+      setCreatedOrder(null);
     }
     window.pickMember = pickMember;
 
@@ -746,23 +735,13 @@
         price,
         note
       });
+
       renderCurrentItems();
+      setCreatedOrder(null);
     }
     window.addPreProductToCurrent = addPreProductToCurrent;
 
-    function setCreatedOrder(order) {
-      state.createdOrder = order || null;
-      document.getElementById("created_order_id").value = order?.order_id || "";
-      document.getElementById("created_checkout_link").value = order?.checkout_link || "";
-      document.getElementById("created_order_amount").value = order?.amount ? TWD(order.amount) : "";
-
-      const enabled = !!order?.order_id;
-      document.getElementById("btnCopyCheckoutLink").disabled = !enabled;
-      document.getElementById("btnSendLineLink").disabled = !enabled;
-      document.getElementById("btnSendLineFlex").disabled = !enabled;
-    }
-
-    // ===== 假資料 =====
+    // ===== 假資料區，之後接你自己的 API =====
     const memberMaster = [
       {
         line_name:"測試客人A",
@@ -835,22 +814,9 @@
       }
     ];
 
-    // 讓預設流水號不跟假資料撞到
-    (function syncInitialSeq(){
-      const maxNum = preProductMaster.reduce((max, item) => {
-        const m = String(item.barcode || "").match(/^D(\d{6})$/);
-        if (!m) return max;
-        return Math.max(max, Number(m[1]));
-      }, 0);
-      const current = getBarcodeSeq();
-      if (current <= maxNum) {
-        setBarcodeSeq(maxNum + 1);
-      }
-    })();
-
     async function mockSearchMembers() {
       const kw = String(document.getElementById("member_keyword").value || "").trim();
-      const rows = memberMaster.filter(x => !kw || [x.line_name,x.name,x.phone,x.email].join(" ").includes(kw));
+      const rows = memberMaster.filter(x => !kw || [x.line_name, x.name, x.phone, x.email].join(" ").includes(kw));
       renderMemberResults(rows);
     }
 
@@ -863,7 +829,7 @@
           x.source === "預購" &&
           x.category === "預購" &&
           x.pre_status === "預購中" &&
-          (!kw || [x.barcode,x.name].join(" ").includes(kw))
+          (!kw || [x.barcode, x.name].join(" ").includes(kw))
         )
         .sort((a,b) => String(a.barcode).localeCompare(String(b.barcode)));
 
@@ -910,28 +876,39 @@
       `).join("");
     }
 
-    async function mockCreateCartLink() {
+    // ===== 之後這段改成真的 call 後端建立 cart / cart_token / checkout link =====
+    async function ensurePreCartLink() {
+      if (state.createdOrder?.checkout_link) {
+        return state.createdOrder;
+      }
+
       if (!state.selectedMember) {
         alert("請先選取客人");
-        return;
+        return null;
       }
+
       if (!state.currentItems.length) {
         alert("請先加入商品");
-        return;
+        return null;
       }
 
-      const amount = state.currentItems.reduce((a,b)=>a+((Number(b.qty)||0)*(Number(b.price)||0)),0);
+      const amount = state.currentItems.reduce(
+        (a, b) => a + ((Number(b.qty) || 0) * (Number(b.price) || 0)),
+        0
+      );
 
-      setCreatedOrder({
-        order_id:"PC202604090001",
-        checkout_link:"https://murain.tw/cart-checkout?cart_token=PREORDER001",
+      const created = {
+        order_id: "PC202604090001",
+        checkout_link: "https://murain.tw/cart-checkout?cart_token=PREORDER001",
         amount
-      });
+      };
 
-      alert("已產生預購購物車連結（目前這版是前端骨架示意）");
+      setCreatedOrder(created);
+      return created;
     }
 
-    function createPreProductLocal() {
+    // ===== 之後這段改成真的 POST 到後端，由後端決定條碼 =====
+    async function createPreProductLocal() {
       const name = String(document.getElementById("pre_name").value || "").trim();
       const qty = Number(document.getElementById("pre_qty").value || 0);
       const suggestPrice = Number(document.getElementById("pre_suggest_price").value || 0);
@@ -946,11 +923,14 @@
         return;
       }
 
-      const barcode = consumeNextPreBarcode();
+      // 這裡之後改成：
+      // POST /op/preorder/create-product
+      // 由後端查 Products 最大 D 條碼，再 +1 後寫入 Airtable，回傳真正 barcode
+      const savedBarcode = document.getElementById("pre_barcode").value || "D000001";
 
       const newProduct = {
         product_id: "rec_pre_" + Date.now(),
-        barcode,
+        barcode: savedBarcode,
         name,
         suggest_price: suggestPrice,
         stock: qty,
@@ -963,7 +943,7 @@
       preProductMaster.push(newProduct);
 
       arrivalMaster.push({
-        barcode,
+        barcode: savedBarcode,
         name,
         preorder_qty: qty,
         sold_qty: 0,
@@ -972,27 +952,33 @@
         pre_status: "預購中"
       });
 
-      resetPreProductForm();
+      await resetPreProductForm();
       mockSearchProducts();
       mockSearchArrivalList();
 
-      alert(`已新增預購商品：${barcode}`);
+      alert(`已新增預購商品：${savedBarcode}`);
     }
 
     document.getElementById("btnReloadPage").addEventListener("click", ()=>location.reload());
 
-    document.getElementById("btnClearPreProduct").addEventListener("click", resetPreProductForm);
+    document.getElementById("btnClearPreProduct").addEventListener("click", async ()=>{
+      await resetPreProductForm();
+    });
+
     document.getElementById("btnCreatePreProduct").addEventListener("click", createPreProductLocal);
 
     document.getElementById("btnSearchMember").addEventListener("click", mockSearchMembers);
+
     document.getElementById("btnClearMemberSearch").addEventListener("click", ()=>{
       document.getElementById("member_keyword").value = "";
       state.selectedMember = null;
       renderSelectedMember();
+      setCreatedOrder(null);
       document.getElementById("memberResultBody").innerHTML = `<tr><td colspan="6" class="hint">尚未搜尋</td></tr>`;
     });
 
     document.getElementById("btnSearchPreProducts").addEventListener("click", mockSearchProducts);
+
     document.getElementById("btnClearProductSearch").addEventListener("click", ()=>{
       document.getElementById("product_keyword").value = "";
       document.getElementById("pick_qty").value = 1;
@@ -1004,6 +990,23 @@
     document.getElementById("btnClearCurrentOrder").addEventListener("click", ()=>{
       state.currentItems = [];
       renderCurrentItems();
+      setCreatedOrder(null);
+    });
+
+    document.getElementById("btnCopyCheckoutLink").addEventListener("click", async () => {
+      const created = await ensurePreCartLink();
+      if (!created?.checkout_link) return;
+
+      await navigator.clipboard.writeText(created.checkout_link);
+      alert("已複製購物車連結");
+    });
+
+    document.getElementById("btnSendLineFlex").addEventListener("click", async () => {
+      const created = await ensurePreCartLink();
+      if (!created?.checkout_link) return;
+
+      // 這裡之後接你原本的 LINE Flex API
+      alert("這顆之後接 LINE 預購卡片（含購物車按鈕）");
     });
 
     document.getElementById("btnClearOrderForm").addEventListener("click", ()=>{
@@ -1016,24 +1019,8 @@
       document.getElementById("pick_note").value = "";
     });
 
-    document.getElementById("btnCopyCheckoutLink").addEventListener("click", async ()=>{
-      const v = document.getElementById("created_checkout_link").value || "";
-      if (!v) return;
-      await navigator.clipboard.writeText(v);
-      alert("已複製購物車連結");
-    });
-
-    document.getElementById("btnSendLineLink").addEventListener("click", ()=>{
-      if (!state.createdOrder) return;
-      alert("這顆之後接你原本的 LINE 發送購物車連結 API");
-    });
-
-    document.getElementById("btnSendLineFlex").addEventListener("click", ()=>{
-      if (!state.createdOrder) return;
-      alert("這顆之後接你原本的 LINE Flex API");
-    });
-
     document.getElementById("btnSearchArrivalList").addEventListener("click", mockSearchArrivalList);
+
     document.getElementById("btnClearArrivalSearch").addEventListener("click", ()=>{
       document.getElementById("arrival_keyword").value = "";
       document.getElementById("arrival_filter").value = "waiting";
@@ -1055,12 +1042,19 @@
       mockSearchArrivalList();
     });
 
-    resetPreProductForm();
-    renderSelectedMember();
-    renderCurrentItems();
-    setCreatedOrder(null);
-    mockSearchProducts();
-    mockSearchArrivalList();
+    document.getElementById("btnViewAllPreorders").addEventListener("click", ()=>{
+      document.getElementById("arrival_filter").value = "all";
+      mockSearchArrivalList();
+    });
+
+    (async () => {
+      await resetPreProductForm();
+      renderSelectedMember();
+      renderCurrentItems();
+      setCreatedOrder(null);
+      mockSearchProducts();
+      mockSearchArrivalList();
+    })();
   </script>
 </body>
 </html>
