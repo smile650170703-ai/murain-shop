@@ -2305,12 +2305,25 @@ const addrText = (()=>{
   return '';
 })();
 
-  const itemsText = f.items_text || '';
- const instApplyText = (f.installment_apply_text || "").trim();
-  const a = calcAmounts(f);
-  const totalBase = money(a.base);
-  const creditUse = money(a.credit);
-  const totalNet  = money(a.net);
+    const itemsText = f.items_text || '';
+const rawInstApplyText = String(f.installment_apply_text || "").trim();
+const a = calcAmounts(f);
+const totalBase = money(a.base);
+const creditUse = money(a.credit);
+const totalNet  = money(a.net);
+
+const isYufuOrder = /^yufu_inst_/i.test(String(f.payment_method || '').trim());
+
+const instApplyText = isYufuOrder
+  ? [
+      rawInstApplyText,
+      yufuPhoneOwner ? `電話是否本人名下：${yufuPhoneOwner}` : '',
+      `付款方式：${displayPaymentMethod(f.payment_method || '')}`,
+      `應付金額：${totalNet}`
+    ].filter(Boolean).join('\n')
+  : rawInstApplyText;
+
+const yufuCopyText = instApplyText;
 
   dEl.innerHTML = `
     <div class="detail-grid">
@@ -2333,16 +2346,10 @@ ${renderTailInfoBlock(f)}
           <div class="section-title">收件人 / 取貨資訊</div>
           <label>收件人</label>
           <input id="d_ship_name" readonly value="${ship.name || ''}">
-          <div class="row">
-            <div>
-              <label>電話</label>
-              <input id="d_ship_phone" readonly value="${ship.phone || ''}">
-            </div>
-            <div>
-              <label>Email</label>
-              <input id="d_ship_email" readonly value="${ship.email || ''}">
-            </div>
-          </div>
+
+          <label>電話</label>
+          <input id="d_ship_phone" readonly value="${ship.phone || ''}">
+
           <label>取貨方式 / 地址</label>
           <textarea id="d_ship_addr" readonly>${addrText}</textarea>
 
@@ -2351,15 +2358,14 @@ ${renderTailInfoBlock(f)}
 
           <label class="mt-2">商品明細</label>
           <textarea id="d_items_text" readonly>${itemsText}</textarea>
+
           ${instApplyText ? `
-          <label class="mt-2">裕富分期申請資料</label>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;">
+            <label style="margin:0;">裕富分期申請資料</label>
+            <button class="small-btn" id="btnCopyYufuText" type="button">📋 一鍵複製裕富內容</button>
+          </div>
           <textarea id="d_installment_apply_text" readonly>${instApplyText}</textarea>
 ` : ''}
-
-          <label class="mt-2">電話是否本人名下</label>
-          <div class="ro-field ro-sm ${yufuPhoneOwner ? '' : 'ro-empty'}" id="d_yufu_phone_owner_ro">
-            ${escapeHtml(yufuPhoneOwner || '—')}
-          </div>
         </div>
       </div>
 
@@ -2486,6 +2492,28 @@ ${renderTailInfoBlock(f)}
 </div>
     </div>
   `;
+
+   const btnCopyYufuText = $('#btnCopyYufuText');
+  if (btnCopyYufuText) {
+    btnCopyYufuText.addEventListener('click', async () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(yufuCopyText || '');
+        } else {
+          const ta = $('#d_installment_apply_text');
+          if (ta) {
+            ta.select();
+            document.execCommand('copy');
+            window.getSelection().removeAllRanges();
+          }
+        }
+        alert('已複製裕富內容');
+      } catch (e) {
+        console.error(e);
+        alert('複製失敗，請手動選取文字複製。');
+      }
+    });
+  }
 
  // ★ 賣貨便名稱選單：帶入目前欄位值，並更新當月累積金額
   const vendorSel = $('#d_vendor_name');
