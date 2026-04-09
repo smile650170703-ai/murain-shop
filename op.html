@@ -966,8 +966,7 @@ function buildCheckoutUrl() {
   const cartToken = String(CART || '').trim();
 
   // ✅ 2) endpoint 統一用「無副檔名」入口（配合 Pages 308 行為）
-  const endpoint = `https://murain.tw/liff-checkout?cart_token=${encodeURIComponent(CART)}&force=1`;
-
+const endpoint = `https://murain.tw/liff-checkout.html?cart_token=${encodeURIComponent(CART)}`;
   return `https://liff.line.me/${LIFF_ID}?url=${encodeURIComponent(endpoint)}`;
 }
 async function markCartCopied() {
@@ -1292,7 +1291,13 @@ function renderCartSummary(json){
       const uid   = escHtml(c.line_user_id || c.lineUserId || '');
       const cnt   = Number(c.item_count || c.itemCount || 0) || 0;
       const up    = escHtml(c.updated_at || c.updatedAt || '');
-      const st    = escHtml(c.status || '');
+const st    = escHtml(c.status || '');
+const copiedAt = escHtml(c.link_copied_at || '');
+const sentAt   = escHtml(c.link_sent_at || '');
+
+let sendState = '未發送';
+if (sentAt) sendState = '已正式發送';
+else if (copiedAt) sendState = '已複製待確認';
 
       return `
         <div style="padding:10px;border:1px solid #e5e7eb;border-radius:12px;background:#fff;margin-bottom:10px;">
@@ -1302,8 +1307,11 @@ function renderCartSummary(json){
                 ${name || '(未填名字)'} <span class="muted">(${cnt} 件)</span>
               </div>
               <div class="muted" style="margin-top:2px;">
-                status: <b>${st || '-'}</b> ｜ updated: ${up || '-'}
-              </div>
+  status: <b>${st || '-'}</b> ｜ 發送狀態: <b>${sendState}</b> ｜ updated: ${up || '-'}
+</div>
+<div class="muted" style="margin-top:4px;">
+  copied: ${copiedAt || '-'} ｜ sent: ${sentAt || '-'}
+</div>
               <div class="muted mono" style="margin-top:6px;word-break:break-all;">
                 cart_token: ${token}<br/>
                 line_user_id: ${uid || '-'}
@@ -1479,12 +1487,13 @@ async function adminListOpenCarts(){
   }
 
   const cartsRaw = (r.json.carts || []);
-  const hasItemCount = cartsRaw.some(c => c && c.item_count != null);
-  const carts = hasItemCount
-    ? cartsRaw.filter(c => (Number(c.item_count || 0) || 0) > 0)
-    : cartsRaw;
+const hasItemCount = cartsRaw.some(c => c && c.item_count != null);
+const carts = hasItemCount
+  ? cartsRaw.filter(c => (Number(c.item_count || 0) || 0) > 0)
+  : cartsRaw;
 
-  renderOpenCarts(carts);
+renderOpenCarts(carts);
+alert(`搜尋完成，共找到 ${carts.length} 台購物車`);
 }
 
   function getAdminKey(){
