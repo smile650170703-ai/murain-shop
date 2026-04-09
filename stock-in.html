@@ -453,6 +453,7 @@
     }
 
     .hidden { display: none !important; }
+.hidden-col { display: none !important; }
 
     @media (max-width: 1200px) {
       .field { grid-column: span 4; }
@@ -524,7 +525,7 @@
 <div class="muted" style="margin-top:10px;">需先查到會員，再確認是否已有寄賣人主檔，寄賣品才能正式送出。</div>
     </div>
 
-    <div class="card">
+    <div id="singleInputCard" class="card hidden">
       <div class="card-header">
         <div>
           <h2 class="card-title">2️⃣ 入庫表輸入</h2>
@@ -628,16 +629,17 @@
     <div class="card">
       <div class="card-header">
         <div>
-          <h2 class="card-title">3️⃣ 當次輸入內容</h2>
-          <p class="hint">下方每筆都可以直接改每個欄位，確認沒問題再送出。</p>
+          <h2 class="card-title">2️⃣ 正式入庫表</h2>
+<p class="hint">先選上方模式，再按「新增一列」，直接在下方表格一次輸入多筆後送出。</p>
         </div>
       </div>
 
       <div class="summary" id="summaryBoxes"></div>
 
 <div class="toolbar">
-  <div id="statusText" class="status">目前尚未加入任何品項。</div>
+  <div id="statusText" class="status">先選模式，再按「新增一列」開始批次輸入。</div>
   <div class="actions" style="margin-top:0;">
+    <button id="btnAddRow" class="btn btn-secondary" type="button">新增一列</button>
     <button id="btnDownloadLabelExcel" class="btn btn-excel" type="button">下載標籤 Excel</button>
     <button id="btnSubmitAll" class="btn btn-success" type="button">確認送出</button>
     <button id="btnClearDrafts" class="btn btn-danger" type="button">清空本次清單</button>
@@ -647,24 +649,24 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr>
-              <th>操作</th>
-              <th>商品來源</th>
-              <th>原本包包條碼</th>
-              <th>SKU</th>
-              <th>寄賣人</th>
-              <th>庫存位置</th>
-              <th>Name</th>
-              <th>Price</th>
-<th>起標價格</th>
-<th>一標多少</th>
-<th>StockQty</th>
-<th>Cost</th>
-<th>入庫日期</th>
-<th>sub_category</th>
-<th>直播截圖</th>
-            </tr>
-          </thead>
+  <tr>
+    <th>操作</th>
+    <th>商品來源</th>
+    <th class="col-always-hidden">原本包包條碼</th>
+    <th>SKU</th>
+    <th class="col-consign-only">寄賣人</th>
+    <th>庫存位置</th>
+    <th>商品名稱</th>
+    <th>建議售價</th>
+    <th class="col-consign-only">起標價格</th>
+    <th class="col-consign-only">一標多少</th>
+    <th>數量</th>
+    <th class="col-own-only">成本</th>
+    <th>入庫日期</th>
+    <th>分類</th>
+    <th class="col-consign-only">直播截圖</th>
+  </tr>
+</thead>
           <tbody id="draftTableBody">
             <tr><td colspan="15" class="empty">目前尚無資料</td></tr>
           </tbody>
@@ -832,6 +834,7 @@ sourceType: $('sourceType'),
       summaryBoxes: $('summaryBoxes'),
       statusText: $('statusText'),
 draftTableBody: $('draftTableBody'),
+btnAddRow: $('btnAddRow'),
 btnDownloadLabelExcel: $('btnDownloadLabelExcel'),
 btnSubmitAll: $('btnSubmitAll'),
 btnClearDrafts: $('btnClearDrafts'),
@@ -900,6 +903,20 @@ liveScreenshotPreview: $('liveScreenshotPreview')
       target.classList.toggle('active', !!msg);
     }
 
+function toggleTableColumns(selector, shouldHide) {
+  document.querySelectorAll(selector).forEach(node => {
+    node.classList.toggle('hidden-col', shouldHide);
+  });
+}
+
+function applyTableMode() {
+  const isConsign = state.mode === 'consign';
+
+  toggleTableColumns('.col-always-hidden', true);
+  toggleTableColumns('.col-consign-only', !isConsign);
+  toggleTableColumns('.col-own-only', isConsign);
+}
+
 function setMode(mode) {
   state.mode = mode;
   localStorage.setItem(MODE_KEY, mode);
@@ -911,44 +928,32 @@ function setMode(mode) {
   el.btnModeConsign.classList.toggle('active', isConsign);
   el.memberSearchCard.classList.toggle('active', isConsign);
 
-  // 原本包包條碼：目前兩種模式都不顯示
+  el.sourceType.value = isOwn ? '自有' : '寄賣';
+  el.sourceBadge.textContent = `目前模式：${isOwn ? '自有' : '寄賣'}`;
+  el.sourceBadge.className = `badge ${isOwn ? 'blue' : 'orange'}`;
+
+  // 上方單筆區雖然隱藏，資料狀態還是一起同步
   el.originBarcodeField.classList.add('hidden');
-
-  // 寄賣模式不要顯示成本
   el.costField.classList.toggle('hidden', isConsign);
-
-  // 寄賣模式要顯示的欄位
   el.consignorField.classList.toggle('hidden', isOwn);
   el.auctionStartPriceField.classList.toggle('hidden', isOwn);
   el.bidStepField.classList.toggle('hidden', isOwn);
   el.liveScreenshotField.classList.toggle('hidden', isOwn);
 
-  // SKU 規則：自有手動、寄賣自動
   el.sku.readOnly = isConsign;
-  el.sku.placeholder = isConsign
-    ? '寄賣自動帶入 C 開頭流水號'
-    : '請手動輸入條碼';
-
-  el.sourceType.value = isOwn ? '自有' : '寄賣';
-  el.sourceBadge.textContent = `目前模式：${isOwn ? '自有' : '寄賣'}`;
-  el.sourceBadge.className = `badge ${isOwn ? 'blue' : 'orange'}`;
+  el.sku.placeholder = isConsign ? '寄賣自動帶入 C 開頭流水號' : '請手動輸入條碼';
+  el.name.placeholder = isConsign ? '輸入品牌+商品名稱' : '輸入商品名稱';
 
   if (isConsign) {
     el.originBarcode.value = '';
     el.cost.value = '';
     el.subCategory.value = '寄賣';
     el.subCategory.readOnly = true;
-    el.sku.value = '';
-
-    fillNextSku(true).catch(err => {
-      showError(el.formError, err.message || '取得寄賣條碼失敗');
-    });
   } else {
     el.subCategory.readOnly = false;
     if (el.subCategory.value === '寄賣') {
       el.subCategory.value = '';
     }
-    el.sku.value = '';
   }
 
   if (isOwn) {
@@ -966,7 +971,10 @@ function setMode(mode) {
     el.btnEditConsignor.classList.add('hidden');
   }
 
+  applyTableMode();
+  renderDrafts();
   showError(el.formError, '');
+  showError(el.submitError, '');
 }
 
     function formatCSku(no) {
@@ -1058,6 +1066,50 @@ function validateItem(item) {
       if (!s) return false;
       return state.drafts.some(row => row.id !== currentId && String(row.SKU || '').trim().toUpperCase() === s);
     }
+
+    async function createEmptyDraftRow(mode = state.mode) {
+  const isConsign = mode === 'consign';
+
+  if (isConsign && !String(state.selectedConsignorRecordId || '').trim()) {
+    throw new Error('寄賣入庫請先在上方查詢並帶入寄賣人');
+  }
+
+  let sku = '';
+  if (isConsign) {
+    sku = await fetchNextSkuFromServer();
+  }
+
+  return {
+    id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    商品來源: isConsign ? '寄賣' : '自有',
+    原本包包條碼: '',
+    SKU: sku,
+    寄賣人: isConsign ? el.consignor.value.trim() : '',
+    consignorRecordId: isConsign ? String(state.selectedConsignorRecordId || '').trim() : '',
+    庫存位置: '',
+    Name: '',
+    Price: 0,
+    起標價格: isConsign ? 0 : 0,
+    一標多少: isConsign ? 0 : 0,
+    StockQty: 1,
+    Cost: isConsign ? 0 : 0,
+    入庫日期: el.stockInDate.value || todayStr(),
+    sub_category: isConsign ? '寄賣' : '',
+    直播截圖Url: ''
+  };
+}
+
+async function addBlankRow() {
+  showError(el.submitError, '');
+  try {
+    const row = await createEmptyDraftRow(state.mode);
+    state.drafts.push(row);
+    saveDrafts();
+    renderDrafts();
+  } catch (err) {
+    showError(el.submitError, err.message || '新增一列失敗');
+  }
+}
 
 async function clearForm(keepMode = true) {
   el.originBarcode.value = '';
@@ -1190,86 +1242,141 @@ if (key === '商品來源') {
       return Number(n || 0).toLocaleString('zh-TW');
     }
 
-    function renderDrafts() {
-      renderSummary();
+function renderDrafts() {
+  renderSummary();
+  applyTableMode();
 
-      if (!state.drafts.length) {
-        el.draftTableBody.innerHTML = '<tr><td colspan="15" class="empty">目前尚無資料</td></tr>';
-        return;
-      }
+  if (!state.drafts.length) {
+    el.draftTableBody.innerHTML = '<tr><td colspan="15" class="empty">請先選模式，再按「新增一列」開始批次輸入</td></tr>';
+    return;
+  }
 
-      el.draftTableBody.innerHTML = state.drafts.map((row) => {
-        const isConsign = row.商品來源 === '寄賣';
-        return `
-          <tr>
-            <td>
-              <button class="btn btn-danger" style="min-height:40px;padding:0 12px;" type="button" onclick="window.__removeDraft('${escapeHtml(row.id)}')">刪除</button>
-            </td>
-            <td>
-              <select class="table-select" onchange="window.__updateDraft('${escapeHtml(row.id)}','商品來源',this.value)">
-                <option value="自有" ${row.商品來源 === '自有' ? 'selected' : ''}>自有</option>
-                <option value="寄賣" ${row.商品來源 === '寄賣' ? 'selected' : ''}>寄賣</option>
-              </select>
-            </td>
-            <td>
-              <input class="table-input barcode" type="text" value="${escapeHtml(row.原本包包條碼 || '')}" ${!isConsign ? 'readonly' : ''}
-                oninput="window.__updateDraft('${escapeHtml(row.id)}','原本包包條碼',this.value)" />
-            </td>
-            <td>
-              <input class="table-input barcode" type="text" value="${escapeHtml(row.SKU || '')}"
-                oninput="window.__updateDraft('${escapeHtml(row.id)}','SKU',this.value)" />
-            </td>
-            <td>
-              <input class="table-input medium" type="text" value="${escapeHtml(row.寄賣人 || '')}" readonly />
-            </td>
-            <td>
-              <input class="table-input medium" type="text" value="${escapeHtml(row.庫存位置 || '')}"
-                oninput="window.__updateDraft('${escapeHtml(row.id)}','庫存位置',this.value)" />
-            </td>
-            <td>
-              <input class="table-input name" type="text" value="${escapeHtml(row.Name || '')}"
-                oninput="window.__updateDraft('${escapeHtml(row.id)}','Name',this.value)" />
-            </td>
-           <td>
-  <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row.Price ?? 0)}"
-    oninput="window.__updateDraft('${escapeHtml(row.id)}','Price',Number(this.value || 0))" />
-</td>
-<td>
-  <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row['起標價格'] ?? 0)}" ${!isConsign ? 'readonly' : ''}
-    oninput="window.__updateDraft('${escapeHtml(row.id)}','起標價格',Number(this.value || 0))" />
-</td>
-<td>
-  <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row['一標多少'] ?? 0)}" ${!isConsign ? 'readonly' : ''}
-    oninput="window.__updateDraft('${escapeHtml(row.id)}','一標多少',Number(this.value || 0))" />
-</td>
-<td>
-  <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row.StockQty ?? 0)}"
-    oninput="window.__updateDraft('${escapeHtml(row.id)}','StockQty',Number(this.value || 0))" />
-</td>
-            <td>
-              <input class="table-input small right" type="number" min="0" step="1" value="${escapeHtml(row.Cost ?? 0)}"
-                oninput="window.__updateDraft('${escapeHtml(row.id)}','Cost',Number(this.value || 0))" />
-            </td>
-            <td>
-              <input class="table-input long" type="date" value="${escapeHtml(row.入庫日期 || todayStr())}"
-                oninput="window.__updateDraft('${escapeHtml(row.id)}','入庫日期',this.value)" />
-            </td>
-            <td>
-  <input class="table-input medium" type="text" value="${escapeHtml(row.sub_category || '')}"
-    oninput="window.__updateDraft('${escapeHtml(row.id)}','sub_category',this.value)" />
-</td>
-<td>
-  <input
-    class="table-input medium"
-    type="text"
-    value="${row['直播截圖Url'] ? '已上傳' : '未上傳'}"
-    readonly
-  />
-</td>
-          </tr>
-        `;
-      }).join('');
-    }
+  el.draftTableBody.innerHTML = state.drafts.map((row) => {
+    const isConsign = String(row.商品來源 || '') === '寄賣';
+    const namePlaceholder = isConsign ? '輸入品牌+商品名稱' : '輸入商品名稱';
+
+    return `
+      <tr>
+        <td>
+          <button class="btn btn-danger" style="min-height:40px;padding:0 12px;" type="button" onclick="window.__removeDraft('${escapeHtml(row.id)}')">刪除</button>
+        </td>
+        <td>
+          <input class="table-input medium" type="text" value="${escapeHtml(row.商品來源 || '')}" readonly />
+        </td>
+        <td class="col-always-hidden">
+          <input class="table-input barcode" type="text" value="${escapeHtml(row.原本包包條碼 || '')}" readonly />
+        </td>
+        <td>
+          <input
+            class="table-input barcode"
+            type="text"
+            value="${escapeHtml(row.SKU || '')}"
+            ${isConsign ? 'readonly' : ''}
+            placeholder="${isConsign ? '寄賣自動帶入' : '請手動輸入條碼'}"
+            oninput="window.__updateDraft('${escapeHtml(row.id)}','SKU',this.value)"
+          />
+        </td>
+        <td class="col-consign-only">
+          <input class="table-input medium" type="text" value="${escapeHtml(row.寄賣人 || '')}" readonly />
+        </td>
+        <td>
+          <input
+            class="table-input medium"
+            type="text"
+            value="${escapeHtml(row.庫存位置 || '')}"
+            placeholder="可不填"
+            oninput="window.__updateDraft('${escapeHtml(row.id)}','庫存位置',this.value)"
+          />
+        </td>
+        <td>
+          <input
+            class="table-input name"
+            type="text"
+            value="${escapeHtml(row.Name || '')}"
+            placeholder="${namePlaceholder}"
+            oninput="window.__updateDraft('${escapeHtml(row.id)}','Name',this.value)"
+          />
+        </td>
+        <td>
+          <input
+            class="table-input small right"
+            type="number"
+            min="0"
+            step="1"
+            value="${escapeHtml(row.Price ?? 0)}"
+            oninput="window.__updateDraft('${escapeHtml(row.id)}','Price',Number(this.value || 0))"
+          />
+        </td>
+        <td class="col-consign-only">
+          <input
+            class="table-input small right"
+            type="number"
+            min="0"
+            step="1"
+            value="${escapeHtml(row['起標價格'] ?? 0)}"
+            oninput="window.__updateDraft('${escapeHtml(row.id)}','起標價格',Number(this.value || 0))"
+          />
+        </td>
+        <td class="col-consign-only">
+          <input
+            class="table-input small right"
+            type="number"
+            min="0"
+            step="1"
+            value="${escapeHtml(row['一標多少'] ?? 0)}"
+            oninput="window.__updateDraft('${escapeHtml(row.id)}','一標多少',Number(this.value || 0))"
+          />
+        </td>
+        <td>
+          <input
+            class="table-input small right"
+            type="number"
+            min="0"
+            step="1"
+            value="${escapeHtml(row.StockQty ?? 1)}"
+            oninput="window.__updateDraft('${escapeHtml(row.id)}','StockQty',Number(this.value || 0))"
+          />
+        </td>
+        <td class="col-own-only">
+          <input
+            class="table-input small right"
+            type="number"
+            min="0"
+            step="1"
+            value="${escapeHtml(row.Cost ?? 0)}"
+            oninput="window.__updateDraft('${escapeHtml(row.id)}','Cost',Number(this.value || 0))"
+          />
+        </td>
+        <td>
+          <input
+            class="table-input long"
+            type="date"
+            value="${escapeHtml(row.入庫日期 || todayStr())}"
+            oninput="window.__updateDraft('${escapeHtml(row.id)}','入庫日期',this.value)"
+          />
+        </td>
+        <td>
+          <input
+            class="table-input medium"
+            type="text"
+            value="${escapeHtml(row.sub_category || '')}"
+            ${isConsign ? 'readonly' : ''}
+            placeholder="${isConsign ? '寄賣' : '請輸入分類'}"
+            oninput="window.__updateDraft('${escapeHtml(row.id)}','sub_category',this.value)"
+          />
+        </td>
+        <td class="col-consign-only">
+          <input
+            class="table-input medium"
+            type="text"
+            value="${row['直播截圖Url'] ? '已上傳' : '未上傳'}"
+            readonly
+          />
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
 
 function buildPayload(row) {
   const isConsign = String(row.商品來源 || '').trim() === '寄賣';
@@ -1809,6 +1916,7 @@ async function saveConsignor() {
     el.btnModeOwn.addEventListener('click', () => setMode('own'));
     el.btnModeConsign.addEventListener('click', () => setMode('consign'));
 el.btnAddDraft.addEventListener('click', addDraft);
+el.btnAddRow.addEventListener('click', addBlankRow);
 el.btnClearForm.addEventListener('click', () => clearForm(true));
 el.btnClearDrafts.addEventListener('click', clearDrafts);
 el.btnDownloadLabelExcel.addEventListener('click', downloadLabelExcel);
