@@ -183,7 +183,8 @@
 #btnQuickPaid,
 #btnRemindToday,
 #btnPickupNeed,
-#btnConsign{
+#btnConsign,
+#btnConsignAccounting{
   display:none !important;
 }
   .label-inline{display:flex;align-items:center;gap:5px;font-size:12px;margin-top:4px}
@@ -277,6 +278,9 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   <span>寄賣</span>
   <span id="consignBadge" class="count-badge" style="display:none;">0</span>
 </button>
+ <button class="filter-btn" id="btnConsignAccountingTop" type="button">
+  一時貿易
+</button>
 </div>
 <div class="filter-row">
     <div class="field">
@@ -324,6 +328,11 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
  <div class="field">
   <label>&nbsp;</label>
   <button class="small-btn" id="btnConsign" type="button">寄賣</button>
+</div>
+
+<div class="field">
+  <label>&nbsp;</label>
+  <button class="small-btn" id="btnConsignAccounting" type="button">一時貿易</button>
 </div>
 
   <div class="field">
@@ -433,10 +442,171 @@ let ORDERS_CACHE = []; // ← 匯出用，存純欄位物件
 let ALL_ORDERS_CACHE = [];
 let VENDOR_SUMMARY_CACHE = [];
 let LINE_SEARCH_TERM = '';
+ let currentConsignAccountingRows = [];
+let currentConsignAccountingBucket = '';
 
 let currentPanelMode = 'orders';      // orders / consign
 let currentConsignRows = [];
 let currentConsignRecord = null;
+
+ function getBiMonthLabel(dateLike){
+  const s = String(dateLike || '').trim();
+  if (!s) return '';
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return '';
+  const m = d.getMonth() + 1;
+
+  if (m <= 2) return '1-2月';
+  if (m <= 4) return '3-4月';
+  if (m <= 6) return '5-6月';
+  if (m <= 8) return '7-8月';
+  if (m <= 10) return '9-10月';
+  return '11-12月';
+}
+
+async function loadConsignAccountingList(){
+  currentPanelMode = 'consign_accounting';
+  currentConsignRecord = null;
+  currentConsignAccountingBucket = '';
+
+  const listEl = $('#orderList');
+  const detailEl = $('#orderDetail');
+  const msgEl = $('#msg');
+
+  listEl.innerHTML = '<div class="muted">一時貿易資料載入中…</div>';
+  detailEl.innerHTML = '<div class="muted">請先選擇一個月份區間</div>';
+  if (msgEl) msgEl.textContent = '';
+
+  try{
+    await ensureOpKey();
+
+    const r = await fetch(`${API}/op/consign/settlement/list`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        status: 'all'
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok || !j.ok){
+      throw new Error(j.error || 'consign_accounting_list_failed');
+    }
+
+    currentConsignAccountingRows = (j.items || []).filter(row => {
+      const st = String(row.status || '').trim().toLowerCase();
+      const method = String(row.method || '').trim().toLowerCase();
+      return st === 'settled' && (method === 'bank_transfer' || method === 'store_credit');
+    });
+
+    renderConsignAccountingBuckets();
+   setTopFilterActive('consign_accounting');
+
+    if (msgEl) {
+      msgEl.textContent = currentConsignAccountingRows.length
+        ? `僅顯示已完成匯款／購物金的一時貿易資料，共 ${currentConsignAccountingRows.length} 筆。`
+        : '目前沒有可列印的一時貿易資料。';
+    }
+  }catch(e){
+    console.error(e);
+    listEl.innerHTML = '<div class="error">一時貿易資料載入失敗：' + (e.message || e) + '</div>';
+    currentConsignAccountingRows = [];
+  }
+}
+
+function renderConsignAccountingBuckets(){
+  const listEl = $('#orderList');
+
+  const buckets = ['1-2月','3-4月','5-6月','7-8月','9-10月','11-12月'];
+
+  const grouped = {};
+  buckets.forEach(k => grouped[k] = []);
+
+  (currentConsignAccountingRows || []).forEach(row => {
+    const doneAt =
+      row.creditDoneAt ||
+      row.bankDoneAt ||
+      row.doneAt ||
+      row.updatedAt ||
+      '';
+    const label = getBiMonthLabel(doneAt);
+    if (label && grouped[label]) grouped[label].push(row);
+  });
+
+  listEl.innerHTML = buckets.map(label => {
+    const count = grouped[label].length;
+    return `
+      <div class="order-row" data-bucket="${label}">
+        <div class="ord-top">
+          <div class="ord-id">${label}</div>
+          <div class="ord-right">
+            <div class="ord-amount">${count} 筆</div>
+          </div>
+        </div>
+        <div class="ord-sub">已完成匯款／購物金的一時貿易資料</div>
+      </div>
+    `;
+  }).join('');
+
+  $$('#orderList .order-row').forEach(rowEl => {
+    rowEl.addEventListener('click', () => {
+      $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
+      rowEl.classList.add('active');
+
+      const bucket = rowEl.getAttribute('data-bucket') || '';
+      currentConsignAccountingBucket = bucket;
+      renderConsignAccountingDetail(bucket, grouped[bucket] || []);
+    });
+  });
+}
+
+function renderConsignAccountingDetail(bucket, rows){
+  const detailEl = $('#orderDetail');
+
+  if (!rows.length){
+    detailEl.innerHTML = `<div class="muted">${bucket} 沒有可列印資料</div>`;
+    return;
+  }
+
+  const lines = rows.map((item, idx) => {
+    return [
+      `【${idx + 1}】`,
+      `姓名：${item.accounting?.name || ''}`,
+      `身分證字號：${item.accounting?.nationalId || ''}`,
+      `訂單編號：${item.orderId || ''}`,
+      `商品名稱：${item.name || ''}`,
+      `售出金額：${item.saleAmount || 0}`,
+      `匯款金額：${item.bankAmount || 0}`,
+      `購物金金額：${item.creditAmount || 0}`,
+      `結算方式：${displayConsignMethod(item.method)}`,
+      ''
+    ].join('\n');
+  }).join('\n');
+
+  detailEl.innerHTML = `
+    <div class="section-title">${bucket} 一時貿易資料</div>
+    <textarea id="consignAccountingText" style="min-height:420px;">${escapeHtml(lines)}</textarea>
+    <button class="btn-primary" id="btnCopyConsignAccountingBucket" type="button">📋 複製本區資料</button>
+    <button class="btn-secondary" id="btnPrintConsignAccountingBucket" type="button">🖨️ 列印本區資料</button>
+  `;
+
+  $('#btnCopyConsignAccountingBucket')?.addEventListener('click', async () => {
+    const txt = $('#consignAccountingText')?.value || '';
+    await navigator.clipboard.writeText(txt);
+    alert('已複製本區一時貿易資料');
+  });
+
+  $('#btnPrintConsignAccountingBucket')?.addEventListener('click', () => {
+    const txt = $('#consignAccountingText')?.value || '';
+    const win = window.open('', '_blank');
+    if (!win) return;
+    win.document.write(`<pre style="white-space:pre-wrap;font-size:14px;padding:24px;">${txt.replace(/</g,'&lt;')}</pre>`);
+    win.document.close();
+    win.focus();
+    win.print();
+  });
+}
 
 function fmtDateInput(d){
   const y = d.getFullYear();
@@ -664,13 +834,14 @@ function restoreViewInputs(){
 }
 
 function setTopFilterActive(mode){
-  const btnAll     = $('.filter-btn[data-filter="all"]');
-  const btnQuick   = $('#btnQuickPaidTop');
-  const btnRemind  = $('#btnRemindTodayTop');
-  const btnPickup  = $('#btnPickupNeedTop');
-  const btnConsign = $('#btnConsignTop');
+  const btnAll              = $('.filter-btn[data-filter="all"]');
+  const btnQuick            = $('#btnQuickPaidTop');
+  const btnRemind           = $('#btnRemindTodayTop');
+  const btnPickup           = $('#btnPickupNeedTop');
+  const btnConsign          = $('#btnConsignTop');
+  const btnConsignAccounting = $('#btnConsignAccountingTop');
 
-  [btnAll, btnQuick, btnRemind, btnPickup, btnConsign].forEach(btn => {
+  [btnAll, btnQuick, btnRemind, btnPickup, btnConsign, btnConsignAccounting].forEach(btn => {
     if (btn) btn.classList.remove('active');
   });
 
@@ -691,6 +862,11 @@ function setTopFilterActive(mode){
 
   if (mode === 'consign_settlement') {
     if (btnConsign) btnConsign.classList.add('active');
+    return;
+  }
+
+  if (mode === 'consign_accounting') {
+    if (btnConsignAccounting) btnConsignAccounting.classList.add('active');
     return;
   }
 
@@ -1372,7 +1548,10 @@ async function loadOrders(filter='all', extra = {}){
       throw new Error(j.error || 'consign_list_failed');
     }
 
-    currentConsignRows = j.items || [];
+    currentConsignRows = (j.items || []).filter(row => {
+  const st = String(row.status || '').trim().toLowerCase();
+  return st !== 'settled';
+});
     renderConsignList();
     setTopFilterActive('consign_settlement');
 
@@ -1578,10 +1757,19 @@ async function consignAction(orderItemId, action){
     body: JSON.stringify({ op_key: OP_KEY, orderItemId, action })
   });
   const j = await r.json().catch(() => ({}));
+
   if (!r.ok || !j.ok) {
     alert('操作失敗：' + (j.error || 'unknown'));
     return;
   }
+
+  if (j.skipped && j.reason === 'credit_already_granted') {
+    alert('這筆已經加值過');
+    await loadConsignSettlementList();
+    await refreshTopShortcutBadges();
+    return;
+  }
+
   alert('已更新');
   await loadConsignSettlementList();
   await refreshTopShortcutBadges();
@@ -1599,6 +1787,16 @@ async function reloadCurrentView(){
       status: st
     });
     return loadConsignSettlementList();
+  }
+
+  if (mode === 'consign_accounting' || currentPanelMode === 'consign_accounting') {
+    saveViewState('consign_accounting', {
+      filter: 'all',
+      date_from: $('#date_from') ? ($('#date_from').value || '') : '',
+      date_to: $('#date_to') ? ($('#date_to').value || '') : '',
+      status: st
+    });
+    return loadConsignAccountingList();
   }
 
   if (st === 'unshipped_custom') {
@@ -3397,10 +3595,24 @@ if (btnConsign){
   });
 }
 
+  const btnConsignAccounting = $('#btnConsignAccounting');
+if (btnConsignAccounting){
+  btnConsignAccounting.addEventListener('click', async ()=>{
+    await loadConsignAccountingList();
+  });
+}
+
 const btnConsignTop = $('#btnConsignTop');
 if (btnConsignTop){
   btnConsignTop.addEventListener('click', ()=>{
     $('#btnConsign')?.click();
+  });
+}
+
+  const btnConsignAccountingTop = $('#btnConsignAccountingTop');
+if (btnConsignAccountingTop){
+  btnConsignAccountingTop.addEventListener('click', ()=>{
+    $('#btnConsignAccounting')?.click();
   });
 }
 
