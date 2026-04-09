@@ -486,7 +486,7 @@
         <p>上方輸入 → 加入本次清單 → 下方逐筆確認與修改 → 最後一次送出</p>
       </div>
       <div class="badge-row">
-        <div class="badge blue">條碼：請手動輸入</div>
+        <div class="badge blue">條碼：自有手動輸入 / 寄賣自動 C 開頭流水號</div>
 <div class="badge orange">寄賣：分類固定為寄賣 / 不需成本 / 不需原本包包條碼</div>
       </div>
     </div>
@@ -543,7 +543,7 @@
 
         <div class="field span-4">
   <label for="sku">條碼</label>
-  <input id="sku" type="text" placeholder="請手動輸入條碼" />
+  <input id="sku" type="text" placeholder="自有：手動輸入／寄賣：自動帶入 C 開頭號碼" />
 </div>
 
         <div class="field span-4">
@@ -923,6 +923,12 @@ function setMode(mode) {
   el.bidStepField.classList.toggle('hidden', isOwn);
   el.liveScreenshotField.classList.toggle('hidden', isOwn);
 
+  // SKU 規則：自有手動、寄賣自動
+  el.sku.readOnly = isConsign;
+  el.sku.placeholder = isConsign
+    ? '寄賣自動帶入 C 開頭流水號'
+    : '請手動輸入條碼';
+
   el.sourceType.value = isOwn ? '自有' : '寄賣';
   el.sourceBadge.textContent = `目前模式：${isOwn ? '自有' : '寄賣'}`;
   el.sourceBadge.className = `badge ${isOwn ? 'blue' : 'orange'}`;
@@ -932,11 +938,17 @@ function setMode(mode) {
     el.cost.value = '';
     el.subCategory.value = '寄賣';
     el.subCategory.readOnly = true;
+    el.sku.value = '';
+
+    fillNextSku(true).catch(err => {
+      showError(el.formError, err.message || '取得寄賣條碼失敗');
+    });
   } else {
     el.subCategory.readOnly = false;
     if (el.subCategory.value === '寄賣') {
       el.subCategory.value = '';
     }
+    el.sku.value = '';
   }
 
   if (isOwn) {
@@ -1070,6 +1082,14 @@ async function clearForm(keepMode = true) {
     setMode('own');
     return;
   }
+
+  if (state.mode === 'consign') {
+    try {
+      await fillNextSku(true);
+    } catch (err) {
+      showError(el.formError, err.message || '取得寄賣條碼失敗');
+    }
+  }
 }
 
 async function addDraft() {
@@ -1078,6 +1098,10 @@ async function addDraft() {
   try {
     el.btnAddDraft.disabled = true;
     el.btnAddDraft.textContent = '加入中...';
+
+    if (state.mode === 'consign' && !el.sku.value.trim()) {
+      await fillNextSku(true);
+    }
 
     const item = getFormData();
     const err = validateItem(item);
