@@ -486,8 +486,8 @@
         <p>上方輸入 → 加入本次清單 → 下方逐筆確認與修改 → 最後一次送出</p>
       </div>
       <div class="badge-row">
-        <div class="badge blue">自有：手動輸入 SKU</div>
-        <div class="badge orange">寄賣：SKU = C + 原條碼後五碼</div>
+        <div class="badge blue">條碼：系統自動流水號</div>
+<div class="badge orange">寄賣：仍需填原本包包條碼</div>
       </div>
     </div>
 
@@ -543,7 +543,7 @@
 
         <div class="field span-4">
           <label for="sku">條碼</label>
-          <input id="sku" type="text" placeholder="自有可手動輸入；寄賣會自動帶入 C+後五碼" />
+          <input id="sku" type="text" readonly placeholder="系統自動帶入 C000001 起，加入後自動跳下一號" />
         </div>
 
         <div class="field span-4">
@@ -779,6 +779,7 @@ const CONFIG = {
   imageUploadUrl: 'https://api.murain.tw/op/upload/image',
   createBatchUrl: 'https://api.murain.tw/op/products/stock-in/batch',
   createItemUrl: '',
+  nextSkuUrl: 'https://api.murain.tw/op/products/next-sku',
   requestHeaders: {
     'Content-Type': 'application/json'
   }
@@ -928,26 +929,53 @@ el.liveScreenshotPreview.textContent = '';
   el.consignorStatusBox.innerHTML = '<div class="muted">尚未查詢寄賣人主檔</div>';
   el.btnEditConsignor.classList.add('hidden');
 }
-      maybeAutofillConsignSku();
+      el.sku.value = '';
+showError(el.formError, '');
+fillNextSku(true).catch(err => {
+  showError(el.formError, err.message || '取得下一個條碼失敗');
+});
     }
 
-    function makeConsignSku(originBarcode) {
-      const raw = String(originBarcode || '').trim();
-      if (!raw) return '';
-      const cleaned = raw.replace(/\s+/g, '');
-      const tail = cleaned.slice(-5);
-      return tail ? `C${tail}` : '';
-    }
+    function formatCSku(no) {
+  return `C${String(no).padStart(6, '0')}`;
+}
 
-    function maybeAutofillConsignSku() {
-      if (state.mode !== 'consign') return;
-      if (!el.originBarcode.value.trim()) return;
-      const autoSku = makeConsignSku(el.originBarcode.value);
-      if (!el.sku.value.trim() || el.sku.dataset.auto === '1') {
-        el.sku.value = autoSku;
-        el.sku.dataset.auto = '1';
-      }
-    }
+async function fetchNextSkuFromServer() {
+  if (!CONFIG.nextSkuUrl) {
+    throw new Error('尚未設定 nextSkuUrl');
+  }
+
+  const resp = await fetch(CONFIG.nextSkuUrl, {
+    method: 'POST',
+    headers: CONFIG.requestHeaders,
+    body: JSON.stringify({
+      op_key: CONFIG.opKey
+    })
+  });
+
+  const data = await resp.json().catch(() => ({}));
+
+  if (!resp.ok || data.ok === false || !data.sku) {
+    throw new Error(
+      data.detail ||
+      data.message ||
+      data.error ||
+      `取得下一個條碼失敗：HTTP ${resp.status}`
+    );
+  }
+
+  return String(data.sku || '').trim();
+}
+
+async function fillNextSku(force = false) {
+  if (!force && el.sku.value.trim()) {
+    return el.sku.value.trim();
+  }
+
+  const sku = await fetchNextSkuFromServer();
+  el.sku.value = sku;
+  return sku;
+}
 
     function normalizeNumber(v, fallback = 0) {
       const n = Number(v);
@@ -998,42 +1026,58 @@ if (item.商品來源 === '寄賣') {
       return state.drafts.some(row => row.id !== currentId && String(row.SKU || '').trim().toUpperCase() === s);
     }
 
-function clearForm(keepMode = true) {
+async function clearForm(keepMode = true) {
   el.originBarcode.value = '';
   el.sku.value = '';
-  delete el.sku.dataset.auto;
   el.location.value = '';
   el.name.value = '';
   el.liveScreenshot.value = '';
-el.liveScreenshotPreview.textContent = '';
-el.price.value = '';
-el.auctionStartPrice.value = '';
-el.bidStep.value = '';
-el.stockQty.value = '1';
-el.cost.value = '';
-el.consignor.value = '';
+  el.liveScreenshotPreview.textContent = '';
+  el.price.value = '';
+  el.auctionStartPrice.value = '';
+  el.bidStep.value = '';
+  el.stockQty.value = '1';
+  el.cost.value = '';
+  el.consignor.value = '';
   state.selectedConsignorRecordId = '';
   el.stockInDate.value = todayStr();
   el.subCategory.value = '';
   showError(el.formError, '');
-  if (!keepMode) setMode('own');
-}
 
-async function addDraft() {
-  const item = getFormData();
-  const err = validateItem(item);
-  if (err) {
-    showError(el.formError, err);
-    return;
-  }
-  if (isDuplicateSkuInDrafts(item.SKU)) {
-    showError(el.formError, `本次清單內 SKU 已重複：${item.SKU}`);
+  if (!keepMode) {
+    setMode('own');
     return;
   }
 
   try {
+    await fillNextSku(true);
+  } catch (err) {
+    showError(el.formError, err.message || '取得下一個條碼失敗');
+  }
+}
+
+async function addDraft() {
+  showError(el.formError, '');
+
+  try {
     el.btnAddDraft.disabled = true;
     el.btnAddDraft.textContent = '加入中...';
+
+    if (!el.sku.value.trim()) {
+      await fillNextSku(true);
+    }
+
+    const item = getFormData();
+    const err = validateItem(item);
+    if (err) {
+      showError(el.formError, err);
+      return;
+    }
+
+    if (isDuplicateSkuInDrafts(item.SKU)) {
+      showError(el.formError, `本次清單內 SKU 已重複：${item.SKU}`);
+      return;
+    }
 
     if (state.mode === 'consign' && el.liveScreenshot.files?.[0]) {
       item['直播截圖Url'] = await uploadSingleImage(el.liveScreenshot.files[0]);
@@ -1043,9 +1087,10 @@ async function addDraft() {
     state.drafts.unshift(item);
     saveDrafts();
     renderDrafts();
-    clearForm(true);
+    await clearForm(true);
+
   } catch (e) {
-    showError(el.formError, e.message || '直播截圖上傳失敗');
+    showError(el.formError, e.message || '加入失敗');
   } finally {
     el.btnAddDraft.disabled = false;
     el.btnAddDraft.textContent = '加入本次清單';
@@ -1066,14 +1111,6 @@ if (key === '商品來源') {
     row['一標多少'] = 0;
   }
 }
-
-  if (key === '原本包包條碼' && row.商品來源 === '寄賣') {
-    const autoSku = makeConsignSku(value);
-    if (!row.SKU || row.SKU === makeConsignSku(row.原本包包條碼)) {
-      row.SKU = autoSku;
-    }
-  }
-
   saveDrafts();
   renderDrafts();
 }
@@ -1760,9 +1797,7 @@ el.btnSubmitAll.addEventListener('click', submitAll);
 
     el.btnCloseConsignorModal.addEventListener('click', closeConsignorModal);
     el.btnSaveConsignor.addEventListener('click', saveConsignor);
-    el.originBarcode.addEventListener('input', maybeAutofillConsignSku);
-    el.sku.addEventListener('input', () => { el.sku.dataset.auto = '0'; });
-
+    
     el.stockInDate.value = todayStr();
     setMode(state.mode);
     renderDrafts();
