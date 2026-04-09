@@ -545,9 +545,10 @@ function setCartToken(t) {
   $('#cart_token').textContent = t||'尚未建立';
   $('#btn-clear').disabled = !OP || !CART;
   try { rememberCartForUser(CART); } catch(e) {}
-  syncMainButtons();
-updateCurrentCustomerInfo();
-syncBenefitPanel();
+    syncMainButtons();
+  updateCurrentCustomerInfo();
+  syncBenefitPanel();
+  syncCartManageButtons();
 }
 
 function clearCurrentCartView(){
@@ -1178,6 +1179,7 @@ function clearManageEditState(){
   setV('addSku', '');
   setV('addQty', '1');
   setV('addPrice', '');
+  syncCartManageButtons();
 }
 
 function beginEditCartItem(item){
@@ -1186,6 +1188,7 @@ function beginEditCartItem(item){
   setV('addQty', String(item?.qty || 1));
   setV('addPrice', item?.price != null ? String(item.price) : '');
   setManageEditHint(`目前正在修改：${item?.name || item?.sku || ''}（原條碼：${item?.sku || ''}）`);
+  syncCartManageButtons();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -1453,13 +1456,27 @@ await adminReloadCart();
   let ADMIN_LIST_LOADING = false;
 
 function syncCartManageButtons() {
-  const btn = document.getElementById('btnListOpen');
-  if (!btn) return;
+  const btnListOpen   = document.getElementById('btnListOpen');
+  const btnReloadCart = document.getElementById('btnReloadCart');
+  const btnClearCart  = document.getElementById('btnClearCart');
+  const btnAddItem    = document.getElementById('btnAddItem');
+  const btnRemoveItem = document.getElementById('btnRemoveItem');
 
   const hasAdminKey = !!getAdminKeyUI();
+  const hasOpKey    = !!getOpKeyUI();
+  const hasCart     = !!getSelectedCartUI();
+  const hasAddSku   = !!v('addSku');
+  const hasRmSku    = !!v('rmSku');
 
-  btn.disabled = ADMIN_LIST_LOADING || !hasAdminKey;
-  btn.textContent = ADMIN_LIST_LOADING ? '搜尋中...' : '未完成結單購物車清單';
+  if (btnListOpen) {
+    btnListOpen.disabled = ADMIN_LIST_LOADING || !hasAdminKey;
+    btnListOpen.textContent = ADMIN_LIST_LOADING ? '搜尋中...' : '未完成結單購物車清單';
+  }
+
+  if (btnReloadCart) btnReloadCart.disabled = !hasCart;
+  if (btnClearCart)  btnClearCart.disabled  = !(hasCart && hasOpKey);
+  if (btnAddItem)    btnAddItem.disabled    = !(hasCart && hasOpKey && hasAddSku);
+  if (btnRemoveItem) btnRemoveItem.disabled = !(hasCart && hasOpKey && hasRmSku);
 }
 async function adminListOpenCarts(){
   const ak = getAdminKeyUI();
@@ -1790,6 +1807,18 @@ if (adminKeyInput) {
   // ✅ 新增：一輸入就更新按鈕狀態
   adminKeyInput.addEventListener('input', syncCartManageButtons);
 }
+
+const addSkuInput = document.getElementById('addSku');
+if (addSkuInput) {
+  addSkuInput.addEventListener('input', syncCartManageButtons);
+}
+
+const rmSkuInput = document.getElementById('rmSku');
+if (rmSkuInput) {
+  rmSkuInput.addEventListener('input', syncCartManageButtons);
+}
+
+// ======（這裡結束貼上）======
 
     // ======（這裡結束貼上）======
    
