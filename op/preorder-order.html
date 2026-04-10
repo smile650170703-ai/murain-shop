@@ -698,6 +698,27 @@ async function withBtnLoading(btnId, loadingText, fn) {
   }
 }
 
+    function memberRowKey(row = {}) {
+  return String(
+    row.line_user_id ||
+    `${row.line_name || ""}|${row.name || ""}|${row.phone || ""}`
+  ).trim();
+}
+
+function isSelectedMemberRow(row = {}) {
+  if (!state.selectedMember) return false;
+  return memberRowKey(state.selectedMember) === memberRowKey(row);
+}
+
+function isSelectedProductRow(row = {}) {
+  return String(state.selectedProduct?.barcode || "") === String(row?.barcode || "");
+}
+
+function canAddProductRow(row = {}) {
+  const qty = Number(document.getElementById("pick_qty")?.value || 0);
+  return isSelectedProductRow(row) && Number(row.stock || 0) > 0 && qty > 0;
+}
+
     function todayStr() {
       const d = new Date();
       const y = d.getFullYear();
@@ -820,93 +841,145 @@ async function withBtnLoading(btnId, loadingText, fn) {
       document.getElementById("pick_price").value = row.suggest_price || "";
     }
 
-    function renderMemberResults(rows) {
-      const tbody = document.getElementById("memberResultBody");
-      if (!rows || !rows.length) {
-        tbody.innerHTML = `<tr><td colspan="6" class="hint">查無客人資料</td></tr>`;
-        return;
-      }
-      tbody.innerHTML = rows.map((r, idx) => `
-        <tr>
-          <td>${r.line_name || ""}</td>
-          <td>${r.name || ""}</td>
-          <td>${r.phone || ""}</td>
-          <td>${r.email || ""}</td>
-          <td>${r.line_user_id || ""}</td>
-          <td>
-            <button class="btn btn-green" onclick='pickMember(${idx})'>選取客人</button>
-          </td>
-        </tr>
-      `).join("");
-      window.__memberRows = rows;
-    }
+function renderMemberResults(rows) {
+  const tbody = document.getElementById("memberResultBody");
+  if (!rows || !rows.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="hint">查無客人資料</td></tr>`;
+    return;
+  }
 
-    function pickMember(idx) {
-      const rows = window.__memberRows || [];
-      state.selectedMember = rows[idx] || null;
-      renderSelectedMember();
-      setCreatedOrder(null);
-    }
+  tbody.innerHTML = rows.map((r, idx) => {
+    const selected = isSelectedMemberRow(r);
+
+    return `
+      <tr>
+        <td>${r.line_name || ""}</td>
+        <td>${r.name || ""}</td>
+        <td>${r.phone || ""}</td>
+        <td>${r.email || ""}</td>
+        <td>${r.line_user_id || ""}</td>
+        <td>
+          <button
+            id="btnPickMember_${idx}"
+            class="btn ${selected ? "btn-dark is-disabled" : "btn-green"}"
+            ${selected ? "disabled" : ""}
+            onclick='pickMember(${idx})'
+          >${selected ? "已選取" : "選取客人"}</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  window.__memberRows = rows;
+}
+
+async function pickMember(idx) {
+  const rows = window.__memberRows || [];
+  const row = rows[idx];
+  if (!row) return;
+
+  await withBtnLoading(`btnPickMember_${idx}`, "選取中...", async () => {
+    state.selectedMember = row;
+    renderSelectedMember();
+    setCreatedOrder(null);
+    renderMemberResults(rows);
+  });
+}
     window.pickMember = pickMember;
 
-    function renderPreProductResults(rows) {
-      const tbody = document.getElementById("preProductBody");
-      if (!rows || !rows.length) {
-        tbody.innerHTML = `<tr><td colspan="8" class="hint">查無預購商品</td></tr>`;
-        return;
-      }
-      tbody.innerHTML = rows.map((r, idx) => `
-        <tr>
-          <td>${r.barcode || ""}</td>
-          <td>${r.name || ""}</td>
-          <td>${TWD(r.suggest_price || 0)}</td>
-          <td>${r.stock || 0}</td>
-          <td>${r.source || ""}</td>
-          <td>${r.category || ""}</td>
-          <td>${r.pre_status || ""}</td>
-          <td>
-            <button class="btn btn-green" onclick='pickPreProduct(${idx})'>選取商品</button>
-            <button class="btn btn-gold" onclick='addPreProductToCurrent(${idx})'>加入本次清單</button>
-          </td>
-        </tr>
-      `).join("");
-      window.__preRows = rows;
-    }
+function renderPreProductResults(rows) {
+  const tbody = document.getElementById("preProductBody");
+  if (!rows || !rows.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="hint">查無預購商品</td></tr>`;
+    return;
+  }
 
-    function pickPreProduct(idx) {
-      const rows = window.__preRows || [];
-      const row = rows[idx];
-      if (!row) return;
-      applyPickProduct(row);
-    }
+  tbody.innerHTML = rows.map((r, idx) => {
+    const selected = isSelectedProductRow(r);
+    const canAdd = canAddProductRow(r);
+    const noStock = Number(r.stock || 0) <= 0;
+
+    let addText = "請先選取";
+    if (noStock) addText = "不可加入";
+    else if (selected) addText = "加入本次清單";
+
+    return `
+      <tr>
+        <td>${r.barcode || ""}</td>
+        <td>${r.name || ""}</td>
+        <td>${TWD(r.suggest_price || 0)}</td>
+        <td>${r.stock || 0}</td>
+        <td>${r.source || ""}</td>
+        <td>${r.category || ""}</td>
+        <td>${r.pre_status || ""}</td>
+        <td>
+          <button
+            id="btnPickPre_${idx}"
+            class="btn ${selected ? "btn-dark is-disabled" : "btn-green"}"
+            ${selected ? "disabled" : ""}
+            onclick='pickPreProduct(${idx})'
+          >${selected ? "已選取" : "選取商品"}</button>
+
+          <button
+            id="btnAddPre_${idx}"
+            class="btn ${canAdd ? "btn-gold" : "btn-dark is-disabled"}"
+            ${canAdd ? "" : "disabled"}
+            onclick='addPreProductToCurrent(${idx})'
+          >${addText}</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
+
+  window.__preRows = rows;
+}
+
+async function pickPreProduct(idx) {
+  const rows = window.__preRows || [];
+  const row = rows[idx];
+  if (!row) return;
+
+  await withBtnLoading(`btnPickPre_${idx}`, "選取中...", async () => {
+    applyPickProduct(row);
+    renderPreProductResults(rows);
+  });
+}
     window.pickPreProduct = pickPreProduct;
 
-    function addPreProductToCurrent(idx) {
-      const rows = window.__preRows || [];
-      const row = rows[idx];
-      if (!row) return;
+async function addPreProductToCurrent(idx) {
+  const rows = window.__preRows || [];
+  const row = rows[idx];
+  if (!row) return;
 
-      const qty = Number(document.getElementById("pick_qty").value || 0);
-      const price = Number(document.getElementById("pick_price").value || row.suggest_price || 0);
-      const note = String(document.getElementById("pick_note").value || "").trim();
+  await withBtnLoading(`btnAddPre_${idx}`, "加入中...", async () => {
+    const qty = Number(document.getElementById("pick_qty").value || 0);
+    const price = Number(document.getElementById("pick_price").value || row.suggest_price || 0);
+    const note = String(document.getElementById("pick_note").value || "").trim();
 
-      if (qty <= 0) {
-        alert("請先輸入正確數量");
-        return;
-      }
-
-      state.currentItems.push({
-        product_id: row.product_id || "",
-        barcode: row.barcode || "",
-        name: row.name || "",
-        qty,
-        price,
-        note
-      });
-
-      renderCurrentItems();
-      setCreatedOrder(null);
+    if (!isSelectedProductRow(row)) {
+      alert("請先按「選取商品」");
+      return;
     }
+
+    if (qty <= 0) {
+      alert("請先輸入正確數量");
+      return;
+    }
+
+    state.currentItems.push({
+      product_id: row.product_id || "",
+      barcode: row.barcode || "",
+      name: row.name || "",
+      qty,
+      price,
+      note
+    });
+
+    renderCurrentItems();
+    setCreatedOrder(null);
+    renderPreProductResults(rows);
+  });
+}
     window.addPreProductToCurrent = addPreProductToCurrent;
 
 let preProductMaster = [];
@@ -1063,11 +1136,6 @@ async function createPreProductLocal() {
     return;
   }
 
-  const btn = document.getElementById("btnCreatePreProduct");
-  const oldText = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = "新增中...";
-
   try {
     const resp = await fetch("/op/preorder/create-product", {
       method: "POST",
@@ -1118,10 +1186,6 @@ async function createPreProductLocal() {
     alert(`已新增預購商品：${product.barcode}`);
   } catch (err) {
     alert(String(err?.message || err || "新增失敗"));
-  } finally {
-    btn.disabled = false;
-    btn.textContent = oldText;
-  }
 }
 
     document.getElementById("btnReloadPage").addEventListener("click", ()=>location.reload());
@@ -1274,11 +1338,23 @@ document.getElementById("btnSendLineFlex").addEventListener("click", async () =>
       mockSearchArrivalList();
     });
 
-    ["pre_name", "pre_qty", "member_keyword"].forEach(id => {
+["pre_name", "pre_qty", "member_keyword"].forEach(id => {
   const el = document.getElementById(id);
   if (el) {
     el.addEventListener("input", refreshActionStates);
     el.addEventListener("change", refreshActionStates);
+  }
+});
+
+["pick_qty", "pick_price"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) {
+    el.addEventListener("input", () => {
+      renderPreProductResults(window.__preRows || []);
+    });
+    el.addEventListener("change", () => {
+      renderPreProductResults(window.__preRows || []);
+    });
   }
 });
 
