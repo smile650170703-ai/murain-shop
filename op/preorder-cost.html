@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>預購成本補登</title>
+  <style>
+    :root{
+      --bg:#0f172a;
+      --panel:#111827;
+      --line:#334155;
+      --text:#f8fafc;
+      --muted:#94a3b8;
+      --gold:#d4af37;
+      --gold-2:#f5deb3;
+      --green:#14532d;
+      --red:#7f1d1d;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:linear-gradient(180deg,#0b1120 0%, #111827 100%);
+      color:var(--text);
+      font-family:"Microsoft JhengHei",sans-serif;
+    }
+    .wrap{
+      max-width:1400px;
+      margin:0 auto;
+      padding:20px;
+    }
+    .topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:18px;
+    }
+    .brand{
+      font-size:28px;
+      font-weight:800;
+      letter-spacing:2px;
+      color:var(--gold-2);
+    }
+    .sub{
+      color:var(--muted);
+      font-size:13px;
+    }
+    .card{
+      background:rgba(17,24,39,.92);
+      border:1px solid rgba(212,175,55,.18);
+      border-radius:18px;
+      padding:16px;
+      box-shadow:0 10px 30px rgba(0,0,0,.25);
+    }
+    .actions{
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      margin-top:8px;
+    }
+    .btn{
+      border:0;
+      border-radius:12px;
+      padding:10px 16px;
+      cursor:pointer;
+      font:inherit;
+      font-weight:700;
+    }
+    .btn-gold{
+      background:linear-gradient(135deg,var(--gold),#b8860b);
+      color:#111827;
+    }
+    .btn-dark{
+      background:#1e293b;
+      color:#fff;
+      border:1px solid #475569;
+    }
+    .btn-green{
+      background:var(--green);
+      color:#dcfce7;
+      border:1px solid #166534;
+    }
+    .btn:disabled{
+      opacity:1;
+      cursor:not-allowed;
+      background:#9ca3af !important;
+      color:#ffffff !important;
+      border:1px solid #9ca3af !important;
+    }
+    input{
+      width:100%;
+      background:#0f172a;
+      color:#fff;
+      border:1px solid #334155;
+      border-radius:12px;
+      padding:10px 12px;
+      outline:none;
+      font:inherit;
+    }
+    .row{
+      display:grid;
+      grid-template-columns:2fr 1fr auto;
+      gap:12px;
+      margin-bottom:12px;
+    }
+    .table-wrap{
+      overflow:auto;
+      border:1px solid rgba(148,163,184,.15);
+      border-radius:14px;
+      margin-top:12px;
+    }
+    table{
+      width:100%;
+      border-collapse:collapse;
+      min-width:980px;
+    }
+    th, td{
+      padding:10px 12px;
+      border-bottom:1px solid rgba(148,163,184,.12);
+      text-align:left;
+      vertical-align:middle;
+      font-size:14px;
+    }
+    th{
+      background:#0b1220;
+      color:var(--gold-2);
+      position:sticky;
+      top:0;
+      z-index:1;
+    }
+    .hint{
+      color:var(--muted);
+      font-size:12px;
+      margin-top:4px;
+    }
+    .cost-input{
+      min-width:120px;
+    }
+    @media (max-width:1100px){
+      .row{
+        grid-template-columns:1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div>
+        <div class="brand">MURAIN｜預購成本補登</div>
+        <div class="sub">列出預購商品且 Cost 空白的資料，可直接輸入成本並儲存</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-dark" onclick="location.href='preorder-send.html'">預購入庫＋發送</button>
+        <button class="btn btn-gold" onclick="location.href='preorder-cost.html'">預購成本補登</button>
+        <button class="btn btn-dark" id="btnReloadPage">重新整理</button>
+      </div>
+    </div>
+
+    <section class="card">
+      <div class="row">
+        <input id="kw" type="text" placeholder="搜尋條碼 / 商品名稱" />
+        <input id="op_key" type="password" placeholder="請輸入 OP Key" />
+        <div class="actions" style="margin-top:0;">
+          <button class="btn btn-gold" id="btnLoad">查詢清單</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>條碼</th>
+              <th>商品名稱</th>
+              <th>建議售價</th>
+              <th>庫存</th>
+              <th>Cost</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="tbody">
+            <tr><td colspan="6" class="hint">尚未查詢</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const API_BASE = "https://api.murain.tw";
+    const apiUrl = (path) => `${API_BASE}${path}`;
+    const TWD = n => Number(n || 0).toLocaleString("zh-TW");
+
+    async function apiJson(url, options = {}) {
+      const resp = await fetch(url, { cache: "no-store", ...options });
+      const text = await resp.text().catch(() => "");
+      let data = {};
+      try { data = text ? JSON.parse(text) : {}; } catch (_) {}
+      if (!resp.ok || data?.ok === false) {
+        throw new Error(data?.detail || data?.error || data?.message || text || `HTTP_${resp.status}`);
+      }
+      return data;
+    }
+
+    function renderRows(rows) {
+      const tbody = document.getElementById("tbody");
+      if (!rows || !rows.length) {
+        tbody.innerHTML = `<tr><td colspan="6" class="hint">查無資料</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = rows.map((r, idx) => `
+        <tr>
+          <td>${r.barcode || ""}</td>
+          <td>${r.name || ""}</td>
+          <td>${TWD(r.suggest_price || 0)}</td>
+          <td>${r.stock || 0}</td>
+          <td>
+            <input class="cost-input" id="cost_${idx}" type="number" min="0" step="1" value="${r.cost || ""}" />
+          </td>
+          <td>
+            <button class="btn btn-green" onclick="saveCost(${idx})">儲存</button>
+          </td>
+        </tr>
+      `).join("");
+
+      window.__rows = rows;
+    }
+
+    async function loadRows() {
+      const kw = String(document.getElementById("kw").value || "").trim();
+      const data = await apiJson(apiUrl(`/op/preorder/cost-list?q=${encodeURIComponent(kw)}`), {
+        method: "GET"
+      });
+      renderRows(Array.isArray(data.items) ? data.items : []);
+    }
+
+    async function saveCost(idx) {
+      const rows = window.__rows || [];
+      const row = rows[idx];
+      if (!row) return;
+
+      const opKey = String(document.getElementById("op_key").value || "").trim();
+      if (!opKey) {
+        alert("請先輸入 OP Key");
+        return;
+      }
+
+      const cost = Number(document.getElementById(`cost_${idx}`).value || 0);
+      if (cost < 0) {
+        alert("Cost 不可小於 0");
+        return;
+      }
+
+      try {
+        await apiJson(apiUrl("/op/preorder/save-cost"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            op_key: opKey,
+            product_id: row.product_id,
+            cost
+          })
+        });
+        alert("已儲存 Cost");
+        await loadRows();
+      } catch (err) {
+        alert(String(err?.message || err || "儲存失敗"));
+      }
+    }
+
+    window.saveCost = saveCost;
+
+    document.getElementById("btnLoad").addEventListener("click", loadRows);
+    document.getElementById("btnReloadPage").addEventListener("click", () => location.reload());
+  </script>
+</body>
+</html>
