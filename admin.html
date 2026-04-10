@@ -1116,8 +1116,14 @@ function isUnshippedOrder(rec){
     oid.toUpperCase().startsWith("TL") ||
     !!parentId;
 
-  // 原訂單如果底下已經有 TL，就不要再顯示在待出貨
-  if (!isTail && hasTailChildInRows(oid, ALL_ORDERS_CACHE)) return false;
+ // 原訂單如果已被後端標記有尾款單，就不要再顯示在待出貨
+const hasTailMarked =
+  f.has_tail_order === true ||
+  String(f.has_tail_order || "").toLowerCase() === "true" ||
+  !!String(f.tail_pending_order_id || "").trim();
+
+// 相容舊資料：若主單還沒被標記，才退回用前端 cache 掃 TL
+if (!isTail && (hasTailMarked || hasTailChildInRows(oid, ALL_ORDERS_CACHE))) return false;
 
   // 先排除「作廢/取消」和「付款失敗」
   if (st === "cancelled") return false;
