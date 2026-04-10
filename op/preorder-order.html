@@ -146,10 +146,39 @@
       color:#fee2e2;
       border:1px solid #991b1b;
     }
-    .btn:disabled{
-      opacity:.45;
-      cursor:not-allowed;
-    }
+    .btn:disabled,
+.btn.is-disabled{
+  opacity:1;
+  cursor:not-allowed;
+  background:#9ca3af !important;
+  color:#ffffff !important;
+  border:1px solid #9ca3af !important;
+  box-shadow:none !important;
+  filter:saturate(.15);
+}
+
+.btn.is-loading{
+  pointer-events:none;
+  opacity:.95;
+  position:relative;
+}
+
+.btn.is-loading::after{
+  content:"";
+  display:inline-block;
+  width:12px;
+  height:12px;
+  margin-left:8px;
+  border:2px solid rgba(255,255,255,.35);
+  border-top-color:#ffffff;
+  border-radius:50%;
+  vertical-align:-1px;
+  animation:btnSpin .8s linear infinite;
+}
+
+@keyframes btnSpin{
+  to{ transform:rotate(360deg); }
+}
     .hint{
       color:var(--muted);
       font-size:12px;
@@ -530,6 +559,145 @@
       createdOrder: null
     };
 
+    const CHECKOUT_LIFF_ID = "2008430261-KLwoQjm4";
+
+async function apiJson(url, options = {}) {
+  const resp = await fetch(url, {
+    credentials: "same-origin",
+    cache: "no-store",
+    ...options
+  });
+
+  const data = await resp.json().catch(() => ({}));
+
+  if (!resp.ok || data?.ok === false) {
+    throw new Error(data?.error || data?.message || "request_failed");
+  }
+
+  return data;
+}
+
+async function getOpKey(force = false) {
+  let opKey = force ? "" : String(sessionStorage.getItem("murain_op_key") || "").trim();
+
+  while (!opKey) {
+    opKey = String(window.prompt("請輸入 OP Key") || "").trim();
+    if (!opKey) throw new Error("未輸入 OP Key");
+  }
+
+  const data = await apiJson("/op/auth", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ op_key: opKey })
+  });
+
+  if (!data?.ok) {
+    sessionStorage.removeItem("murain_op_key");
+    throw new Error("OP Key 驗證失敗");
+  }
+
+  sessionStorage.setItem("murain_op_key", opKey);
+  return opKey;
+}
+
+function buildCheckoutLink(cartToken) {
+  const endpoint = `https://murain.tw/liff-checkout.html?cart_token=${encodeURIComponent(cartToken)}`;
+  return `https://liff.line.me/${CHECKOUT_LIFF_ID}?url=${encodeURIComponent(endpoint)}`;
+}
+
+function normalizeMemberRow(raw = {}) {
+  return {
+    line_name:
+      String(
+        raw.line_name ||
+        raw.displayName ||
+        raw.DisplayName ||
+        raw.display_name ||
+        raw.lineName ||
+        raw.name ||
+        raw.Name ||
+        ""
+      ).trim(),
+    name:
+      String(
+        raw.name ||
+        raw.Name ||
+        raw.customer_name ||
+        ""
+      ).trim(),
+    phone:
+      String(
+        raw.phone ||
+        raw.Phone ||
+        raw["電話"] ||
+        ""
+      ).trim(),
+    email:
+      String(
+        raw.email ||
+        raw.Email ||
+        ""
+      ).trim(),
+    line_user_id:
+      String(
+        raw.line_user_id ||
+        raw.lineUserId ||
+        raw.LineUserId ||
+        raw.LINE_USER_ID ||
+        ""
+      ).trim()
+  };
+}
+
+function hideArrivalSection() {
+  const sec = document.getElementById("secArrivalList");
+  if (sec) sec.style.display = "none";
+}
+
+    function setBtnDisabled(id, disabled) {
+  const btn = document.getElementById(id);
+  if (!btn) return;
+  btn.disabled = !!disabled;
+}
+
+function refreshActionStates() {
+  const hasMember = !!state.selectedMember;
+  const hasItems = Array.isArray(state.currentItems) && state.currentItems.length > 0;
+
+  const preName = String(document.getElementById("pre_name")?.value || "").trim();
+  const preQty = Number(document.getElementById("pre_qty")?.value || 0);
+  const memberKeyword = String(document.getElementById("member_keyword")?.value || "").trim();
+
+  setBtnDisabled("btnCreatePreProduct", !(preName && preQty > 0));
+  setBtnDisabled("btnSearchMember", !memberKeyword);
+  setBtnDisabled("btnCopyCheckoutLink", !(hasMember && hasItems));
+  setBtnDisabled("btnSendLineFlex", !(hasMember && hasItems));
+  setBtnDisabled("btnClearCurrentOrder", !hasItems);
+  setBtnDisabled("btnClearOrderForm", !(hasItems || state.createdOrder));
+}
+
+async function withBtnLoading(btnId, loadingText, fn) {
+  const btn = typeof btnId === "string" ? document.getElementById(btnId) : btnId;
+  if (!btn) return await fn();
+  if (btn.dataset.loading === "1") return;
+
+  const oldText = btn.textContent;
+
+  btn.dataset.loading = "1";
+  btn.disabled = true;
+  btn.classList.add("is-loading");
+  btn.textContent = loadingText;
+
+  try {
+    return await fn();
+  } finally {
+    btn.dataset.loading = "0";
+    btn.classList.remove("is-loading");
+    btn.textContent = oldText;
+    refreshActionStates();
+  }
+}
+
     function todayStr() {
       const d = new Date();
       const y = d.getFullYear();
@@ -574,62 +742,71 @@
     }
 
     function setCreatedOrder(order) {
-      state.createdOrder = order || null;
-      document.getElementById("created_order_id").value = order?.order_id || "";
-      document.getElementById("created_checkout_link").value = order?.checkout_link || "";
-      document.getElementById("created_order_amount").value = order?.amount ? TWD(order.amount) : "";
-    }
+  state.createdOrder = order || null;
+  document.getElementById("created_order_id").value = order?.order_id || "";
+  document.getElementById("created_checkout_link").value = order?.checkout_link || "";
+  document.getElementById("created_order_amount").value = order?.amount ? TWD(order.amount) : "";
+  refreshActionStates();
+}
 
-    function renderSelectedMember() {
-      const box = document.getElementById("selectedMemberBox");
-      const m = state.selectedMember;
-      if (!m) {
-        box.innerHTML = `
-          <div><span class="badge badge-red">尚未選取客人</span></div>
-          <div class="hint" style="margin-top:8px;">請先搜尋並選取客人</div>
-        `;
-        document.getElementById("created_member_name").value = "";
-        return;
-      }
-      box.innerHTML = `
-        <div><span class="badge badge-green">已選取客人</span></div>
-        <div style="margin-top:8px; line-height:1.9;">
-          LINE 名稱：${m.line_name || ""}<br>
-          姓名：${m.name || ""}<br>
-          電話：${m.phone || ""}<br>
-          Email：${m.email || ""}<br>
-          line_user_id：${m.line_user_id || ""}
-        </div>
-      `;
-      document.getElementById("created_member_name").value = m.line_name || "";
-    }
+ function renderSelectedMember() {
+  const box = document.getElementById("selectedMemberBox");
+  const m = state.selectedMember;
+
+  if (!m) {
+    box.innerHTML = `
+      <div><span class="badge badge-red">尚未選取客人</span></div>
+      <div class="hint" style="margin-top:8px;">請先搜尋並選取客人</div>
+    `;
+    document.getElementById("created_member_name").value = "";
+    refreshActionStates();
+    return;
+  }
+
+  box.innerHTML = `
+    <div><span class="badge badge-green">已選取客人</span></div>
+    <div style="margin-top:8px; line-height:1.9;">
+      LINE 名稱：${m.line_name || ""}<br>
+      姓名：${m.name || ""}<br>
+      電話：${m.phone || ""}<br>
+      Email：${m.email || ""}<br>
+      line_user_id：${m.line_user_id || ""}
+    </div>
+  `;
+  document.getElementById("created_member_name").value = m.line_name || "";
+  refreshActionStates();
+}
 
     function renderCurrentItems() {
-      const tbody = document.getElementById("currentOrderBody");
-      const items = state.currentItems || [];
-      if (!items.length) {
-        tbody.innerHTML = `<tr><td colspan="7" class="hint">尚未加入商品</td></tr>`;
-      } else {
-        tbody.innerHTML = items.map((it, idx) => `
-          <tr>
-            <td>${it.barcode || ""}</td>
-            <td>${it.name || ""}</td>
-            <td>${it.qty || 0}</td>
-            <td>${TWD(it.price || 0)}</td>
-            <td>${TWD((Number(it.qty) || 0) * (Number(it.price) || 0))}</td>
-            <td>${it.note || ""}</td>
-            <td>
-              <button class="btn btn-red" onclick="removeCurrentItem(${idx})">移除</button>
-            </td>
-          </tr>
-        `).join("");
-      }
+  const tbody = document.getElementById("currentOrderBody");
+  const items = state.currentItems || [];
 
-      const sumQty = items.reduce((a,b)=>a+(Number(b.qty)||0),0);
-      const sumAmount = items.reduce((a,b)=>a+((Number(b.qty)||0)*(Number(b.price)||0)),0);
-      document.getElementById("sumQty").textContent = TWD(sumQty);
-      document.getElementById("sumAmount").textContent = TWD(sumAmount);
-    }
+  if (!items.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="hint">尚未加入商品</td></tr>`;
+  } else {
+    tbody.innerHTML = items.map((it, idx) => `
+      <tr>
+        <td>${it.barcode || ""}</td>
+        <td>${it.name || ""}</td>
+        <td>${it.qty || 0}</td>
+        <td>${TWD(it.price || 0)}</td>
+        <td>${TWD((Number(it.qty) || 0) * (Number(it.price) || 0))}</td>
+        <td>${it.note || ""}</td>
+        <td>
+          <button class="btn btn-red" onclick="removeCurrentItem(${idx})">移除</button>
+        </td>
+      </tr>
+    `).join("");
+  }
+
+  const sumQty = items.reduce((a,b)=>a+(Number(b.qty)||0),0);
+  const sumAmount = items.reduce((a,b)=>a+((Number(b.qty)||0)*(Number(b.price)||0)),0);
+
+  document.getElementById("sumQty").textContent = TWD(sumQty);
+  document.getElementById("sumAmount").textContent = TWD(sumAmount);
+
+  refreshActionStates();
+}
 
     function removeCurrentItem(idx) {
       state.currentItems.splice(idx, 1);
@@ -732,97 +909,56 @@
     }
     window.addPreProductToCurrent = addPreProductToCurrent;
 
-    // 假資料，之後接你自己的 API
-    const memberMaster = [
-      {
-        line_name:"測試客人A",
-        name:"王小美",
-        phone:"0912345678",
-        email:"testa@example.com",
-        line_user_id:"Uxxxxxxxxxxxx001"
-      },
-      {
-        line_name:"測試客人B",
-        name:"陳小華",
-        phone:"0922333444",
-        email:"testb@example.com",
-        line_user_id:"Uxxxxxxxxxxxx002"
-      }
-    ];
+let preProductMaster = [];
+let arrivalMaster = [];
 
-    let preProductMaster = [
-      {
-        product_id:"rec_pre_001",
-        barcode:"D000001",
-        name:"CHANEL 經典肩背包",
-        suggest_price:128000,
-        stock:1,
-        source:"預購",
-        category:"預購",
-        pre_status:"預購中",
-        note:""
-      },
-      {
-        product_id:"rec_pre_002",
-        barcode:"D000002",
-        name:"LV 手提包",
-        suggest_price:69800,
-        stock:1,
-        source:"預購",
-        category:"預購",
-        pre_status:"預購中",
-        note:""
-      },
-      {
-        product_id:"rec_pre_003",
-        barcode:"D000003",
-        name:"DIOR 迷你包",
-        suggest_price:48000,
-        stock:0,
-        source:"預購",
-        category:"預購",
-        pre_status:"預購中",
-        note:""
-      }
-    ];
+async function mockSearchMembers() {
+  const kw = String(document.getElementById("member_keyword").value || "").trim();
 
-    let arrivalMaster = [
-      {
-        barcode:"D000001",
-        name:"CHANEL 經典肩背包",
-        preorder_qty:1,
-        sold_qty:1,
-        cost:"",
-        arrival_date:"",
-        pre_status:"預購中"
-      },
-      {
-        barcode:"D000002",
-        name:"LV 手提包",
-        preorder_qty:1,
-        sold_qty:1,
-        cost:52000,
-        arrival_date:"2026-04-09",
-        pre_status:"已到貨"
-      },
-      {
-        barcode:"D000003",
-        name:"DIOR 迷你包",
-        preorder_qty:1,
-        sold_qty:1,
-        cost:48000,
-        arrival_date:"2026-04-08",
-        pre_status:"已完成"
-      }
-    ];
+  if (!kw) {
+    alert("請先輸入 LINE 名稱 / 姓名 / 電話");
+    return;
+  }
 
-    async function mockSearchMembers() {
-      const kw = String(document.getElementById("member_keyword").value || "").trim();
-      const rows = memberMaster.filter(x => !kw || [x.line_name, x.name, x.phone, x.email].join(" ").includes(kw));
-      renderMemberResults(rows);
-    }
+  try {
+    const opKey = await getOpKey();
 
- async function loadPreProducts() {
+    const data = await apiJson("/op/line-member/search", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        op_key: opKey,
+        keyword: kw
+      })
+    });
+
+    const rawRows = []
+      .concat(data?.items || [])
+      .concat(data?.rows || [])
+      .concat(data?.item ? [data.item] : [])
+      .concat(data?.record ? [data.record] : [])
+      .concat(data?.member ? [data.member] : []);
+
+    const rows = rawRows
+      .map(normalizeMemberRow)
+      .filter(x => x.line_name || x.name || x.phone || x.email || x.line_user_id);
+
+    renderMemberResults(rows);
+  } catch (err) {
+    document.getElementById("memberResultBody").innerHTML =
+      `<tr><td colspan="6" class="hint">查無客人資料</td></tr>`;
+    alert(String(err?.message || err || "搜尋客人失敗"));
+  }
+}
+
+async function mockSearchArrivalList() {
+  const tbody = document.getElementById("arrivalListBody");
+  if (!tbody) return;
+
+  tbody.innerHTML = `<tr><td colspan="8" class="hint">此區尚未接真實後端，已先隱藏，不影響預購開單使用</td></tr>`;
+}
+
+async function loadPreProducts() {
   const kw = String(document.getElementById("product_keyword").value || "").trim();
 
   const qs = new URLSearchParams();
@@ -842,78 +978,76 @@
   renderPreProductResults(Array.isArray(data.items) ? data.items : []);
 }
 
-    async function mockSearchArrivalList() {
-      const kw = String(document.getElementById("arrival_keyword").value || "").trim();
-      const filter = String(document.getElementById("arrival_filter").value || "waiting");
-      const tbody = document.getElementById("arrivalListBody");
+async function ensurePreCartLink() {
+  if (state.createdOrder?.checkout_link && state.createdOrder?.cart_token) {
+    return state.createdOrder;
+  }
 
-      let rows = [...arrivalMaster];
+  if (!state.selectedMember) {
+    alert("請先選取客人");
+    return null;
+  }
 
-      if (filter === "waiting") {
-        rows = rows.filter(x => x.pre_status === "預購中");
-      } else if (filter === "arrived") {
-        rows = rows.filter(x => x.pre_status === "已到貨");
-      } else if (filter === "completed") {
-        rows = rows.filter(x => x.pre_status === "已完成");
-      }
+  if (!state.currentItems.length) {
+    alert("請先加入商品");
+    return null;
+  }
 
-      rows = rows.filter(x => !kw || [x.barcode, x.name].join(" ").includes(kw));
+  const member = state.selectedMember;
+  const opKey = await getOpKey();
 
-      if (!rows.length) {
-        tbody.innerHTML = `<tr><td colspan="8" class="hint">查無資料</td></tr>`;
-        return;
-      }
+  const createData = await apiJson("/cart/create", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      streamer_name: "預購開單",
+      customer_type: "live",
+      line_user_id: member.line_user_id || "",
+      customer_name: member.name || member.line_name || ""
+    })
+  });
 
-      tbody.innerHTML = rows.map(r => `
-        <tr>
-          <td>${r.barcode}</td>
-          <td>${r.name}</td>
-          <td>${r.preorder_qty}</td>
-          <td>${r.sold_qty}</td>
-          <td>${r.cost === "" ? "" : TWD(r.cost)}</td>
-          <td>${r.arrival_date || ""}</td>
-          <td>${r.pre_status}</td>
-          <td>
-            <button class="btn btn-dark">補上成本</button>
-            <button class="btn btn-green">確認到貨</button>
-            <button class="btn btn-gold">轉待出貨</button>
-          </td>
-        </tr>
-      `).join("");
-    }
+  const cartToken = String(createData?.cart_token || "").trim();
+  if (!cartToken) {
+    throw new Error("建立購物車失敗");
+  }
 
-    // 之後改成真的 call 後端建立 cart / cart_token / checkout link
-    async function ensurePreCartLink() {
-      if (state.createdOrder?.checkout_link) {
-        return state.createdOrder;
-      }
+  for (const item of state.currentItems) {
+    const sku = String(item.barcode || item.sku || "").trim();
+    if (!sku) continue;
 
-      if (!state.selectedMember) {
-        alert("請先選取客人");
-        return null;
-      }
+    await apiJson("/cart/add", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        cart_token: cartToken,
+        sku,
+        qty: Math.max(1, Number(item.qty || 1) || 1),
+        price: Math.max(0, Number(item.price || 0) || 0),
+        op_key: opKey,
+        line_user_id: member.line_user_id || "",
+        customer_name: member.name || member.line_name || ""
+      })
+    });
+  }
 
-      if (!state.currentItems.length) {
-        alert("請先加入商品");
-        return null;
-      }
+  const amount = state.currentItems.reduce(
+    (a, b) => a + ((Number(b.qty) || 0) * (Number(b.price) || 0)),
+    0
+  );
 
-      const amount = state.currentItems.reduce(
-        (a, b) => a + ((Number(b.qty) || 0) * (Number(b.price) || 0)),
-        0
-      );
+  const created = {
+    order_id: cartToken,
+    cart_token: cartToken,
+    checkout_link: buildCheckoutLink(cartToken),
+    amount
+  };
 
-      const created = {
-        order_id: "PC202604090001",
-        checkout_link: "https://murain.tw/cart-checkout?cart_token=PREORDER001",
-        amount
-      };
+  setCreatedOrder(created);
+  return created;
+}
 
-      setCreatedOrder(created);
-      return created;
-    }
-
- async function createPreProductLocal() {
+async function createPreProductLocal() {
   const name = String(document.getElementById("pre_name").value || "").trim();
   const qty = Number(document.getElementById("pre_qty").value || 0);
   const suggestPrice = Number(document.getElementById("pre_suggest_price").value || 0);
@@ -996,9 +1130,13 @@
       await resetPreProductForm();
     });
 
-    document.getElementById("btnCreatePreProduct").addEventListener("click", createPreProductLocal);
+    document.getElementById("btnCreatePreProduct").addEventListener("click", async () => {
+  await withBtnLoading("btnCreatePreProduct", "新增中...", createPreProductLocal);
+});
 
-    document.getElementById("btnSearchMember").addEventListener("click", mockSearchMembers);
+    document.getElementById("btnSearchMember").addEventListener("click", async () => {
+  await withBtnLoading("btnSearchMember", "搜尋中...", mockSearchMembers);
+});
 
     document.getElementById("btnClearMemberSearch").addEventListener("click", ()=>{
       document.getElementById("member_keyword").value = "";
@@ -1009,11 +1147,13 @@
     });
 
     document.getElementById("btnSearchPreProducts").addEventListener("click", async () => {
-  try {
-    await loadPreProducts();
-  } catch (err) {
-    alert(String(err?.message || err || "載入預購清單失敗"));
-  }
+  await withBtnLoading("btnSearchPreProducts", "載入中...", async () => {
+    try {
+      await loadPreProducts();
+    } catch (err) {
+      alert(String(err?.message || err || "載入預購清單失敗"));
+    }
+  });
 });
 
     document.getElementById("btnClearProductSearch").addEventListener("click", async ()=>{
@@ -1035,20 +1175,72 @@
       setCreatedOrder(null);
     });
 
-    document.getElementById("btnCopyCheckoutLink").addEventListener("click", async () => {
+document.getElementById("btnCopyCheckoutLink").addEventListener("click", async () => {
+  await withBtnLoading("btnCopyCheckoutLink", "產生中...", async () => {
+    try {
       const created = await ensurePreCartLink();
-      if (!created?.checkout_link) return;
+      if (!created?.checkout_link || !created?.cart_token) return;
 
       await navigator.clipboard.writeText(created.checkout_link);
+
+      const opKey = await getOpKey();
+      const member = state.selectedMember || {};
+
+      await apiJson("/op/cart/mark-copied", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          op_key: opKey,
+          cart_token: created.cart_token,
+          line_user_id: member.line_user_id || "",
+          customer_name: member.name || member.line_name || ""
+        })
+      });
+
       alert("已複製購物車連結");
-    });
+    } catch (err) {
+      alert(String(err?.message || err || "複製失敗"));
+    }
+  });
+});
 
-    document.getElementById("btnSendLineFlex").addEventListener("click", async () => {
+    alert("已複製購物車連結");
+  } catch (err) {
+    alert(String(err?.message || err || "複製失敗"));
+  }
+});
+
+document.getElementById("btnSendLineFlex").addEventListener("click", async () => {
+  await withBtnLoading("btnSendLineFlex", "發送中...", async () => {
+    try {
       const created = await ensurePreCartLink();
-      if (!created?.checkout_link) return;
+      if (!created?.cart_token) return;
 
-      alert("這顆之後接 LINE 預購卡片（含購物車按鈕）");
-    });
+      const member = state.selectedMember || {};
+      if (!member.line_user_id) {
+        alert("這位客人沒有 line_user_id，無法直接發送 LINE");
+        return;
+      }
+
+      const opKey = await getOpKey();
+
+      await apiJson("/op/cart/send-link", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          op_key: opKey,
+          cart_token: created.cart_token,
+          line_user_id: member.line_user_id || "",
+          customer_name: member.name || member.line_name || ""
+        })
+      });
+
+      alert("已發送 LINE 預購卡片");
+    } catch (err) {
+      alert(String(err?.message || err || "發送失敗"));
+    }
+  });
+});
 
     document.getElementById("btnClearOrderForm").addEventListener("click", ()=>{
       state.currentItems = [];
@@ -1088,13 +1280,23 @@
       mockSearchArrivalList();
     });
 
-    (async () => {
+    ["pre_name", "pre_qty", "member_keyword"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) {
+    el.addEventListener("input", refreshActionStates);
+    el.addEventListener("change", refreshActionStates);
+  }
+});
+
+ (async () => {
   await resetPreProductForm();
   renderSelectedMember();
   renderCurrentItems();
   setCreatedOrder(null);
+  hideArrivalSection();
   await loadPreProducts();
-  mockSearchArrivalList();
+  await mockSearchArrivalList();
+  refreshActionStates();
 })();
   </script>
 </body>
