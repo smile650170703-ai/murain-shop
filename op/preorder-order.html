@@ -726,17 +726,10 @@ function canAddProductRow(row = {}) {
     // 之後改成真的 call 後端：
     // GET /op/preorder/next-barcode
     async function fetchNextPreBarcode() {
-  const resp = await fetch(apiUrl("/op/preorder/next-barcode"), {
-    method: "GET",
-    cache: "no-store"
+  const data = await apiJson(apiUrl("/op/preorder/next-barcode"), {
+    method: "GET"
   });
-
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || !data?.ok) {
-    throw new Error(data?.error || "取得下一號條碼失敗");
-  }
-
-  return String(data.barcode || "D000001");
+  return String(data?.barcode || "D000001");
 }
 
     async function resetPreProductForm() {
@@ -1015,16 +1008,9 @@ async function mockSearchArrivalList() {
 }
 
 async function loadPreProducts() {
-  const resp = await fetch(apiUrl("/op/preorder/products"), {
-    method: "GET",
-    cache: "no-store"
+  const data = await apiJson(apiUrl("/op/preorder/products"), {
+    method: "GET"
   });
-
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || !data?.ok) {
-    throw new Error(data?.error || "載入預購清單失敗");
-  }
-
   renderPreProductResults(Array.isArray(data.items) ? data.items : []);
 }
 
@@ -1323,15 +1309,32 @@ document.getElementById("btnClearOrderForm").addEventListener("click", ()=>{
   }
 });
 
- (async () => {
-  await resetPreProductForm();
-  renderSelectedMember();
-  renderCurrentItems();
-  setCreatedOrder(null);
-  hideArrivalSection();
-  await loadPreProducts();
-  await mockSearchArrivalList();
-  refreshActionStates();
+(async () => {
+  try {
+    await resetPreProductForm();
+    renderSelectedMember();
+    renderCurrentItems();
+    setCreatedOrder(null);
+    hideArrivalSection();
+    await loadPreProducts();
+    await mockSearchArrivalList();
+    refreshActionStates();
+  } catch (err) {
+    console.error("預購開單初始化失敗：", err);
+    alert(`初始化失敗：${String(err?.message || err || "")}`);
+
+    // 先讓畫面至少能操作，不要整頁卡死
+    document.getElementById("pre_barcode").value = "D000001";
+    document.getElementById("pre_in_date").value = todayStr();
+    renderSelectedMember();
+    renderCurrentItems();
+    setCreatedOrder(null);
+    hideArrivalSection();
+    refreshActionStates();
+
+    document.getElementById("preProductBody").innerHTML =
+      `<tr><td colspan="8" class="hint">預購清單載入失敗，請檢查 API / CORS 設定</td></tr>`;
+  }
 })();
   </script>
 </body>
