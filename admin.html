@@ -3184,9 +3184,6 @@ async function markMeetupCashDone(){
     return;
   }
 
-  const ok = await saveDetail({ skipReload: true });
-  if (!ok) return;
-
   const f = currentRecord.fields || currentRecord || {};
   const pm = String(f.payment_method || '');
 
@@ -3201,42 +3198,85 @@ async function markMeetupCashDone(){
     return;
   }
 
-  if (!confirm('確定要將此「面交付現」訂單標記為：已收款 + 出貨完成（已出貨）？')) {
+  if (!confirm('確定要將此「面交付現」訂單標記為：已收款 + 出貨完成（已出貨）＋發送 LINE 通知？')) {
     return;
   }
 
   const msgEl = $('#detailMsg');
+
+  // ✅ 面交固定運費 0：先直接帶入畫面欄位，讓 saveDetail 一起存進 Airtable
+  const feeEl = $('#d_ship_fee');
+  if (feeEl) feeEl.value = '0';
+
+  // 先把右側欄位資料存起來（包含 shipping_fee = 0 / 備註等）
+  if (msgEl) msgEl.textContent = '儲存面交資料中…';
+  const ok = await saveDetail({ skipReload: true });
+  if (!ok) return;
+
   if (msgEl) msgEl.textContent = '更新面交狀態中…';
 
-  const payload = {
+  const updatePayload = {
     op_key: OP_KEY,
     record_id: currentRecord.id || null,
     order_id: orderId || null,
     fields: {
-      pay_status:  'paid_ok',
-      ship_status: 'shipped',
-      status:      'shipped',
-      shipped_at:  new Date().toISOString()
+      shipping_fee: 0,
+      pay_status:   'paid_ok',
+      ship_status:  'shipped',
+      status:       'shipped',
+      shipped_at:   new Date().toISOString()
     }
   };
 
   try {
+    // 1) 先標記：已收款 + 已出貨 + 運費 0
     const res = await fetch(API + '/admin/order/update', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
+      body: JSON.stringify(updatePayload)
     });
     const j = await res.json().catch(()=> ({}));
     if (!res.ok || !j.ok) {
       throw new Error(j.error || ('HTTP ' + res.status));
     }
 
-    if (msgEl) msgEl.textContent = '✅ 已標記：已收款 + 出貨完成';
+    // 2) 再發面交通知 LINE
+    if (msgEl) msgEl.textContent = '發送面交 LINE 通知中…';
+
+    const note = ($('#d_internal_note')?.value || '').trim();
+    const notifyPayload = {
+      op_key: OP_KEY,
+      order_id: orderId,
+      note: note
+    };
+
+    const notifyRes = await fetch(API + '/admin/order/meetup-notify', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(notifyPayload)
+    });
+    const notifyJson = await notifyRes.json().catch(()=> ({}));
+
+    if (!notifyRes.ok || !notifyJson.ok) {
+      throw new Error(notifyJson.error || ('HTTP ' + notifyRes.status));
+    }
+
+    if (msgEl) {
+      if (notifyJson.line_sent) {
+        msgEl.textContent = '✅ 已完成面交收款：已收款＋出貨完成＋LINE 已發送';
+      } else {
+        msgEl.textContent = '✅ 已完成面交收款，但找不到此訂單的 LINE 綁定';
+      }
+    }
+
+    const keepKey = orderId || currentRecord.id || '';
     await reloadCurrentView();
+    restoreSelectedOrder(keepKey);
+
   } catch(e) {
     console.error(e);
-    if (msgEl) msgEl.textContent = '❌ 更新失敗：' + (e.message || e);
-    alert('更新失敗，請稍後再試');
+    if (msgEl) msgEl.textContent = '❌ 面交完成處理失敗：' + (e.message || e);
+    alert('面交完成處理失敗，請稍後再試');
   }
 }
 /* ===== 預約面交通知：發 LINE ===== */
