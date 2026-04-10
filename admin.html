@@ -184,7 +184,8 @@
 #btnRemindToday,
 #btnPickupNeed,
 #btnConsign,
-#btnConsignAccounting{
+#btnConsignAccounting,
+#btnSyncTailToParentTop{
   display:none !important;
 }
   .label-inline{display:flex;align-items:center;gap:5px;font-size:12px;margin-top:4px}
@@ -1083,13 +1084,42 @@ function displayPayStatus(ps){
     default:        return ps || '';
   }
 }
- function isUnshippedOrder(rec){
-  const f  = rec?.fields || rec || {};
-  const st = String(f.status || "").toLowerCase();        // submitted/paid/shipped/cancelled...
-  const ps = String(f.pay_status || "").toLowerCase();    // pending/paid_ok/deposit_ok/failed/cancelled...
-  const ss = String(f.ship_status || f.shipping_status || "").toLowerCase(); // ready_to_ship/shipped/returned...
+ function hasTailChildInRows(parentOrderId, rows = ALL_ORDERS_CACHE){
+  const pid = String(parentOrderId || '').trim();
+  if (!pid) return false;
 
-  // 先排除「作廢/取消」和「付款失敗」：跟你 all_no_fail 的精神一致
+  return (rows || []).some(rec => {
+    const f = rec?.fields || rec || {};
+    const oid = String(f.order_id || '').trim();
+    const parentId = String(f.parent_order_id || '').trim();
+
+    const isTail =
+      !!f.is_tail ||
+      String(f.order_type || '').toLowerCase() === 'tail' ||
+      oid.toUpperCase().startsWith('TL') ||
+      !!parentId;
+
+    return isTail && parentId === pid;
+  });
+}
+function isUnshippedOrder(rec){
+  const f  = rec?.fields || rec || {};
+  const oid = String(f.order_id || "").trim();
+  const st = String(f.status || "").toLowerCase();
+  const ps = String(f.pay_status || "").toLowerCase();
+  const ss = String(f.ship_status || f.shipping_status || "").toLowerCase();
+  const parentId = String(f.parent_order_id || "").trim();
+
+  const isTail =
+    !!f.is_tail ||
+    String(f.order_type || "").toLowerCase() === "tail" ||
+    oid.toUpperCase().startsWith("TL") ||
+    !!parentId;
+
+  // 原訂單如果底下已經有 TL，就不要再顯示在待出貨
+  if (!isTail && hasTailChildInRows(oid, ALL_ORDERS_CACHE)) return false;
+
+  // 先排除「作廢/取消」和「付款失敗」
   if (st === "cancelled") return false;
   if (ps === "failed" || ps === "cancelled") return false;
 
@@ -1097,7 +1127,7 @@ function displayPayStatus(ps){
   if (st === "shipped") return false;
   if (ss === "shipped" || ss === "arrived" || ss === "picked_up" || ss === "returned") return false;
 
-  // 其他一律視為「未出貨」
+  // 其他一律視為未出貨
   return true;
 }
  function displayShipStatusText(st){
