@@ -3198,17 +3198,17 @@ async function markMeetupCashDone(){
     return;
   }
 
-  if (!confirm('確定要將此「面交付現」訂單標記為：已收款 + 出貨完成（已出貨）＋發送 LINE 通知？')) {
+  if (!confirm('確定要將此「面交付現」訂單標記為：已收款 + 出貨完成（已出貨）＋發送完成面交 LINE 通知？')) {
     return;
   }
 
   const msgEl = $('#detailMsg');
 
-  // ✅ 面交固定運費 0：先直接帶入畫面欄位，讓 saveDetail 一起存進 Airtable
+  // 面交固定運費 0
   const feeEl = $('#d_ship_fee');
   if (feeEl) feeEl.value = '0';
 
-  // 先把右側欄位資料存起來（包含 shipping_fee = 0 / 備註等）
+  // 先把右側資料存起來（包含 shipping_fee = 0）
   if (msgEl) msgEl.textContent = '儲存面交資料中…';
   const ok = await saveDetail({ skipReload: true });
   if (!ok) return;
@@ -3221,15 +3221,15 @@ async function markMeetupCashDone(){
     order_id: orderId || null,
     fields: {
       shipping_fee: 0,
-      pay_status:   'paid_ok',
-      ship_status:  'shipped',
-      status:       'shipped',
-      shipped_at:   new Date().toISOString()
+      pay_status: 'paid_ok',
+      ship_status: 'shipped',
+      status: 'shipped',
+      shipped_at: new Date().toISOString()
     }
   };
 
   try {
-    // 1) 先標記：已收款 + 已出貨 + 運費 0
+    // 1) 先標記已收款 + 已出貨
     const res = await fetch(API + '/admin/order/update', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -3240,17 +3240,17 @@ async function markMeetupCashDone(){
       throw new Error(j.error || ('HTTP ' + res.status));
     }
 
-    // 2) 再發面交通知 LINE
-    if (msgEl) msgEl.textContent = '發送面交 LINE 通知中…';
+    // 2) 再發「完成面交」專用 LINE
+    if (msgEl) msgEl.textContent = '發送完成面交 LINE 通知中…';
 
     const note = ($('#d_internal_note')?.value || '').trim();
     const notifyPayload = {
       op_key: OP_KEY,
       order_id: orderId,
-      note: note
+      note
     };
 
-    const notifyRes = await fetch(API + '/admin/order/meetup-notify', {
+    const notifyRes = await fetch(API + '/admin/order/meetup-complete-notify', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(notifyPayload)
@@ -3263,7 +3263,7 @@ async function markMeetupCashDone(){
 
     if (msgEl) {
       if (notifyJson.line_sent) {
-        msgEl.textContent = '✅ 已完成面交收款：已收款＋出貨完成＋LINE 已發送';
+        msgEl.textContent = '✅ 已完成面交收款：已收款＋出貨完成＋完成面交 LINE 已發送';
       } else {
         msgEl.textContent = '✅ 已完成面交收款，但找不到此訂單的 LINE 綁定';
       }
