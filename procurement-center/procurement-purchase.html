@@ -427,7 +427,17 @@ td input.qty {
     </div>
 
     <div class="card">
-      <h2>2. 商品明細</h2>
+  <h2>1.5 訂單核對 ❌ 清單</h2>
+  <div class="sub" style="margin-bottom:12px;">
+    顯示最近核對失敗的採購單，方便你快速回頭檢查資料。
+  </div>
+  <div id="badOrderList" class="bad-list">
+    <div class="bad-empty">載入中...</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>2. 商品明細</h2>
       <div class="sub" style="margin-bottom:12px;">
   每列一筆商品。可從 Excel / Google Sheets 複製單一欄位多行資料，
   直接貼到名稱、顏色、尺寸、美金單價或數量欄位，系統會自動往下分配。
@@ -480,38 +490,25 @@ td input.qty {
       location.href = "/procurement-center/procurement-index.html";
     }
 
-    const API_CREATE = "https://api.murain.tw/op/procurement/purchase/create-with-items";
-    const API_PACKAGE_CHECK = "https://api.murain.tw/op/procurement/package/check";
+const API_CREATE = "https://api.murain.tw/op/procurement/purchase/create-with-items";
+const API_PACKAGE_CHECK = "https://api.murain.tw/op/procurement/package/check";
 const API_BAD_LIST = "https://api.murain.tw/op/procurement/purchase/bad-list";
 
-    const $ = (id) => document.getElementById(id);
-    const rowsEl = $("itemRows");
-    const msgEl = $("msg");
-    const btnSubmit = $("btnSubmit");
-    const btnAddRow = $("btnAddRow");
+const $ = (id) => document.getElementById(id);
+const rowsEl = $("itemRows");
+const msgEl = $("msg");
+const btnSubmit = $("btnSubmit");
+const btnAddRow = $("btnAddRow");
 
-    const ITEM_COLS = [
+const ITEM_COLS = [
   "name",
   "color",
   "size",
   "usdUnitPrice",
   "qty"
 ];
+
 function resetPurchaseForm() {
-  $("vendor").value = "";
-  $("twdAfterTax").value = "";
-  $("orderNo").value = "";
-  $("usdTotal").value = "";
-  $("usdRate").value = "";
-  $("buyDate").value = "";
-  $("packageCode").value = "";
-
-  rowsEl.innerHTML = "";
-  createRow(); // 只留 1 列空白列
-  refreshRows();
-}
-
-    function resetPurchaseForm() {
   $("vendor").value = "";
   $("twdAfterTax").value = "";
   $("orderNo").value = "";
@@ -527,7 +524,7 @@ function resetPurchaseForm() {
   createRow();
   refreshRows();
 }
-    
+
 function getRowList() {
   return [...rowsEl.querySelectorAll("tr")];
 }
@@ -603,6 +600,86 @@ function handleSingleColumnPaste(e) {
     throw new Error(data.message || data.error || "API 失敗");
   }
   return data;
+}
+
+    async function apiGet(url) {
+  const r = await fetch(url);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.ok) {
+    throw new Error(data.message || data.error || "查詢失敗");
+  }
+  return data;
+}
+
+function setPackageCheckResult(text) {
+  const el = $("packageCheckResult");
+  if (el) el.textContent = text || "";
+}
+
+async function checkPackageQuick() {
+  const code = $("quickPackageCode")?.value.trim();
+  if (!code) {
+    setPackageCheckResult("請先輸入包裹編號。");
+    return;
+  }
+
+  setPackageCheckResult("查詢中...");
+
+  try {
+    const data = await apiGet(`${API_PACKAGE_CHECK}?code=${encodeURIComponent(code)}`);
+
+    if (!data.exists) {
+      setPackageCheckResult(`查無包裹編號：${code}`);
+      return;
+    }
+
+    const lines = [
+      `包裹編號：${data.package_code || code}`,
+      `包裹 ID：${data.package_id || "-"}`,
+      `關聯商品數：${data.linked_count ?? 0}`
+    ];
+
+    if (Array.isArray(data.linked_names) && data.linked_names.length) {
+      lines.push(`商品：${data.linked_names.join("、")}`);
+    }
+
+    setPackageCheckResult(lines.join("\n"));
+  } catch (err) {
+    setPackageCheckResult(`❌ ${err.message || err}`);
+  }
+}
+
+async function loadBadPurchases() {
+  const wrap = $("badOrderList");
+  if (!wrap) return;
+
+  wrap.innerHTML = `<div class="bad-empty">載入中...</div>`;
+
+  try {
+    const data = await apiGet(API_BAD_LIST);
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+
+    if (!rows.length) {
+      wrap.innerHTML = `<div class="bad-empty">目前沒有訂單核對為 ❌ 的清單。</div>`;
+      return;
+    }
+
+    wrap.innerHTML = rows.map(row => `
+      <div class="bad-item">
+        <div class="bad-top">
+          <strong>${escapeHtml(row.orderNo || "-")}</strong>
+          <span class="badge">❌</span>
+        </div>
+        <div class="sub">
+          進貨商：${escapeHtml(row.vendor || "-")}<br>
+          購買日期：${escapeHtml(row.buyDate || "-")}<br>
+          訂單核對：${escapeHtml(row.orderCheck || "❌")}
+        </div>
+      </div>
+    `).join("");
+  } catch (err) {
+    wrap.innerHTML = `<div class="bad-empty">❌ ${escapeHtml(err.message || String(err))}</div>`;
+  }
 }
 
     async function apiGet(url) {
@@ -840,9 +917,10 @@ loadBadPurchases();
     }
 
     $("btnCalcTwd").addEventListener("click", calcTwd);
-    btnAddRow.addEventListener("click", () => createRow());
-    btnSubmit.addEventListener("click", submitForm);
-    const btnCheckPackage = $("btnCheckPackage");
+btnAddRow.addEventListener("click", () => createRow());
+btnSubmit.addEventListener("click", submitForm);
+
+const btnCheckPackage = $("btnCheckPackage");
 if (btnCheckPackage) {
   btnCheckPackage.addEventListener("click", checkPackageQuick);
 }
@@ -854,7 +932,7 @@ if (quickPackageCode) {
   });
 }
 
-    createRow();
+createRow();
 loadBadPurchases();
   </script>
 </body>
