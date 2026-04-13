@@ -353,25 +353,27 @@ td input.qty {
   </div>
 
   <div class="wrap">
-    <div class="page-head">
+  <div class="page-head">
   <div class="page-head-left">
     <h1>採購單</h1>
-    <div class="sub">
-      這一頁處理：<br>
-      採購單主資料 + 包裹單號 + 多列商品明細，一次送出。
-    </div>
   </div>
 
   <div class="page-head-right">
-    <div class="soft-box">
-      <div class="soft-title">包裹編號快速查詢</div>
-      <label for="quickPackageCode">包裹編號</label>
-      <input id="quickPackageCode" placeholder="例如 20260407 / 95627755" />
+    <div class="soft-box" style="margin-bottom:14px;">
+      <div class="soft-title">採購單訂單編號快速查詢</div>
+      <label for="quickOrderNo">訂單編號</label>
+      <input id="quickOrderNo" placeholder="例如 P003101819" />
       <div class="toolbar">
-        <button class="btn secondary" type="button" id="btnCheckPackage">查詢包裹</button>
+        <button class="btn secondary" type="button" id="btnCheckPurchase">查詢訂單</button>
       </div>
-      <div class="helper">可先確認這個包裹編號是否已經輸入過。</div>
-      <div id="packageCheckResult" class="soft-text" style="margin-top:10px;">尚未查詢</div>
+      <div id="purchaseCheckResult" class="soft-text" style="margin-top:10px;">尚未查詢</div>
+    </div>
+
+    <div class="soft-box">
+      <div class="soft-title">1.5 訂單核對 ❌ 清單</div>
+      <div id="badOrderList" class="bad-list">
+        <div class="bad-empty">載入中...</div>
+      </div>
     </div>
   </div>
 </div>
@@ -419,30 +421,10 @@ td input.qty {
           <input id="packageCode" placeholder="例如 490697164804" />
         </div>
       </div>
-
-      <div class="helper">
-        <button class="btn secondary" type="button" id="btnCalcTwd">美元 × 匯率 帶出台幣</button>
-        <span>這顆只做輔助計算，不會改你其他流程。</span>
-      </div>
     </div>
-
-    <div class="card">
-  <h2>1.5 訂單核對 ❌ 清單</h2>
-  <div class="sub" style="margin-bottom:12px;">
-    顯示最近核對失敗的採購單，方便你快速回頭檢查資料。
-  </div>
-  <div id="badOrderList" class="bad-list">
-    <div class="bad-empty">載入中...</div>
-  </div>
-</div>
-
+    
 <div class="card">
   <h2>2. 商品明細</h2>
-      <div class="sub" style="margin-bottom:12px;">
-  每列一筆商品。可從 Excel / Google Sheets 複製單一欄位多行資料，
-  直接貼到名稱、顏色、尺寸、美金單價或數量欄位，系統會自動往下分配。
-  商品照片改為按鈕式選檔。
-</div>
 
       <div class="toolbar">
         <button class="btn secondary" type="button" id="btnAddRow">+ 新增一列商品</button>
@@ -491,7 +473,7 @@ td input.qty {
     }
 
 const API_CREATE = "https://api.murain.tw/op/procurement/purchase/create-with-items";
-const API_PACKAGE_CHECK = "https://api.murain.tw/op/procurement/package/check";
+const API_PURCHASE_CHECK = "https://api.murain.tw/op/procurement/purchase/check";
 const API_BAD_LIST = "https://api.murain.tw/op/procurement/purchase/bad-list";
 
 const $ = (id) => document.getElementById(id);
@@ -517,8 +499,8 @@ function resetPurchaseForm() {
   $("buyDate").value = "";
   $("packageCode").value = "";
 
-  if ($("quickPackageCode")) $("quickPackageCode").value = "";
-  setPackageCheckResult("尚未查詢");
+  if ($("quickOrderNo")) $("quickOrderNo").value = "";
+setPurchaseCheckResult("尚未查詢");
 
   rowsEl.innerHTML = "";
   createRow();
@@ -611,41 +593,41 @@ function handleSingleColumnPaste(e) {
   return data;
 }
 
-function setPackageCheckResult(text) {
-  const el = $("packageCheckResult");
+function setPurchaseCheckResult(text) {
+  const el = $("purchaseCheckResult");
   if (el) el.textContent = text || "";
 }
 
-async function checkPackageQuick() {
-  const code = $("quickPackageCode")?.value.trim();
-  if (!code) {
-    setPackageCheckResult("請先輸入包裹編號。");
+async function checkPurchaseQuick() {
+  const orderNo = $("quickOrderNo")?.value.trim();
+  if (!orderNo) {
+    setPurchaseCheckResult("請先輸入訂單編號。");
     return;
   }
 
-  setPackageCheckResult("查詢中...");
+  setPurchaseCheckResult("查詢中...");
 
   try {
-    const data = await apiGet(`${API_PACKAGE_CHECK}?code=${encodeURIComponent(code)}`);
+    const data = await apiGet(`${API_PURCHASE_CHECK}?orderNo=${encodeURIComponent(orderNo)}`);
 
     if (!data.exists) {
-      setPackageCheckResult(`查無包裹編號：${code}`);
+      setPurchaseCheckResult(`查無訂單編號：${orderNo}`);
       return;
     }
 
     const lines = [
-      `包裹編號：${data.package_code || code}`,
-      `包裹 ID：${data.package_id || "-"}`,
-      `關聯商品數：${data.linked_count ?? 0}`
+      `訂單編號：${data.order_no || orderNo}`,
+      `採購單 ID：${data.purchase_id || "-"}`,
+      `進貨商：${data.vendor || "-"}`,
+      `購買日期：${data.buy_date || "-"}`,
+      `包裹編號：${data.package_code || "-"}`,
+      `商品數：${data.item_count ?? 0}`,
+      `訂單核對：${data.order_check || "-"}`
     ];
 
-    if (Array.isArray(data.linked_names) && data.linked_names.length) {
-      lines.push(`商品：${data.linked_names.join("、")}`);
-    }
-
-    setPackageCheckResult(lines.join("\n"));
+    setPurchaseCheckResult(lines.join("\n"));
   } catch (err) {
-    setPackageCheckResult(`❌ ${err.message || err}`);
+    setPurchaseCheckResult(`❌ ${err.message || err}`);
   }
 }
 
@@ -916,19 +898,18 @@ loadBadPurchases();
       }
     }
 
-    $("btnCalcTwd").addEventListener("click", calcTwd);
 btnAddRow.addEventListener("click", () => createRow());
 btnSubmit.addEventListener("click", submitForm);
 
-const btnCheckPackage = $("btnCheckPackage");
-if (btnCheckPackage) {
-  btnCheckPackage.addEventListener("click", checkPackageQuick);
+const btnCheckPurchase = $("btnCheckPurchase");
+if (btnCheckPurchase) {
+  btnCheckPurchase.addEventListener("click", checkPurchaseQuick);
 }
 
-const quickPackageCode = $("quickPackageCode");
-if (quickPackageCode) {
-  quickPackageCode.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") checkPackageQuick();
+const quickOrderNo = $("quickOrderNo");
+if (quickOrderNo) {
+  quickOrderNo.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") checkPurchaseQuick();
   });
 }
 
