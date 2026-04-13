@@ -385,9 +385,8 @@
     location.href = "/procurement-center/procurement-index.html";
   }
 
-  // 你後端如果還沒做，先把這兩支 API 補上
-  const API_LIST_ZERO_WEIGHT = "https://api.murain.tw/op/procurement/package/list-zero-weight";
-  const API_SAVE_PACKAGE_BULK = "https://api.murain.tw/op/procurement/package/bulk-update";
+const API_LIST_ZERO_WEIGHT = "https://api.murain.tw/op/procurement/package/list-zero-weight";
+const API_SAVE_TRANSFER = "https://api.murain.tw/op/procurement/transfer/save";
 
   const $ = (id) => document.getElementById(id);
   const rowsEl = $("packageRows");
@@ -513,41 +512,74 @@
       }));
   }
 
-  async function submitForm() {
-    const rows = collectSelectedRows();
+async function submitForm() {
+  const transfer = {
+    transferNo: $("transferNo").value.trim(),
+    transferDate: $("transferDate").value.trim(),
+    shippingFeeOrTax: $("shippingFeeOrTax").value.trim(),
+    extraFeeTwd: $("extraFeeTwd").value.trim(),
+    creditOrTaichung: $("creditOrTaichung").checked,
+    invoiceRef: $("invoiceRef").value.trim()
+  };
 
-    if (!rows.length) {
-      setMsg("❌ 請先勾選要儲存的包裹。", "err");
-      return;
-    }
+  const selectedRows = collectSelectedRows();
 
-    const invalid = rows.find(r => !r.weight_lbs);
-    if (invalid) {
-      setMsg(`❌ 請先填寫重量[磅]：${invalid.package_code || invalid.package_id}`, "err");
-      return;
-    }
-
-    btnSubmit.disabled = true;
-    setMsg("送出中...");
-
-    try {
-      const data = await apiPost(API_SAVE_PACKAGE_BULK, { packages: rows });
-
-      setMsg(
-`✅ 儲存成功
-成功筆數：${data.updated_count || 0}
-失敗筆數：${data.failed_count || 0}
-${data.failed_count ? "\n失敗明細：\n" + JSON.stringify(data.failed_rows || [], null, 2) : ""}`,
-        "ok"
-      );
-
-      await loadZeroWeightPackages();
-    } catch (err) {
-      setMsg(`❌ ${err.message || err}`, "err");
-    } finally {
-      btnSubmit.disabled = false;
-    }
+  if (!transfer.transferNo) {
+    setMsg("❌ 請先輸入轉運單號。", "err");
+    return;
   }
+
+  if (!selectedRows.length) {
+    setMsg("❌ 請先勾選要儲存的包裹。", "err");
+    return;
+  }
+
+  const invalid = selectedRows.find(r => !r.weight_lbs);
+  if (invalid) {
+    setMsg(`❌ 請先填寫重量[磅]：${invalid.package_code || invalid.package_id}`, "err");
+    return;
+  }
+
+  const payload = {
+    transfer,
+    packages: selectedRows.map(r => ({
+      packageCode: r.package_code || "",
+      weightLbs: r.weight_lbs || "",
+      packageFeeTwd: r.package_fee_twd || "",
+      packageRemark: r.package_remark || ""
+    }))
+  };
+
+  btnSubmit.disabled = true;
+  setMsg("送出中...");
+
+  try {
+    const data = await apiPost(API_SAVE_TRANSFER, payload);
+
+    setMsg(
+`✅ 建立／更新成功
+轉運單 ID：${data.transfer_id || ""}
+成功包裹筆數：${data.package_updated_count || 0}
+失敗包裹筆數：${data.package_failed_count || 0}
+
+${data.package_failed_count ? "失敗明細：\n" + JSON.stringify(data.failed_packages || [], null, 2) : "全部包裹都已完成更新。"}`,
+      "ok"
+    );
+
+    $("transferNo").value = "";
+    $("transferDate").value = "";
+    $("shippingFeeOrTax").value = "";
+    $("extraFeeTwd").value = "";
+    $("creditOrTaichung").checked = false;
+    $("invoiceRef").value = "";
+
+    await loadZeroWeightPackages();
+  } catch (err) {
+    setMsg(`❌ ${err.message || err}`, "err");
+  } finally {
+    btnSubmit.disabled = false;
+  }
+}
 
   btnReloadPackages.addEventListener("click", loadZeroWeightPackages);
   btnSubmit.addEventListener("click", submitForm);
