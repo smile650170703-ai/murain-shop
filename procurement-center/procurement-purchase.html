@@ -493,6 +493,7 @@ td input.qty{
           <thead>
             <tr>
   <th style="width:60px;">#</th>
+  <th style="width:140px;">包裹編號</th>
   <th>名稱</th>
   <th>顏色</th>
   <th>尺寸</th>
@@ -541,6 +542,7 @@ const btnSubmit = $("btnSubmit");
 const btnAddRow = $("btnAddRow");
 
 const ITEM_COLS = [
+  "packageCode",
   "name",
   "color",
   "size",
@@ -732,10 +734,12 @@ async function loadBadPurchases() {
 
 function createRow(data = {}) {
   const fileId = `photo_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+  const defaultPackageCode = $("packageCode")?.value.trim() || "";
 
   const tr = document.createElement("tr");
   tr.innerHTML = `
     <td class="row-no"></td>
+    <td><input class="packageCode" value="${escapeHtml(data.packageCode || defaultPackageCode || "")}" placeholder="包裹編號"></td>
     <td><input class="name" value="${escapeHtml(data.name || "")}" placeholder="名稱"></td>
     <td><input class="color" value="${escapeHtml(data.color || "")}" placeholder="顏色"></td>
     <td><input class="size" value="${escapeHtml(data.size || "")}" placeholder="尺寸"></td>
@@ -789,8 +793,9 @@ function createRow(data = {}) {
       }, 0);
     }
 
-    function collectItems() {
+function collectItems() {
   return [...rowsEl.querySelectorAll("tr")].map((tr) => ({
+    packageCode: tr.querySelector(".packageCode")?.value.trim() || "",
     name: tr.querySelector(".name")?.value.trim() || "",
     color: tr.querySelector(".color")?.value.trim() || "",
     size: tr.querySelector(".size")?.value.trim() || "",
@@ -829,25 +834,60 @@ function createRow(data = {}) {
         setMsg("❌ 請先輸入訂單編號。", "err");
         return;
       }
-      if (!payload.purchase.packageCode) {
-        setMsg("❌ 請先輸入包裹編號。", "err");
-        return;
-      }
       if (!payload.items.length) {
         setMsg("❌ 請至少新增 1 列商品。", "err");
         return;
       }
 
-      const validItems = payload.items.filter(row =>
-  row.name || row.color || row.size || row.usdUnitPrice || row.qty
-);
+const payload = {
+  purchase: {
+    vendor: $("vendor").value.trim(),
+    twdAfterTax: $("twdAfterTax").value.trim(),
+    orderNo: $("orderNo").value.trim(),
+    usdTotal: $("usdTotal").value.trim(),
+    usdRate: $("usdRate").value.trim(),
+    buyDate: $("buyDate").value.trim(),
+    packageCode: $("packageCode").value.trim() // 這裡改成「預設包裹編號」
+  },
+  items: collectItems()
+};
 
-      if (!validItems.length) {
-        setMsg("❌ 商品明細目前都是空白列。", "err");
-        return;
-      }
+if (!payload.purchase.vendor) {
+  setMsg("❌ 請先選擇進貨商。", "err");
+  return;
+}
+if (!payload.purchase.orderNo) {
+  setMsg("❌ 請先輸入訂單編號。", "err");
+  return;
+}
+if (!payload.items.length) {
+  setMsg("❌ 請至少新增 1 列商品。", "err");
+  return;
+}
 
-      payload.items = validItems;
+const defaultPackageCode = payload.purchase.packageCode || "";
+
+const validItems = payload.items
+  .filter(row =>
+    row.packageCode || row.name || row.color || row.size || row.usdUnitPrice || row.qty
+  )
+  .map(row => ({
+    ...row,
+    packageCode: row.packageCode || defaultPackageCode
+  }));
+
+if (!validItems.length) {
+  setMsg("❌ 商品明細目前都是空白列。", "err");
+  return;
+}
+
+const missingPackageRow = validItems.findIndex(row => !row.packageCode);
+if (missingPackageRow >= 0) {
+  setMsg(`❌ 第 ${missingPackageRow + 1} 列商品沒有包裹編號。`, "err");
+  return;
+}
+
+payload.items = validItems;
 
       btnSubmit.disabled = true;
       setMsg("送出中...");
