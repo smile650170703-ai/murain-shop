@@ -273,6 +273,61 @@ td input.qty {
   overflow:hidden;
   text-overflow:ellipsis;
 }
+    .page-head-left{
+  flex:1;
+  min-width:0;
+}
+.page-head-right{
+  width:380px;
+  max-width:100%;
+  flex:0 0 auto;
+}
+.soft-box{
+  background:#eef6ff;
+  border:1px solid #cfe3ff;
+  border-radius:16px;
+  padding:16px;
+}
+.soft-title{
+  font-size:15px;
+  font-weight:800;
+  margin-bottom:8px;
+}
+.soft-text{
+  color:#31538f;
+  line-height:1.7;
+  font-size:14px;
+  white-space:pre-wrap;
+}
+@media (max-width: 1100px){
+  .page-head{
+    flex-direction:column;
+  }
+  .page-head-right{
+    width:100%;
+  }
+}
+    .bad-list{
+  display:grid;
+  gap:10px;
+}
+.bad-item{
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:12px 14px;
+  background:#fff;
+}
+.bad-top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:6px;
+}
+.bad-empty{
+  color:var(--muted);
+  font-size:14px;
+}
   </style>
 </head>
 <body>
@@ -299,15 +354,27 @@ td input.qty {
 
   <div class="wrap">
     <div class="page-head">
-      <div>
-        <h1>採購單</h1>
-        <div class="sub">
-          這一頁處理：<br>
-          採購單主資料 + 包裹單號 + 多列商品明細，一次送出。
-        </div>
-      </div>
-      <div class="badge">第一版：商品照片先用選檔按鈕，尚未接 Airtable Attachment 上傳</div>
+  <div class="page-head-left">
+    <h1>採購單</h1>
+    <div class="sub">
+      這一頁處理：<br>
+      採購單主資料 + 包裹單號 + 多列商品明細，一次送出。
     </div>
+  </div>
+
+  <div class="page-head-right">
+    <div class="soft-box">
+      <div class="soft-title">包裹編號快速查詢</div>
+      <label for="quickPackageCode">包裹編號</label>
+      <input id="quickPackageCode" placeholder="例如 20260407 / 95627755" />
+      <div class="toolbar">
+        <button class="btn secondary" type="button" id="btnCheckPackage">查詢包裹</button>
+      </div>
+      <div class="helper">可先確認這個包裹編號是否已經輸入過。</div>
+      <div id="packageCheckResult" class="soft-text" style="margin-top:10px;">尚未查詢</div>
+    </div>
+  </div>
+</div>
 
     <div class="card">
       <h2>1. 採購單主資料</h2>
@@ -414,6 +481,8 @@ td input.qty {
     }
 
     const API_CREATE = "https://api.murain.tw/op/procurement/purchase/create-with-items";
+    const API_PACKAGE_CHECK = "https://api.murain.tw/op/procurement/package/check";
+const API_BAD_LIST = "https://api.murain.tw/op/procurement/purchase/bad-list";
 
     const $ = (id) => document.getElementById(id);
     const rowsEl = $("itemRows");
@@ -439,6 +508,23 @@ function resetPurchaseForm() {
 
   rowsEl.innerHTML = "";
   createRow(); // 只留 1 列空白列
+  refreshRows();
+}
+
+    function resetPurchaseForm() {
+  $("vendor").value = "";
+  $("twdAfterTax").value = "";
+  $("orderNo").value = "";
+  $("usdTotal").value = "";
+  $("usdRate").value = "";
+  $("buyDate").value = "";
+  $("packageCode").value = "";
+
+  if ($("quickPackageCode")) $("quickPackageCode").value = "";
+  setPackageCheckResult("尚未查詢");
+
+  rowsEl.innerHTML = "";
+  createRow();
   refreshRows();
 }
     
@@ -517,6 +603,86 @@ function handleSingleColumnPaste(e) {
     throw new Error(data.message || data.error || "API 失敗");
   }
   return data;
+}
+
+    async function apiGet(url) {
+  const r = await fetch(url);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.ok) {
+    throw new Error(data.message || data.error || "查詢失敗");
+  }
+  return data;
+}
+
+function setPackageCheckResult(text) {
+  const el = $("packageCheckResult");
+  if (el) el.textContent = text || "";
+}
+
+async function checkPackageQuick() {
+  const code = $("quickPackageCode")?.value.trim();
+  if (!code) {
+    setPackageCheckResult("請先輸入包裹編號。");
+    return;
+  }
+
+  setPackageCheckResult("查詢中...");
+
+  try {
+    const data = await apiGet(`${API_PACKAGE_CHECK}?code=${encodeURIComponent(code)}`);
+
+    if (!data.exists) {
+      setPackageCheckResult(`查無包裹編號：${code}`);
+      return;
+    }
+
+    const lines = [
+      `包裹編號：${data.package_code || code}`,
+      `包裹 ID：${data.package_id || "-"}`,
+      `關聯商品數：${data.linked_count ?? 0}`
+    ];
+
+    if (Array.isArray(data.linked_names) && data.linked_names.length) {
+      lines.push(`商品：${data.linked_names.join("、")}`);
+    }
+
+    setPackageCheckResult(lines.join("\n"));
+  } catch (err) {
+    setPackageCheckResult(`❌ ${err.message || err}`);
+  }
+}
+
+    async function loadBadPurchases() {
+  const wrap = $("badOrderList");
+  if (!wrap) return;
+
+  wrap.innerHTML = `<div class="bad-empty">載入中...</div>`;
+
+  try {
+    const data = await apiGet(API_BAD_LIST);
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+
+    if (!rows.length) {
+      wrap.innerHTML = `<div class="bad-empty">目前沒有訂單核對為 ❌ 的清單。</div>`;
+      return;
+    }
+
+    wrap.innerHTML = rows.map(row => `
+      <div class="bad-item">
+        <div class="bad-top">
+          <strong>${escapeHtml(row.orderNo || "-")}</strong>
+          <span class="badge">❌</span>
+        </div>
+        <div class="sub">
+          進貨商：${escapeHtml(row.vendor || "-")}<br>
+          購買日期：${escapeHtml(row.buyDate || "-")}<br>
+          訂單核對：${escapeHtml(row.orderCheck || "❌")}
+        </div>
+      </div>
+    `).join("");
+  } catch (err) {
+    wrap.innerHTML = `<div class="bad-empty">❌ ${escapeHtml(err.message || String(err))}</div>`;
+  }
 }
 
     function escapeHtml(str) {
@@ -665,6 +831,7 @@ ${data.item_failed_count ? "失敗明細：\n" + JSON.stringify(data.failed_item
 );
 
 resetPurchaseForm();
+loadBadPurchases();
       } catch (err) {
         setMsg("❌ " + (err.message || err), "err");
       } finally {
@@ -675,8 +842,20 @@ resetPurchaseForm();
     $("btnCalcTwd").addEventListener("click", calcTwd);
     btnAddRow.addEventListener("click", () => createRow());
     btnSubmit.addEventListener("click", submitForm);
+    const btnCheckPackage = $("btnCheckPackage");
+if (btnCheckPackage) {
+  btnCheckPackage.addEventListener("click", checkPackageQuick);
+}
+
+const quickPackageCode = $("quickPackageCode");
+if (quickPackageCode) {
+  quickPackageCode.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") checkPackageQuick();
+  });
+}
 
     createRow();
+loadBadPurchases();
   </script>
 </body>
 </html>
