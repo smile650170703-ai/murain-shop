@@ -302,28 +302,6 @@
     <div class="page-head">
       <div class="page-head-left">
         <h1>包裹／轉運</h1>
-        <div class="sub">
-          這一頁處理：<br>
-          轉運單主資料 + 多個包裹管理 + 單一欄位多行貼上。<br>
-          包裹編號可先查詢是否已存在，避免重複輸入。
-        </div>
-      </div>
-
-      <div class="page-head-right">
-        <div class="soft-box">
-          <div class="soft-title">包裹編號快速查詢</div>
-          <div class="grid-2" style="align-items:end;">
-            <div style="grid-column:1 / -1;">
-              <label for="quickPackageCode">包裹編號</label>
-              <input id="quickPackageCode" placeholder="例如 20260407 / 95627755" />
-            </div>
-          </div>
-          <div class="toolbar">
-            <button class="btn secondary" type="button" id="btnCheckPackage">查詢包裹</button>
-          </div>
-          <div class="helper">這裡只做確認：有沒有輸入過、目前有沒有關聯商品。</div>
-          <div id="packageCheckResult" class="soft-text" style="margin-top:10px;">尚未查詢</div>
-        </div>
       </div>
     </div>
 
@@ -362,341 +340,219 @@
           <label>發票核對</label>
           <input id="invoiceRef" placeholder="可先輸入發票核對編號 / 關鍵字" />
         </div>
-
-        <div class="full">
-          <div class="helper">
-            這一版先把轉運主資料與包裹管理做在同一頁。之後如果你要串「發票核對」正式 linked record，
-            再補 API 對接即可。
-          </div>
-        </div>
       </div>
     </div>
 
-    <div class="card">
-      <h2>2. 包裹管理</h2>
-      <div class="sub" style="margin-bottom:12px;">
-        每列一個包裹。可從 Excel / Google Sheets 複製單一欄位多行資料，
-        直接貼到「包裹編號」或「重量[磅]」欄位，系統會自動往下分配。
-      </div>
+<div class="card">
+  <h2>2. 包裹管理</h2>
 
-      <div class="toolbar">
-        <button class="btn secondary" type="button" id="btnAddRow">+ 新增一列包裹</button>
-      </div>
+  <div class="table-wrap" style="margin-top:14px;">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:60px;">選取</th>
+          <th style="width:70px;">#</th>
+          <th>包裹編號</th>
+          <th style="width:130px;">重量[磅]</th>
+          <th style="width:140px;">包裹運費</th>
+          <th>備註</th>
+        </tr>
+      </thead>
+      <tbody id="packageRows"></tbody>
+    </table>
+  </div>
 
-      <div class="table-wrap" style="margin-top:14px;">
-        <table>
-          <thead>
-            <tr>
-              <th style="width:60px;">#</th>
-              <th>包裹編號</th>
-              <th style="width:110px;">重量[磅]</th>
-              <th>備註</th>
-              <th style="width:100px;">刪除</th>
-            </tr>
-          </thead>
-          <tbody id="packageRows"></tbody>
-        </table>
-      </div>
+  <div class="sticky-summary">
+    <div class="badge">待補重量包裹：<span id="packageCount" style="margin-left:6px;">0</span></div>
+    <div class="badge">已勾選：<span id="selectedCount" style="margin-left:6px;">0</span></div>
+    <div class="badge">已填總重量[磅]：<span id="weightTotal" style="margin-left:6px;">0</span></div>
+  </div>
 
-      <div class="sticky-summary">
-        <div class="badge">包裹筆數：<span id="packageCount" style="margin-left:6px;">0</span></div>
-        <div class="badge">總重量[磅]：<span id="weightTotal" style="margin-left:6px;">0</span></div>
-      </div>
-
-      <div class="toolbar">
-        <button class="btn" type="button" id="btnSubmit">送出建立／更新轉運單</button>
-      </div>
-    </div>
+  <div class="toolbar">
+    <button class="btn secondary" type="button" id="btnReloadPackages">重新載入</button>
+    <button class="btn" type="button" id="btnSubmit">儲存勾選包裹資料</button>
+  </div>
+</div>
 
     <div class="card">
       <h2>3. 執行結果</h2>
       <div id="msg" class="msg">尚未送出</div>
     </div>
   </div>
+<script>
+  const STORAGE_OK = "procurement_entry_ok";
+  if (sessionStorage.getItem(STORAGE_OK) !== "1") {
+    location.href = "/procurement-center/procurement-index.html";
+  }
 
-  <script>
-    const STORAGE_OK = "procurement_entry_ok";
-    if (sessionStorage.getItem(STORAGE_OK) !== "1") {
-      location.href = "/procurement-center/procurement-index.html";
+  // 你後端如果還沒做，先把這兩支 API 補上
+  const API_LIST_ZERO_WEIGHT = "https://api.murain.tw/op/procurement/package/list-zero-weight";
+  const API_SAVE_PACKAGE_BULK = "https://api.murain.tw/op/procurement/package/bulk-update";
+
+  const $ = (id) => document.getElementById(id);
+  const rowsEl = $("packageRows");
+  const msgEl = $("msg");
+
+  const btnSubmit = $("btnSubmit");
+  const btnReloadPackages = $("btnReloadPackages");
+
+  function setMsg(text, type) {
+    msgEl.textContent = text || "";
+    msgEl.className = "msg";
+    if (type === "ok") msgEl.classList.add("ok");
+    if (type === "err") msgEl.classList.add("err");
+  }
+
+  function escapeHtml(str) {
+    return String(str || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+
+  async function apiGet(url) {
+    const r = await fetch(url);
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok) {
+      throw new Error(data.message || data.error || "查詢失敗");
     }
+    return data;
+  }
 
-    const API_CHECK_PACKAGE = "https://api.murain.tw/op/procurement/package/check";
-    const API_SAVE_TRANSFER = "https://api.murain.tw/op/procurement/transfer/save";
-
-    const $ = (id) => document.getElementById(id);
-    const rowsEl = $("packageRows");
-    const msgEl = $("msg");
-
-    const btnAddRow = $("btnAddRow");
-    const btnSubmit = $("btnSubmit");
-    const btnCheckPackage = $("btnCheckPackage");
-
-    const PACKAGE_COLS = ["packageCode", "weightLbs"];
-
-    function setMsg(text, type) {
-      msgEl.textContent = text || "";
-      msgEl.className = "msg";
-      if (type === "ok") msgEl.classList.add("ok");
-      if (type === "err") msgEl.classList.add("err");
-    }
-
-    function setCheckResult(text) {
-      $("packageCheckResult").textContent = text || "";
-    }
-
-    function escapeHtml(str) {
-      return String(str || "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#39;");
-    }
-
-    function getRowList() {
-      return [...rowsEl.querySelectorAll("tr")];
-    }
-
-    function ensureRowCount(targetCount) {
-      while (getRowList().length < targetCount) {
-        createRow();
-      }
-    }
-
-    function handleSingleColumnPaste(e) {
-      const target = e.target;
-      if (!(target instanceof HTMLInputElement)) return;
-
-      const colKey = PACKAGE_COLS.find(k => target.classList.contains(k));
-      if (!colKey) return;
-
-      const text = e.clipboardData?.getData("text/plain") || "";
-      if (!text) return;
-
-      const lines = String(text)
-        .replace(/\r\n/g, "\n")
-        .replace(/\r/g, "\n")
-        .split("\n")
-        .map(s => s.trim())
-        .filter(Boolean);
-
-      if (lines.length <= 1) return;
-
-      e.preventDefault();
-
-      const startTr = target.closest("tr");
-      if (!startTr) return;
-
-      const rowListBefore = getRowList();
-      const startRowIndex = rowListBefore.indexOf(startTr);
-      if (startRowIndex < 0) return;
-
-      ensureRowCount(startRowIndex + lines.length);
-
-      const rowList = getRowList();
-
-      lines.forEach((val, idx) => {
-        const tr = rowList[startRowIndex + idx];
-        if (!tr) return;
-
-        const input = tr.querySelector(`.${colKey}`);
-        if (!input) return;
-
-        input.value = val;
-      });
-
-      refreshRows();
-    }
-
-    function createRow(data = {}) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="row-no"></td>
-        <td><input class="packageCode" value="${escapeHtml(data.packageCode || "")}" placeholder="包裹編號"></td>
-        <td><input class="weightLbs" type="number" step="0.1" value="${escapeHtml(data.weightLbs || "")}" placeholder="0"></td>
-        <td><input class="packageRemark" value="${escapeHtml(data.packageRemark || "")}" placeholder="備註"></td>
-        <td><button type="button" class="btn danger btn-del">刪除</button></td>
-      `;
-
-      tr.querySelector(".btn-del").addEventListener("click", () => {
-        tr.remove();
-        refreshRows();
-      });
-
-      tr.querySelectorAll("input").forEach((el) => {
-        el.addEventListener("input", refreshSummary);
-        el.addEventListener("paste", handleSingleColumnPaste);
-      });
-
-      rowsEl.appendChild(tr);
-      refreshRows();
-    }
-
-    function refreshRows() {
-      [...rowsEl.querySelectorAll("tr")].forEach((tr, i) => {
-        tr.querySelector(".row-no").textContent = i + 1;
-      });
-      refreshSummary();
-    }
-
-    function refreshSummary() {
-      const rows = collectPackages();
-      $("packageCount").textContent = rows.length;
-      $("weightTotal").textContent = rows.reduce((sum, row) => {
-        const n = Number(row.weightLbs || 0);
-        return sum + (Number.isFinite(n) ? n : 0);
-      }, 0);
-    }
-
-    function collectPackages() {
-      return [...rowsEl.querySelectorAll("tr")].map((tr) => ({
-        packageCode: tr.querySelector(".packageCode")?.value.trim() || "",
-        weightLbs: tr.querySelector(".weightLbs")?.value.trim() || "",
-        packageRemark: tr.querySelector(".packageRemark")?.value.trim() || ""
-      }));
-    }
-
-    async function apiPost(url, payload) {
-      const r = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok || !data.ok) {
-        throw new Error(data.message || data.error || "API 失敗");
-      }
-      return data;
-    }
-
-    async function apiGet(url) {
-      const r = await fetch(url);
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok || !data.ok) {
-        throw new Error(data.message || data.error || "查詢失敗");
-      }
-      return data;
-    }
-
-    async function checkPackageQuick() {
-      const code = $("quickPackageCode").value.trim();
-      if (!code) {
-        setCheckResult("請先輸入包裹編號。");
-        return;
-      }
-
-      setCheckResult("查詢中...");
-
-      try {
-        const url = `${API_CHECK_PACKAGE}?code=${encodeURIComponent(code)}`;
-        const data = await apiGet(url);
-
-        if (!data.exists) {
-          setCheckResult(`查無包裹編號：${code}`);
-          return;
-        }
-
-        const lines = [
-          `包裹編號：${data.package_code || code}`,
-          `包裹 ID：${data.package_id || "-"}`,
-          `關聯商品數：${data.linked_count ?? 0}`
-        ];
-
-        if (Array.isArray(data.linked_names) && data.linked_names.length) {
-          lines.push(`商品：${data.linked_names.join("、")}`);
-        }
-
-        setCheckResult(lines.join("\n"));
-      } catch (err) {
-        setCheckResult(`❌ ${err.message || err}`);
-      }
-    }
-
-    function resetTransferForm() {
-      $("transferNo").value = "";
-      $("transferDate").value = "";
-      $("shippingFeeOrTax").value = "";
-      $("extraFeeTwd").value = "";
-      $("creditOrTaichung").checked = false;
-      $("invoiceRef").value = "";
-      $("quickPackageCode").value = "";
-      setCheckResult("尚未查詢");
-
-      rowsEl.innerHTML = "";
-      createRow();
-      refreshRows();
-    }
-
-    async function submitForm() {
-      const payload = {
-        transfer: {
-          transferNo: $("transferNo").value.trim(),
-          transferDate: $("transferDate").value.trim(),
-          creditOrTaichung: $("creditOrTaichung").checked,
-          shippingFeeOrTax: $("shippingFeeOrTax").value.trim(),
-          extraFeeTwd: $("extraFeeTwd").value.trim(),
-          invoiceRef: $("invoiceRef").value.trim()
-        },
-        packages: collectPackages()
-      };
-
-      if (!payload.transfer.transferNo) {
-        setMsg("❌ 請先輸入轉運單號。", "err");
-        return;
-      }
-
-      const validPackages = payload.packages.filter(row =>
-        row.packageCode || row.weightLbs || row.packageRemark
-      );
-
-      if (!validPackages.length) {
-        setMsg("❌ 請至少輸入 1 筆包裹。", "err");
-        return;
-      }
-
-      const packageCodes = validPackages.map(r => r.packageCode).filter(Boolean);
-      const dup = packageCodes.find((code, idx) => packageCodes.indexOf(code) !== idx);
-      if (dup) {
-        setMsg(`❌ 包裹編號重複：${dup}`, "err");
-        return;
-      }
-
-      payload.packages = validPackages;
-
-      btnSubmit.disabled = true;
-      setMsg("送出中...");
-
-      try {
-        const data = await apiPost(API_SAVE_TRANSFER, payload);
-
-        setMsg(
-`✅ 建立／更新成功
-轉運單 ID：${data.transfer_id || ""}
-成功包裹筆數：${data.package_updated_count || 0}
-失敗包裹筆數：${data.package_failed_count || 0}
-
-${data.package_failed_count ? "失敗明細：\n" + JSON.stringify(data.failed_packages || [], null, 2) : "全部包裹都已完成更新。"}`,
-          "ok"
-        );
-
-        resetTransferForm();
-      } catch (err) {
-        setMsg(`❌ ${err.message || err}`, "err");
-      } finally {
-        btnSubmit.disabled = false;
-      }
-    }
-
-    btnAddRow.addEventListener("click", () => createRow());
-    btnSubmit.addEventListener("click", submitForm);
-    btnCheckPackage.addEventListener("click", checkPackageQuick);
-
-    $("quickPackageCode").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") checkPackageQuick();
+  async function apiPost(url, payload) {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
     });
 
-    createRow();
-  </script>
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok) {
+      throw new Error(data.message || data.error || "API 失敗");
+    }
+    return data;
+  }
+
+  function createRow(data = {}, index = 0) {
+    const tr = document.createElement("tr");
+    tr.dataset.packageId = data.package_id || "";
+
+    tr.innerHTML = `
+      <td>
+        <input type="checkbox" class="rowCheck">
+      </td>
+      <td class="row-no">${index + 1}</td>
+      <td>
+        <input class="packageCode" value="${escapeHtml(data.package_code || "")}" readonly>
+      </td>
+      <td>
+        <input class="weightLbs" type="number" step="0.1" value="${escapeHtml(data.weight_lbs || "")}" placeholder="0">
+      </td>
+      <td>
+        <input class="packageFeeTwd" type="number" step="1" value="${escapeHtml(data.package_fee_twd || "")}" placeholder="0">
+      </td>
+      <td>
+        <input class="packageRemark" value="${escapeHtml(data.package_remark || "")}" placeholder="備註">
+      </td>
+    `;
+
+    tr.querySelectorAll("input").forEach((el) => {
+      el.addEventListener("input", refreshSummary);
+      el.addEventListener("change", refreshSummary);
+    });
+
+    rowsEl.appendChild(tr);
+  }
+
+  function getRowList() {
+    return [...rowsEl.querySelectorAll("tr")];
+  }
+
+  function refreshSummary() {
+    const rows = getRowList();
+
+    const selectedRows = rows.filter(tr => tr.querySelector(".rowCheck")?.checked);
+    const weightTotal = selectedRows.reduce((sum, tr) => {
+      const n = Number(tr.querySelector(".weightLbs")?.value || 0);
+      return sum + (Number.isFinite(n) ? n : 0);
+    }, 0);
+
+    $("packageCount").textContent = rows.length;
+    $("selectedCount").textContent = selectedRows.length;
+    $("weightTotal").textContent = weightTotal;
+  }
+
+  async function loadZeroWeightPackages() {
+    setMsg("載入中...");
+    rowsEl.innerHTML = "";
+
+    try {
+      const data = await apiGet(API_LIST_ZERO_WEIGHT);
+      const rows = Array.isArray(data.rows) ? data.rows : [];
+
+      rows.forEach((row, i) => createRow(row, i));
+
+      refreshSummary();
+      setMsg(`✅ 已載入 ${rows.length} 筆重量[磅] = 0 的包裹`, "ok");
+    } catch (err) {
+      setMsg(`❌ ${err.message || err}`, "err");
+    }
+  }
+
+  function collectSelectedRows() {
+    return getRowList()
+      .filter(tr => tr.querySelector(".rowCheck")?.checked)
+      .map(tr => ({
+        package_id: tr.dataset.packageId || "",
+        package_code: tr.querySelector(".packageCode")?.value.trim() || "",
+        weight_lbs: tr.querySelector(".weightLbs")?.value.trim() || "",
+        package_fee_twd: tr.querySelector(".packageFeeTwd")?.value.trim() || "",
+        package_remark: tr.querySelector(".packageRemark")?.value.trim() || ""
+      }));
+  }
+
+  async function submitForm() {
+    const rows = collectSelectedRows();
+
+    if (!rows.length) {
+      setMsg("❌ 請先勾選要儲存的包裹。", "err");
+      return;
+    }
+
+    const invalid = rows.find(r => !r.weight_lbs);
+    if (invalid) {
+      setMsg(`❌ 請先填寫重量[磅]：${invalid.package_code || invalid.package_id}`, "err");
+      return;
+    }
+
+    btnSubmit.disabled = true;
+    setMsg("送出中...");
+
+    try {
+      const data = await apiPost(API_SAVE_PACKAGE_BULK, { packages: rows });
+
+      setMsg(
+`✅ 儲存成功
+成功筆數：${data.updated_count || 0}
+失敗筆數：${data.failed_count || 0}
+${data.failed_count ? "\n失敗明細：\n" + JSON.stringify(data.failed_rows || [], null, 2) : ""}`,
+        "ok"
+      );
+
+      await loadZeroWeightPackages();
+    } catch (err) {
+      setMsg(`❌ ${err.message || err}`, "err");
+    } finally {
+      btnSubmit.disabled = false;
+    }
+  }
+
+  btnReloadPackages.addEventListener("click", loadZeroWeightPackages);
+  btnSubmit.addEventListener("click", submitForm);
+
+  loadZeroWeightPackages();
+</script>
 </body>
 </html>
