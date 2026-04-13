@@ -313,8 +313,10 @@
     <div class="card">
       <h2>2. 商品明細</h2>
       <div class="sub" style="margin-bottom:12px;">
-        每列一筆商品。第一版先填：名稱、顏色、尺寸、商品照片網址、美金單價、數量。
-      </div>
+  每列一筆商品。可從 Excel / Google Sheets 複製單一欄位多行資料，
+  直接貼到名稱、顏色、尺寸、美金單價或數量欄位，系統會自動往下分配。
+  商品照片改為按鈕式選檔。
+</div>
 
       <div class="toolbar">
         <button class="btn secondary" type="button" id="btnAddRow">+ 新增一列商品</button>
@@ -324,16 +326,15 @@
         <table>
           <thead>
             <tr>
-              <th style="width:60px;">#</th>
-              <th>名稱</th>
-              <th>顏色</th>
-              <th>尺寸</th>
-              <th>商品照片網址</th>
-              <th style="width:140px;">美金單價</th>
-              <th style="width:100px;">數量</th>
-              <th>備註</th>
-              <th style="width:100px;">刪除</th>
-            </tr>
+  <th style="width:60px;">#</th>
+  <th>名稱</th>
+  <th>顏色</th>
+  <th>尺寸</th>
+  <th>商品照片</th>
+  <th style="width:140px;">美金單價</th>
+  <th style="width:100px;">數量</th>
+  <th style="width:100px;">刪除</th>
+</tr>
           </thead>
           <tbody id="itemRows"></tbody>
         </table>
@@ -371,6 +372,70 @@
     const btnSubmit = $("btnSubmit");
     const btnAddRow = $("btnAddRow");
 
+    const ITEM_COLS = [
+  "name",
+  "color",
+  "size",
+  "usdUnitPrice",
+  "qty"
+];
+
+function getRowList() {
+  return [...rowsEl.querySelectorAll("tr")];
+}
+
+function ensureRowCount(targetCount) {
+  while (getRowList().length < targetCount) {
+    createRow();
+  }
+}
+
+function handleSingleColumnPaste(e) {
+  const target = e.target;
+  if (!(target instanceof HTMLInputElement)) return;
+
+  const colKey = ITEM_COLS.find(k => target.classList.contains(k));
+  if (!colKey) return;
+
+  const text = e.clipboardData?.getData("text/plain") || "";
+  if (!text) return;
+
+  const lines = String(text)
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  // 單一值就保留原本貼上
+  if (lines.length <= 1) return;
+
+  e.preventDefault();
+
+  const startTr = target.closest("tr");
+  if (!startTr) return;
+
+  const rowListBefore = getRowList();
+  const startRowIndex = rowListBefore.indexOf(startTr);
+  if (startRowIndex < 0) return;
+
+  ensureRowCount(startRowIndex + lines.length);
+
+  const rowList = getRowList();
+
+  lines.forEach((val, idx) => {
+    const tr = rowList[startRowIndex + idx];
+    if (!tr) return;
+
+    const input = tr.querySelector(`.${colKey}`);
+    if (!input) return;
+
+    input.value = val;
+  });
+
+  refreshRows();
+}
+
     function setMsg(text, type) {
       msgEl.textContent = text || "";
       msgEl.className = "msg";
@@ -379,22 +444,18 @@
     }
 
     async function apiFetch(url, payload) {
-      const token = sessionStorage.getItem(STORAGE_TOKEN) || "";
-      const headers = { "Content-Type": "application/json" };
-      if (token) headers["X-Procurement-Entry"] = token;
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
 
-      const r = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload)
-      });
-
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok || !data.ok) {
-        throw new Error(data.message || data.error || "API 失敗");
-      }
-      return data;
-    }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.ok) {
+    throw new Error(data.message || data.error || "API 失敗");
+  }
+  return data;
+}
 
     function escapeHtml(str) {
       return String(str || "")
@@ -406,31 +467,31 @@
     }
 
     function createRow(data = {}) {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td class="row-no"></td>
-        <td><input class="name" value="${escapeHtml(data.name || "")}" placeholder="名稱"></td>
-        <td><input class="color" value="${escapeHtml(data.color || "")}" placeholder="顏色"></td>
-        <td><input class="size" value="${escapeHtml(data.size || "")}" placeholder="尺寸"></td>
-        <td><input class="photoUrl" value="${escapeHtml(data.photoUrl || "")}" placeholder="https://..."></td>
-        <td><input class="usdUnitPrice" type="number" step="0.01" value="${escapeHtml(data.usdUnitPrice || "")}" placeholder="0.00"></td>
-        <td><input class="qty" type="number" step="1" value="${escapeHtml(data.qty || "1")}" placeholder="1"></td>
-        <td><input class="note" value="${escapeHtml(data.note || "")}" placeholder="備註"></td>
-        <td><button type="button" class="btn danger btn-del">刪除</button></td>
-      `;
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td class="row-no"></td>
+    <td><input class="name" value="${escapeHtml(data.name || "")}" placeholder="名稱"></td>
+    <td><input class="color" value="${escapeHtml(data.color || "")}" placeholder="顏色"></td>
+    <td><input class="size" value="${escapeHtml(data.size || "")}" placeholder="尺寸"></td>
+    <td><input class="photoFile" type="file" accept="image/*"></td>
+    <td><input class="usdUnitPrice" type="number" step="0.01" value="${escapeHtml(data.usdUnitPrice || "")}" placeholder="0.00"></td>
+    <td><input class="qty" type="number" step="1" value="${escapeHtml(data.qty || "1")}" placeholder="1"></td>
+    <td><button type="button" class="btn danger btn-del">刪除</button></td>
+  `;
 
-      tr.querySelector(".btn-del").addEventListener("click", () => {
-        tr.remove();
-        refreshRows();
-      });
+  tr.querySelector(".btn-del").addEventListener("click", () => {
+    tr.remove();
+    refreshRows();
+  });
 
-      tr.querySelectorAll("input").forEach((el) => {
-        el.addEventListener("input", refreshSummary);
-      });
+  tr.querySelectorAll("input").forEach((el) => {
+    el.addEventListener("input", refreshSummary);
+    el.addEventListener("paste", handleSingleColumnPaste);
+  });
 
-      rowsEl.appendChild(tr);
-      refreshRows();
-    }
+  rowsEl.appendChild(tr);
+  refreshRows();
+}
 
     function refreshRows() {
       [...rowsEl.querySelectorAll("tr")].forEach((tr, i) => {
@@ -449,16 +510,14 @@
     }
 
     function collectItems() {
-      return [...rowsEl.querySelectorAll("tr")].map((tr) => ({
-        name: tr.querySelector(".name")?.value.trim() || "",
-        color: tr.querySelector(".color")?.value.trim() || "",
-        size: tr.querySelector(".size")?.value.trim() || "",
-        photoUrl: tr.querySelector(".photoUrl")?.value.trim() || "",
-        usdUnitPrice: tr.querySelector(".usdUnitPrice")?.value.trim() || "",
-        qty: tr.querySelector(".qty")?.value.trim() || "1",
-        note: tr.querySelector(".note")?.value.trim() || ""
-      }));
-    }
+  return [...rowsEl.querySelectorAll("tr")].map((tr) => ({
+    name: tr.querySelector(".name")?.value.trim() || "",
+    color: tr.querySelector(".color")?.value.trim() || "",
+    size: tr.querySelector(".size")?.value.trim() || "",
+    usdUnitPrice: tr.querySelector(".usdUnitPrice")?.value.trim() || "",
+    qty: tr.querySelector(".qty")?.value.trim() || "1"
+  }));
+}
 
     function calcTwd() {
       const usd = Number($("usdTotal").value || 0);
