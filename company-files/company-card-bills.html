@@ -381,22 +381,6 @@
       <input id="formMonth" placeholder="例如 2026-02" />
     </div>
 
-    <div>
-  <label>預設費用支出歸類（可留空）</label>
-  <select id="formCategory">
-    <option value="">未歸類</option>
-    <option value="🟫 - 貨款">🟫 - 貨款</option>
-    <option value="公司開支">公司開支</option>
-    <option value="退款登記">退款登記</option>
-    <option value="其他">其他</option>
-  </select>
-</div>
-
-    <div>
-      <label>統一備註</label>
-      <input id="formNote" placeholder="這批若都同一種備註可先填這裡" />
-    </div>
-
     <div class="full">
       <label>批次貼上區</label>
       <textarea id="pasteBox" placeholder="直接從網銀複製貼上，多列資料。
@@ -404,13 +388,15 @@
 交易日期[TAB]交易明細[TAB]交易金額[TAB]費用支出歸類[TAB]備註
 
 例如：
-2026/02/06	Buyforyou	14800	🟫 - 貨款	
-2026/02/06	電子化繳稅南天有	999	公司開支	
-2026/02/06	藥聯皮 - 康爵洋企業股份	975	公司開支	垃圾袋
+2025/11/07	MICHAEL KORS-909 ECOMM	12558	🟫 - 貨款	USD 404.60
+2025/10/19	Buyandship -	1024	🟫 - 貨款	
+2025/11/05	電子化繳稅南天有	999	公司開支	
+2025/11/05	退款調整	-500	退款登記	
 
 說明：
-- 第 4 欄 費用支出歸類 可留空，留空就吃上面的預設值
-- 第 5 欄 備註 可留空，留空就吃上面的統一備註"></textarea>
+- 第 4 欄 費用支出歸類 可留空
+- 第 5 欄 備註 可留空
+- 你之後也可以到第 3 區再慢慢分類"></textarea>
     </div>
   </div>
 
@@ -825,8 +811,6 @@ async function renderGoodsPending() {
   function clearForm() {
   $("formBank").value = "";
   $("formMonth").value = "";
-  $("formCategory").value = "";
-  $("formNote").value = "";
   $("pasteBox").value = "";
   pastedRows = [];
   $("pastePreviewRows").innerHTML = `<tr><td colspan="7" class="empty">尚未貼上資料。</td></tr>`;
@@ -895,11 +879,23 @@ function renderPastePreview() {
   `).join("");
 }
 
+function normalizeCategoryValue(v) {
+  const s = String(v || "").trim();
+  if (!s) return "";
+
+  if (["貨款", "🟫-貨款", "🟫 -貨款", "🟫 - 貨款"].includes(s)) {
+    return "🟫 - 貨款";
+  }
+  if (s === "公司開支") return "公司開支";
+  if (s === "退款登記") return "退款登記";
+  if (s === "其他") return "其他";
+
+  return s;
+}
+
 function buildRowsFromPaste() {
   const bank = $("formBank").value.trim();
   const month = normalizeMonthValue($("formMonth").value.trim());
-  const defaultCategory = normalizeCategoryValue($("formCategory").value.trim());
-  const defaultNote = $("formNote").value.trim();
   const raw = $("pasteBox").value;
 
   if (!bank || !month || !raw.trim()) {
@@ -921,9 +917,8 @@ function buildRowsFromPaste() {
     const date = normalizeDateValue(cols[0]);
     const detail = cols[1] || "";
     const amount = parseMoneyValue(cols[2]);
-
-    const rowCategory = normalizeCategoryValue(cols[3] || defaultCategory);
-    const rowNote = cols[4] ? cols[4] : defaultNote;
+    const rowCategory = normalizeCategoryValue(cols[3] || "");
+    const rowNote = cols[4] || "";
 
     if (!date || !detail || !amount) continue;
 
@@ -961,7 +956,7 @@ $("btnPreviewPaste").addEventListener("click", () => {
   renderPastePreview();
 
   if (!pastedRows.length) {
-    $("formMsg").textContent = "❌ 沒有解析到資料。請確認格式是：交易日期[TAB]交易明細[TAB]交易金額[TAB]費用支出歸類[TAB]備註（第 4、5 欄可留空）";
+    $("formMsg").textContent = `✅ 已解析 ${pastedRows.length} 筆，請確認每列資料後再送出；費用支出歸類可留空，之後到第 3 區再分類`;
     $("formMsg").className = "msg err";
     return;
   }
