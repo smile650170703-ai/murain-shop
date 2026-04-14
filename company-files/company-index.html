@@ -305,103 +305,104 @@
     </div>
   </div>
 
-  <script>
-    (function () {
-    const STORAGE_OK = "company_entry_ok";
-    const STORAGE_TOKEN = "company_entry_token";
+ <script>
+  const STORAGE_OK = "company_entry_ok";
+  const STORAGE_TOKEN = "company_entry_token";
 
-    function clearCompanySession() {
-      sessionStorage.removeItem(STORAGE_OK);
-      sessionStorage.removeItem(STORAGE_TOKEN);
+  const msgEl = document.getElementById("msg");
+  const moduleCard = document.getElementById("moduleCard");
+  const btnEnter = document.getElementById("btnEnter");
+  const btnLogout = document.getElementById("btnLogout");
+  const inputPassword = document.getElementById("entryPassword");
+
+  function setMsg(text, type) {
+    msgEl.textContent = text || "";
+    msgEl.className = "msg";
+    if (type === "ok") msgEl.classList.add("ok");
+    if (type === "err") msgEl.classList.add("err");
+  }
+
+  function showUnlocked() {
+    moduleCard.classList.remove("hidden");
+    btnLogout.classList.remove("hidden");
+    setMsg("✅ 已通過首頁驗證，可以進入模組。", "ok");
+  }
+
+  function showLocked() {
+    moduleCard.classList.add("hidden");
+    btnLogout.classList.add("hidden");
+  }
+
+  async function checkPassword() {
+    const password = inputPassword.value.trim();
+    if (!password) {
+      setMsg("請先輸入首頁進入密碼。", "err");
+      return;
     }
 
-    document.querySelectorAll(".page-tabs-bar .page-tab").forEach((a) => {
-      a.addEventListener("click", () => {
-        clearCompanySession();
+    btnEnter.disabled = true;
+    setMsg("驗證中...");
+
+    try {
+      const API_BASE = "https://api.murain.tw";
+
+      const r = await fetch(`${API_BASE}/op/procurement/check-entry-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password })
       });
-    });
-  })();
-    const STORAGE_OK = "company_entry_ok";
-    const STORAGE_TOKEN = "company_entry_token";
 
-    const msgEl = document.getElementById("msg");
-    const moduleCard = document.getElementById("moduleCard");
-    const btnEnter = document.getElementById("btnEnter");
-    const btnLogout = document.getElementById("btnLogout");
-    const inputPassword = document.getElementById("entryPassword");
+      const data = await r.json().catch(() => ({}));
 
-    function setMsg(text, type) {
-      msgEl.textContent = text || "";
-      msgEl.className = "msg";
-      if (type === "ok") msgEl.classList.add("ok");
-      if (type === "err") msgEl.classList.add("err");
-    }
-
-    function showUnlocked() {
-      moduleCard.classList.remove("hidden");
-      btnLogout.classList.remove("hidden");
-      setMsg("✅ 已通過首頁驗證，可以進入模組。", "ok");
-    }
-
-    function showLocked() {
-      moduleCard.classList.add("hidden");
-      btnLogout.classList.add("hidden");
-    }
-
-    async function checkPassword() {
-      const password = inputPassword.value.trim();
-      if (!password) {
-        setMsg("請先輸入首頁進入密碼。", "err");
-        return;
+      if (!r.ok || !data.ok) {
+        throw new Error(data.message || data.error || "密碼驗證失敗");
       }
 
-      btnEnter.disabled = true;
-      setMsg("驗證中...");
-
-      try {
-        const API_BASE = "https://api.murain.tw";
-        const r = await fetch(`${API_BASE}/op/procurement/check-entry-password`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ password })
-        });
-
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok || !data.ok) {
-          throw new Error(data.message || data.error || "密碼驗證失敗");
-        }
-
-        sessionStorage.setItem(STORAGE_OK, "1");
-        sessionStorage.setItem(STORAGE_TOKEN, "ok");
-        showUnlocked();
-      } catch (err) {
-        showLocked();
-        setMsg(`❌ ${err.message || err}`, "err");
-      } finally {
-        btnEnter.disabled = false;
+      sessionStorage.setItem(STORAGE_OK, "1");
+      if (data.token) {
+        sessionStorage.setItem(STORAGE_TOKEN, data.token);
+      } else {
+        sessionStorage.removeItem(STORAGE_TOKEN);
       }
-    }
 
-    function logoutLocal() {
-      sessionStorage.removeItem(STORAGE_OK);
-      sessionStorage.removeItem(STORAGE_TOKEN);
       inputPassword.value = "";
-      showLocked();
-      setMsg("請輸入首頁進入密碼。");
-    }
-
-    btnEnter.addEventListener("click", checkPassword);
-    btnLogout.addEventListener("click", logoutLocal);
-    inputPassword.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") checkPassword();
-    });
-
-    if (sessionStorage.getItem(STORAGE_OK) === "1") {
       showUnlocked();
-    } else {
-      showLocked();
-      setMsg("請輸入首頁進入密碼。");
+    } catch (err) {
+      setMsg("❌ " + (err.message || err), "err");
+    } finally {
+      btnEnter.disabled = false;
     }
-  </script>
+  }
+
+  function logout() {
+    sessionStorage.removeItem(STORAGE_OK);
+    sessionStorage.removeItem(STORAGE_TOKEN);
+    showLocked();
+    setMsg("已登出。", "ok");
+  }
+
+  btnEnter.addEventListener("click", checkPassword);
+  btnLogout.addEventListener("click", logout);
+
+  inputPassword.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") checkPassword();
+  });
+
+  function forceLockEveryOpen() {
+    sessionStorage.removeItem(STORAGE_OK);
+    sessionStorage.removeItem(STORAGE_TOKEN);
+    inputPassword.value = "";
+    showLocked();
+    setMsg("請輸入首頁進入密碼。");
+  }
+
+  // 一般載入
+  forceLockEveryOpen();
+
+  // 瀏覽器上一頁 / 返回快取時，也一律重新鎖住
+  window.addEventListener("pageshow", () => {
+    forceLockEveryOpen();
+  });
+</script>
 </body>
 </html>
