@@ -649,32 +649,53 @@ function collectPayload() {
     }
   }
 
-  async function saveSelected() {
-    const rows = collectPayload();
+async function saveSelected() {
+  const rows = collectPayload();
 
-    if (!rows.length) {
-      setMsg("❌ 請先把 品牌 / 商品種類 / 商品名稱 填完整。", "err");
+  if (!rows.length) {
+    setMsg("❌ 請先把 品牌 / 商品種類 / 商品名稱 填完整。", "err");
+    return;
+  }
+
+  setMsg("送出中...");
+
+  try {
+    const data = await apiPost(API_SAVE, { rows });
+
+    const updatedCount = Number(data.updated_count || 0);
+    const failedCount = Number(data.failed_count || 0);
+    const failedRows = Array.isArray(data.failed) ? data.failed : [];
+
+    if (failedCount > 0) {
+      const failedText = failedRows.map((r, i) => {
+        const name = String(r?.name || "").trim() || "(未帶名稱)";
+        const err = String(r?.error || "").trim() || "未知錯誤";
+        return `${i + 1}. ${name}｜${err}`;
+      }).join("\n");
+
+      setMsg(
+`⚠️ 部分儲存成功
+成功筆數：${updatedCount}
+失敗筆數：${failedCount}
+
+失敗明細：
+${failedText}`,
+        "err"
+      );
       return;
     }
 
-    setMsg("送出中...");
+    setMsg(
+`✅ 已全部儲存成功
+成功筆數：${updatedCount}
+失敗筆數：0`,
+      "ok"
+    );
 
-    try {
-      const data = await apiPost(API_SAVE, { rows });
-      setMsg(
-`✅ 已儲存
-成功筆數：${data.updated_count || 0}
-失敗筆數：${data.failed_count || 0}`,
-        "ok"
-      );
-
-      setTimeout(() => {
-        location.href = "/procurement-center/procurement-label-print.html";
-      }, 700);
-    } catch (err) {
-      setMsg(`❌ ${err.message || err}`, "err");
-    }
+  } catch (err) {
+    setMsg(`❌ ${err.message || err}`, "err");
   }
+}
 
   $("btnReload").addEventListener("click", loadList);
   $("btnSave").addEventListener("click", saveSelected);
