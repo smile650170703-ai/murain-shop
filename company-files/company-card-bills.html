@@ -624,6 +624,10 @@
 
     let rows = [...mockRows];
 
+    const API_SUMMARY = "https://api.murain.tw/op/company/card-bills/summary";
+const API_UNCLASSIFIED = "https://api.murain.tw/op/company/card-bills/unclassified-list";
+const API_GOODS_PENDING = "https://api.murain.tw/op/company/card-bills/goods-pending-list";
+
     const $ = (id) => document.getElementById(id);
 
     function money(n) {
@@ -639,46 +643,43 @@
         .slice(-1)[0] || "-";
     }
 
-    function buildSummary() {
-      const banks = [...new Set(rows.map(r => r.bank).filter(Boolean))];
-      const grid = $("summaryGrid");
+async function buildSummary() {
+  const grid = $("summaryGrid");
+  grid.innerHTML = `<div class="empty">載入中...</div>`;
 
-      if (!banks.length) {
-        grid.innerHTML = `<div class="empty">目前沒有資料。</div>`;
-        return;
-      }
+  try {
+    const data = await apiGet(API_SUMMARY);
+    const list = Array.isArray(data.rows) ? data.rows : [];
 
-      grid.innerHTML = banks.map(bank => {
-        const bankRows = rows.filter(r => r.bank === bank);
-        const latest = latestMonthByBank(bankRows);
-        const latestRows = bankRows.filter(r => r.month === latest);
-        const unclassified = bankRows.filter(r => !String(r.category || "").trim()).length;
-        const goodsPending = bankRows.filter(r =>
-          r.category === "🟫 - 貨款" &&
-          !String(r.purchaseLink || "").trim() &&
-          !String(r.transferLink || "").trim()
-        ).length;
-
-        const monthGap = calcMonthGap(latest);
-
-        let monthTag = `<span class="tag">已登記到 ${latest}</span>`;
-        if (monthGap >= 2) monthTag = `<span class="tag danger">落後 ${monthGap} 個月</span>`;
-        else if (monthGap === 1) monthTag = `<span class="tag warn">落後 1 個月</span>`;
-
-        return `
-          <div class="summary-card">
-            <h3>${bank}</h3>
-            <div style="margin-bottom:10px;">${monthTag}</div>
-            <div class="mini-list">
-              <div class="mini-row"><span>已登記到</span><strong>${latest}</strong></div>
-              <div class="mini-row"><span>該月份筆數</span><strong>${latestRows.length}</strong></div>
-              <div class="mini-row"><span>未歸類</span><strong>${unclassified}</strong></div>
-              <div class="mini-row"><span>貨款待連結</span><strong>${goodsPending}</strong></div>
-            </div>
-          </div>
-        `;
-      }).join("");
+    if (!list.length) {
+      grid.innerHTML = `<div class="empty">目前沒有資料。</div>`;
+      return;
     }
+
+    grid.innerHTML = list.map(item => {
+      const monthGap = calcMonthGap(item.latestMonth);
+
+      let monthTag = `<span class="tag">已登記到 ${item.latestMonth || "-"}</span>`;
+      if (monthGap >= 2) monthTag = `<span class="tag danger">落後 ${monthGap} 個月</span>`;
+      else if (monthGap === 1) monthTag = `<span class="tag warn">落後 1 個月</span>`;
+
+      return `
+        <div class="summary-card">
+          <h3>${item.bank}</h3>
+          <div style="margin-bottom:10px;">${monthTag}</div>
+          <div class="mini-list">
+            <div class="mini-row"><span>已登記到</span><strong>${item.latestMonth || "-"}</strong></div>
+            <div class="mini-row"><span>該月份筆數</span><strong>${item.latestMonthCount || 0}</strong></div>
+            <div class="mini-row"><span>未歸類</span><strong>${item.unclassifiedCount || 0}</strong></div>
+            <div class="mini-row"><span>貨款待連結</span><strong>${item.goodsPendingCount || 0}</strong></div>
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (err) {
+    grid.innerHTML = `<div class="empty">❌ ${err.message || err}</div>`;
+  }
+}
 
     function calcMonthGap(monthStr) {
       const s = String(monthStr || "").trim();
@@ -694,58 +695,71 @@
       return Math.max(0, (nowY - y) * 12 + (nowM - mo));
     }
 
-    function renderUnclassified() {
-      const list = rows.filter(r => !String(r.category || "").trim());
-      $("unclassifiedCountTag").textContent = `${list.length} 筆`;
+    async function apiGet(url) {
+  const r = await fetch(url);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.ok) {
+    throw new Error(data.message || data.error || "API 失敗");
+  }
+  return data;
+}
 
-      $("unclassifiedRows").innerHTML = list.length ? list.map(r => `
-        <tr>
-          <td>${r.bank}</td>
-          <td>${r.month}</td>
-          <td>${r.date}</td>
-          <td>${r.detail}</td>
-          <td>${money(r.amount)}</td>
-          <td>
-            <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              <button class="btn btnMarkCat small brown" data-id="${r.id}" data-cat="🟫 - 貨款" type="button">貨款</button>
-              <button class="btn btnMarkCat small secondary" data-id="${r.id}" data-cat="公司開支" type="button">公司開支</button>
-            </div>
-          </td>
-        </tr>
-      `).join("") : `<tr><td colspan="6" class="empty">目前沒有未歸類資料。</td></tr>`;
+async function renderUnclassified() {
+  const wrap = $("unclassifiedRows");
+  wrap.innerHTML = `<tr><td colspan="6" class="empty">載入中...</td></tr>`;
 
-      document.querySelectorAll(".btnMarkCat").forEach(btn => {
-        btn.addEventListener("click", () => {
-          const id = btn.dataset.id;
-          const cat = btn.dataset.cat;
-          const row = rows.find(x => x.id === id);
-          if (!row) return;
-          row.category = cat;
-          refreshAll();
-        });
-      });
-    }
+  try {
+    const data = await apiGet(API_UNCLASSIFIED);
+    const list = Array.isArray(data.rows) ? data.rows : [];
 
-    function renderGoodsPending() {
-      const list = rows.filter(r =>
-        r.category === "🟫 - 貨款" &&
-        !String(r.purchaseLink || "").trim() &&
-        !String(r.transferLink || "").trim()
-      );
+    $("unclassifiedCountTag").textContent = `${list.length} 筆`;
 
-      $("goodsPendingCountTag").textContent = `${list.length} 筆`;
+    wrap.innerHTML = list.length ? list.map(r => `
+      <tr>
+        <td>${r.bank}</td>
+        <td>${r.month}</td>
+        <td>${r.date}</td>
+        <td>${r.detail}</td>
+        <td>${money(r.amount)}</td>
+        <td>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn small brown" type="button">貨款</button>
+            <button class="btn small secondary" type="button">公司開支</button>
+          </div>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty">目前沒有未歸類資料。</td></tr>`;
+  } catch (err) {
+    wrap.innerHTML = `<tr><td colspan="6" class="empty">❌ ${err.message || err}</td></tr>`;
+    $("unclassifiedCountTag").textContent = `0 筆`;
+  }
+}
 
-      $("goodsPendingRows").innerHTML = list.length ? list.map(r => `
-        <tr>
-          <td>${r.bank}</td>
-          <td>${r.month}</td>
-          <td>${r.date}</td>
-          <td>${r.detail}</td>
-          <td>${money(r.amount)}</td>
-          <td><span class="tag brown">待連結</span></td>
-        </tr>
-      `).join("") : `<tr><td colspan="6" class="empty">目前沒有貨款待連結資料。</td></tr>`;
-    }
+async function renderGoodsPending() {
+  const wrap = $("goodsPendingRows");
+  wrap.innerHTML = `<tr><td colspan="6" class="empty">載入中...</td></tr>`;
+
+  try {
+    const data = await apiGet(API_GOODS_PENDING);
+    const list = Array.isArray(data.rows) ? data.rows : [];
+
+    $("goodsPendingCountTag").textContent = `${list.length} 筆`;
+
+    wrap.innerHTML = list.length ? list.map(r => `
+      <tr>
+        <td>${r.bank}</td>
+        <td>${r.month}</td>
+        <td>${r.date}</td>
+        <td>${r.detail}</td>
+        <td>${money(r.amount)}</td>
+        <td><span class="tag brown">待連結</span></td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty">目前沒有貨款待連結資料。</td></tr>`;
+  } catch (err) {
+    wrap.innerHTML = `<tr><td colspan="6" class="empty">❌ ${err.message || err}</td></tr>`;
+    $("goodsPendingCountTag").textContent = `0 筆`;
+  }
+}
 
     function renderAllRows(list = rows) {
       $("allRows").innerHTML = list.length ? list.map(r => `
@@ -811,7 +825,10 @@
       clearForm();
       $("formMsg").textContent = "✅ 已新增一筆前端示意資料";
       $("formMsg").className = "msg ok";
-      refreshAll();
+      buildSummary();
+renderUnclassified();
+renderGoodsPending();
+renderAllRows(rows); // 先保留下面歷史查詢用假資料
     });
 
     $("btnClearForm").addEventListener("click", () => {
