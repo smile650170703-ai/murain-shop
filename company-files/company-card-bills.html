@@ -133,11 +133,11 @@
       grid-template-columns:repeat(4,minmax(0,1fr));
       gap:14px;
     }
-    .grid-2{
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:18px;
-    }
+.grid-2{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:18px;
+}
     .full{ grid-column:1 / -1; }
 
     label{
@@ -357,66 +357,84 @@
       <div class="summary-grid" id="summaryGrid"></div>
     </div>
 
-    <div class="card">
-      <div class="split-head">
-        <h2 style="margin:0;">2. 新增信用卡明細</h2>
-        <span class="tag">先做前端架構</span>
-      </div>
+<div class="card">
+  <div class="split-head">
+    <h2 style="margin:0;">2. 批次貼上信用卡明細</h2>
+    <span class="tag">可直接從網銀複製貼上</span>
+  </div>
 
-      <div class="grid">
-        <div>
-          <label>銀行</label>
-          <select id="formBank">
-            <option value="">請選擇</option>
-            <option value="國泰世華">國泰世華</option>
-            <option value="中國信託">中國信託</option>
-            <option value="玉山銀行">玉山銀行</option>
-            <option value="兆豐銀行">兆豐銀行</option>
-            <option value="台新銀行">台新銀行</option>
-          </select>
-        </div>
-        <div>
-          <label>帳單月份</label>
-          <input id="formMonth" placeholder="例如 2026-02" />
-        </div>
-        <div>
-          <label>交易日期</label>
-          <input id="formDate" type="date" />
-        </div>
-        <div>
-          <label>交易金額</label>
-          <input id="formAmount" type="number" placeholder="例如 20000" />
-        </div>
-
-        <div class="full">
-          <label>交易明細</label>
-          <input id="formDetail" placeholder="例如 Buyforyou / 電子化繳稅南天有 / 藥聯皮 - 康爵洋企業股份" />
-        </div>
-
-        <div>
-          <label>費用支出歸類</label>
-          <select id="formCategory">
-            <option value="">未歸類</option>
-            <option value="🟫 - 貨款">🟫 - 貨款</option>
-            <option value="公司開支">公司開支</option>
-            <option value="退款登記">退款登記</option>
-            <option value="其他">其他</option>
-          </select>
-        </div>
-
-        <div class="full">
-          <label>備註</label>
-          <input id="formNote" placeholder="補充說明" />
-        </div>
-      </div>
-
-      <div class="toolbar">
-        <button class="btn" type="button" id="btnAddMock">新增一筆（前端示意）</button>
-        <button class="btn secondary" type="button" id="btnClearForm">清空</button>
-      </div>
-
-      <div class="msg" id="formMsg">這區先做版面與操作感，之後再接 Airtable 寫入。</div>
+  <div class="grid">
+    <div>
+      <label>銀行</label>
+      <select id="formBank">
+        <option value="">請選擇</option>
+        <option value="國泰世華">國泰世華</option>
+        <option value="中國信託">中國信託</option>
+        <option value="玉山銀行">玉山銀行</option>
+        <option value="兆豐銀行">兆豐銀行</option>
+        <option value="台新銀行">台新銀行</option>
+      </select>
     </div>
+
+    <div>
+      <label>帳單月份</label>
+      <input id="formMonth" placeholder="例如 2026-02" />
+    </div>
+
+    <div>
+      <label>費用支出歸類</label>
+      <select id="formCategory">
+        <option value="">未歸類</option>
+        <option value="🟫 - 貨款">🟫 - 貨款</option>
+        <option value="公司開支">公司開支</option>
+        <option value="退款登記">退款登記</option>
+        <option value="其他">其他</option>
+      </select>
+    </div>
+
+    <div>
+      <label>統一備註</label>
+      <input id="formNote" placeholder="這批若都同一種備註可先填這裡" />
+    </div>
+
+    <div class="full">
+      <label>批次貼上區</label>
+      <textarea id="pasteBox" placeholder="直接從網銀複製貼上，多列資料。
+每列格式建議：
+交易日期[TAB]交易明細[TAB]交易金額
+例如：
+2026/02/06    Buyforyou    14800
+2026/02/06    Buyforyou    19456"></textarea>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <button class="btn" type="button" id="btnPreviewPaste">預覽貼上結果</button>
+    <button class="btn" type="button" id="btnAddMock">加入頁面（前端示意）</button>
+    <button class="btn secondary" type="button" id="btnClearForm">清空</button>
+  </div>
+
+  <div class="msg" id="formMsg">先貼資料，再按「預覽貼上結果」。確認沒問題後再加入頁面。</div>
+
+  <div class="table-wrap" style="margin-top:14px;">
+    <table>
+      <thead>
+        <tr>
+          <th>銀行</th>
+          <th>帳單月份</th>
+          <th>交易日期</th>
+          <th>交易明細</th>
+          <th>交易金額</th>
+          <th>費用支出歸類</th>
+          <th>備註</th>
+        </tr>
+      </thead>
+      <tbody id="pastePreviewRows">
+        <tr><td colspan="7" class="empty">尚未貼上資料。</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
 
     <div class="grid-2">
       <div class="card">
@@ -623,6 +641,7 @@
     ];
 
     let rows = [...mockRows];
+    let pastedRows = [];
 
     const API_SUMMARY = "https://api.murain.tw/op/company/card-bills/summary";
 const API_UNCLASSIFIED = "https://api.murain.tw/op/company/card-bills/unclassified-list";
@@ -784,52 +803,158 @@ async function renderGoodsPending() {
       renderAllRows();
     }
 
-    function clearForm() {
-      $("formBank").value = "";
-      $("formMonth").value = "";
-      $("formDate").value = "";
-      $("formAmount").value = "";
-      $("formDetail").value = "";
-      $("formCategory").value = "";
-      $("formNote").value = "";
-    }
+  function clearForm() {
+  $("formBank").value = "";
+  $("formMonth").value = "";
+  $("formCategory").value = "";
+  $("formNote").value = "";
+  $("pasteBox").value = "";
+  pastedRows = [];
+  $("pastePreviewRows").innerHTML = `<tr><td colspan="7" class="empty">尚未貼上資料。</td></tr>`;
+}
+    function normalizeMonthValue(v) {
+  const s = String(v || "").trim();
+  const m = s.match(/^(\d{4})[-\/]?(\d{1,2})$/);
+  if (!m) return s;
+  return `${m[1]}-${String(m[2]).padStart(2, "0")}`;
+}
 
-    $("btnAddMock").addEventListener("click", () => {
-      const bank = $("formBank").value.trim();
-      const month = $("formMonth").value.trim();
-      const date = $("formDate").value.trim();
-      const amount = Number($("formAmount").value || 0);
-      const detail = $("formDetail").value.trim();
-      const category = $("formCategory").value.trim();
-      const note = $("formNote").value.trim();
+function normalizeDateValue(v) {
+  const s = String(v || "").trim().replace(/\./g, "/").replace(/-/g, "/");
+  if (!s) return "";
 
-      if (!bank || !month || !date || !detail || !amount) {
-        $("formMsg").textContent = "❌ 請至少填：銀行、帳單月份、交易日期、交易明細、交易金額";
-        $("formMsg").className = "msg err";
-        return;
-      }
+  const m1 = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (m1) {
+    return `${m1[1]}-${String(m1[2]).padStart(2, "0")}-${String(m1[3]).padStart(2, "0")}`;
+  }
 
-      rows.unshift({
-        id: String(Date.now()),
-        bank,
-        month,
-        date,
-        detail,
-        amount,
-        category,
-        purchaseLink: "",
-        transferLink: "",
-        note
-      });
+  const m2 = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m2) {
+    return `${m2[1]}-${m2[2]}-${m2[3]}`;
+  }
 
-      clearForm();
-      $("formMsg").textContent = "✅ 已新增一筆前端示意資料";
-      $("formMsg").className = "msg ok";
-      buildSummary();
-renderUnclassified();
-renderGoodsPending();
-renderAllRows(rows); // 先保留下面歷史查詢用假資料
+  return s;
+}
+
+function parseMoneyValue(v) {
+  const s = String(v || "").replace(/[^\d.-]/g, "").trim();
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function renderPastePreview() {
+  const wrap = $("pastePreviewRows");
+
+  if (!pastedRows.length) {
+    wrap.innerHTML = `<tr><td colspan="7" class="empty">尚未貼上資料。</td></tr>`;
+    return;
+  }
+
+  wrap.innerHTML = pastedRows.map(r => `
+    <tr>
+      <td>${r.bank}</td>
+      <td>${r.month}</td>
+      <td>${r.date}</td>
+      <td>${r.detail}</td>
+      <td>${money(r.amount)}</td>
+      <td>${r.category || ""}</td>
+      <td>${r.note || ""}</td>
+    </tr>
+  `).join("");
+}
+
+function buildRowsFromPaste() {
+  const bank = $("formBank").value.trim();
+  const month = normalizeMonthValue($("formMonth").value.trim());
+  const category = $("formCategory").value.trim();
+  const note = $("formNote").value.trim();
+  const raw = $("pasteBox").value;
+
+  if (!bank || !month || !raw.trim()) {
+    return [];
+  }
+
+  const lines = raw
+    .split(/\r?\n/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const parsed = [];
+
+  for (const line of lines) {
+    const cols = line.split("\t").map(s => s.trim());
+
+    if (cols.length < 3) continue;
+
+    const date = normalizeDateValue(cols[0]);
+    const detail = cols[1] || "";
+    const amount = parseMoneyValue(cols[2]);
+    const rowNote = cols[3] ? cols[3] : note;
+
+    if (!date || !detail || !amount) continue;
+
+    parsed.push({
+      id: String(Date.now()) + Math.random().toString(36).slice(2, 7),
+      bank,
+      month,
+      date,
+      detail,
+      amount,
+      category,
+      purchaseLink: "",
+      transferLink: "",
+      note: rowNote
     });
+  }
+
+  return parsed;
+}
+
+$("btnPreviewPaste").addEventListener("click", () => {
+  const bank = $("formBank").value.trim();
+  const month = $("formMonth").value.trim();
+  const raw = $("pasteBox").value.trim();
+
+  if (!bank || !month || !raw) {
+    $("formMsg").textContent = "❌ 請先填：銀行、帳單月份，並貼上多列資料";
+    $("formMsg").className = "msg err";
+    pastedRows = [];
+    renderPastePreview();
+    return;
+  }
+
+  pastedRows = buildRowsFromPaste();
+  renderPastePreview();
+
+  if (!pastedRows.length) {
+    $("formMsg").textContent = "❌ 沒有解析到資料。請確認格式是：交易日期[TAB]交易明細[TAB]交易金額";
+    $("formMsg").className = "msg err";
+    return;
+  }
+
+  $("formMsg").textContent = `✅ 已解析 ${pastedRows.length} 筆，請確認預覽後再加入頁面`;
+  $("formMsg").className = "msg ok";
+});
+
+$("btnAddMock").addEventListener("click", () => {
+  if (!pastedRows.length) {
+    $("formMsg").textContent = "❌ 請先按「預覽貼上結果」";
+    $("formMsg").className = "msg err";
+    return;
+  }
+
+  rows = [...pastedRows, ...rows];
+  const addedCount = pastedRows.length;
+
+  clearForm();
+  $("formMsg").textContent = `✅ 已加入 ${addedCount} 筆前端示意資料`;
+  $("formMsg").className = "msg ok";
+
+  buildSummary();
+  renderUnclassified();
+  renderGoodsPending();
+  renderAllRows(rows);
+});
 
     $("btnClearForm").addEventListener("click", () => {
       clearForm();
