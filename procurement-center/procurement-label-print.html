@@ -238,10 +238,30 @@
       font-size:12px;
     }
     .empty{
-      color:var(--muted);
-      font-size:14px;
-      padding:18px;
-    }
+  color:var(--muted);
+  font-size:14px;
+  padding:18px;
+}
+
+.summary-bar{
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+  margin-top:14px;
+}
+
+.summary-pill{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:8px 14px;
+  border-radius:999px;
+  border:1px solid #cfe3ff;
+  background:#eef6ff;
+  color:#0f3f8c;
+  font-size:13px;
+  font-weight:700;
+}
     .hint{
       margin-top:10px;
       color:#475569;
@@ -312,20 +332,24 @@
 
       <div class="table-wrap">
         <table>
-         <thead>
-  <tr>
-    <th style="width:50px;">選取</th>
-    <th style="width:74px;">商品照片</th>
-    <th style="width:88px;">品牌</th>
-    <th style="min-width:160px;">商品名稱</th>
-    <th style="width:128px;">標籤輸入碼</th>
-    <th style="width:82px;">參考價</th>
-    <th style="width:128px;">建議售價 (TWD)</th>
-    <th style="width:62px;">數量</th>
-  </tr>
-</thead>
-          <tbody id="rows"></tbody>
-        </table>
+  <thead>
+    <tr>
+      <th style="width:74px;">商品照片</th>
+      <th style="width:88px;">品牌</th>
+      <th style="min-width:160px;">商品名稱</th>
+      <th style="width:128px;">標籤輸入碼</th>
+      <th style="width:82px;">參考價</th>
+      <th style="width:128px;">建議售價 (TWD)</th>
+      <th style="width:62px;">數量</th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+
+<div class="summary-bar">
+  <div class="summary-pill">清單筆數：<span id="totalCount">0</span></div>
+  <div class="summary-pill">已可儲存：<span id="savableCount">0</span></div>
+</div>
       </div>
     </div>
   </div>
@@ -344,6 +368,18 @@
     const statusBar = $("statusBar");
 
     let currentRows = [];
+    function isRowSavableByTr(tr) {
+  const labelCode = String(tr.querySelector('[data-role="labelCode"]')?.value || "").trim();
+  const suggestPrice = String(tr.querySelector('[data-role="suggestPrice"]')?.value || "").trim();
+  return !!(labelCode && suggestPrice);
+}
+
+function refreshSummary() {
+  $("totalCount").textContent = String(currentRows.length);
+
+  const savable = [...rowsEl.querySelectorAll("tr[data-id]")].filter(tr => isRowSavableByTr(tr)).length;
+  $("savableCount").textContent = String(savable);
+}
 
     function escapeHtml(str) {
       return String(str || "")
@@ -399,15 +435,13 @@
       currentRows = Array.isArray(rows) ? rows : [];
 
       if (!currentRows.length) {
-  rowsEl.innerHTML = `<tr><td colspan="8"><div class="empty">目前沒有需要處理的資料。</div></td></tr>`;
+  rowsEl.innerHTML = `<tr><td colspan="7"><div class="empty">目前沒有需要處理的資料。</div></td></tr>`;
+  refreshSummary();
   return;
 }
 
-    rowsEl.innerHTML = currentRows.map((row) => `
+   rowsEl.innerHTML = currentRows.map((row) => `
   <tr data-id="${escapeHtml(row.id)}">
-    <td>
-      <input class="row-check" type="checkbox" data-role="check">
-    </td>
     <td>${renderPhotoCell(row)}</td>
     <td>${escapeHtml(row.brand || "")}</td>
     <td>${escapeHtml(row.productName || "")}</td>
@@ -436,21 +470,14 @@
 `).join("");
 
       [...rowsEl.querySelectorAll("tr[data-id]")].forEach((tr) => {
-        const labelInput = tr.querySelector('[data-role="labelCode"]');
-        const priceInput = tr.querySelector('[data-role="suggestPrice"]');
+  const labelInput = tr.querySelector('[data-role="labelCode"]');
+  const priceInput = tr.querySelector('[data-role="suggestPrice"]');
 
-        labelInput.addEventListener("input", () => syncRowAutoCheck(tr));
-        priceInput.addEventListener("input", () => syncRowAutoCheck(tr));
+  labelInput.addEventListener("input", refreshSummary);
+  priceInput.addEventListener("input", refreshSummary);
+});
 
-        syncRowAutoCheck(tr);
-      });
-    }
-
-    function syncRowAutoCheck(tr) {
-      const labelCode = String(tr.querySelector('[data-role="labelCode"]').value || "").trim();
-      const suggestPrice = String(tr.querySelector('[data-role="suggestPrice"]').value || "").trim();
-      const check = tr.querySelector('[data-role="check"]');
-      check.checked = !!(labelCode && suggestPrice);
+refreshSummary();
     }
 
     function normalizePrice(v) {
@@ -458,28 +485,27 @@
     }
 
     function getSelectedPayload() {
-      const rows = [];
-      [...rowsEl.querySelectorAll("tr[data-id]")].forEach((tr) => {
-        const checked = !!tr.querySelector('[data-role="check"]')?.checked;
-        if (!checked) return;
+  const rows = [];
+  [...rowsEl.querySelectorAll("tr[data-id]")].forEach((tr) => {
+    if (!isRowSavableByTr(tr)) return;
 
-        const id = String(tr.dataset.id || "").trim();
-        const row = currentRows.find(r => String(r.id) === id) || {};
-        const labelCode = String(tr.querySelector('[data-role="labelCode"]').value || "").trim();
-        const suggestPrice = normalizePrice(tr.querySelector('[data-role="suggestPrice"]').value || "");
+    const id = String(tr.dataset.id || "").trim();
+    const row = currentRows.find(r => String(r.id) === id) || {};
+    const labelCode = String(tr.querySelector('[data-role="labelCode"]').value || "").trim();
+    const suggestPrice = normalizePrice(tr.querySelector('[data-role="suggestPrice"]').value || "");
 
-        rows.push({
-  id,
-  labelCode,
-  suggestPrice,
-  newBarcode: row.newBarcode || "",
-  brand: row.brand || "",
-  productName: row.productName || "",
-  qty: row.qty || ""
-});
-      });
-      return rows;
-    }
+    rows.push({
+      id,
+      labelCode,
+      suggestPrice,
+      newBarcode: row.newBarcode || "",
+      brand: row.brand || "",
+      productName: row.productName || "",
+      qty: row.qty || ""
+    });
+  });
+  return rows;
+}
 
     function validateSelectedRows(items) {
       if (!items.length) {
@@ -574,7 +600,8 @@
     renderRows(data.rows || []);
     setStatus(`✅ 清單已更新，共 ${Array.isArray(data.rows) ? data.rows.length : 0} 筆`, "ok");
   } catch (err) {
-    rowsEl.innerHTML = `<tr><td colspan="8"><div class="empty">❌ ${escapeHtml(err.message || String(err))}</div></td></tr>`;
+    rowsEl.innerHTML = `<tr><td colspan="7"><div class="empty">❌ ${escapeHtml(err.message || String(err))}</div></td></tr>`;
+refreshSummary();
     setStatus(`❌ ${err.message || err}`, "err");
   }
 }
