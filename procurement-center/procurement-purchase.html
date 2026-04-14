@@ -218,7 +218,7 @@
 
 table{
   width:100%;
-  min-width:920px;
+  min-width:1080px;
   border-collapse:collapse;
   table-layout:fixed;
 }
@@ -245,13 +245,14 @@ td input{
 }
 
 th:nth-child(1), td:nth-child(1){ width:48px; }
-th:nth-child(2), td:nth-child(2){ width:180px; }
-th:nth-child(3), td:nth-child(3){ width:92px; }
-th:nth-child(4), td:nth-child(4){ width:92px; }
-th:nth-child(5), td:nth-child(5){ width:170px; }
-th:nth-child(6), td:nth-child(6){ width:110px; }
-th:nth-child(7), td:nth-child(7){ width:70px; }
-th:nth-child(8), td:nth-child(8){ width:78px; }
+th:nth-child(2), td:nth-child(2){ width:140px; }  /* 包裹編號 */
+th:nth-child(3), td:nth-child(3){ width:180px; }  /* 名稱 */
+th:nth-child(4), td:nth-child(4){ width:92px; }   /* 顏色 */
+th:nth-child(5), td:nth-child(5){ width:92px; }   /* 尺寸 */
+th:nth-child(6), td:nth-child(6){ width:170px; }  /* 商品照片 */
+th:nth-child(7), td:nth-child(7){ width:110px; }  /* 美金單價 */
+th:nth-child(8), td:nth-child(8){ width:70px; }   /* 數量 */
+th:nth-child(9), td:nth-child(9){ width:78px; }   /* 刪除 */
 
 td input.name{
   width:100%;
@@ -812,108 +813,83 @@ function collectItems() {
       }
     }
 
-    async function submitForm() {
-      const payload = {
-        purchase: {
-          vendor: $("vendor").value.trim(),
-          twdAfterTax: $("twdAfterTax").value.trim(),
-          orderNo: $("orderNo").value.trim(),
-          usdTotal: $("usdTotal").value.trim(),
-          usdRate: $("usdRate").value.trim(),
-          buyDate: $("buyDate").value.trim(),
-          packageCode: $("packageCode").value.trim()
-        },
-        items: collectItems()
-      };
+async function submitForm() {
+  const payload = {
+    purchase: {
+      vendor: $("vendor").value.trim(),
+      twdAfterTax: $("twdAfterTax").value.trim(),
+      orderNo: $("orderNo").value.trim(),
+      usdTotal: $("usdTotal").value.trim(),
+      usdRate: $("usdRate").value.trim(),
+      buyDate: $("buyDate").value.trim(),
+      packageCode: $("packageCode").value.trim() // 預設包裹編號
+    },
+    items: collectItems()
+  };
 
-      if (!payload.purchase.vendor) {
-        setMsg("❌ 請先選擇進貨商。", "err");
-        return;
-      }
-      if (!payload.purchase.orderNo) {
-        setMsg("❌ 請先輸入訂單編號。", "err");
-        return;
-      }
-      if (!payload.items.length) {
-        setMsg("❌ 請至少新增 1 列商品。", "err");
-        return;
-      }
+  if (!payload.purchase.vendor) {
+    setMsg("❌ 請先選擇進貨商。", "err");
+    return;
+  }
+  if (!payload.purchase.orderNo) {
+    setMsg("❌ 請先輸入訂單編號。", "err");
+    return;
+  }
+  if (!payload.items.length) {
+    setMsg("❌ 請至少新增 1 列商品。", "err");
+    return;
+  }
 
-const payload = {
-  purchase: {
-    vendor: $("vendor").value.trim(),
-    twdAfterTax: $("twdAfterTax").value.trim(),
-    orderNo: $("orderNo").value.trim(),
-    usdTotal: $("usdTotal").value.trim(),
-    usdRate: $("usdRate").value.trim(),
-    buyDate: $("buyDate").value.trim(),
-    packageCode: $("packageCode").value.trim() // 這裡改成「預設包裹編號」
-  },
-  items: collectItems()
-};
+  const defaultPackageCode = payload.purchase.packageCode || "";
 
-if (!payload.purchase.vendor) {
-  setMsg("❌ 請先選擇進貨商。", "err");
-  return;
-}
-if (!payload.purchase.orderNo) {
-  setMsg("❌ 請先輸入訂單編號。", "err");
-  return;
-}
-if (!payload.items.length) {
-  setMsg("❌ 請至少新增 1 列商品。", "err");
-  return;
-}
+  const validItems = payload.items
+    .filter(row =>
+      row.packageCode || row.name || row.color || row.size || row.usdUnitPrice || row.qty
+    )
+    .map(row => ({
+      ...row,
+      packageCode: row.packageCode || defaultPackageCode
+    }));
 
-const defaultPackageCode = payload.purchase.packageCode || "";
+  if (!validItems.length) {
+    setMsg("❌ 商品明細目前都是空白列。", "err");
+    return;
+  }
 
-const validItems = payload.items
-  .filter(row =>
-    row.packageCode || row.name || row.color || row.size || row.usdUnitPrice || row.qty
-  )
-  .map(row => ({
-    ...row,
-    packageCode: row.packageCode || defaultPackageCode
-  }));
+  const missingPackageRow = validItems.findIndex(row => !row.packageCode);
+  if (missingPackageRow >= 0) {
+    setMsg(`❌ 第 ${missingPackageRow + 1} 列商品沒有包裹編號。`, "err");
+    return;
+  }
 
-if (!validItems.length) {
-  setMsg("❌ 商品明細目前都是空白列。", "err");
-  return;
-}
+  payload.items = validItems;
 
-const missingPackageRow = validItems.findIndex(row => !row.packageCode);
-if (missingPackageRow >= 0) {
-  setMsg(`❌ 第 ${missingPackageRow + 1} 列商品沒有包裹編號。`, "err");
-  return;
-}
+  btnSubmit.disabled = true;
+  setMsg("送出中...");
 
-payload.items = validItems;
+  try {
+    const data = await apiFetch(API_CREATE, payload);
 
-      btnSubmit.disabled = true;
-      setMsg("送出中...");
-
-      try {
-        const data = await apiFetch(API_CREATE, payload);
-
-        setMsg(
+    setMsg(
 `✅ 建立成功
 採購單 ID：${data.purchase_id || ""}
-包裹單號 ID：${data.package_id || ""}
+包裹數：${data.package_created_count || 0}
+包裹編號：${Array.isArray(data.package_codes) ? data.package_codes.join("、") : ""}
 成功商品筆數：${data.item_created_count || 0}
 失敗商品筆數：${data.item_failed_count || 0}
 
 ${data.item_failed_count ? "失敗明細：\n" + JSON.stringify(data.failed_items || [], null, 2) : "全部商品都已建立完成。"}`,
-  "ok"
-);
+      "ok"
+    );
 
-resetPurchaseForm();
-loadBadPurchases();
-      } catch (err) {
-        setMsg("❌ " + (err.message || err), "err");
-      } finally {
-        btnSubmit.disabled = false;
-      }
-    }
+    resetPurchaseForm();
+    loadBadPurchases();
+  } catch (err) {
+    setMsg("❌ " + (err.message || err), "err");
+  } finally {
+    btnSubmit.disabled = false;
+  }
+}
 
 btnAddRow.addEventListener("click", () => createRow());
 btnSubmit.addEventListener("click", submitForm);
