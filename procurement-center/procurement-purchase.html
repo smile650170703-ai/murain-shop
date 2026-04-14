@@ -218,7 +218,7 @@
 
 table{
   width:100%;
-  min-width:1080px;
+  min-width:900px;
   border-collapse:collapse;
   table-layout:fixed;
 }
@@ -239,53 +239,32 @@ th{
 td input{
   width:100%;
   min-width:0;
-  padding:9px 10px;
-  height:36px;
-  font-size:13px;
+  padding:7px 8px;
+  height:32px;
+  font-size:12px;
 }
 
-th:nth-child(1), td:nth-child(1){ width:48px; }
-th:nth-child(2), td:nth-child(2){ width:140px; }  /* 包裹編號 */
-th:nth-child(3), td:nth-child(3){ width:180px; }  /* 名稱 */
-th:nth-child(4), td:nth-child(4){ width:92px; }   /* 顏色 */
-th:nth-child(5), td:nth-child(5){ width:92px; }   /* 尺寸 */
-th:nth-child(6), td:nth-child(6){ width:170px; }  /* 商品照片 */
-th:nth-child(7), td:nth-child(7){ width:110px; }  /* 美金單價 */
-th:nth-child(8), td:nth-child(8){ width:70px; }   /* 數量 */
-th:nth-child(9), td:nth-child(9){ width:78px; }   /* 刪除 */
-
-td input.name{
-  width:100%;
-  min-width:0;
-}
-
-td input.color,
-td input.size,
-td input.usdUnitPrice,
-td input.qty{
-  width:100%;
-  min-width:0;
-}
-
-.file-wrap{
-  display:flex;
-  align-items:center;
-  gap:6px;
-  width:100%;
-  min-width:0;
-}
+th:nth-child(1), td:nth-child(1){ width:36px; }   /* # */
+th:nth-child(2), td:nth-child(2){ width:120px; }  /* 包裹編號 */
+th:nth-child(3), td:nth-child(3){ width:150px; }  /* 名稱 */
+th:nth-child(4), td:nth-child(4){ width:78px; }   /* 顏色 */
+th:nth-child(5), td:nth-child(5){ width:78px; }   /* 尺寸 */
+th:nth-child(6), td:nth-child(6){ width:140px; }  /* 商品照片 */
+th:nth-child(7), td:nth-child(7){ width:86px; }   /* 美金單價 */
+th:nth-child(8), td:nth-child(8){ width:58px; }   /* 數量 */
+th:nth-child(9), td:nth-child(9){ width:64px; }   /* 刪除 */
 
 .photo-btn{
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  height:32px;
-  padding:0 10px;
+  height:28px;
+  padding:0 8px;
   border:1px solid var(--line);
-  border-radius:10px;
+  border-radius:8px;
   background:#fff;
   color:var(--text);
-  font-size:12px;
+  font-size:11px;
   font-weight:700;
   cursor:pointer;
   white-space:nowrap;
@@ -295,7 +274,7 @@ td input.qty{
 .photo-name{
   flex:1;
   min-width:0;
-  font-size:11px;
+  font-size:10px;
   color:var(--muted);
   white-space:nowrap;
   overflow:hidden;
@@ -535,6 +514,7 @@ td input.qty{
 const API_CREATE = "https://api.murain.tw/op/procurement/purchase/create-with-items";
 const API_PURCHASE_CHECK = "https://api.murain.tw/op/procurement/purchase/check";
 const API_BAD_LIST = "https://api.murain.tw/op/procurement/purchase/bad-list";
+    const API_IMAGE_DIRECT_UPLOAD = "https://api.murain.tw/op/procurement/image/direct-upload";
 
 const $ = (id) => document.getElementById(id);
 const rowsEl = $("itemRows");
@@ -645,6 +625,43 @@ function handleSingleColumnPaste(e) {
   return data;
 }
 
+    async function createDirectUploadUrl(filename) {
+  const r = await fetch(API_IMAGE_DIRECT_UPLOAD, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename })
+  });
+
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.ok) {
+    throw new Error(data.message || data.error || "建立圖片上傳網址失敗");
+  }
+  return data;
+}
+
+async function uploadImageToCloudflare(file) {
+  if (!file) return { imageUrl: "", imageId: "" };
+
+  const info = await createDirectUploadUrl(file.name);
+
+  const form = new FormData();
+  form.append("file", file, file.name);
+
+  const uploadResp = await fetch(info.upload_url, {
+    method: "POST",
+    body: form
+  });
+
+  if (!uploadResp.ok) {
+    throw new Error(`圖片上傳失敗：${uploadResp.status}`);
+  }
+
+  return {
+    imageUrl: info.image_url || "",
+    imageId: info.image_id || ""
+  };
+}
+
     async function apiGet(url) {
   const r = await fetch(url);
   const data = await r.json().catch(() => ({}));
@@ -747,8 +764,9 @@ function createRow(data = {}) {
     <td>
       <div class="file-wrap">
         <input id="${fileId}" class="photoFile photo-hidden" type="file" accept="image/*">
+        <input class="photoUrl" type="hidden" value="${escapeHtml(data.photoUrl || "")}">
         <label class="photo-btn" for="${fileId}">選擇檔案</label>
-        <span class="photo-name">未選擇</span>
+        <span class="photo-name">${escapeHtml(data.photoUrl ? "已上傳圖片" : "未選擇")}</span>
       </div>
     </td>
     <td><input class="usdUnitPrice" type="number" step="0.01" value="${escapeHtml(data.usdUnitPrice || "")}" placeholder="0.00"></td>
@@ -763,9 +781,11 @@ function createRow(data = {}) {
 
   const fileInput = tr.querySelector(".photoFile");
   const fileName = tr.querySelector(".photo-name");
+  const photoUrlInput = tr.querySelector(".photoUrl");
 
   fileInput.addEventListener("change", () => {
     const f = fileInput.files && fileInput.files[0];
+    photoUrlInput.value = "";
     fileName.textContent = f ? f.name : "未選擇";
   });
 
@@ -800,6 +820,7 @@ function collectItems() {
     name: tr.querySelector(".name")?.value.trim() || "",
     color: tr.querySelector(".color")?.value.trim() || "",
     size: tr.querySelector(".size")?.value.trim() || "",
+    photoUrl: tr.querySelector(".photoUrl")?.value.trim() || "",
     usdUnitPrice: tr.querySelector(".usdUnitPrice")?.value.trim() || "",
     qty: tr.querySelector(".qty")?.value.trim() || "1"
   }));
@@ -822,7 +843,7 @@ async function submitForm() {
       usdTotal: $("usdTotal").value.trim(),
       usdRate: $("usdRate").value.trim(),
       buyDate: $("buyDate").value.trim(),
-      packageCode: $("packageCode").value.trim() // 預設包裹編號
+      packageCode: $("packageCode").value.trim()
     },
     items: collectItems()
   };
@@ -842,7 +863,7 @@ async function submitForm() {
 
   const defaultPackageCode = payload.purchase.packageCode || "";
 
-  const validItems = payload.items
+  let validItems = payload.items
     .filter(row =>
       row.packageCode || row.name || row.color || row.size || row.usdUnitPrice || row.qty
     )
@@ -862,12 +883,34 @@ async function submitForm() {
     return;
   }
 
-  payload.items = validItems;
-
   btnSubmit.disabled = true;
-  setMsg("送出中...");
+  setMsg("圖片上傳中...");
 
   try {
+    const rowEls = [...rowsEl.querySelectorAll("tr")];
+
+    for (let i = 0; i < validItems.length; i++) {
+      const row = validItems[i];
+      const tr = rowEls[i];
+      const fileInput = tr?.querySelector(".photoFile");
+      const photoUrlInput = tr?.querySelector(".photoUrl");
+      const fileName = tr?.querySelector(".photo-name");
+      const file = fileInput?.files?.[0];
+
+      if (file) {
+        const uploaded = await uploadImageToCloudflare(file);
+        row.photoUrl = uploaded.imageUrl || "";
+        if (photoUrlInput) photoUrlInput.value = row.photoUrl || "";
+        if (fileName) fileName.textContent = row.photoUrl ? "已上傳圖片" : file.name;
+      } else {
+        row.photoUrl = row.photoUrl || "";
+      }
+    }
+
+    payload.items = validItems;
+
+    setMsg("送出中...");
+
     const data = await apiFetch(API_CREATE, payload);
 
     setMsg(
