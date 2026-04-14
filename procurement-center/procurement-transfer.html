@@ -90,6 +90,53 @@
       max-width:100%;
       flex:0 0 auto;
     }
+    .head-check-box{
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:14px 16px;
+  box-shadow:0 10px 24px rgba(15,23,42,.05);
+}
+.head-check-title{
+  font-size:13px;
+  font-weight:800;
+  margin-bottom:8px;
+  color:var(--text);
+}
+.head-check-row{
+  display:flex;
+  gap:8px;
+  align-items:center;
+}
+.head-check-row input{
+  flex:1 1 auto;
+  min-width:0;
+}
+.head-check-btn{
+  width:auto !important;
+  min-width:76px;
+  padding:12px 14px;
+  border:none;
+  border-radius:12px;
+  background:var(--btn2);
+  color:#fff;
+  font-size:13px;
+  font-weight:800;
+  cursor:pointer;
+}
+.head-check-btn:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+.head-check-msg{
+  margin-top:8px;
+  font-size:12px;
+  line-height:1.5;
+  color:var(--muted);
+  white-space:pre-wrap;
+}
+.head-check-msg.ok{ color:var(--ok); }
+.head-check-msg.err{ color:var(--danger); }
     h1{
       margin:0 0 8px;
       font-size:34px;
@@ -161,6 +208,44 @@
       flex-wrap:wrap;
       margin-top:14px;
     }
+    .mini-check-row{
+  display:flex;
+  gap:8px;
+  align-items:center;
+  margin-top:8px;
+}
+.mini-check-row input{
+  flex:1 1 auto;
+  min-width:0;
+  padding:8px 10px;
+  font-size:12px;
+  border-radius:10px;
+}
+.mini-btn{
+  width:auto !important;
+  min-width:68px;
+  padding:8px 12px;
+  border:none;
+  border-radius:10px;
+  background:#475569;
+  color:#fff;
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+}
+.mini-btn:disabled{
+  opacity:.55;
+  cursor:not-allowed;
+}
+.mini-msg{
+  margin-top:6px;
+  font-size:12px;
+  line-height:1.5;
+  color:var(--muted);
+  white-space:pre-wrap;
+}
+.mini-msg.ok{ color:var(--ok); }
+.mini-msg.err{ color:var(--danger); }
     .btn{
       width:auto;
       min-width:120px;
@@ -325,10 +410,21 @@ td input.packageFeeTwd{
 
   <div class="wrap">
     <div class="page-head">
-      <div class="page-head-left">
-        <h1>包裹／轉運</h1>
+  <div class="page-head-left">
+    <h1>包裹／轉運</h1>
+  </div>
+
+  <div class="page-head-right">
+    <div class="head-check-box">
+      <div class="head-check-title">查詢相同轉運單號</div>
+      <div class="head-check-row">
+        <input id="transferCheckNo" placeholder="輸入轉運單號" />
+        <button class="head-check-btn" type="button" id="btnCheckTransfer">查詢</button>
       </div>
+      <div id="transferCheckMsg" class="head-check-msg"></div>
     </div>
+  </div>
+</div>
 
     <div class="card">
       <h2>1. 轉運單主資料</h2>
@@ -361,10 +457,10 @@ td input.packageFeeTwd{
           </div>
         </div>
 
-        <div>
-          <label>發票核對</label>
-          <input id="invoiceRef" placeholder="請輸入發票核對流水號" />
-        </div>
+       <div>
+  <label>發票核對金額</label>
+  <input id="invoiceRef" type="number" step="1" placeholder="有要建立發票核對才輸入金額" />
+</div>
       </div>
     </div>
 
@@ -413,13 +509,17 @@ td input.packageFeeTwd{
 
 const API_LIST_ZERO_WEIGHT = "https://api.murain.tw/op/procurement/package/list-zero-weight";
 const API_SAVE_TRANSFER = "https://api.murain.tw/op/procurement/transfer/save";
+const API_TRANSFER_CHECK = "https://api.murain.tw/op/procurement/transfer/check";
 
   const $ = (id) => document.getElementById(id);
   const rowsEl = $("packageRows");
   const msgEl = $("msg");
 
   const btnSubmit = $("btnSubmit");
-  const btnReloadPackages = $("btnReloadPackages");
+const btnReloadPackages = $("btnReloadPackages");
+const btnCheckTransfer = $("btnCheckTransfer");
+const transferCheckNoEl = $("transferCheckNo");
+const transferCheckMsgEl = $("transferCheckMsg");
 
   function setMsg(text, type) {
     msgEl.textContent = text || "";
@@ -459,7 +559,67 @@ const API_SAVE_TRANSFER = "https://api.murain.tw/op/procurement/transfer/save";
     }
     return data;
   }
+function setTransferCheckMsg(text, type) {
+  transferCheckMsgEl.textContent = text || "";
+  transferCheckMsgEl.className = "head-check-msg";
+  if (type === "ok") transferCheckMsgEl.classList.add("ok");
+  if (type === "err") transferCheckMsgEl.classList.add("err");
+}
 
+function normalizeDateInput(v) {
+  const s = String(v || "").trim();
+  if (!s) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+  const m = s.match(/^(\d{4})[\/年.-](\d{1,2})[\/月.-](\d{1,2})/);
+  if (!m) return "";
+
+  return `${m[1]}-${String(m[2]).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`;
+}
+
+async function checkTransferNo() {
+  const keyword =
+    transferCheckNoEl.value.trim() ||
+    $("transferNo").value.trim();
+
+  if (!keyword) {
+    setTransferCheckMsg("請先輸入要查詢的轉運單號", "err");
+    return;
+  }
+
+  btnCheckTransfer.disabled = true;
+  setTransferCheckMsg("查詢中...");
+
+  try {
+    const data = await apiGet(
+      `${API_TRANSFER_CHECK}?transfer_no=${encodeURIComponent(keyword)}`
+    );
+
+    if (!data.exists) {
+      setTransferCheckMsg(`查無相同轉運單號：${keyword}`, "ok");
+      return;
+    }
+
+    setTransferCheckMsg(`✅ 已有相同轉運單號：${data.transfer_no || keyword}`, "ok");
+
+    if (!$("transferNo").value.trim()) {
+      $("transferNo").value = data.transfer_no || keyword;
+    }
+    if (!$("transferDate").value.trim()) {
+      $("transferDate").value = normalizeDateInput(data.transfer_date);
+    }
+    if (!$("shippingFeeOrTax").value.trim() && data.shipping_fee_or_tax !== "") {
+      $("shippingFeeOrTax").value = data.shipping_fee_or_tax;
+    }
+    if (!$("extraFeeTwd").value.trim() && data.extra_fee_twd !== "") {
+      $("extraFeeTwd").value = data.extra_fee_twd;
+    }
+  } catch (err) {
+    setTransferCheckMsg(`❌ ${err.message || err}`, "err");
+  } finally {
+    btnCheckTransfer.disabled = false;
+  }
+}
   function createRow(data = {}, index = 0) {
     const tr = document.createElement("tr");
     tr.dataset.packageId = data.package_id || "";
@@ -603,9 +763,17 @@ ${data.package_failed_count ? "失敗明細：\n" + JSON.stringify(data.failed_p
 }
 
   btnReloadPackages.addEventListener("click", loadZeroWeightPackages);
-  btnSubmit.addEventListener("click", submitForm);
+btnSubmit.addEventListener("click", submitForm);
+btnCheckTransfer.addEventListener("click", checkTransferNo);
 
-  loadZeroWeightPackages();
+transferCheckNoEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    checkTransferNo();
+  }
+});
+
+loadZeroWeightPackages();
 </script>
 </body>
 </html>
