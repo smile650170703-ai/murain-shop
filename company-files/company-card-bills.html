@@ -410,7 +410,7 @@
 
   <div class="toolbar">
     <button class="btn" type="button" id="btnPreviewPaste">預覽貼上結果</button>
-    <button class="btn" type="button" id="btnAddMock">加入頁面（前端示意）</button>
+    <button class="btn" type="button" id="btnAddMock">送出寫入 Airtable</button>
     <button class="btn secondary" type="button" id="btnClearForm">清空</button>
   </div>
 
@@ -646,6 +646,7 @@
     const API_SUMMARY = "https://api.murain.tw/op/company/card-bills/summary";
 const API_UNCLASSIFIED = "https://api.murain.tw/op/company/card-bills/unclassified-list";
 const API_GOODS_PENDING = "https://api.murain.tw/op/company/card-bills/goods-pending-list";
+    const API_CREATE = "https://api.murain.tw/op/company/card-bills/create";
 
     const $ = (id) => document.getElementById(id);
 
@@ -716,6 +717,18 @@ async function buildSummary() {
 
     async function apiGet(url) {
   const r = await fetch(url);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.ok) {
+    throw new Error(data.message || data.error || "API 失敗");
+  }
+  return data;
+}
+    async function apiPost(url, payload) {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
   const data = await r.json().catch(() => ({}));
   if (!r.ok || !data.ok) {
     throw new Error(data.message || data.error || "API 失敗");
@@ -936,21 +949,53 @@ $("btnPreviewPaste").addEventListener("click", () => {
   $("formMsg").className = "msg ok";
 });
 
-$("btnAddMock").addEventListener("click", () => {
+$("btnAddMock").addEventListener("click", async () => {
   if (!pastedRows.length) {
     $("formMsg").textContent = "❌ 請先按「預覽貼上結果」";
     $("formMsg").className = "msg err";
     return;
   }
 
-  rows = [...pastedRows, ...rows];
-  const addedCount = pastedRows.length;
+  $("btnAddMock").disabled = true;
+  $("formMsg").textContent = "送出中...";
+  $("formMsg").className = "msg";
 
-  clearForm();
-  $("formMsg").textContent = `✅ 已加入 ${addedCount} 筆前端示意資料（目前只更新下方查詢預覽，尚未寫入 Airtable）`;
-  $("formMsg").className = "msg ok";
+  try {
+    const payloadRows = pastedRows.map(r => ({
+      bank: r.bank,
+      month: r.month,
+      date: r.date,
+      detail: r.detail,
+      amount: r.amount,
+      category: r.category,
+      note: r.note
+    }));
 
-  renderAllRows(rows);
+    const data = await apiPost(API_CREATE, {
+      rows: payloadRows
+    });
+
+    const createdCount = Number(data.created_count || 0);
+    const failedCount = Number(data.failed_count || 0);
+
+    clearForm();
+
+    $("formMsg").textContent =
+      `✅ 已寫入 Airtable\n成功：${createdCount} 筆\n失敗：${failedCount} 筆`;
+    $("formMsg").className = failedCount > 0 ? "msg err" : "msg ok";
+
+    // 重刷上面三區真資料
+    await buildSummary();
+    await renderUnclassified();
+    await renderGoodsPending();
+
+    // 下面查詢區先維持你目前前端示意 rows，不自動混入
+  } catch (err) {
+    $("formMsg").textContent = `❌ ${err.message || err}`;
+    $("formMsg").className = "msg err";
+  } finally {
+    $("btnAddMock").disabled = false;
+  }
 });
 
     $("btnClearForm").addEventListener("click", () => {
