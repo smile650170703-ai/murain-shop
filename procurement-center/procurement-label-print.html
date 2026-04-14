@@ -327,9 +327,10 @@ td{
   </div>
 
   <div class="toolbar">
-    <button class="btn secondary" type="button" id="btnReload">重新整理</button>
-    <button class="btn" type="button" id="btnSaveExport">儲存＋匯出 Excel</button>
-  </div>
+  <button class="btn secondary" type="button" id="btnReload">重新整理</button>
+  <button class="btn secondary" type="button" id="btnDraft">暫存資料</button>
+  <button class="btn" type="button" id="btnSaveExport">儲存＋匯出 Excel</button>
+</div>
 </div>
 
 <div id="statusBar" class="status"></div>
@@ -381,6 +382,61 @@ td{
     const statusBar = $("statusBar");
 
     let currentRows = [];
+    const DRAFT_KEY = "procurement_label_print_draft_v1";
+
+function getDraftMap() {
+  try {
+    return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+
+function collectDraftMapFromScreen() {
+  const map = {};
+  [...rowsEl.querySelectorAll("tr[data-id]")].forEach((tr) => {
+    const id = String(tr.dataset.id || "").trim();
+    if (!id) return;
+
+    const labelCode = String(tr.querySelector('[data-role="labelCode"]')?.value || "").trim();
+    const suggestPrice = String(tr.querySelector('[data-role="suggestPrice"]')?.value || "").trim();
+
+    if (labelCode || suggestPrice) {
+      map[id] = { labelCode, suggestPrice };
+    }
+  });
+  return map;
+}
+
+function saveDraftToLocal() {
+  const map = collectDraftMapFromScreen();
+  localStorage.setItem(DRAFT_KEY, JSON.stringify(map));
+  setStatus(`✅ 已暫存 ${Object.keys(map).length} 筆資料`, "ok");
+}
+
+function applyDraftToScreen() {
+  const map = getDraftMap();
+
+  [...rowsEl.querySelectorAll("tr[data-id]")].forEach((tr) => {
+    const id = String(tr.dataset.id || "").trim();
+    const draft = map[id];
+    if (!draft) return;
+
+    const labelInput = tr.querySelector('[data-role="labelCode"]');
+    const priceInput = tr.querySelector('[data-role="suggestPrice"]');
+
+    if (labelInput && draft.labelCode != null) {
+      labelInput.value = String(draft.labelCode || "");
+    }
+    if (priceInput && draft.suggestPrice != null) {
+      priceInput.value = String(draft.suggestPrice || "");
+    }
+  });
+}
+
+function clearDraftLocal() {
+  localStorage.removeItem(DRAFT_KEY);
+}
     function isRowSavableByTr(tr) {
   const labelCode = String(tr.querySelector('[data-role="labelCode"]')?.value || "").trim();
   const suggestPrice = String(tr.querySelector('[data-role="suggestPrice"]')?.value || "").trim();
@@ -490,6 +546,7 @@ function refreshSummary() {
   priceInput.addEventListener("input", refreshSummary);
 });
 
+applyDraftToScreen();
 refreshSummary();
     }
 
@@ -633,14 +690,16 @@ refreshSummary();
           downloadExcel(exportRows);
         }
 
-        setStatus(`✅ 已儲存 ${data.updated_count || 0} 筆，並完成 Excel 下載`, "ok");
-        await loadList();
+        clearDraftLocal();
+setStatus(`✅ 已儲存 ${data.updated_count || 0} 筆，並完成 Excel 下載`, "ok");
+await loadList();
       } catch (err) {
         setStatus(`❌ ${err.message || err}`, "err");
       }
     }
 
     $("btnReload").addEventListener("click", loadList);
+$("btnDraft").addEventListener("click", saveDraftToLocal);
 $("btnSaveExport").addEventListener("click", saveAndExport);
 
 loadList();
