@@ -359,21 +359,51 @@ th{
 .msg.ok{ color:var(--ok); }
 .msg.err{ color:var(--danger); }
 
-td input.packageCode{
+td .packageCodeText{
+  display:block;
   width:150px;
   min-width:150px;
-  background:#f8fafc;
-  color:#475569;
-  cursor:not-allowed;
+  font-weight:800;
+  color:var(--text);
+  line-height:1.4;
 }
+
 td input.weightLbs{
-  width:64px;
-  min-width:64px;
+  width:96px;
+  min-width:96px;
+  text-align:center;
 }
+
 td input.packageFeeTwd{
-  width:72px;
-  min-width:72px;
+  width:110px;
+  min-width:110px;
+  text-align:center;
 }
+
+.toast{
+  position:fixed;
+  top:20px;
+  right:20px;
+  z-index:9999;
+  min-width:240px;
+  max-width:360px;
+  padding:14px 16px;
+  border-radius:14px;
+  color:#fff;
+  font-size:14px;
+  font-weight:800;
+  box-shadow:0 12px 28px rgba(15,23,42,.18);
+  opacity:0;
+  transform:translateY(-8px);
+  pointer-events:none;
+  transition:all .2s ease;
+}
+.toast.show{
+  opacity:1;
+  transform:translateY(0);
+}
+.toast.ok{ background:#0f766e; }
+.toast.err{ background:#c81e1e; }
 
     @media (max-width: 1100px){
       .grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -470,12 +500,12 @@ td input.packageFeeTwd{
   <div class="table-wrap" style="margin-top:14px;">
     <table>
       <thead>
-        <tr>
+       <tr>
   <th style="width:60px;">選取</th>
   <th style="width:56px;">#</th>
   <th style="width:180px;">包裹編號</th>
-  <th style="width:96px;">重量[磅]</th>
-  <th style="width:110px;">包裹附加費</th>
+  <th style="width:130px;">重量[磅]</th>
+  <th style="width:150px;">包裹附加費</th>
 </tr>
       </thead>
       <tbody id="packageRows"></tbody>
@@ -527,7 +557,36 @@ const transferCheckMsgEl = $("transferCheckMsg");
     if (type === "ok") msgEl.classList.add("ok");
     if (type === "err") msgEl.classList.add("err");
   }
+function showToast(text, type = "ok") {
+  let el = document.getElementById("pageToast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "pageToast";
+    el.className = "toast";
+    document.body.appendChild(el);
+  }
 
+  el.textContent = text || "";
+  el.className = `toast ${type}`;
+
+  requestAnimationFrame(() => {
+    el.classList.add("show");
+  });
+
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => {
+    el.classList.remove("show");
+  }, 2200);
+}
+
+function syncRowAutoCheck(tr) {
+  const checkEl = tr.querySelector(".rowCheck");
+  const weightVal = tr.querySelector(".weightLbs")?.value.trim() || "";
+  const feeVal = tr.querySelector(".packageFeeTwd")?.value.trim() || "";
+
+  if (!checkEl) return;
+  checkEl.checked = (weightVal !== "" || feeVal !== "");
+}
   function escapeHtml(str) {
     return String(str || "")
       .replaceAll("&", "&amp;")
@@ -620,33 +679,47 @@ async function checkTransferNo() {
     btnCheckTransfer.disabled = false;
   }
 }
-  function createRow(data = {}, index = 0) {
-    const tr = document.createElement("tr");
-    tr.dataset.packageId = data.package_id || "";
+function createRow(data = {}, index = 0) {
+  const tr = document.createElement("tr");
+  tr.dataset.packageId = data.package_id || "";
+  tr.dataset.packageCode = data.package_code || "";
 
-    tr.innerHTML = `
-      <td>
-        <input type="checkbox" class="rowCheck">
-      </td>
-      <td class="row-no">${index + 1}</td>
-      <td>
-        <input class="packageCode" value="${escapeHtml(data.package_code || "")}" readonly>
-      </td>
-      <td>
-        <input class="weightLbs" type="number" step="0.1" value="${escapeHtml(data.weight_lbs || "")}" placeholder="0">
-      </td>
-      <td>
-        <input class="packageFeeTwd" type="number" step="1" value="${escapeHtml(data.package_fee_twd || "")}" placeholder="0">
-      </td>
-    `;
+  tr.innerHTML = `
+    <td>
+      <input type="checkbox" class="rowCheck">
+    </td>
+    <td class="row-no">${index + 1}</td>
+    <td>
+      <span class="packageCodeText">${escapeHtml(data.package_code || "")}</span>
+    </td>
+    <td>
+      <input class="weightLbs" type="number" step="0.1" value="${escapeHtml(data.weight_lbs || "")}" placeholder="0">
+    </td>
+    <td>
+      <input class="packageFeeTwd" type="number" step="1" value="${escapeHtml(data.package_fee_twd || "")}" placeholder="0">
+    </td>
+  `;
 
-    tr.querySelectorAll("input").forEach((el) => {
-      el.addEventListener("input", refreshSummary);
-      el.addEventListener("change", refreshSummary);
+  const checkEl = tr.querySelector(".rowCheck");
+  const weightEl = tr.querySelector(".weightLbs");
+  const feeEl = tr.querySelector(".packageFeeTwd");
+
+  [weightEl, feeEl].forEach((el) => {
+    el.addEventListener("input", () => {
+      syncRowAutoCheck(tr);
+      refreshSummary();
     });
+    el.addEventListener("change", () => {
+      syncRowAutoCheck(tr);
+      refreshSummary();
+    });
+  });
 
-    rowsEl.appendChild(tr);
-  }
+  checkEl.addEventListener("change", refreshSummary);
+
+  syncRowAutoCheck(tr);
+  rowsEl.appendChild(tr);
+}
 
   function getRowList() {
     return [...rowsEl.querySelectorAll("tr")];
@@ -684,15 +757,15 @@ async function checkTransferNo() {
   }
 
   function collectSelectedRows() {
-    return getRowList()
-      .filter(tr => tr.querySelector(".rowCheck")?.checked)
-      .map(tr => ({
-  package_id: tr.dataset.packageId || "",
-  package_code: tr.querySelector(".packageCode")?.value.trim() || "",
-  weight_lbs: tr.querySelector(".weightLbs")?.value.trim() || "",
-  package_fee_twd: tr.querySelector(".packageFeeTwd")?.value.trim() || ""
-}));
-  }
+  return getRowList()
+    .filter(tr => tr.querySelector(".rowCheck")?.checked)
+    .map(tr => ({
+      package_id: tr.dataset.packageId || "",
+      package_code: tr.dataset.packageCode || "",
+      weight_lbs: tr.querySelector(".weightLbs")?.value.trim() || "",
+      package_fee_twd: tr.querySelector(".packageFeeTwd")?.value.trim() || ""
+    }));
+}
 
 async function submitForm() {
   const transfer = {
@@ -735,31 +808,34 @@ async function submitForm() {
   setMsg("送出中...");
 
   try {
-    const data = await apiPost(API_SAVE_TRANSFER, payload);
+  const data = await apiPost(API_SAVE_TRANSFER, payload);
 
-    setMsg(
+  setMsg(
 `✅ 建立／更新成功
 轉運單 ID：${data.transfer_id || ""}
 成功包裹筆數：${data.package_updated_count || 0}
 失敗包裹筆數：${data.package_failed_count || 0}
 
 ${data.package_failed_count ? "失敗明細：\n" + JSON.stringify(data.failed_packages || [], null, 2) : "全部包裹都已完成更新。"}`,
-      "ok"
-    );
+    "ok"
+  );
 
-    $("transferNo").value = "";
-    $("transferDate").value = "";
-    $("shippingFeeOrTax").value = "";
-    $("extraFeeTwd").value = "";
-    $("creditOrTaichung").checked = false;
-    $("invoiceRef").value = "";
+  showToast(`✅ 儲存成功：${data.package_updated_count || 0} 筆包裹`, "ok");
 
-    await loadZeroWeightPackages();
-  } catch (err) {
-    setMsg(`❌ ${err.message || err}`, "err");
-  } finally {
-    btnSubmit.disabled = false;
-  }
+  $("transferNo").value = "";
+  $("transferDate").value = "";
+  $("shippingFeeOrTax").value = "";
+  $("extraFeeTwd").value = "";
+  $("creditOrTaichung").checked = false;
+  $("invoiceRef").value = "";
+
+  await loadZeroWeightPackages();
+} catch (err) {
+  setMsg(`❌ ${err.message || err}`, "err");
+  showToast(`❌ ${err.message || err}`, "err");
+} finally {
+  btnSubmit.disabled = false;
+}
 }
 
   btnReloadPackages.addEventListener("click", loadZeroWeightPackages);
