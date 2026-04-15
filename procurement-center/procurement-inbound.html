@@ -506,13 +506,21 @@ td .xl{ min-width:210px; width:210px; }
     return out.trim();
   }
 
+    function buildAutoProductName(row) {
+  const name = String(row?.name || "").trim();
+  const color = String(row?.color || "").trim();
+
+  if (name && color) return `${name} ${color}`;
+  return name || color || "";
+}
+
   function getRowFormValues(rowId, rowObj) {
   const safeId = String(rowId || "").replace(/[^a-zA-Z0-9_-]/g, "_");
   const row = rowObj || currentRows.find(r => String(r.id) === String(rowId)) || {};
   const fallbackProductName =
-    String(row.productName || "").trim() ||
-    translateNameDisplay(row.name || "") ||
-    String(row.name || "").trim();
+  String(row.productName || "").trim() ||
+  buildAutoProductName(row) ||
+  String(row.name || "").trim();
 
   return {
     brand: document.querySelector(`.brand_${safeId}`)?.value.trim() || "",
@@ -555,9 +563,10 @@ const brandCls = makeInputClass("brand", row.id);
 const typeCls = makeInputClass("productType", row.id);
 const productNameCls = makeInputClass("productName", row.id);
 
-      const displayName = translateNameDisplay(row.name || "");
-      const displayColor = translateColorDisplay(row.color || "");
-      const defaultProductName = String(row.productName || "").trim() || displayName || row.name || "";
+      const displayName = String(row.name || "").trim();
+const displayColor = String(row.color || "").trim();
+const autoProductName = buildAutoProductName(row);
+const defaultProductName = String(row.productName || "").trim() || autoProductName || displayName || "";
       const readyNow = isRowReady({
   brand: row.brand || "",
   productType: row.productType || "",
@@ -612,6 +621,29 @@ const productNameCls = makeInputClass("productName", row.id);
 
       el.addEventListener("input", onChange);
       el.addEventListener("change", onChange);
+      el.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+
+  const tr = el.closest("tr");
+  if (!tr) return;
+
+  const currentInputs = Array.from(tr.querySelectorAll("input, select"));
+  const colIndex = currentInputs.indexOf(el);
+  if (colIndex < 0) return;
+
+  let nextTr = tr.nextElementSibling;
+  while (nextTr) {
+    const nextInputs = Array.from(nextTr.querySelectorAll("input, select"));
+    const target = nextInputs[colIndex];
+    if (target) {
+      target.focus();
+      if (typeof target.select === "function") target.select();
+      break;
+    }
+    nextTr = nextTr.nextElementSibling;
+  }
+});
     });
 
     refreshSummary();
