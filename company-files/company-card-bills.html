@@ -641,6 +641,7 @@ const API_GOODS_PENDING = "https://api.murain.tw/op/company/card-bills/goods-pen
     const API_CREATE = "https://api.murain.tw/op/company/card-bills/create";
     const API_UPDATE = "https://api.murain.tw/op/company/card-bills/update";
     const API_LINK_SEARCH = "https://api.murain.tw/op/company/card-bills/link-search";
+    const API_LIST = "https://api.murain.tw/op/company/card-bills/list";
 
     const $ = (id) => document.getElementById(id);
 
@@ -994,28 +995,56 @@ async function renderGoodsPending() {
   }
 }
 
-    function renderAllRows(list = rows) {
-      $("allRows").innerHTML = list.length ? list.map(r => `
-        <tr>
-          <td>${r.bank}</td>
-          <td>${r.month}</td>
-          <td>${r.date}</td>
-          <td>${r.detail}</td>
-          <td>${money(r.amount)}</td>
-          <td>${r.category || ""}</td>
-          <td>${r.purchaseLink || ""}</td>
-          <td>${r.transferLink || ""}</td>
-          <td>${r.note || ""}</td>
-        </tr>
-      `).join("") : `<tr><td colspan="9" class="empty">目前沒有資料。</td></tr>`;
-    }
+    async function renderAllRowsFromApi() {
+  const bank = $("filterBank").value.trim();
+  const month = $("filterMonth").value.trim();
+  const category = $("filterCategory").value.trim();
+  const linked = $("filterLinked").value.trim();
+  const keyword = $("filterKeyword").value.trim();
+
+  $("allRows").innerHTML = `<tr><td colspan="9" class="empty">載入中...</td></tr>`;
+
+  try {
+    const data = await apiGetWithQuery(API_LIST, {
+      bank,
+      month,
+      category,
+      linked,
+      keyword,
+      max: 200
+    });
+
+    const list = Array.isArray(data.rows) ? data.rows : [];
+
+    $("allRows").innerHTML = list.length ? list.map(r => `
+      <tr>
+        <td>${r.bank || ""}</td>
+        <td>${r.month || ""}</td>
+        <td>${r.date || ""}</td>
+        <td>${r.detail || ""}</td>
+        <td>${money(r.amount)}</td>
+        <td>${r.category || ""}</td>
+        <td>${r.purchaseLink || ""}</td>
+        <td>${r.transferLink || ""}</td>
+        <td>${r.note || ""}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="9" class="empty">目前沒有資料。</td></tr>`;
+
+    $("filterMsg").textContent = `✅ 查到 ${list.length} 筆`;
+    $("filterMsg").className = "msg ok";
+  } catch (err) {
+    $("allRows").innerHTML = `<tr><td colspan="9" class="empty">❌ ${err.message || err}</td></tr>`;
+    $("filterMsg").textContent = `❌ ${err.message || err}`;
+    $("filterMsg").className = "msg err";
+  }
+}
 
     function refreshAll() {
-      buildSummary();
-      renderUnclassified();
-      renderGoodsPending();
-      renderAllRows();
-    }
+  buildSummary();
+  renderUnclassified();
+  renderGoodsPending();
+  renderAllRowsFromApi();
+}
 
   function clearForm() {
   $("formBank").value = "";
@@ -1216,47 +1245,18 @@ $("btnAddMock").addEventListener("click", async () => {
       $("formMsg").className = "msg ok";
     });
 
-    $("btnFilter").addEventListener("click", () => {
-      const bank = $("filterBank").value.trim();
-      const month = $("filterMonth").value.trim();
-      const category = $("filterCategory").value.trim();
-      const linked = $("filterLinked").value.trim();
-      const keyword = $("filterKeyword").value.trim().toLowerCase();
+$("btnFilter").addEventListener("click", async () => {
+  await renderAllRowsFromApi();
+});
 
-      const filtered = rows.filter(r => {
-        if (bank && r.bank !== bank) return false;
-        if (month && r.month !== month) return false;
-        if (category && r.category !== category) return false;
-
-        const isLinked = !!String(r.purchaseLink || "").trim() || !!String(r.transferLink || "").trim();
-        if (linked === "yes" && !isLinked) return false;
-        if (linked === "no" && isLinked) return false;
-
-        if (keyword) {
-          const hay = [
-            r.detail, r.note, r.amount, r.bank, r.month, r.category
-          ].join(" ").toLowerCase();
-          if (!hay.includes(keyword)) return false;
-        }
-
-        return true;
-      });
-
-      renderAllRows(filtered);
-      $("filterMsg").textContent = `✅ 查到 ${filtered.length} 筆`;
-      $("filterMsg").className = "msg ok";
-    });
-
-    $("btnResetFilter").addEventListener("click", () => {
-      $("filterBank").value = "";
-      $("filterMonth").value = "";
-      $("filterCategory").value = "";
-      $("filterLinked").value = "";
-      $("filterKeyword").value = "";
-      renderAllRows(rows);
-      $("filterMsg").textContent = "已清除查詢條件。";
-      $("filterMsg").className = "msg ok";
-    });
+$("btnResetFilter").addEventListener("click", async () => {
+  $("filterBank").value = "";
+  $("filterMonth").value = "";
+  $("filterCategory").value = "";
+  $("filterLinked").value = "";
+  $("filterKeyword").value = "";
+  await renderAllRowsFromApi();
+});
 
     refreshAll();
   </script>
