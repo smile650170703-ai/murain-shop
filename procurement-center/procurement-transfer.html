@@ -465,9 +465,9 @@ td input.packageFeeTwd{
         </div>
 
         <div>
-          <label>轉運日期</label>
-          <input id="transferDate" type="date" />
-        </div>
+  <label>轉運日期</label>
+  <input id="transferDate" type="text" inputmode="numeric" placeholder="YYYY-MM-DD 或 YYYY/MM/DD" />
+</div>
 
         <div>
           <label>運費 or 稅額</label>
@@ -496,6 +496,14 @@ td input.packageFeeTwd{
 
 <div class="card">
   <h2>2. 包裹管理</h2>
+  <div class="helper" style="margin-top:0;margin-bottom:10px;">
+  可輸入包裹編號其中幾碼篩選，重量欄按 Enter 會自動跳到下一筆可見包裹。
+</div>
+
+<div class="toolbar" style="margin-top:0;margin-bottom:12px;">
+  <input id="packageSearch" placeholder="搜尋包裹編號，可輸入其中幾碼後按 Enter" style="max-width:320px;" />
+  <button class="btn secondary" type="button" id="btnClearPackageSearch">清除搜尋</button>
+</div>
 
   <div class="table-wrap" style="margin-top:14px;">
     <table>
@@ -550,6 +558,8 @@ const btnReloadPackages = $("btnReloadPackages");
 const btnCheckTransfer = $("btnCheckTransfer");
 const transferCheckNoEl = $("transferCheckNo");
 const transferCheckMsgEl = $("transferCheckMsg");
+const packageSearchEl = $("packageSearch");
+const btnClearPackageSearch = $("btnClearPackageSearch");
 
   function setMsg(text, type) {
     msgEl.textContent = text || "";
@@ -630,10 +640,74 @@ function normalizeDateInput(v) {
   if (!s) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
 
-  const m = s.match(/^(\d{4})[\/年.-](\d{1,2})[\/月.-](\d{1,2})/);
+  const m = s.match(/^(\d{4})[\/年.-](\d{1,2})[\/月.-](\d{1,2})$/);
   if (!m) return "";
 
   return `${m[1]}-${String(m[2]).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`;
+}
+
+function getTransferDateForSave() {
+  const raw = $("transferDate").value.trim();
+  if (!raw) return "";
+  return normalizeDateInput(raw) || null;
+}
+
+function getVisibleRows() {
+  return getRowList().filter(tr => tr.style.display !== "none");
+}
+
+function focusAndSelect(el) {
+  if (!el) return;
+  el.focus();
+  if (typeof el.select === "function") el.select();
+}
+
+function focusFirstVisibleWeight() {
+  const next = getVisibleRows()
+    .map(tr => tr.querySelector(".weightLbs"))
+    .find(Boolean);
+
+  focusAndSelect(next);
+}
+
+function focusNextTransferField(currentId) {
+  const order = ["transferNo", "transferDate", "shippingFeeOrTax", "extraFeeTwd", "invoiceRef"];
+  const idx = order.indexOf(currentId);
+  const nextId = order[idx + 1];
+
+  if (nextId) {
+    focusAndSelect($(nextId));
+    return;
+  }
+
+  focusFirstVisibleWeight();
+}
+
+function focusNextVisibleWeight(currentEl) {
+  const visibleInputs = getVisibleRows()
+    .map(tr => tr.querySelector(".weightLbs"))
+    .filter(Boolean);
+
+  const idx = visibleInputs.indexOf(currentEl);
+  const next = visibleInputs[idx + 1];
+
+  if (next) {
+    focusAndSelect(next);
+    return;
+  }
+
+  btnSubmit.focus();
+}
+
+function filterPackageRows() {
+  const kw = String(packageSearchEl?.value || "").trim().toLowerCase();
+
+  getRowList().forEach(tr => {
+    const code = String(tr.dataset.packageCode || "").toLowerCase();
+    tr.style.display = (!kw || code.includes(kw)) ? "" : "none";
+  });
+
+  refreshSummary();
 }
 
 async function checkTransferNo() {
@@ -709,10 +783,29 @@ function createRow(data = {}, index = 0) {
       syncRowAutoCheck(tr);
       refreshSummary();
     });
+
     el.addEventListener("change", () => {
       syncRowAutoCheck(tr);
       refreshSummary();
     });
+  });
+
+  weightEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      syncRowAutoCheck(tr);
+      refreshSummary();
+      focusNextVisibleWeight(weightEl);
+    }
+  });
+
+  feeEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      syncRowAutoCheck(tr);
+      refreshSummary();
+      focusNextVisibleWeight(weightEl);
+    }
   });
 
   checkEl.addEventListener("change", refreshSummary);
@@ -749,10 +842,8 @@ function createRow(data = {}, index = 0) {
 
       rows.forEach((row, i) => createRow(row, i));
 
-      refreshSummary();
-      setMsg(`✅ 已載入 ${rows.length} 筆重量[磅] = 0 的包裹`, "ok");
-    } catch (err) {
-      setMsg(`❌ ${err.message || err}`, "err");
+filterPackageRows();
+setMsg(`✅ 已載入 ${rows.length} 筆重量[磅] = 0 的包裹`, "ok");
     }
   }
 
@@ -768,9 +859,17 @@ function createRow(data = {}, index = 0) {
 }
 
 async function submitForm() {
+  const normalizedTransferDate = getTransferDateForSave();
+
+  if ($("transferDate").value.trim() && !normalizedTransferDate) {
+    setMsg("❌ 轉運日期請輸入 YYYY-MM-DD 或 YYYY/MM/DD。", "err");
+    $("transferDate").focus();
+    return;
+  }
+
   const transfer = {
     transferNo: $("transferNo").value.trim(),
-    transferDate: $("transferDate").value.trim(),
+    transferDate: normalizedTransferDate || "",
     shippingFeeOrTax: $("shippingFeeOrTax").value.trim(),
     extraFeeTwd: $("extraFeeTwd").value.trim(),
     creditOrTaichung: $("creditOrTaichung").checked,
@@ -798,49 +897,107 @@ async function submitForm() {
   const payload = {
     transfer,
     packages: selectedRows.map(r => ({
-  packageCode: r.package_code || "",
-  weightLbs: r.weight_lbs || "",
-  packageFeeTwd: r.package_fee_twd || ""
-}))
+      packageCode: r.package_code || "",
+      weightLbs: r.weight_lbs || "",
+      packageFeeTwd: r.package_fee_twd || ""
+    }))
   };
 
   btnSubmit.disabled = true;
   setMsg("送出中...");
 
   try {
-  const data = await apiPost(API_SAVE_TRANSFER, payload);
+    const data = await apiPost(API_SAVE_TRANSFER, payload);
 
-  setMsg(
+    setMsg(
 `✅ 建立／更新成功
 轉運單 ID：${data.transfer_id || ""}
 成功包裹筆數：${data.package_updated_count || 0}
 失敗包裹筆數：${data.package_failed_count || 0}
 
 ${data.package_failed_count ? "失敗明細：\n" + JSON.stringify(data.failed_packages || [], null, 2) : "全部包裹都已完成更新。"}`,
-    "ok"
-  );
+      "ok"
+    );
 
-  showToast(`✅ 儲存成功：${data.package_updated_count || 0} 筆包裹`, "ok");
+    showToast(`✅ 儲存成功：${data.package_updated_count || 0} 筆包裹`, "ok");
 
-  $("transferNo").value = "";
-  $("transferDate").value = "";
-  $("shippingFeeOrTax").value = "";
-  $("extraFeeTwd").value = "";
-  $("creditOrTaichung").checked = false;
-  $("invoiceRef").value = "";
+    $("transferNo").value = "";
+    $("transferDate").value = "";
+    $("shippingFeeOrTax").value = "";
+    $("extraFeeTwd").value = "";
+    $("creditOrTaichung").checked = false;
+    $("invoiceRef").value = "";
 
-  await loadZeroWeightPackages();
-} catch (err) {
-  setMsg(`❌ ${err.message || err}`, "err");
-  showToast(`❌ ${err.message || err}`, "err");
-} finally {
-  btnSubmit.disabled = false;
+    await loadZeroWeightPackages();
+  } catch (err) {
+    setMsg(`❌ ${err.message || err}`, "err");
+    showToast(`❌ ${err.message || err}`, "err");
+  } finally {
+    btnSubmit.disabled = false;
+  }
 }
-}
 
-  btnReloadPackages.addEventListener("click", loadZeroWeightPackages);
+ btnReloadPackages.addEventListener("click", loadZeroWeightPackages);
 btnSubmit.addEventListener("click", submitForm);
 btnCheckTransfer.addEventListener("click", checkTransferNo);
+
+["transferNo", "transferDate", "shippingFeeOrTax", "extraFeeTwd", "invoiceRef"].forEach((id) => {
+  const el = $(id);
+  if (!el) return;
+
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+
+      if (id === "transferDate") {
+        const normalized = getTransferDateForSave();
+        if ($("transferDate").value.trim() && !normalized) {
+          setMsg("❌ 轉運日期請輸入 YYYY-MM-DD 或 YYYY/MM/DD。", "err");
+          $("transferDate").focus();
+          return;
+        }
+        if (normalized) $("transferDate").value = normalized;
+      }
+
+      focusNextTransferField(id);
+    }
+  });
+});
+
+$("transferDate").addEventListener("paste", (e) => {
+  const text = e.clipboardData?.getData("text") || "";
+  const normalized = normalizeDateInput(text);
+
+  if (normalized) {
+    e.preventDefault();
+    $("transferDate").value = normalized;
+  }
+});
+
+$("transferDate").addEventListener("blur", () => {
+  const normalized = getTransferDateForSave();
+  if (normalized) $("transferDate").value = normalized;
+});
+
+if (packageSearchEl) {
+  packageSearchEl.addEventListener("input", filterPackageRows);
+
+  packageSearchEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      filterPackageRows();
+      focusFirstVisibleWeight();
+    }
+  });
+}
+
+if (btnClearPackageSearch) {
+  btnClearPackageSearch.addEventListener("click", () => {
+    packageSearchEl.value = "";
+    filterPackageRows();
+    packageSearchEl.focus();
+  });
+}
 
 transferCheckNoEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
