@@ -639,6 +639,7 @@
 const API_UNCLASSIFIED = "https://api.murain.tw/op/company/card-bills/unclassified-list";
 const API_GOODS_PENDING = "https://api.murain.tw/op/company/card-bills/goods-pending-list";
     const API_CREATE = "https://api.murain.tw/op/company/card-bills/create";
+    const API_UPDATE = "https://api.murain.tw/op/company/card-bills/update";
 
     const $ = (id) => document.getElementById(id);
 
@@ -740,19 +741,72 @@ async function renderUnclassified() {
 
     wrap.innerHTML = list.length ? list.map(r => `
       <tr>
-        <td>${r.bank}</td>
-        <td>${r.month}</td>
-        <td>${r.date}</td>
-        <td>${r.detail}</td>
+        <td>${r.bank || ""}</td>
+        <td>${r.month || ""}</td>
+        <td>${r.date || ""}</td>
+        <td>${r.detail || ""}</td>
         <td>${money(r.amount)}</td>
         <td>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button class="btn small brown" type="button">貨款</button>
-            <button class="btn small secondary" type="button">公司開支</button>
+            <button
+              class="btn btnMarkCat small brown"
+              type="button"
+              data-id="${r.id}"
+              data-cat="🟫 - 貨款"
+            >貨款</button>
+
+            <button
+              class="btn btnMarkCat small secondary"
+              type="button"
+              data-id="${r.id}"
+              data-cat="公司開支"
+            >公司開支</button>
+
+            <button
+              class="btn btnMarkCat small secondary"
+              type="button"
+              data-id="${r.id}"
+              data-cat="退款登記"
+            >退款登記</button>
+
+            <button
+              class="btn btnMarkCat small secondary"
+              type="button"
+              data-id="${r.id}"
+              data-cat="其他"
+            >其他</button>
           </div>
         </td>
       </tr>
     `).join("") : `<tr><td colspan="6" class="empty">目前沒有未歸類資料。</td></tr>`;
+
+    document.querySelectorAll(".btnMarkCat").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        const cat = btn.dataset.cat;
+
+        if (!id || !cat) return;
+
+        const oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "更新中...";
+
+        try {
+          await apiPost(API_UPDATE, {
+            id,
+            category: cat
+          });
+
+          await buildSummary();
+          await renderUnclassified();
+          await renderGoodsPending();
+        } catch (err) {
+          alert(`更新失敗：${err.message || err}`);
+          btn.disabled = false;
+          btn.textContent = oldText;
+        }
+      });
+    });
   } catch (err) {
     wrap.innerHTML = `<tr><td colspan="6" class="empty">❌ ${err.message || err}</td></tr>`;
     $("unclassifiedCountTag").textContent = `0 筆`;
