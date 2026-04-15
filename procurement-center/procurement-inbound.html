@@ -407,25 +407,30 @@ td .xl{ min-width:210px; width:210px; }
   ];
 
   const NAME_DICT = [
-    [/tri[\s-]?fold/gi, "三折"],
-    [/bifold/gi, "短夾"],
-    [/wallet/gi, "短夾"],
-    [/card holder/gi, "卡夾"],
-    [/card case/gi, "卡夾"],
-    [/coin purse/gi, "零錢包"],
-    [/pouch/gi, "小包"],
-    [/chain bag/gi, "鏈條包"],
-    [/crossbody bag/gi, "斜背包"],
-    [/shoulder bag/gi, "肩背包"],
-    [/tote bag/gi, "托特包"],
-    [/satchel/gi, "手提包"],
-    [/bag/gi, "包"],
-    [/classic/gi, "經典"],
-    [/medium/gi, "中"],
-    [/small/gi, "小"],
-    [/large/gi, "大"],
-    [/logo/gi, "LOGO"]
-  ];
+  [/long zip around wallet/gi, "全拉鍊長夾"],
+  [/zip around wallet/gi, "拉鍊長夾"],
+  [/messenger bag/gi, "郵差包"],
+  [/mini belt bag/gi, "迷你腰包"],
+  [/belt bag/gi, "腰包"],
+  [/sling pack/gi, "胸包"],
+  [/wristlet/gi, "手拿包"],
+  [/card holder/gi, "卡夾"],
+  [/card case/gi, "卡夾"],
+  [/coin purse/gi, "零錢包"],
+  [/crossbody bag/gi, "斜背包"],
+  [/shoulder bag/gi, "肩背包"],
+  [/tote bag/gi, "托特包"],
+  [/satchel/gi, "手提包"],
+  [/bifold/gi, "短夾"],
+  [/wallet/gi, "皮夾"],
+  [/pouch/gi, "小包"],
+  [/bag/gi, "包"],
+  [/classic/gi, "經典"],
+  [/medium/gi, "中"],
+  [/small/gi, "小"],
+  [/large/gi, "大"],
+  [/logo/gi, "LOGO"]
+];
 
   function escapeHtml(str) {
     return String(str || "")
@@ -506,12 +511,62 @@ td .xl{ min-width:210px; width:210px; }
     return out.trim();
   }
 
-    function buildAutoProductName(row) {
-  const nameZh = translateNameDisplay(row?.name || "");
-  const colorZh = translateColorDisplay(row?.color || "");
+    function extractEcomColorLabel(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
 
-  if (nameZh && colorZh) return `${nameZh} ${colorZh}`;
-  return nameZh || colorZh || "";
+  const rules = [
+    [/black gold/i, "黑金"],
+    [/full pink/i, "滿版粉"],
+    [/milk tea/i, "奶茶"],
+    [/dove grey/i, "灰色"],
+    [/charcoal/i, "炭灰"],
+    [/chalk multi/i, "拼色"],
+    [/multi/i, "拼色"],
+    [/coffee/i, "咖啡"],
+    [/brown/i, "咖啡"],
+    [/beige/i, "米色"],
+    [/black/i, "黑色"],
+    [/white/i, "白色"],
+    [/chalk/i, "白色"],
+    [/pink/i, "粉色"],
+    [/red/i, "紅色"],
+    [/blue/i, "藍色"],
+    [/green/i, "綠色"],
+    [/gray/i, "灰色"],
+    [/grey/i, "灰色"],
+    [/purple/i, "紫色"],
+    [/yellow/i, "黃色"],
+    [/orange/i, "橘色"]
+  ];
+
+  for (const [re, label] of rules) {
+    if (re.test(raw)) return label;
+  }
+
+  const parts = raw
+    .split(/[\/,|]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const skipRe = /(leather|canvas|jacquard|coated|signature|smooth|pebbled|refined|polished|crossgrain|glovetanned|gunmetal|silver|gold|brass|hardware)/i;
+  const picked = parts.find(part => !skipRe.test(part)) || parts[parts.length - 1] || raw;
+
+  for (const [re, label] of rules) {
+    if (re.test(picked)) return label;
+  }
+
+  return picked;
+}
+
+function buildAutoProductName(row) {
+  const nameZh = translateNameDisplay(row?.name || "");
+  const colorLabel = extractEcomColorLabel(row?.color || "");
+
+  if (nameZh && colorLabel) return `${nameZh} [${colorLabel}]`;
+  if (nameZh) return nameZh;
+  if (colorLabel) return `[${colorLabel}]`;
+  return "";
 }
 
   function getRowFormValues(rowId, rowObj) {
