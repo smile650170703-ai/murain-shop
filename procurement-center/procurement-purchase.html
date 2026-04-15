@@ -577,9 +577,14 @@ th:nth-child(9), td:nth-child(9){ width:50px; }
         </div>
 
         <div>
-          <label>購買日期</label>
-          <input id="buyDate" type="date" />
-        </div>
+  <label>購買日期</label>
+  <input
+    id="buyDate"
+    type="text"
+    inputmode="numeric"
+    placeholder="例如 2025-06-20 或 2025/06/20"
+  />
+</div>
 
         <input id="packageCode" type="hidden" value="" />
       </div>
@@ -660,6 +665,15 @@ const ITEM_COLS = [
 ];
 
 const MAIN_FIELDS = ["vendor", "orderNo", "usdTotal", "twdAfterTax", "usdRate", "buyDate"];
+
+    function normalizeDateInput(v) {
+  let s = String(v || "").trim();
+  if (!s) return "";
+  s = s.replace(/\./g, "-").replace(/\//g, "-");
+  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!m) return s;
+  return `${m[1]}-${String(m[2]).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`;
+}
 
 function resetPurchaseForm() {
   $("vendor").value = "";
@@ -940,8 +954,8 @@ async function loadRecentPurchases() {
       </div>
     `).join("");
   } catch (err) {
-    wrap.innerHTML = `<div class="bad-empty">需新增 recent-list API 後才會顯示。</div>`;
-  }
+  wrap.innerHTML = `<div class="bad-empty">❌ ${escapeHtml(err.message || String(err))}</div>`;
+}
 }
     function escapeHtml(str) {
       return String(str || "")
@@ -986,11 +1000,11 @@ function createRow(data = {}) {
   const photoWrap = tr.querySelector(".photoPasteWrap");
 
   fileInput.addEventListener("change", () => {
-    const f = fileInput.files && fileInput.files[0];
-    tr._pastedPhotoFile = null;
-    photoUrlInput.value = "";
-    fileName.textContent = f ? f.name : "點此後 Ctrl+V / 可選檔";
-  });
+  const f = fileInput.files && fileInput.files[0];
+  tr._pastedPhotoFile = null;
+  photoUrlInput.value = "";
+  fileName.textContent = f ? "已選擇圖片" : "點此後 Ctrl+V / 可選檔";
+});
 
   photoWrap.addEventListener("paste", (e) => {
     const items = [...(e.clipboardData?.items || [])];
@@ -1003,7 +1017,7 @@ function createRow(data = {}) {
 
     tr._pastedPhotoFile = file;
     photoUrlInput.value = "";
-    fileName.textContent = file.name || "已貼上圖片";
+    fileName.textContent = "已貼上圖片";
   });
 
   photoWrap.addEventListener("keydown", (e) => {
@@ -1196,6 +1210,20 @@ if (vendorEl) {
   const el = $(id);
   if (el) el.addEventListener("input", calcTwd);
 });
+
+const buyDateEl = $("buyDate");
+if (buyDateEl) {
+  buyDateEl.addEventListener("blur", () => {
+    buyDateEl.value = normalizeDateInput(buyDateEl.value);
+  });
+
+  buyDateEl.addEventListener("paste", (e) => {
+    const text = e.clipboardData?.getData("text/plain") || "";
+    if (!text) return;
+    e.preventDefault();
+    buyDateEl.value = normalizeDateInput(text);
+  });
+}
 
 bindMainEnterNav();
 createRow();
