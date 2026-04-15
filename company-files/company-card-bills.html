@@ -467,7 +467,7 @@
                 <th>交易日期</th>
                 <th>交易明細</th>
                 <th>交易金額</th>
-                <th>連結狀態</th>
+                <th>連結操作</th>
               </tr>
             </thead>
             <tbody id="goodsPendingRows"></tbody>
@@ -640,6 +640,7 @@ const API_UNCLASSIFIED = "https://api.murain.tw/op/company/card-bills/unclassifi
 const API_GOODS_PENDING = "https://api.murain.tw/op/company/card-bills/goods-pending-list";
     const API_CREATE = "https://api.murain.tw/op/company/card-bills/create";
     const API_UPDATE = "https://api.murain.tw/op/company/card-bills/update";
+    const API_LINK_SEARCH = "https://api.murain.tw/op/company/card-bills/link-search";
 
     const $ = (id) => document.getElementById(id);
 
@@ -722,6 +723,22 @@ async function buildSummary() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || !data.ok) {
+    throw new Error(data.message || data.error || "API 失敗");
+  }
+  return data;
+}
+
+    async function apiGetWithQuery(url, params = {}) {
+  const u = new URL(url, location.origin);
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && String(v).trim() !== "") {
+      u.searchParams.set(k, String(v));
+    }
+  });
+
+  const r = await fetch(u.toString());
   const data = await r.json().catch(() => ({}));
   if (!r.ok || !data.ok) {
     throw new Error(data.message || data.error || "API 失敗");
@@ -825,14 +842,131 @@ async function renderGoodsPending() {
 
     wrap.innerHTML = list.length ? list.map(r => `
       <tr>
-        <td>${r.bank}</td>
-        <td>${r.month}</td>
-        <td>${r.date}</td>
-        <td>${r.detail}</td>
+        <td>${r.bank || ""}</td>
+        <td>${r.month || ""}</td>
+        <td>${r.date || ""}</td>
+        <td>${r.detail || ""}</td>
         <td>${money(r.amount)}</td>
-        <td><span class="tag brown">待連結</span></td>
+        <td>
+          <div style="display:grid; gap:8px;">
+            <input
+              type="text"
+              class="linkKeyword"
+              data-id="${r.id}"
+              placeholder="輸入採購單編號 / 包裹編號"
+              style="min-width:220px;"
+            />
+
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button
+                class="btn btnSearchPurchase small brown"
+                type="button"
+                data-id="${r.id}"
+              >找採購單</button>
+
+              <button
+                class="btn btnSearchTransfer small secondary"
+                type="button"
+                data-id="${r.id}"
+              >找轉運單</button>
+            </div>
+
+            <div class="linkSearchResults" id="linkResults_${r.id}" style="display:grid; gap:6px;"></div>
+          </div>
+        </td>
       </tr>
     `).join("") : `<tr><td colspan="6" class="empty">目前沒有貨款待連結資料。</td></tr>`;
+
+    async function doSearch(rowId, mode) {
+      const input = document.querySelector(`.linkKeyword[data-id="${rowId}"]`);
+      const resultBox = $(`linkResults_${rowId}`);
+      const keyword = String(input?.value || "").trim();
+
+      if (!keyword) {
+        resultBox.innerHTML = `<div class="empty">請先輸入搜尋關鍵字。</div>`;
+        return;
+      }
+
+      resultBox.innerHTML = `<div class="empty">搜尋中...</div>`;
+
+      try {
+        const data = await apiGetWithQuery(API_LINK_SEARCH, {
+          mode,
+          keyword
+        });
+
+        const rows = Array.isArray(data.rows) ? data.rows : [];
+
+        if (!rows.length) {
+          resultBox.innerHTML = `<div class="empty">查無結果。</div>`;
+          return;
+        }
+
+        resultBox.innerHTML = rows.map(item => `
+          <div style="border:1px solid var(--line); border-radius:12px; padding:10px;">
+            <div style="font-weight:800; margin-bottom:4px;">${item.label || "-"}</div>
+            ${item.sub1 ? `<div style="font-size:13px; color:var(--muted); margin-bottom:2px;">${item.sub1}</div>` : ""}
+            ${item.sub2 ? `<div style="font-size:13px; color:var(--muted); margin-bottom:8px;">${item.sub2}</div>` : ""}
+
+            <button
+              class="btn btnLinkTarget small ${mode === "purchase" ? "brown" : "secondary"}"
+              type="button"
+              data-row-id="${rowId}"
+              data-mode="${mode}"
+              data-target-id="${item.id}"
+            >${mode === "purchase" ? "連結採購單" : "連結轉運單"}</button>
+          </div>
+        `).join("");
+
+        resultBox.querySelectorAll(".btnLinkTarget").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const rowId = btn.dataset.rowId;
+            const targetId = btn.dataset.targetId;
+            const mode = btn.dataset.mode;
+
+            btn.disabled = true;
+            const oldText = btn.textContent;
+            btn.textContent = "連結中...";
+
+            try {
+              if (mode === "purchase") {
+                await apiPost(API_UPDATE, {
+                  id: rowId,
+                  purchase_link_ids: [targetId]
+                });
+              } else {
+                await apiPost(API_UPDATE, {
+                  id: rowId,
+                  transfer_link_ids: [targetId]
+                });
+              }
+
+              await buildSummary();
+              await renderUnclassified();
+              await renderGoodsPending();
+            } catch (err) {
+              alert(`連結失敗：${err.message || err}`);
+              btn.disabled = false;
+              btn.textContent = oldText;
+            }
+          });
+        });
+      } catch (err) {
+        resultBox.innerHTML = `<div class="empty">❌ ${err.message || err}</div>`;
+      }
+    }
+
+    document.querySelectorAll(".btnSearchPurchase").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        await doSearch(btn.dataset.id, "purchase");
+      });
+    });
+
+    document.querySelectorAll(".btnSearchTransfer").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        await doSearch(btn.dataset.id, "transfer");
+      });
+    });
   } catch (err) {
     wrap.innerHTML = `<tr><td colspan="6" class="empty">❌ ${err.message || err}</td></tr>`;
     $("goodsPendingCountTag").textContent = `0 筆`;
