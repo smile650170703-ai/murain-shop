@@ -313,26 +313,11 @@
   </div>
 
   <div class="wrap">
-    <div class="page-head">
-      <div class="page-head-left">
-        <h1>現金支出</h1>
-        <div class="sub">
-          這頁只做分類確認與管理。<br>
-          平常付款資料會先進資料庫，這裡只負責：核對分類 → 確認簽收 → 歷史查詢與統計。
-        </div>
-      </div>
-
-      <div class="page-head-right">
-        <div class="soft-box">
-          <div class="soft-title">這頁流程</div>
-          <div class="soft-text">1. 待處理總覽
-2. 待核對分類清單
-3. 待簽收清單
-4. 歷史查詢
-5. 分類統計</div>
-        </div>
-      </div>
-    </div>
+   <div class="page-head">
+  <div class="page-head-left">
+    <h1>現金支出</h1>
+  </div>
+</div>
 
     <div class="card">
       <div class="split-head">
@@ -350,17 +335,18 @@
 
       <div class="table-wrap">
         <table>
-          <thead>
-            <tr>
-              <th>交易明細備註</th>
-              <th>交易金額</th>
-              <th>交易日期</th>
-              <th>目前分類</th>
-              <th>簽收</th>
-              <th>核對狀態</th>
-              <th>分類操作</th>
-            </tr>
-          </thead>
+         <thead>
+  <tr>
+    <th>交易明細備註</th>
+    <th>拍照/截圖</th>
+    <th>交易金額</th>
+    <th>交易日期</th>
+    <th>目前分類</th>
+    <th>簽收</th>
+    <th>核對狀態</th>
+    <th>分類操作</th>
+  </tr>
+</thead>
           <tbody id="reviewRows"></tbody>
         </table>
       </div>
@@ -455,19 +441,13 @@
               <th>備註</th>
             </tr>
           </thead>
-          <tbody id="historyRows"></tbody>
+          <tbody id="historyRows">
+  <tr><td colspan="8" class="empty">請先設定條件後按查詢。</td></tr>
+</tbody>
         </table>
       </div>
 
-      <div class="msg" id="historyMsg">目前是前端示意資料，下一版再接 Airtable。</div>
-    </div>
-
-    <div class="card">
-      <div class="split-head">
-        <h2 style="margin:0;">5. 分類統計</h2>
-        <span class="tag ok">已完成才列入統計</span>
-      </div>
-      <div class="stats-grid" id="statsGrid"></div>
+      <div class="msg" id="historyMsg"></div>
     </div>
   </div>
 
@@ -573,126 +553,116 @@
     `;
   }
 
-  function renderStats(stats) {
-    const list = Array.isArray(stats) ? stats : [];
-    const map = new Map();
-    CATEGORY_OPTIONS.forEach(c => map.set(c, 0));
-    list.forEach(x => {
-      const cat = String(x.category || "").trim();
-      if (!cat) return;
-      map.set(cat, Number(x.amount || 0) || 0);
+  async function renderSummaryFromApi() {
+  const data = await apiGet(API_SUMMARY);
+  renderSummary(data.summary || {});
+}
+
+async function renderReviewRowsFromApi() {
+  const tbody = $("reviewRows");
+  tbody.innerHTML = `<tr><td colspan="8" class="empty">載入中...</td></tr>`;
+
+  try {
+    const data = await apiGet(API_REVIEW);
+    const list = Array.isArray(data.rows) ? data.rows : [];
+
+    $("reviewCountTag").textContent = `${list.length} 筆`;
+
+    tbody.innerHTML = list.length ? list.map(r => `
+      <tr>
+        <td>${r.detail || ""}</td>
+        <td>
+          ${r.photo ? `
+            <a href="${r.photo}" target="_blank" rel="noopener">
+              <img
+                src="${r.photo}"
+                alt="拍照/截圖"
+                style="width:54px;height:54px;object-fit:cover;border-radius:10px;border:1px solid var(--line);display:block;"
+              />
+            </a>
+          ` : ""}
+        </td>
+        <td>${money(r.amount)}</td>
+        <td>${r.date || ""}</td>
+        <td>${r.category || `<span class="tag warn">未分類</span>`}</td>
+        <td>${r.signed ? `<span class="tag ok">已簽收</span>` : `<span class="tag danger">未簽收</span>`}</td>
+        <td>${r.checked ? `<span class="tag ok">已核對</span>` : `<span class="tag warn">待核對</span>`}</td>
+        <td>
+          <div style="display:grid; gap:8px;">
+            <select class="reviewCategory" data-id="${r.id}">
+              <option value="">請選擇分類</option>
+              ${CATEGORY_OPTIONS.map(c => `<option value="${c}" ${r.category===c?"selected":""}>${c}</option>`).join("")}
+            </select>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button class="btn small brown btnSaveCategory" data-id="${r.id}">儲存分類</button>
+              <button class="btn small secondary btnMarkChecked" data-id="${r.id}">核對完成</button>
+            </div>
+          </div>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="8" class="empty">目前沒有待核對資料。</td></tr>`;
+
+    document.querySelectorAll(".btnSaveCategory").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        const sel = document.querySelector(`.reviewCategory[data-id="${id}"]`);
+        const category = String(sel?.value || "").trim();
+
+        if (!id) return;
+
+        btn.disabled = true;
+        const oldText = btn.textContent;
+        btn.textContent = "儲存中...";
+
+        try {
+          await apiPost(API_UPDATE, {
+            id,
+            category
+          });
+          await refreshAll();
+        } catch (err) {
+          alert(`儲存失敗：${err.message || err}`);
+          btn.disabled = false;
+          btn.textContent = oldText;
+        }
+      });
     });
 
-    $("statsGrid").innerHTML = [...map.entries()].map(([k, v]) => `
-      <div class="summary-card">
-        <h3>${k}</h3>
-        <div class="mini-list">
-          <div class="mini-row"><span>已完成總額</span><strong>${money(v)}</strong></div>
-        </div>
-      </div>
-    `).join("");
-  }
+    document.querySelectorAll(".btnMarkChecked").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        const sel = document.querySelector(`.reviewCategory[data-id="${id}"]`);
+        const category = String(sel?.value || "").trim();
 
-  async function renderSummaryFromApi() {
-    const data = await apiGet(API_SUMMARY);
-    renderSummary(data.summary || {});
-    renderStats(data.stats || []);
-  }
+        if (!id) return;
+        if (!category) {
+          alert("請先選擇正確分類。");
+          return;
+        }
 
-  async function renderReviewRowsFromApi() {
-    const tbody = $("reviewRows");
-    tbody.innerHTML = `<tr><td colspan="7" class="empty">載入中...</td></tr>`;
+        btn.disabled = true;
+        const oldText = btn.textContent;
+        btn.textContent = "更新中...";
 
-    try {
-      const data = await apiGet(API_REVIEW);
-      const list = Array.isArray(data.rows) ? data.rows : [];
-
-      $("reviewCountTag").textContent = `${list.length} 筆`;
-
-      tbody.innerHTML = list.length ? list.map(r => `
-        <tr>
-          <td>${r.detail || ""}</td>
-          <td>${money(r.amount)}</td>
-          <td>${r.date || ""}</td>
-          <td>${r.category || `<span class="tag warn">未分類</span>`}</td>
-          <td>${r.signed ? `<span class="tag ok">已簽收</span>` : `<span class="tag danger">未簽收</span>`}</td>
-          <td>${r.checked ? `<span class="tag ok">已核對</span>` : `<span class="tag warn">待核對</span>`}</td>
-          <td>
-            <div style="display:grid; gap:8px;">
-              <select class="reviewCategory" data-id="${r.id}">
-                <option value="">請選擇分類</option>
-                ${CATEGORY_OPTIONS.map(c => `<option value="${c}" ${r.category===c?"selected":""}>${c}</option>`).join("")}
-              </select>
-              <div style="display:flex; gap:6px; flex-wrap:wrap;">
-                <button class="btn small brown btnSaveCategory" data-id="${r.id}">儲存分類</button>
-                <button class="btn small secondary btnMarkChecked" data-id="${r.id}">核對完成</button>
-              </div>
-            </div>
-          </td>
-        </tr>
-      `).join("") : `<tr><td colspan="7" class="empty">目前沒有待核對資料。</td></tr>`;
-
-      document.querySelectorAll(".btnSaveCategory").forEach(btn => {
-        btn.addEventListener("click", async () => {
-          const id = btn.dataset.id;
-          const sel = document.querySelector(`.reviewCategory[data-id="${id}"]`);
-          const category = String(sel?.value || "").trim();
-
-          if (!id) return;
-
-          btn.disabled = true;
-          const oldText = btn.textContent;
-          btn.textContent = "儲存中...";
-
-          try {
-            await apiPost(API_UPDATE, {
-              id,
-              category
-            });
-            await refreshAll();
-          } catch (err) {
-            alert(`儲存失敗：${err.message || err}`);
-            btn.disabled = false;
-            btn.textContent = oldText;
-          }
-        });
+        try {
+          await apiPost(API_UPDATE, {
+            id,
+            category,
+            checked: true
+          });
+          await refreshAll();
+        } catch (err) {
+          alert(`更新失敗：${err.message || err}`);
+          btn.disabled = false;
+          btn.textContent = oldText;
+        }
       });
-
-      document.querySelectorAll(".btnMarkChecked").forEach(btn => {
-        btn.addEventListener("click", async () => {
-          const id = btn.dataset.id;
-          const sel = document.querySelector(`.reviewCategory[data-id="${id}"]`);
-          const category = String(sel?.value || "").trim();
-
-          if (!id) return;
-          if (!category) {
-            alert("請先選擇正確分類。");
-            return;
-          }
-
-          btn.disabled = true;
-          const oldText = btn.textContent;
-          btn.textContent = "更新中...";
-
-          try {
-            await apiPost(API_UPDATE, {
-              id,
-              category,
-              checked: true
-            });
-            await refreshAll();
-          } catch (err) {
-            alert(`更新失敗：${err.message || err}`);
-            btn.disabled = false;
-            btn.textContent = oldText;
-          }
-        });
-      });
-    } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty">❌ ${err.message || err}</td></tr>`;
-      $("reviewCountTag").textContent = `0 筆`;
-    }
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">❌ ${err.message || err}</td></tr>`;
+    $("reviewCountTag").textContent = `0 筆`;
   }
+}
 
   async function renderSignRowsFromApi() {
     const tbody = $("signRows");
@@ -789,27 +759,32 @@
     }
   }
 
-  async function refreshAll() {
-    await Promise.all([
-      renderSummaryFromApi(),
-      renderReviewRowsFromApi(),
-      renderSignRowsFromApi()
-    ]);
-    await renderHistoryRowsFromApi();
-  }
+async function refreshAll() {
+  await Promise.all([
+    renderSummaryFromApi(),
+    renderReviewRowsFromApi(),
+    renderSignRowsFromApi()
+  ]);
+
+  $("historyRows").innerHTML = `<tr><td colspan="8" class="empty">請先設定條件後按查詢。</td></tr>`;
+  $("historyMsg").textContent = "";
+  $("historyMsg").className = "msg";
+}
 
   $("btnFilter").addEventListener("click", async () => {
     await renderHistoryRowsFromApi();
   });
 
-  $("btnResetFilter").addEventListener("click", async () => {
-    $("filterMonth").value = "";
-    $("filterCategory").value = "";
-    $("filterChecked").value = "";
-    $("filterSigned").value = "";
-    $("filterKeyword").value = "";
-    await renderHistoryRowsFromApi();
-  });
+ $("btnResetFilter").addEventListener("click", () => {
+  $("filterMonth").value = "";
+  $("filterCategory").value = "";
+  $("filterChecked").value = "";
+  $("filterSigned").value = "";
+  $("filterKeyword").value = "";
+  $("historyRows").innerHTML = `<tr><td colspan="8" class="empty">請先設定條件後按查詢。</td></tr>`;
+  $("historyMsg").textContent = "已清除查詢條件。";
+  $("historyMsg").className = "msg ok";
+});
 
   refreshAll();
 </script>
