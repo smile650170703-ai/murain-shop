@@ -255,6 +255,20 @@
       font-size:13px;
       white-space:nowrap;
     }
+    .review-row-selected td{
+  background:#eef6ff;
+}
+.reviewPick{
+  accent-color:#1e90ff;
+}
+.thumb-cell img{
+  width:54px;
+  height:54px;
+  object-fit:cover;
+  border-radius:10px;
+  border:1px solid var(--line);
+  display:block;
+}
 
     .msg{
       white-space:pre-wrap;
@@ -341,14 +355,14 @@
          <thead>
   <tr>
     <th style="width:56px;">勾選</th>
-    <th>交易明細備註</th>
-    <th>拍照/截圖</th>
-    <th>交易金額</th>
-    <th>交易日期</th>
-    <th>目前分類</th>
-    <th>簽收</th>
-    <th>核對狀態</th>
-    <th>分類操作</th>
+    <th style="min-width:240px;">交易明細備註</th>
+    <th style="width:86px;">拍照/截圖</th>
+    <th style="width:120px;">交易金額</th>
+    <th style="width:130px;">交易日期</th>
+    <th style="min-width:180px;">目前分類</th>
+    <th style="width:90px;">簽收</th>
+    <th style="width:90px;">核對狀態</th>
+    <th style="width:260px;">分類操作</th>
   </tr>
 </thead>
           <tbody id="reviewRows"></tbody>
@@ -365,16 +379,17 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr>
-              <th>交易明細備註</th>
-              <th>交易金額</th>
-              <th>交易日期</th>
-              <th>費用支出對象</th>
-              <th>核對狀態</th>
-              <th>簽收狀態</th>
-              <th>操作</th>
-            </tr>
-          </thead>
+  <tr>
+    <th style="min-width:240px;">交易明細備註</th>
+    <th style="width:86px;">拍照/截圖</th>
+    <th style="width:120px;">交易金額</th>
+    <th style="width:130px;">交易日期</th>
+    <th style="min-width:180px;">費用支出對象</th>
+    <th style="width:90px;">核對狀態</th>
+    <th style="width:90px;">簽收狀態</th>
+    <th style="width:120px;">操作</th>
+  </tr>
+</thead>
           <tbody id="signRows"></tbody>
         </table>
       </div>
@@ -577,107 +592,53 @@ async function renderReviewRowsFromApi() {
 
     $("reviewCountTag").textContent = `${list.length} 筆`;
 
-    tbody.innerHTML = list.length ? list.map(r => `
-      <tr>
-        <td>
-          <input type="checkbox" class="reviewPick" data-id="${r.id}" style="width:18px;height:18px;" />
-        </td>
-        <td>${r.detail || ""}</td>
-        <td>
-          ${r.photo ? `
-            <a href="${r.photo}" target="_blank" rel="noopener">
-              <img
-                src="${r.photo}"
-                alt="拍照/截圖"
-                style="width:54px;height:54px;object-fit:cover;border-radius:10px;border:1px solid var(--line);display:block;"
-              />
-            </a>
-          ` : ""}
-        </td>
-        <td>${money(r.amount)}</td>
-        <td>${r.date || ""}</td>
-        <td>${r.category || `<span class="tag warn">未分類</span>`}</td>
-        <td>${r.signed ? `<span class="tag ok">已簽收</span>` : `<span class="tag danger">未簽收</span>`}</td>
-        <td>${r.checked ? `<span class="tag ok">已核對</span>` : `<span class="tag warn">待核對</span>`}</td>
-        <td>
-          <div style="display:grid; gap:8px;">
+    tbody.innerHTML = list.length ? list.map(r => {
+      const isPicked = !!String(r.category || "").trim();
+      return `
+        <tr class="${isPicked ? "review-row-selected" : ""}" data-row-id="${r.id}">
+          <td>
+            <input type="checkbox" class="reviewPick" data-id="${r.id}" ${isPicked ? "checked" : ""} style="width:18px;height:18px;" />
+          </td>
+          <td>${r.detail || ""}</td>
+          <td class="thumb-cell">
+            ${r.photo ? `
+              <a href="${r.photo}" target="_blank" rel="noopener">
+                <img src="${r.photo}" alt="拍照/截圖" />
+              </a>
+            ` : ""}
+          </td>
+          <td>${money(r.amount)}</td>
+          <td>${r.date || ""}</td>
+          <td>${r.category || `<span class="tag warn">未分類</span>`}</td>
+          <td>${r.signed ? `<span class="tag ok">已簽收</span>` : `<span class="tag danger">未簽收</span>`}</td>
+          <td>${r.checked ? `<span class="tag ok">已核對</span>` : `<span class="tag warn">待核對</span>`}</td>
+          <td>
             <select class="reviewCategory" data-id="${r.id}">
               <option value="">請選擇分類</option>
               ${CATEGORY_OPTIONS.map(c => `<option value="${c}" ${r.category===c?"selected":""}>${c}</option>`).join("")}
             </select>
-            <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              <button class="btn small brown btnSaveCategory" data-id="${r.id}">儲存分類</button>
-              <button class="btn small secondary btnMarkChecked" data-id="${r.id}">核對完成</button>
-            </div>
-          </div>
-        </td>
-      </tr>
-    `).join("") : `<tr><td colspan="9" class="empty">目前沒有待核對資料。</td></tr>`;
+          </td>
+        </tr>
+      `;
+    }).join("") : `<tr><td colspan="9" class="empty">目前沒有待核對資料。</td></tr>`;
 
     document.querySelectorAll(".reviewCategory").forEach(sel => {
       sel.addEventListener("change", () => {
         const id = sel.dataset.id;
         const pick = document.querySelector(`.reviewPick[data-id="${id}"]`);
-        if (pick && String(sel.value || "").trim()) {
-          pick.checked = true;
-        }
+        const tr = document.querySelector(`tr[data-row-id="${id}"]`);
+        const hasValue = !!String(sel.value || "").trim();
+
+        if (pick) pick.checked = hasValue;
+        if (tr) tr.classList.toggle("review-row-selected", hasValue);
       });
     });
 
-    document.querySelectorAll(".btnSaveCategory").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const id = btn.dataset.id;
-        const sel = document.querySelector(`.reviewCategory[data-id="${id}"]`);
-        const category = String(sel?.value || "").trim();
-
-        if (!id) return;
-
-        btn.disabled = true;
-        const oldText = btn.textContent;
-        btn.textContent = "儲存中...";
-
-        try {
-          await apiPost(API_UPDATE, {
-            id,
-            category
-          });
-          await refreshAll();
-        } catch (err) {
-          alert(`儲存失敗：${err.message || err}`);
-          btn.disabled = false;
-          btn.textContent = oldText;
-        }
-      });
-    });
-
-    document.querySelectorAll(".btnMarkChecked").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const id = btn.dataset.id;
-        const sel = document.querySelector(`.reviewCategory[data-id="${id}"]`);
-        const category = String(sel?.value || "").trim();
-
-        if (!id) return;
-        if (!category) {
-          alert("請先選擇正確分類。");
-          return;
-        }
-
-        btn.disabled = true;
-        const oldText = btn.textContent;
-        btn.textContent = "更新中...";
-
-        try {
-          await apiPost(API_UPDATE, {
-            id,
-            category,
-            checked: true
-          });
-          await refreshAll();
-        } catch (err) {
-          alert(`更新失敗：${err.message || err}`);
-          btn.disabled = false;
-          btn.textContent = oldText;
-        }
+    document.querySelectorAll(".reviewPick").forEach(ck => {
+      ck.addEventListener("change", () => {
+        const id = ck.dataset.id;
+        const tr = document.querySelector(`tr[data-row-id="${id}"]`);
+        if (tr) tr.classList.toggle("review-row-selected", ck.checked);
       });
     });
 
@@ -726,57 +687,64 @@ async function renderReviewRowsFromApi() {
   }
 }
 
-  async function renderSignRowsFromApi() {
-    const tbody = $("signRows");
-    tbody.innerHTML = `<tr><td colspan="7" class="empty">載入中...</td></tr>`;
+async function renderSignRowsFromApi() {
+  const tbody = $("signRows");
+  tbody.innerHTML = `<tr><td colspan="8" class="empty">載入中...</td></tr>`;
 
-    try {
-      const data = await apiGet(API_SIGN);
-      const list = Array.isArray(data.rows) ? data.rows : [];
+  try {
+    const data = await apiGet(API_SIGN);
+    const list = Array.isArray(data.rows) ? data.rows : [];
 
-      $("signCountTag").textContent = `${list.length} 筆`;
+    $("signCountTag").textContent = `${list.length} 筆`;
 
-      tbody.innerHTML = list.length ? list.map(r => `
-        <tr>
-          <td>${r.detail || ""}</td>
-          <td>${money(r.amount)}</td>
-          <td>${r.date || ""}</td>
-          <td>${r.category || ""}</td>
-          <td><span class="tag ok">已核對</span></td>
-          <td><span class="tag danger">未簽收</span></td>
-          <td>
-            <button class="btn small brown btnMarkSigned" data-id="${r.id}">標記已簽收</button>
-          </td>
-        </tr>
-      `).join("") : `<tr><td colspan="7" class="empty">目前沒有待簽收資料。</td></tr>`;
+    tbody.innerHTML = list.length ? list.map(r => `
+      <tr>
+        <td>${r.detail || ""}</td>
+        <td class="thumb-cell">
+          ${r.photo ? `
+            <a href="${r.photo}" target="_blank" rel="noopener">
+              <img src="${r.photo}" alt="拍照/截圖" />
+            </a>
+          ` : ""}
+        </td>
+        <td>${money(r.amount)}</td>
+        <td>${r.date || ""}</td>
+        <td>${r.category || ""}</td>
+        <td><span class="tag ok">已核對</span></td>
+        <td><span class="tag danger">未簽收</span></td>
+        <td>
+          <button class="btn small brown btnMarkSigned" data-id="${r.id}">標記已簽收</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="8" class="empty">目前沒有待簽收資料。</td></tr>`;
 
-      document.querySelectorAll(".btnMarkSigned").forEach(btn => {
-        btn.addEventListener("click", async () => {
-          const id = btn.dataset.id;
-          if (!id) return;
+    document.querySelectorAll(".btnMarkSigned").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const id = btn.dataset.id;
+        if (!id) return;
 
-          btn.disabled = true;
-          const oldText = btn.textContent;
-          btn.textContent = "更新中...";
+        btn.disabled = true;
+        const oldText = btn.textContent;
+        btn.textContent = "更新中...";
 
-          try {
-            await apiPost(API_UPDATE, {
-              id,
-              signed: true
-            });
-            await refreshAll();
-          } catch (err) {
-            alert(`更新失敗：${err.message || err}`);
-            btn.disabled = false;
-            btn.textContent = oldText;
-          }
-        });
+        try {
+          await apiPost(API_UPDATE, {
+            id,
+            signed: true
+          });
+          await refreshAll();
+        } catch (err) {
+          alert(`更新失敗：${err.message || err}`);
+          btn.disabled = false;
+          btn.textContent = oldText;
+        }
       });
-    } catch (err) {
-      tbody.innerHTML = `<tr><td colspan="7" class="empty">❌ ${err.message || err}</td></tr>`;
-      $("signCountTag").textContent = `0 筆`;
-    }
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">❌ ${err.message || err}</td></tr>`;
+    $("signCountTag").textContent = `0 筆`;
   }
+}
 
   async function renderHistoryRowsFromApi() {
     const month = $("filterMonth").value.trim();
