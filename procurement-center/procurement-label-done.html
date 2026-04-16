@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>列印完成｜採購／到貨入庫中心</title>
+  <title>列印紀錄｜採購／到貨入庫中心</title>
   <style>
     :root{
       --bg:#f5f7fb;
@@ -113,7 +113,7 @@
     }
     .grid{
       display:grid;
-      grid-template-columns:repeat(4,minmax(0,1fr));
+      grid-template-columns:repeat(3,minmax(0,1fr));
       gap:14px;
     }
     .toolbar{
@@ -193,34 +193,6 @@
       font-size:13px;
       white-space:nowrap;
     }
-    .badge{
-      display:inline-flex;
-      align-items:center;
-      padding:8px 12px;
-      border-radius:999px;
-      background:#eef6ff;
-      border:1px solid #cfe3ff;
-      color:#0f3f8c;
-      font-size:13px;
-      font-weight:700;
-    }
-    .batch-list{
-      display:grid;
-      gap:10px;
-    }
-    .batch-item{
-      border:1px solid var(--line);
-      border-radius:14px;
-      padding:12px 14px;
-      background:#fff;
-    }
-    .batch-top{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-      margin-bottom:6px;
-    }
     .msg{
       white-space:pre-wrap;
       line-height:1.7;
@@ -233,6 +205,20 @@
       color:var(--muted);
       font-size:14px;
       padding:10px 0;
+    }
+    .card-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+      margin-bottom:10px;
+    }
+    .link-btn{
+      text-decoration:none;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
     }
     @media (max-width: 1100px){
       .grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -262,7 +248,7 @@
       <a class="proc-tab" href="/procurement-center/procurement-transfer.html">包裹／轉運</a>
       <a class="proc-tab" href="/procurement-center/procurement-inbound.html">待入庫</a>
       <a class="proc-tab" href="/procurement-center/procurement-label-print.html">標籤列印</a>
-      <a class="proc-tab is-active" href="/procurement-center/procurement-label-done.html">列印完成</a>
+      <a class="proc-tab is-active" href="/procurement-center/procurement-label-done.html">列印紀錄</a>
       <a class="proc-tab is-disabled" href="javascript:void(0)">保留</a>
     </div>
   </div>
@@ -270,23 +256,23 @@
   <div class="wrap">
     <div class="page-head">
       <div class="page-head-left">
-        <h1>列印完成</h1>
+        <h1>列印紀錄</h1>
         <div class="sub">
-          這一頁處理：<br>
-          查詢列印完成批次、看哪些已完成、回查資料。
+          這一頁只保留查詢用途：<br>
+          查看最近列印紀錄、用批次或關鍵字回查資料。
         </div>
       </div>
 
       <div class="page-head-right">
         <div class="soft-box">
           <div class="soft-title">使用方式</div>
-          <div class="soft-text">可直接輸入列印批次查單一批，也可空白查最近完成批次。</div>
+          <div class="soft-text">可直接輸入列印批次查單一批，也可空白查最近列印紀錄。</div>
         </div>
       </div>
     </div>
 
     <div class="card">
-      <h2>1. 查詢條件</h2>
+      <h2>查詢條件</h2>
       <div class="grid">
         <div>
           <label>列印批次</label>
@@ -297,27 +283,23 @@
           <input id="keyword" placeholder="搜尋新條碼 / 品牌 / 商品名稱 / 名稱" />
         </div>
         <div>
-          <label>每次顯示筆數</label>
-          <input id="limit" type="number" value="50" min="1" max="200" />
-        </div>
-        <div>
           <label>&nbsp;</label>
           <div class="toolbar" style="margin-top:0;">
             <button class="btn secondary" type="button" id="btnSearch">查詢</button>
+            <button class="btn" type="button" id="btnReset">清空</button>
           </div>
         </div>
       </div>
     </div>
 
     <div class="card">
-      <h2>2. 完成批次</h2>
-      <div id="batchList" class="batch-list">
-        <div class="empty">尚未查詢</div>
+      <div class="card-head">
+        <h2 style="margin:0;">列印紀錄明細</h2>
+        <a class="btn secondary link-btn" href="/procurement-center/procurement-label-print.html">回標籤列印</a>
       </div>
-    </div>
 
-    <div class="card">
-      <h2>3. 完成明細</h2>
+      <div id="msg" class="msg" style="margin-bottom:12px;">尚未查詢</div>
+
       <div class="table-wrap">
         <table>
           <thead>
@@ -335,11 +317,6 @@
           <tbody id="rows"></tbody>
         </table>
       </div>
-    </div>
-
-    <div class="card">
-      <h2>4. 執行結果</h2>
-      <div id="msg" class="msg">尚未查詢</div>
     </div>
   </div>
 
@@ -380,33 +357,11 @@
       return data;
     }
 
-    function renderBatchList(list) {
-      const wrap = $("batchList");
-      const rows = Array.isArray(list) ? list : [];
-
-      if (!rows.length) {
-        wrap.innerHTML = `<div class="empty">目前沒有符合的完成批次。</div>`;
-        return;
-      }
-
-      wrap.innerHTML = rows.map(row => `
-        <div class="batch-item">
-          <div class="batch-top">
-            <strong>${escapeHtml(row.batch || "-")}</strong>
-            <span class="badge">完成 ${escapeHtml(row.count || 0)} 筆</span>
-          </div>
-          <div class="sub">
-            完成時間：${escapeHtml(row.completedAt || "-")}
-          </div>
-        </div>
-      `).join("");
-    }
-
     function renderRows(list) {
       const rows = Array.isArray(list) ? list : [];
 
       if (!rows.length) {
-        rowsEl.innerHTML = `<tr><td colspan="8"><div class="empty">目前沒有完成明細。</div></td></tr>`;
+        rowsEl.innerHTML = `<tr><td colspan="8"><div class="empty">目前沒有列印紀錄。</div></td></tr>`;
         return;
       }
 
@@ -427,7 +382,7 @@
     async function loadDoneList() {
       const batch = $("batch").value.trim();
       const keyword = $("keyword").value.trim();
-      const limit = $("limit").value.trim() || "50";
+      const limit = "50";
 
       setMsg("查詢中...");
 
@@ -435,20 +390,26 @@
         const url = `${API_LIST}?batch=${encodeURIComponent(batch)}&keyword=${encodeURIComponent(keyword)}&limit=${encodeURIComponent(limit)}`;
         const data = await apiGet(url);
 
-        renderBatchList(data.batches || []);
         renderRows(data.rows || []);
-        setMsg("✅ 查詢完成", "ok");
+        setMsg(`✅ 查詢完成，共 ${Array.isArray(data.rows) ? data.rows.length : 0} 筆`, "ok");
       } catch (err) {
-        renderBatchList([]);
         renderRows([]);
         setMsg(`❌ ${err.message || err}`, "err");
       }
     }
 
     $("btnSearch").addEventListener("click", loadDoneList);
+
+    $("btnReset").addEventListener("click", () => {
+      $("batch").value = "";
+      $("keyword").value = "";
+      loadDoneList();
+    });
+
     $("batch").addEventListener("keydown", (e) => {
       if (e.key === "Enter") loadDoneList();
     });
+
     $("keyword").addEventListener("keydown", (e) => {
       if (e.key === "Enter") loadDoneList();
     });
