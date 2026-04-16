@@ -727,11 +727,10 @@
 <div class="toolbar">
   <div id="statusText" class="status">先選模式，再按「新增一列」開始批次輸入。</div>
   <div class="actions" style="margin-top:0;">
-    <button id="btnAddRow" class="btn btn-secondary" type="button">新增一列</button>
-    <button id="btnDownloadLabelExcel" class="btn btn-excel" type="button">下載標籤 Excel</button>
-    <button id="btnSubmitAll" class="btn btn-success" type="button">確認送出</button>
-    <button id="btnClearDrafts" class="btn btn-danger" type="button">清空本次清單</button>
-  </div>
+  <button id="btnAddRow" class="btn btn-secondary" type="button">新增一列</button>
+  <button id="btnExportAndSubmit" class="btn btn-success" type="button">下載標籤 Excel＋確認送出</button>
+  <button id="btnClearDrafts" class="btn btn-danger" type="button">清空本次清單</button>
+</div>
 </div>
 
       <div class="table-wrap">
@@ -916,8 +915,7 @@ sourceType: $('sourceType'),
 draftTableHead: $('draftTableHead'),
 draftTableBody: $('draftTableBody'),
 btnAddRow: $('btnAddRow'),
-btnDownloadLabelExcel: $('btnDownloadLabelExcel'),
-btnSubmitAll: $('btnSubmitAll'),
+btnExportAndSubmit: $('btnExportAndSubmit'),
 btnClearDrafts: $('btnClearDrafts'),
 submitError: $('submitError'),
             btnNewConsignor: $('btnNewConsignor'),
@@ -1430,26 +1428,31 @@ function renderDraftCell(row, rowIndex, col) {
     extraAttrs.push(`list="draftSubCategoryList"`);
   }
 
-  const attrs = [
-    `class="${inputClass}"`,
-    `style="${widthStyle}"`,
-    `type="${col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}"`,
-    `value="${escapeHtml(value)}"`,
-    col.placeholder ? `placeholder="${escapeHtml(col.placeholder)}"` : '',
-    col.readonly ? 'readonly' : '',
-    col.type === 'number' ? 'min="0" step="1"' : '',
-    col.paste ? `data-row-index="${rowIndex}" data-paste-key="${col.key}"` : '',
-    ...extraAttrs,
-    !col.readonly
-      ? `oninput="window.__updateDraft('${escapeHtml(row.id)}','${col.key}',${col.type === 'number' ? 'Number(this.value || 0)' : 'this.value'})"`
-      : '',
-    !col.readonly
-      ? `onblur="window.__refreshDraftUi()"`
-      : '',
-    !col.readonly && col.type === 'date'
-      ? `onchange="window.__refreshDraftUi()"`
-      : ''
-  ].filter(Boolean).join(' ');
+const attrs = [
+  `class="${inputClass}"`,
+  `style="${widthStyle}"`,
+  `type="${col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}"`,
+  `value="${escapeHtml(value)}"`,
+  col.placeholder ? `placeholder="${escapeHtml(col.placeholder)}"` : '',
+  col.readonly ? 'readonly' : '',
+  col.type === 'number' ? 'min="0" step="1"' : '',
+  `data-row-index="${rowIndex}"`,
+  `data-col-key="${col.key}"`,
+  col.paste ? `data-paste-key="${col.key}"` : '',
+  ...extraAttrs,
+  !col.readonly
+    ? `oninput="window.__updateDraft('${escapeHtml(row.id)}','${col.key}',${col.type === 'number' ? 'Number(this.value || 0)' : 'this.value'})"`
+    : '',
+  !col.readonly
+    ? `onblur="window.__refreshDraftUi()"`
+    : '',
+  !col.readonly
+    ? `onkeydown="window.__handleDraftKeydown(event)"`
+    : '',
+  !col.readonly && col.type === 'date'
+    ? `onchange="window.__refreshDraftUi()"`
+    : ''
+].filter(Boolean).join(' ');
 
   return `<input ${attrs} />`;
 }
@@ -1520,6 +1523,34 @@ async function handleDraftTablePaste(e) {
 
   saveDrafts();
   renderDrafts();
+}
+    async function handleDraftKeydown(e) {
+  if (e.key !== 'Enter') return;
+
+  const target = e.target;
+  if (!target) return;
+
+  const colKey = String(target.dataset.colKey || '');
+  if (colKey !== 'sub_category') return;
+
+  e.preventDefault();
+
+  const currentRow = Number(target.dataset.rowIndex || 0);
+  let nextInput = el.draftTableBody.querySelector(
+    `input[data-row-index="${currentRow + 1}"][data-col-key="sub_category"]`
+  );
+
+  if (!nextInput) {
+    await addBlankRow();
+    nextInput = el.draftTableBody.querySelector(
+      `input[data-row-index="${currentRow + 1}"][data-col-key="sub_category"]`
+    );
+  }
+
+  if (nextInput) {
+    nextInput.focus();
+    nextInput.select?.();
+  }
 }
 
 function buildPayload(row) {
@@ -1669,7 +1700,7 @@ function downloadLabelExcel() {
 
   if (!state.drafts.length) {
     showError(el.submitError, '目前沒有可下載的標籤資料');
-    return;
+    return false;
   }
 
   const isOwnMode = state.mode === 'own';
@@ -1678,31 +1709,41 @@ function downloadLabelExcel() {
     const ownRows = state.drafts.filter(row => String(row.商品來源 || '') === '自有');
     if (!ownRows.length) {
       showError(el.submitError, '目前沒有自有入庫資料可下載');
-      return;
+      return false;
     }
 
     const expandedRows = buildOwnLabelRows(ownRows);
     if (!expandedRows.length) {
       showError(el.submitError, '自有入庫的數量需大於 0 才能產生標籤');
-      return;
+      return false;
     }
 
     const headers = ['SKU', 'Name', 'Price', 'StockQty', 'sub_category'];
     const html = buildExcelHtml(headers, expandedRows, '自有入庫標籤');
     downloadExcelFile(`自有入庫標籤_${labelFileDate()}.xls`, html);
-    return;
+    return true;
   }
 
   const consignRows = state.drafts.filter(row => String(row.商品來源 || '') === '寄賣');
   if (!consignRows.length) {
     showError(el.submitError, '目前沒有寄賣入庫資料可下載');
-    return;
+    return false;
   }
 
-const exportRows = buildConsignLabelRows(consignRows);
-const headers = ['SKU', '商品名稱', '建議售價', '起標價格', '一標多少', '分類'];
-const html = buildExcelHtml(headers, exportRows, '寄賣入庫標籤');
-downloadExcelFile(`寄賣入庫標籤_${labelFileDate()}.xls`, html);
+  const exportRows = buildConsignLabelRows(consignRows);
+  const headers = ['SKU', '商品名稱', '建議售價', '起標價格', '一標多少', '分類'];
+  const html = buildExcelHtml(headers, exportRows, '寄賣入庫標籤');
+  downloadExcelFile(`寄賣入庫標籤_${labelFileDate()}.xls`, html);
+  return true;
+}
+
+async function exportAndSubmit() {
+  showError(el.submitError, '');
+
+  const ok = downloadLabelExcel();
+  if (!ok) return;
+
+  await submitAll();
 }
 
     async function submitAll() {
@@ -2062,10 +2103,15 @@ async function saveConsignor() {
   }
 }
 
-    window.__pickMember = (idx) => pickMember(state.memberResults[idx] || {});
+   window.__pickMember = (idx) => pickMember(state.memberResults[idx] || {});
 window.__updateDraft = (id, key, value) => updateDraft(id, key, value);
 window.__refreshDraftUi = () => refreshDraftUi();
 window.__removeDraft = (id) => removeDraft(id);
+window.__handleDraftKeydown = (e) => {
+  handleDraftKeydown(e).catch(err => {
+    showError(el.submitError, err.message || '切換下一列失敗');
+  });
+};
 
     el.btnModeOwn.addEventListener('click', () => setMode('own'));
     el.btnModeConsign.addEventListener('click', () => setMode('consign'));
@@ -2073,8 +2119,7 @@ el.btnAddDraft.addEventListener('click', addDraft);
 el.btnAddRow.addEventListener('click', addBlankRow);
 el.btnClearForm.addEventListener('click', () => clearForm(true));
 el.btnClearDrafts.addEventListener('click', clearDrafts);
-el.btnDownloadLabelExcel.addEventListener('click', downloadLabelExcel);
-el.btnSubmitAll.addEventListener('click', submitAll);
+el.btnExportAndSubmit.addEventListener('click', exportAndSubmit);
 el.draftTableBody.addEventListener('paste', (e) => {
   handleDraftTablePaste(e).catch(err => {
     showError(el.submitError, err.message || '貼上失敗');
