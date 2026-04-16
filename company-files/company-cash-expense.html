@@ -471,152 +471,147 @@
     </div>
   </div>
 
-  <script>
-    const STORAGE_OK = "company_entry_ok";
-    if (sessionStorage.getItem(STORAGE_OK) !== "1") {
-      location.href = "/company-files/company-index.html";
+<script>
+  const STORAGE_OK = "company_entry_ok";
+  if (sessionStorage.getItem(STORAGE_OK) !== "1") {
+    location.href = "/company-files/company-index.html";
+  }
+
+  const API_SUMMARY = "https://api.murain.tw/op/company/cash-expense/summary";
+  const API_REVIEW = "https://api.murain.tw/op/company/cash-expense/review-list";
+  const API_SIGN = "https://api.murain.tw/op/company/cash-expense/sign-list";
+  const API_UPDATE = "https://api.murain.tw/op/company/cash-expense/update";
+  const API_LIST = "https://api.murain.tw/op/company/cash-expense/list";
+
+  const CATEGORY_OPTIONS = [
+    "公司🟥 - 妹妹",
+    "公司🟫 - LUMI",
+    "借支💰 - 妹妹",
+    "借支💰 - LUMI",
+    "✨ 不用入 對帳用 + 台中貨款",
+    "公司 - 妹妹 - 運費"
+  ];
+
+  const $ = (id) => document.getElementById(id);
+
+  function money(n) {
+    const v = Number(n || 0) || 0;
+    return `NT$ ${v.toLocaleString("zh-TW")}`;
+  }
+
+  function monthText(dateStr) {
+    const s = String(dateStr || "").trim().replace(/月/g, "");
+    const m = s.match(/^(\d{4})-(\d{2})/);
+    return m ? `${m[1]}-${m[2]}` : s;
+  }
+
+  async function apiGet(url) {
+    const r = await fetch(url);
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok) {
+      throw new Error(data.message || data.error || "API 失敗");
     }
+    return data;
+  }
 
-    const CATEGORY_OPTIONS = [
-      "公司🟥 - 妹妹",
-      "公司🟫 - LUMI",
-      "借支💰 - 妹妹",
-      "借支💰 - LUMI",
-      "✨ 不用入 對帳用 + 台中貨款",
-      "公司 - 妹妹 - 運費"
-    ];
+  async function apiPost(url, payload) {
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok) {
+      throw new Error(data.message || data.error || "API 失敗");
+    }
+    return data;
+  }
 
-    let rows = [
-      {
-        id: "1",
-        detail: "捐保 圓形貼紙",
-        amount: 163,
-        date: "2025-11-25",
-        category: "公司🟫 - LUMI",
-        checked: true,
-        signed: true,
-        note: ""
-      },
-      {
-        id: "2",
-        detail: "淘寶聖誕節",
-        amount: 1132,
-        date: "2025-11-26",
-        category: "公司🟫 - LUMI",
-        checked: true,
-        signed: true,
-        note: ""
-      },
-      {
-        id: "3",
-        detail: "新家鑰匙兩隻",
-        amount: 200,
-        date: "2025-12-04",
-        category: "公司🟥 - 妹妹",
-        checked: true,
-        signed: true,
-        note: ""
-      },
-      {
-        id: "4",
-        detail: "從郵局借支1萬",
-        amount: 10000,
-        date: "2025-12-07",
-        category: "借支💰 - 妹妹",
-        checked: true,
-        signed: false,
-        note: ""
-      },
-      {
-        id: "5",
-        detail: "從農會轉貨款給台中",
-        amount: 30000,
-        date: "2025-12-08",
-        category: "✨ 不用入 對帳用 + 台中貨款",
-        checked: true,
-        signed: true,
-        note: ""
-      },
-      {
-        id: "6",
-        detail: "10/6 120運費 運費60 10/18 運費...",
-        amount: 1676,
-        date: "2025-11-25",
-        category: "公司 - 妹妹 - 運費",
-        checked: false,
-        signed: true,
-        note: ""
-      },
-      {
-        id: "7",
-        detail: "現金支出待分類示意",
-        amount: 754,
-        date: "2025-11-30",
-        category: "",
-        checked: false,
-        signed: false,
-        note: ""
+  async function apiGetWithQuery(url, params = {}) {
+    const u = new URL(url, location.origin);
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && String(v).trim() !== "") {
+        u.searchParams.set(k, String(v));
       }
-    ];
+    });
 
-    const $ = (id) => document.getElementById(id);
-
-    function money(n) {
-      const v = Number(n || 0) || 0;
-      return `NT$ ${v.toLocaleString("zh-TW")}`;
+    const r = await fetch(u.toString());
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok) {
+      throw new Error(data.message || data.error || "API 失敗");
     }
+    return data;
+  }
 
-    function monthText(dateStr) {
-      const s = String(dateStr || "").trim();
-      const m = s.match(/^(\d{4})-(\d{2})/);
-      return m ? `${m[1]}-${m[2]}` : "";
-    }
+  function renderSummary(summary) {
+    const s = summary || {};
+    $("summaryGrid").innerHTML = `
+      <div class="summary-card">
+        <h3>待核對</h3>
+        <div class="mini-list">
+          <div class="mini-row"><span>筆數</span><strong>${Number(s.reviewCount || 0)}</strong></div>
+        </div>
+      </div>
+      <div class="summary-card">
+        <h3>待簽收</h3>
+        <div class="mini-list">
+          <div class="mini-row"><span>筆數</span><strong>${Number(s.signCount || 0)}</strong></div>
+        </div>
+      </div>
+      <div class="summary-card">
+        <h3>本月已完成</h3>
+        <div class="mini-list">
+          <div class="mini-row"><span>總額</span><strong>${money(s.thisMonthDoneTotal || 0)}</strong></div>
+        </div>
+      </div>
+      <div class="summary-card">
+        <h3>全部已完成</h3>
+        <div class="mini-list">
+          <div class="mini-row"><span>總額</span><strong>${money(s.doneTotal || 0)}</strong></div>
+        </div>
+      </div>
+    `;
+  }
 
-    function renderSummary() {
-      const reviewCount = rows.filter(r => !r.checked || !r.category).length;
-      const signCount = rows.filter(r => r.checked && !r.signed).length;
-      const doneRows = rows.filter(r => r.checked && r.signed);
-      const monthNow = new Date().toISOString().slice(0, 7);
-      const thisMonthTotal = doneRows
-        .filter(r => monthText(r.date) === monthNow)
-        .reduce((sum, r) => sum + Number(r.amount || 0), 0);
-      const doneTotal = doneRows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  function renderStats(stats) {
+    const list = Array.isArray(stats) ? stats : [];
+    const map = new Map();
+    CATEGORY_OPTIONS.forEach(c => map.set(c, 0));
+    list.forEach(x => {
+      const cat = String(x.category || "").trim();
+      if (!cat) return;
+      map.set(cat, Number(x.amount || 0) || 0);
+    });
 
-      $("summaryGrid").innerHTML = `
-        <div class="summary-card">
-          <h3>待核對</h3>
-          <div class="mini-list">
-            <div class="mini-row"><span>筆數</span><strong>${reviewCount}</strong></div>
-          </div>
+    $("statsGrid").innerHTML = [...map.entries()].map(([k, v]) => `
+      <div class="summary-card">
+        <h3>${k}</h3>
+        <div class="mini-list">
+          <div class="mini-row"><span>已完成總額</span><strong>${money(v)}</strong></div>
         </div>
-        <div class="summary-card">
-          <h3>待簽收</h3>
-          <div class="mini-list">
-            <div class="mini-row"><span>筆數</span><strong>${signCount}</strong></div>
-          </div>
-        </div>
-        <div class="summary-card">
-          <h3>本月已完成</h3>
-          <div class="mini-list">
-            <div class="mini-row"><span>總額</span><strong>${money(thisMonthTotal)}</strong></div>
-          </div>
-        </div>
-        <div class="summary-card">
-          <h3>全部已完成</h3>
-          <div class="mini-list">
-            <div class="mini-row"><span>總額</span><strong>${money(doneTotal)}</strong></div>
-          </div>
-        </div>
-      `;
-    }
+      </div>
+    `).join("");
+  }
 
-    function renderReviewRows() {
-      const list = rows.filter(r => !r.checked || !r.category);
+  async function renderSummaryFromApi() {
+    const data = await apiGet(API_SUMMARY);
+    renderSummary(data.summary || {});
+    renderStats(data.stats || []);
+  }
+
+  async function renderReviewRowsFromApi() {
+    const tbody = $("reviewRows");
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">載入中...</td></tr>`;
+
+    try {
+      const data = await apiGet(API_REVIEW);
+      const list = Array.isArray(data.rows) ? data.rows : [];
+
       $("reviewCountTag").textContent = `${list.length} 筆`;
 
-      $("reviewRows").innerHTML = list.length ? list.map(r => `
+      tbody.innerHTML = list.length ? list.map(r => `
         <tr>
-          <td>${r.detail}</td>
+          <td>${r.detail || ""}</td>
           <td>${money(r.amount)}</td>
           <td>${r.date || ""}</td>
           <td>${r.category || `<span class="tag warn">未分類</span>`}</td>
@@ -638,38 +633,80 @@
       `).join("") : `<tr><td colspan="7" class="empty">目前沒有待核對資料。</td></tr>`;
 
       document.querySelectorAll(".btnSaveCategory").forEach(btn => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", async () => {
           const id = btn.dataset.id;
-          const sel = document.querySelector(\`.reviewCategory[data-id="\${id}"]\`);
-          const row = rows.find(x => x.id === id);
-          if (!row || !sel) return;
-          row.category = sel.value.trim();
-          renderAll();
+          const sel = document.querySelector(`.reviewCategory[data-id="${id}"]`);
+          const category = String(sel?.value || "").trim();
+
+          if (!id) return;
+
+          btn.disabled = true;
+          const oldText = btn.textContent;
+          btn.textContent = "儲存中...";
+
+          try {
+            await apiPost(API_UPDATE, {
+              id,
+              category
+            });
+            await refreshAll();
+          } catch (err) {
+            alert(`儲存失敗：${err.message || err}`);
+            btn.disabled = false;
+            btn.textContent = oldText;
+          }
         });
       });
 
       document.querySelectorAll(".btnMarkChecked").forEach(btn => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", async () => {
           const id = btn.dataset.id;
-          const row = rows.find(x => x.id === id);
-          if (!row) return;
-          if (!row.category) {
+          const sel = document.querySelector(`.reviewCategory[data-id="${id}"]`);
+          const category = String(sel?.value || "").trim();
+
+          if (!id) return;
+          if (!category) {
             alert("請先選擇正確分類。");
             return;
           }
-          row.checked = true;
-          renderAll();
+
+          btn.disabled = true;
+          const oldText = btn.textContent;
+          btn.textContent = "更新中...";
+
+          try {
+            await apiPost(API_UPDATE, {
+              id,
+              category,
+              checked: true
+            });
+            await refreshAll();
+          } catch (err) {
+            alert(`更新失敗：${err.message || err}`);
+            btn.disabled = false;
+            btn.textContent = oldText;
+          }
         });
       });
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty">❌ ${err.message || err}</td></tr>`;
+      $("reviewCountTag").textContent = `0 筆`;
     }
+  }
 
-    function renderSignRows() {
-      const list = rows.filter(r => r.checked && !r.signed);
+  async function renderSignRowsFromApi() {
+    const tbody = $("signRows");
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">載入中...</td></tr>`;
+
+    try {
+      const data = await apiGet(API_SIGN);
+      const list = Array.isArray(data.rows) ? data.rows : [];
+
       $("signCountTag").textContent = `${list.length} 筆`;
 
-      $("signRows").innerHTML = list.length ? list.map(r => `
+      tbody.innerHTML = list.length ? list.map(r => `
         <tr>
-          <td>${r.detail}</td>
+          <td>${r.detail || ""}</td>
           <td>${money(r.amount)}</td>
           <td>${r.date || ""}</td>
           <td>${r.category || ""}</td>
@@ -682,97 +719,99 @@
       `).join("") : `<tr><td colspan="7" class="empty">目前沒有待簽收資料。</td></tr>`;
 
       document.querySelectorAll(".btnMarkSigned").forEach(btn => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", async () => {
           const id = btn.dataset.id;
-          const row = rows.find(x => x.id === id);
-          if (!row) return;
-          row.signed = true;
-          renderAll();
+          if (!id) return;
+
+          btn.disabled = true;
+          const oldText = btn.textContent;
+          btn.textContent = "更新中...";
+
+          try {
+            await apiPost(API_UPDATE, {
+              id,
+              signed: true
+            });
+            await refreshAll();
+          } catch (err) {
+            alert(`更新失敗：${err.message || err}`);
+            btn.disabled = false;
+            btn.textContent = oldText;
+          }
         });
       });
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7" class="empty">❌ ${err.message || err}</td></tr>`;
+      $("signCountTag").textContent = `0 筆`;
     }
+  }
 
-    function renderHistoryRows(list) {
+  async function renderHistoryRowsFromApi() {
+    const month = $("filterMonth").value.trim();
+    const category = $("filterCategory").value.trim();
+    const checked = $("filterChecked").value.trim();
+    const signed = $("filterSigned").value.trim();
+    const keyword = $("filterKeyword").value.trim();
+
+    $("historyRows").innerHTML = `<tr><td colspan="8" class="empty">載入中...</td></tr>`;
+
+    try {
+      const data = await apiGetWithQuery(API_LIST, {
+        month,
+        category,
+        checked,
+        signed,
+        keyword,
+        max: 200
+      });
+
+      const list = Array.isArray(data.rows) ? data.rows : [];
+
       $("historyRows").innerHTML = list.length ? list.map(r => `
         <tr>
-          <td>${r.detail}</td>
+          <td>${r.detail || ""}</td>
           <td>${money(r.amount)}</td>
           <td>${r.date || ""}</td>
           <td>${r.category || ""}</td>
           <td>${r.checked ? "已核對" : "未核對"}</td>
           <td>${r.signed ? "已簽收" : "未簽收"}</td>
-          <td>${monthText(r.date)}</td>
+          <td>${r.month || ""}</td>
           <td>${r.note || ""}</td>
         </tr>
       `).join("") : `<tr><td colspan="8" class="empty">目前沒有資料。</td></tr>`;
-    }
 
-    function renderStats() {
-      const groups = new Map();
-      CATEGORY_OPTIONS.forEach(c => groups.set(c, 0));
-
-      rows.forEach(r => {
-        if (!r.checked || !r.signed || !r.category) return;
-        groups.set(r.category, (groups.get(r.category) || 0) + Number(r.amount || 0));
-      });
-
-      $("statsGrid").innerHTML = [...groups.entries()].map(([k,v]) => `
-        <div class="summary-card">
-          <h3>${k}</h3>
-          <div class="mini-list">
-            <div class="mini-row"><span>已完成總額</span><strong>${money(v)}</strong></div>
-          </div>
-        </div>
-      `).join("");
-    }
-
-    function renderAll() {
-      renderSummary();
-      renderReviewRows();
-      renderSignRows();
-      renderHistoryRows(rows);
-      renderStats();
-    }
-
-    $("btnFilter").addEventListener("click", () => {
-      const month = $("filterMonth").value.trim();
-      const category = $("filterCategory").value.trim();
-      const checked = $("filterChecked").value.trim();
-      const signed = $("filterSigned").value.trim();
-      const keyword = $("filterKeyword").value.trim().toLowerCase();
-
-      const filtered = rows.filter(r => {
-        if (month && monthText(r.date) !== month) return false;
-        if (category && r.category !== category) return false;
-        if (checked === "yes" && !r.checked) return false;
-        if (checked === "no" && r.checked) return false;
-        if (signed === "yes" && !r.signed) return false;
-        if (signed === "no" && r.signed) return false;
-
-        if (keyword) {
-          const hay = [r.detail, r.note, r.amount, r.category, r.date].join(" ").toLowerCase();
-          if (!hay.includes(keyword)) return false;
-        }
-        return true;
-      });
-
-      renderHistoryRows(filtered);
-      $("historyMsg").textContent = `✅ 查到 ${filtered.length} 筆`;
+      $("historyMsg").textContent = `✅ 查到 ${list.length} 筆`;
       $("historyMsg").className = "msg ok";
-    });
+    } catch (err) {
+      $("historyRows").innerHTML = `<tr><td colspan="8" class="empty">❌ ${err.message || err}</td></tr>`;
+      $("historyMsg").textContent = `❌ ${err.message || err}`;
+      $("historyMsg").className = "msg err";
+    }
+  }
 
-    $("btnResetFilter").addEventListener("click", () => {
-      $("filterMonth").value = "";
-      $("filterCategory").value = "";
-      $("filterChecked").value = "";
-      $("filterSigned").value = "";
-      $("filterKeyword").value = "";
-      renderHistoryRows(rows);
-      $("historyMsg").textContent = "已清除查詢條件。";
-      $("historyMsg").className = "msg ok";
-    });
+  async function refreshAll() {
+    await Promise.all([
+      renderSummaryFromApi(),
+      renderReviewRowsFromApi(),
+      renderSignRowsFromApi()
+    ]);
+    await renderHistoryRowsFromApi();
+  }
 
-    renderAll();
-  </script>
+  $("btnFilter").addEventListener("click", async () => {
+    await renderHistoryRowsFromApi();
+  });
+
+  $("btnResetFilter").addEventListener("click", async () => {
+    $("filterMonth").value = "";
+    $("filterCategory").value = "";
+    $("filterChecked").value = "";
+    $("filterSigned").value = "";
+    $("filterKeyword").value = "";
+    await renderHistoryRowsFromApi();
+  });
+
+  refreshAll();
+</script>
 </body>
 </html>
