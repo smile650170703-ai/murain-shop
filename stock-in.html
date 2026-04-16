@@ -98,6 +98,28 @@
       color: var(--orange);
       border-color: #fed7aa;
     }
+    .mode-btn.active.patch {
+  background: var(--green-weak);
+  color: var(--green);
+  border-color: #a7f3d0;
+}
+
+.patch-card {
+  border: 1px dashed #86efac;
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+}
+
+.patch-result-box {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #d1fae5;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.patch-result-box .grid {
+  margin-top: 8px;
+}
 
     .card {
       background: var(--card);
@@ -580,9 +602,10 @@
     </div>
 
     <div class="mode-bar">
-      <button id="btnModeOwn" class="mode-btn own active" type="button">自有入庫</button>
-      <button id="btnModeConsign" class="mode-btn consign" type="button">寄賣入庫</button>
-    </div>
+  <button id="btnModeOwn" class="mode-btn own active" type="button">自有入庫</button>
+  <button id="btnModeConsign" class="mode-btn consign" type="button">寄賣入庫</button>
+  <button id="btnModePatch" class="mode-btn patch" type="button">補資料</button>
+</div>
 
     <div id="memberSearchCard" class="card member-box">
       <div class="card-header">
@@ -712,8 +735,56 @@
 
       <div id="formError" class="error"></div>
     </div>
+    <div id="patchCard" class="card patch-card hidden">
+  <div class="card-header">
+    <div>
+      <h2 class="card-title">2️⃣ 補資料</h2>
+      <p class="hint">輸入條碼後查詢商品，可直接補「庫存位置」。</p>
+    </div>
+    <div class="badge-row">
+      <div class="badge green">補資料模式：不影響原本入庫流程</div>
+    </div>
+  </div>
 
-    <div class="card">
+  <div class="search-grid">
+    <input id="patchSku" type="text" placeholder="請輸入條碼，例如 1234567890 / C000123" />
+    <button id="btnPatchSearch" class="btn btn-search" type="button">查詢條碼</button>
+  </div>
+
+  <div id="patchSearchError" class="error"></div>
+
+  <div id="patchResultBox" class="patch-result-box hidden">
+    <div class="grid">
+      <div class="field span-4">
+        <label for="patchSkuView">條碼</label>
+        <input id="patchSkuView" type="text" readonly />
+      </div>
+
+      <div class="field span-8">
+        <label for="patchNameView">商品名稱</label>
+        <input id="patchNameView" type="text" readonly />
+      </div>
+
+      <div class="field span-6">
+        <label for="patchLocationOld">目前庫存位置</label>
+        <input id="patchLocationOld" type="text" readonly />
+      </div>
+
+      <div class="field span-6">
+        <label for="patchLocationNew">新庫存位置</label>
+        <input id="patchLocationNew" type="text" placeholder="例如：11號櫃 / A-2 / 倉庫6號" />
+      </div>
+    </div>
+
+    <div class="actions" style="margin-top:14px;">
+      <button id="btnPatchSave" class="btn btn-success" type="button">儲存庫存位置</button>
+    </div>
+
+    <div id="patchSaveError" class="error"></div>
+  </div>
+</div>
+
+    <div id="draftsCard" class="card">
       <div class="card-header">
         <div>
           <h2 class="card-title">2️⃣ 正式入庫表</h2>
@@ -860,6 +931,10 @@ const CONFIG = {
   createBatchUrl: 'https://api.murain.tw/op/products/stock-in/batch',
   createItemUrl: '',
   nextSkuUrl: 'https://api.murain.tw/op/products/next-sku',
+
+  searchProductUrl: 'https://api.murain.tw/op/products/by-sku',
+  updateProductLocationUrl: 'https://api.murain.tw/op/products/location/update',
+
   requestHeaders: {
     'Content-Type': 'application/json'
   }
@@ -874,15 +949,20 @@ const state = {
   memberResults: [],
   selectedLineMember: null,
   selectedConsignor: null,
-  selectedConsignorRecordId: ''
+  selectedConsignorRecordId: '',
+  patchProduct: null
 };
 
     const $ = (id) => document.getElementById(id);
 
     const el = {
-      btnModeOwn: $('btnModeOwn'),
-      btnModeConsign: $('btnModeConsign'),
-      memberSearchCard: $('memberSearchCard'),
+  btnModeOwn: $('btnModeOwn'),
+  btnModeConsign: $('btnModeConsign'),
+  btnModePatch: $('btnModePatch'),
+
+  memberSearchCard: $('memberSearchCard'),
+  patchCard: $('patchCard'),
+  draftsCard: $('draftsCard'),
       memberKeyword: $('memberKeyword'),
       btnSearchMember: $('btnSearchMember'),
       memberResults: $('memberResults'),
@@ -944,6 +1024,17 @@ consignorContractPhotosPreview: $('consignorContractPhotosPreview'),
 liveScreenshotField: $('liveScreenshotField'),
 liveScreenshot: $('liveScreenshot'),
 liveScreenshotPreview: $('liveScreenshotPreview')
+      ,
+  patchSku: $('patchSku'),
+  btnPatchSearch: $('btnPatchSearch'),
+  patchSearchError: $('patchSearchError'),
+  patchResultBox: $('patchResultBox'),
+  patchSkuView: $('patchSkuView'),
+  patchNameView: $('patchNameView'),
+  patchLocationOld: $('patchLocationOld'),
+  patchLocationNew: $('patchLocationNew'),
+  btnPatchSave: $('btnPatchSave'),
+  patchSaveError: $('patchSaveError')
     };
 
     function loadDrafts() {
@@ -981,22 +1072,62 @@ liveScreenshotPreview: $('liveScreenshotPreview')
       target.classList.toggle('active', !!msg);
     }
 
+function resetPatchUi(clearKeyword = false) {
+  state.patchProduct = null;
+
+  if (clearKeyword) {
+    el.patchSku.value = '';
+  }
+
+  el.patchResultBox.classList.add('hidden');
+  el.patchSkuView.value = '';
+  el.patchNameView.value = '';
+  el.patchLocationOld.value = '';
+  el.patchLocationNew.value = '';
+  showError(el.patchSearchError, '');
+  showError(el.patchSaveError, '');
+}
+
+function renderPatchProduct(product) {
+  state.patchProduct = product || null;
+
+  if (!product) {
+    resetPatchUi(false);
+    return;
+  }
+
+  const sku = String(product.SKU || product.sku || '').trim();
+  const name = String(product.Name || product.name || '').trim();
+  const location = String(product['庫存位置'] || product.location || '').trim();
+
+  el.patchResultBox.classList.remove('hidden');
+  el.patchSkuView.value = sku;
+  el.patchNameView.value = name;
+  el.patchLocationOld.value = location;
+  el.patchLocationNew.value = location;
+  showError(el.patchSaveError, '');
+}
+
 function setMode(mode) {
   state.mode = mode;
   localStorage.setItem(MODE_KEY, mode);
 
   const isOwn = mode === 'own';
   const isConsign = mode === 'consign';
+  const isPatch = mode === 'patch';
 
   el.btnModeOwn.classList.toggle('active', isOwn);
   el.btnModeConsign.classList.toggle('active', isConsign);
+  el.btnModePatch.classList.toggle('active', isPatch);
+
   el.memberSearchCard.classList.toggle('active', isConsign);
+  el.patchCard.classList.toggle('hidden', !isPatch);
+  el.draftsCard.classList.toggle('hidden', isPatch);
 
   el.sourceType.value = isOwn ? '自有' : '寄賣';
   el.sourceBadge.textContent = `目前模式：${isOwn ? '自有' : '寄賣'}`;
   el.sourceBadge.className = `badge ${isOwn ? 'blue' : 'orange'}`;
 
-  // 上方單筆區雖然隱藏，資料狀態還是同步
   el.originBarcodeField.classList.add('hidden');
   el.costField.classList.toggle('hidden', isConsign);
   el.consignorField.classList.toggle('hidden', isOwn);
@@ -1035,9 +1166,142 @@ function setMode(mode) {
     el.btnEditConsignor.classList.add('hidden');
   }
 
+  if (isPatch) {
+    resetPatchUi(false);
+    showError(el.formError, '');
+    showError(el.submitError, '');
+  }
+
   renderDrafts();
   showError(el.formError, '');
   showError(el.submitError, '');
+}
+    async function searchProductBySku() {
+  const sku = String(el.patchSku.value || '').trim();
+  showError(el.patchSearchError, '');
+  showError(el.patchSaveError, '');
+
+  if (!sku) {
+    showError(el.patchSearchError, '請先輸入條碼');
+    return;
+  }
+
+  if (!CONFIG.searchProductUrl) {
+    showError(el.patchSearchError, '尚未設定 searchProductUrl');
+    return;
+  }
+
+  el.btnPatchSearch.disabled = true;
+  el.btnPatchSearch.textContent = '查詢中...';
+
+  try {
+    const resp = await fetch(CONFIG.searchProductUrl, {
+      method: 'POST',
+      headers: CONFIG.requestHeaders,
+      body: JSON.stringify({
+        op_key: CONFIG.opKey,
+        sku
+      })
+    });
+
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || data.ok === false) {
+      throw new Error(
+        data.detail ||
+        data.message ||
+        data.error ||
+        `查詢失敗：HTTP ${resp.status}`
+      );
+    }
+
+    const product = data.product || data.item || data.record || null;
+    if (!product) {
+      throw new Error('查無此條碼');
+    }
+
+    renderPatchProduct(product);
+  } catch (err) {
+    resetPatchUi(false);
+    showError(el.patchSearchError, err.message || '查詢失敗');
+  } finally {
+    el.btnPatchSearch.disabled = false;
+    el.btnPatchSearch.textContent = '查詢條碼';
+  }
+}
+
+async function savePatchLocation() {
+  showError(el.patchSaveError, '');
+
+  const sku = String(el.patchSkuView.value || el.patchSku.value || '').trim();
+  const newLocation = String(el.patchLocationNew.value || '').trim();
+
+  if (!state.patchProduct) {
+    showError(el.patchSaveError, '請先查詢條碼');
+    return;
+  }
+
+  if (!sku) {
+    showError(el.patchSaveError, '缺少條碼');
+    return;
+  }
+
+  if (!newLocation) {
+    showError(el.patchSaveError, '請輸入新庫存位置');
+    return;
+  }
+
+  if (!CONFIG.updateProductLocationUrl) {
+    showError(el.patchSaveError, '尚未設定 updateProductLocationUrl');
+    return;
+  }
+
+  el.btnPatchSave.disabled = true;
+  el.btnPatchSave.textContent = '儲存中...';
+
+  try {
+    const resp = await fetch(CONFIG.updateProductLocationUrl, {
+      method: 'POST',
+      headers: CONFIG.requestHeaders,
+      body: JSON.stringify({
+        op_key: CONFIG.opKey,
+        sku,
+        location: newLocation
+      })
+    });
+
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || data.ok === false) {
+      throw new Error(
+        data.detail ||
+        data.message ||
+        data.error ||
+        `更新失敗：HTTP ${resp.status}`
+      );
+    }
+
+    const updatedProduct = {
+      ...(state.patchProduct || {}),
+      SKU: sku,
+      Name: String(
+        (data.product && (data.product.Name || data.product.name)) ||
+        state.patchProduct?.Name ||
+        state.patchProduct?.name ||
+        ''
+      ),
+      '庫存位置': newLocation,
+      location: newLocation
+    };
+
+    renderPatchProduct(updatedProduct);
+    alert(`已更新 ${sku} 的庫存位置`);
+  } catch (err) {
+    showError(el.patchSaveError, err.message || '更新失敗');
+  } finally {
+    el.btnPatchSave.disabled = false;
+    el.btnPatchSave.textContent = '儲存庫存位置';
+  }
 }
     function formatCSku(no) {
   return `C${String(no).padStart(6, '0')}`;
@@ -2136,6 +2400,18 @@ window.__handleDraftKeydown = (e) => {
 
     el.btnModeOwn.addEventListener('click', () => setMode('own'));
     el.btnModeConsign.addEventListener('click', () => setMode('consign'));
+    el.btnModePatch.addEventListener('click', () => setMode('patch'));
+
+el.btnPatchSearch.addEventListener('click', searchProductBySku);
+el.btnPatchSave.addEventListener('click', savePatchLocation);
+
+el.patchSku.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') searchProductBySku();
+});
+
+el.patchLocationNew.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') savePatchLocation();
+});
 el.btnAddDraft.addEventListener('click', addDraft);
 el.btnAddRow.addEventListener('click', addBlankRow);
 el.btnClearForm.addEventListener('click', () => clearForm(true));
