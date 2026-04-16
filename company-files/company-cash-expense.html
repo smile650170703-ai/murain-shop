@@ -328,15 +328,19 @@
     </div>
 
     <div class="card">
-      <div class="split-head">
-        <h2 style="margin:0;">2. 待核對分類清單</h2>
-        <span class="tag warn" id="reviewCountTag">0 筆</span>
-      </div>
+     <div class="split-head">
+  <h2 style="margin:0;">2. 待核對分類清單</h2>
+  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <span class="tag warn" id="reviewCountTag">0 筆</span>
+    <button class="btn brown small" type="button" id="btnBatchSaveCheck">儲存分類＋核對完成</button>
+  </div>
+</div>
 
       <div class="table-wrap">
         <table>
          <thead>
   <tr>
+    <th style="width:56px;">勾選</th>
     <th>交易明細備註</th>
     <th>拍照/截圖</th>
     <th>交易金額</th>
@@ -390,14 +394,16 @@
         <div>
           <label>費用支出對象</label>
           <select id="filterCategory">
-            <option value="">全部</option>
-            <option value="公司🟥 - 妹妹">公司🟥 - 妹妹</option>
-            <option value="公司🟫 - LUMI">公司🟫 - LUMI</option>
-            <option value="借支💰 - 妹妹">借支💰 - 妹妹</option>
-            <option value="借支💰 - LUMI">借支💰 - LUMI</option>
-            <option value="✨ 不用入 對帳用 + 台中貨款">✨ 不用入 對帳用 + 台中貨款</option>
-            <option value="公司 - 妹妹 - 運費">公司 - 妹妹 - 運費</option>
-          </select>
+  <option value="">全部</option>
+  <option value="公司🟥 - 妹妹">公司🟥 - 妹妹</option>
+  <option value="公司🟫 - LUMI">公司🟫 - LUMI</option>
+  <option value="公司🟫 - 貨款">公司🟫 - 貨款</option>
+  <option value="借支💰 - 妹妹">借支💰 - 妹妹</option>
+  <option value="借支💰 - LUMI">借支💰 - LUMI</option>
+  <option value="✨ 不用入 對帳用">✨ 不用入 對帳用</option>
+  <option value="✨ 不用入台中貨款">✨ 不用入台中貨款</option>
+  <option value="公司 - 妹妹 - 運費">公司 - 妹妹 - 運費</option>
+</select>
         </div>
         <div>
           <label>核對狀態</label>
@@ -464,13 +470,16 @@
   const API_LIST = "https://api.murain.tw/op/company/cash-expense/list";
 
   const CATEGORY_OPTIONS = [
-    "公司🟥 - 妹妹",
-    "公司🟫 - LUMI",
-    "借支💰 - 妹妹",
-    "借支💰 - LUMI",
-    "✨ 不用入 對帳用 + 台中貨款",
-    "公司 - 妹妹 - 運費"
-  ];
+  "公司🟥 - 妹妹",
+  "公司🟫 - LUMI",
+  "公司🟫 - 貨款",
+  "借支💰 - 妹妹",
+  "借支💰 - LUMI",
+  "✨ 不用入 對帳用",
+  "✨ 不用入台中貨款",
+  "公司 - 妹妹 - 運費"
+];
+
 
   const $ = (id) => document.getElementById(id);
 
@@ -560,7 +569,7 @@
 
 async function renderReviewRowsFromApi() {
   const tbody = $("reviewRows");
-  tbody.innerHTML = `<tr><td colspan="8" class="empty">載入中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="9" class="empty">載入中...</td></tr>`;
 
   try {
     const data = await apiGet(API_REVIEW);
@@ -570,6 +579,9 @@ async function renderReviewRowsFromApi() {
 
     tbody.innerHTML = list.length ? list.map(r => `
       <tr>
+        <td>
+          <input type="checkbox" class="reviewPick" data-id="${r.id}" style="width:18px;height:18px;" />
+        </td>
         <td>${r.detail || ""}</td>
         <td>
           ${r.photo ? `
@@ -600,7 +612,17 @@ async function renderReviewRowsFromApi() {
           </div>
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="8" class="empty">目前沒有待核對資料。</td></tr>`;
+    `).join("") : `<tr><td colspan="9" class="empty">目前沒有待核對資料。</td></tr>`;
+
+    document.querySelectorAll(".reviewCategory").forEach(sel => {
+      sel.addEventListener("change", () => {
+        const id = sel.dataset.id;
+        const pick = document.querySelector(`.reviewPick[data-id="${id}"]`);
+        if (pick && String(sel.value || "").trim()) {
+          pick.checked = true;
+        }
+      });
+    });
 
     document.querySelectorAll(".btnSaveCategory").forEach(btn => {
       btn.addEventListener("click", async () => {
@@ -658,8 +680,48 @@ async function renderReviewRowsFromApi() {
         }
       });
     });
+
+    const batchBtn = $("btnBatchSaveCheck");
+    if (batchBtn) {
+      batchBtn.onclick = async () => {
+        const picked = [...document.querySelectorAll(".reviewPick:checked")];
+
+        if (!picked.length) {
+          alert("請先勾選要處理的列。");
+          return;
+        }
+
+        const payloads = [];
+        for (const ck of picked) {
+          const id = ck.dataset.id;
+          const sel = document.querySelector(`.reviewCategory[data-id="${id}"]`);
+          const category = String(sel?.value || "").trim();
+
+          if (!category) {
+            alert("勾選列中有未選分類的資料，請先選好分類。");
+            return;
+          }
+
+          payloads.push({ id, category, checked: true });
+        }
+
+        batchBtn.disabled = true;
+        const oldText = batchBtn.textContent;
+        batchBtn.textContent = "處理中...";
+
+        try {
+          await Promise.all(payloads.map(p => apiPost(API_UPDATE, p)));
+          await refreshAll();
+        } catch (err) {
+          alert(`批次更新失敗：${err.message || err}`);
+        } finally {
+          batchBtn.disabled = false;
+          batchBtn.textContent = oldText;
+        }
+      };
+    }
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty">❌ ${err.message || err}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">❌ ${err.message || err}</td></tr>`;
     $("reviewCountTag").textContent = `0 筆`;
   }
 }
