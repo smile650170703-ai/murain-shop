@@ -360,8 +360,6 @@
     <th style="width:120px;">交易金額</th>
     <th style="width:130px;">交易日期</th>
     <th style="min-width:180px;">目前分類</th>
-    <th style="width:90px;">簽收</th>
-    <th style="width:90px;">核對狀態</th>
     <th style="width:260px;">分類操作</th>
   </tr>
 </thead>
@@ -372,22 +370,23 @@
 
     <div class="card">
       <div class="split-head">
-        <h2 style="margin:0;">3. 待簽收清單</h2>
-        <span class="tag danger" id="signCountTag">0 筆</span>
-      </div>
+  <h2 style="margin:0;">3. 待簽收清單</h2>
+  <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+    <span class="tag danger" id="signCountTag">0 筆</span>
+    <button class="btn brown small" type="button" id="btnBatchSigned">標記已簽收</button>
+  </div>
+</div>
 
       <div class="table-wrap">
         <table>
           <thead>
   <tr>
+    <th style="width:56px;">勾選</th>
     <th style="min-width:240px;">交易明細備註</th>
     <th style="width:86px;">拍照/截圖</th>
     <th style="width:120px;">交易金額</th>
     <th style="width:130px;">交易日期</th>
     <th style="min-width:180px;">費用支出對象</th>
-    <th style="width:90px;">核對狀態</th>
-    <th style="width:90px;">簽收狀態</th>
-    <th style="width:120px;">操作</th>
   </tr>
 </thead>
           <tbody id="signRows"></tbody>
@@ -584,7 +583,7 @@
 
 async function renderReviewRowsFromApi() {
   const tbody = $("reviewRows");
-  tbody.innerHTML = `<tr><td colspan="9" class="empty">載入中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="7" class="empty">載入中...</td></tr>`;
 
   try {
     const data = await apiGet(API_REVIEW);
@@ -610,8 +609,6 @@ async function renderReviewRowsFromApi() {
           <td>${money(r.amount)}</td>
           <td>${r.date || ""}</td>
           <td>${r.category || `<span class="tag warn">未分類</span>`}</td>
-          <td>${r.signed ? `<span class="tag ok">已簽收</span>` : `<span class="tag danger">未簽收</span>`}</td>
-          <td>${r.checked ? `<span class="tag ok">已核對</span>` : `<span class="tag warn">待核對</span>`}</td>
           <td>
             <select class="reviewCategory" data-id="${r.id}">
               <option value="">請選擇分類</option>
@@ -620,7 +617,7 @@ async function renderReviewRowsFromApi() {
           </td>
         </tr>
       `;
-    }).join("") : `<tr><td colspan="9" class="empty">目前沒有待核對資料。</td></tr>`;
+    }).join("") : `<tr><td colspan="7" class="empty">目前沒有待核對資料。</td></tr>`;
 
     document.querySelectorAll(".reviewCategory").forEach(sel => {
       sel.addEventListener("change", () => {
@@ -682,14 +679,14 @@ async function renderReviewRowsFromApi() {
       };
     }
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="9" class="empty">❌ ${err.message || err}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">❌ ${err.message || err}</td></tr>`;
     $("reviewCountTag").textContent = `0 筆`;
   }
 }
 
 async function renderSignRowsFromApi() {
   const tbody = $("signRows");
-  tbody.innerHTML = `<tr><td colspan="8" class="empty">載入中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="6" class="empty">載入中...</td></tr>`;
 
   try {
     const data = await apiGet(API_SIGN);
@@ -698,7 +695,10 @@ async function renderSignRowsFromApi() {
     $("signCountTag").textContent = `${list.length} 筆`;
 
     tbody.innerHTML = list.length ? list.map(r => `
-      <tr>
+      <tr class="signDataRow" data-row-id="${r.id}">
+        <td>
+          <input type="checkbox" class="signPick" data-id="${r.id}" style="width:18px;height:18px;" />
+        </td>
         <td>${r.detail || ""}</td>
         <td class="thumb-cell">
           ${r.photo ? `
@@ -710,38 +710,58 @@ async function renderSignRowsFromApi() {
         <td>${money(r.amount)}</td>
         <td>${r.date || ""}</td>
         <td>${r.category || ""}</td>
-        <td><span class="tag ok">已核對</span></td>
-        <td><span class="tag danger">未簽收</span></td>
-        <td>
-          <button class="btn small brown btnMarkSigned" data-id="${r.id}">標記已簽收</button>
-        </td>
       </tr>
-    `).join("") : `<tr><td colspan="8" class="empty">目前沒有待簽收資料。</td></tr>`;
+    `).join("") : `<tr><td colspan="6" class="empty">目前沒有待簽收資料。</td></tr>`;
 
-    document.querySelectorAll(".btnMarkSigned").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const id = btn.dataset.id;
-        if (!id) return;
-
-        btn.disabled = true;
-        const oldText = btn.textContent;
-        btn.textContent = "更新中...";
-
-        try {
-          await apiPost(API_UPDATE, {
-            id,
-            signed: true
-          });
-          await refreshAll();
-        } catch (err) {
-          alert(`更新失敗：${err.message || err}`);
-          btn.disabled = false;
-          btn.textContent = oldText;
-        }
+    document.querySelectorAll(".signPick").forEach(ck => {
+      ck.addEventListener("change", () => {
+        const tr = ck.closest("tr");
+        if (tr) tr.classList.toggle("review-row-selected", ck.checked);
       });
     });
+
+    document.querySelectorAll(".signDataRow").forEach(tr => {
+      tr.addEventListener("click", (e) => {
+        if (e.target.closest("a") || e.target.closest("input")) return;
+        const ck = tr.querySelector(".signPick");
+        if (!ck) return;
+        ck.checked = !ck.checked;
+        tr.classList.toggle("review-row-selected", ck.checked);
+      });
+    });
+
+    const batchBtn = $("btnBatchSigned");
+    if (batchBtn) {
+      batchBtn.onclick = async () => {
+        const picked = [...document.querySelectorAll(".signPick:checked")];
+
+        if (!picked.length) {
+          alert("請先勾選要簽收的列。");
+          return;
+        }
+
+        const payloads = picked.map(ck => ({
+          id: ck.dataset.id,
+          signed: true
+        }));
+
+        batchBtn.disabled = true;
+        const oldText = batchBtn.textContent;
+        batchBtn.textContent = "處理中...";
+
+        try {
+          await Promise.all(payloads.map(p => apiPost(API_UPDATE, p)));
+          await refreshAll();
+        } catch (err) {
+          alert(`批次更新失敗：${err.message || err}`);
+        } finally {
+          batchBtn.disabled = false;
+          batchBtn.textContent = oldText;
+        }
+      };
+    }
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty">❌ ${err.message || err}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" class="empty">❌ ${err.message || err}</td></tr>`;
     $("signCountTag").textContent = `0 筆`;
   }
 }
