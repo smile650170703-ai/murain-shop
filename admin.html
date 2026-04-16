@@ -353,7 +353,6 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   一時貿易
 </button>
  <button class="filter-btn" id="btnCartOpenTop" type="button">🛒 未結單購物車</button>
-<button class="filter-btn" id="btnBankPendingTop" type="button">🏦 匯款待提醒</button>
 </div>
 <div class="filter-row">
     <div class="field">
@@ -458,9 +457,6 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
         </button>
        <button class="btn-secondary" id="btnCartRemindTop" type="button" style="display:none;">
   🛒 提醒目前購物車清單
-</button>
-<button class="btn-secondary" id="btnBankRemindTop" type="button" style="display:none;">
-  🏦 提醒目前匯款清單
 </button>
       </div>
 
@@ -977,14 +973,69 @@ refreshTopShortcutBadges();
     okText = '僅顯示「已收款(pay_status = paid_ok) 且 運費 TWD 未填寫」的訂單。';
   }
 
-  else if (mode === 'remind_today'){
-    rows = rows.filter(rec => {
+else if (mode === 'remind_today'){
+  const nowMs = Date.now();
+  const H24 = 24 * 60 * 60 * 1000;
+  const H48 = 48 * 60 * 60 * 1000;
+
+  const isBankPm = (pm) => [
+    'atm_full',
+    'atm_deposit',
+    'atm_full_tail',
+    'bank_transfer',
+    'deposit_new',
+    'deposit_old',
+    'deposit_new_partial',
+    'deposit_old_partial',
+    'deposit_new_full',
+    'deposit_old_full',
+    'deposit_new_full_711',
+    'deposit_new_full_post'
+  ].includes(String(pm || '').trim().toLowerCase());
+
+  rows = rows
+    .filter(rec => {
       const f = rec.fields || rec || {};
-      return String(f.pay_status || '').toLowerCase() === 'pending';
+      const ps = String(f.pay_status || '').toLowerCase();
+      const pm = String(f.payment_method || '').toLowerCase();
+      return ps === 'pending' && isBankPm(pm);
+    })
+    .map(rec => {
+      const f = rec.fields || rec || {};
+      const createdMs =
+        Date.parse(String(f.created_at || '')) ||
+        Date.parse(String(f.updated_at || '')) ||
+        0;
+
+      const overdueMs = createdMs ? (nowMs - createdMs) : 0;
+      const overdue24 = overdueMs >= H24;
+      const overdue48 = overdueMs >= H48;
+
+      return {
+        ...rec,
+        __overdue24: overdue24,
+        __overdue48: overdue48,
+        __sortOverdue: overdue48 ? 2 : overdue24 ? 1 : 0,
+        __createdMs: createdMs || 0
+      };
+    })
+    .sort((a, b) => {
+      const sa = Number(a.__sortOverdue || 0);
+      const sb = Number(b.__sortOverdue || 0);
+      if (sb !== sa) return sb - sa;
+      return Number(a.__createdMs || 0) - Number(b.__createdMs || 0);
     });
-    emptyText = '目前沒有「付款狀態＝待確認」的訂單。';
-    okText = '僅顯示「付款狀態＝待確認(pay_status = pending)」的訂單。';
+
+  emptyText = '目前沒有「匯款待確認」的訂單。';
+  okText = `僅顯示「匯款／訂金匯款，且 pay_status = pending」的訂單。共 ${rows.length} 筆。`;
+
+  const over48 = rows.filter(x => x.__overdue48).length;
+  const over24 = rows.filter(x => !x.__overdue48 && x.__overdue24).length;
+
+  if (over48 || over24) {
+    okText += `　🔴 逾 48h：${over48} 筆　🟠 逾 24h：${over24} 筆`;
   }
+}
 
   else if (mode === 'pickup_need'){
     rows = rows.filter(rec => {
@@ -1067,10 +1118,7 @@ function fmtAdminDateTime(v){
 
 function setBatchActionMode(mode = 'none'){
   const btnCart = $('#btnCartRemindTop');
-  const btnBank = $('#btnBankRemindTop');
-
   if (btnCart) btnCart.style.display = (mode === 'cart') ? '' : 'none';
-  if (btnBank) btnBank.style.display = (mode === 'bank') ? '' : 'none';
 }
 
 async function loadOpenCartList(){
@@ -1398,9 +1446,8 @@ function setTopFilterActive(mode){
   const btnConsign           = $('#btnConsignTop');
   const btnConsignAccounting = $('#btnConsignAccountingTop');
   const btnCartOpen          = $('#btnCartOpenTop');
-  const btnBankPending       = $('#btnBankPendingTop');
 
-  [btnAll, btnQuick, btnRemind, btnPickup, btnConsign, btnConsignAccounting, btnCartOpen, btnBankPending]
+  [btnAll, btnQuick, btnRemind, btnPickup, btnConsign, btnConsignAccounting, btnCartOpen]
     .forEach(btn => { if (btn) btn.classList.remove('active'); });
 
   if (mode === 'quick_paid') {
@@ -1430,11 +1477,6 @@ function setTopFilterActive(mode){
 
   if (mode === 'cart_open') {
     if (btnCartOpen) btnCartOpen.classList.add('active');
-    return;
-  }
-
-  if (mode === 'bank_pending') {
-    if (btnBankPending) btnBankPending.classList.add('active');
     return;
   }
 
@@ -2384,10 +2426,6 @@ async function reloadCurrentView(){
 
   if (mode === 'cart_open' || currentPanelMode === 'cart_open') {
     return loadOpenCartList();
-  }
-
-  if (mode === 'bank_pending') {
-    return loadBankPendingList();
   }
 
   if (mode === 'consign_settlement' || currentPanelMode === 'consign') {
@@ -4334,13 +4372,6 @@ if (btnCartOpenTop){
   });
 }
 
-const btnBankPendingTop = $('#btnBankPendingTop');
-if (btnBankPendingTop){
-  btnBankPendingTop.addEventListener('click', async () => {
-    await loadBankPendingList();
-  });
-}
-
 const btnCartRemindTop = $('#btnCartRemindTop');
 if (btnCartRemindTop){
   btnCartRemindTop.addEventListener('click', async () => {
@@ -4350,13 +4381,6 @@ if (btnCartRemindTop){
     }
     if (!confirm(`要提醒目前清單中的 ${currentCartRows.length} 台購物車嗎？`)) return;
     await remindCartRows(currentCartRows);
-  });
-}
-
-const btnBankRemindTop = $('#btnBankRemindTop');
-if (btnBankRemindTop){
-  btnBankRemindTop.addEventListener('click', async () => {
-    await remindVisibleBankOrders();
   });
 }
 
