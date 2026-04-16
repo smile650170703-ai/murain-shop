@@ -375,67 +375,75 @@ td{
     }
 
     const API_LIST = "https://api.murain.tw/op/procurement/label-print/list";
-    const API_SAVE_EXPORT = "https://api.murain.tw/op/procurement/label-print/save-export";
+const API_SAVE_DRAFT = "https://api.murain.tw/op/procurement/label-print/save-draft";
+const API_SAVE_EXPORT = "https://api.murain.tw/op/procurement/label-print/save-export";
 
     const $ = (id) => document.getElementById(id);
     const rowsEl = $("rows");
     const statusBar = $("statusBar");
 
-    let currentRows = [];
-    const DRAFT_KEY = "procurement_label_print_draft_v1";
+let currentRows = [];
+const DRAFT_KEY = "procurement_label_print_draft_v1";
 
-function getDraftMap() {
-  try {
-    return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}") || {};
-  } catch {
-    return {};
-  }
+function clearDraftLocal() {
+  localStorage.removeItem(DRAFT_KEY);
 }
 
-function collectDraftMapFromScreen() {
-  const map = {};
+function applyDraftToScreen() {
+  // 改成以後端資料為準，不再把 localStorage 舊草稿蓋回畫面
+}
+
+function getDraftPayload() {
+  const items = [];
+
   [...rowsEl.querySelectorAll("tr[data-id]")].forEach((tr) => {
     const id = String(tr.dataset.id || "").trim();
     if (!id) return;
 
     const labelCode = String(tr.querySelector('[data-role="labelCode"]')?.value || "").trim();
-    const suggestPrice = String(tr.querySelector('[data-role="suggestPrice"]')?.value || "").trim();
+    const suggestPrice = normalizePrice(tr.querySelector('[data-role="suggestPrice"]')?.value || "");
 
-    if (labelCode || suggestPrice) {
-      map[id] = { labelCode, suggestPrice };
-    }
+    if (!labelCode && !suggestPrice) return;
+
+    items.push({
+      id,
+      labelCode,
+      suggestPrice
+    });
   });
-  return map;
+
+  return items;
 }
 
-function saveDraftToLocal() {
-  const map = collectDraftMapFromScreen();
-  localStorage.setItem(DRAFT_KEY, JSON.stringify(map));
-  setStatus(`✅ 已暫存 ${Object.keys(map).length} 筆資料`, "ok");
-}
+async function saveDraftToServer() {
+  const items = getDraftPayload();
 
-function applyDraftToScreen() {
-  const map = getDraftMap();
+  if (!items.length) {
+    throw new Error("請先至少輸入 1 筆標籤碼或建議售價，再進行暫存。");
+  }
 
-  [...rowsEl.querySelectorAll("tr[data-id]")].forEach((tr) => {
-    const id = String(tr.dataset.id || "").trim();
-    const draft = map[id];
-    if (!draft) return;
+  setStatus("暫存中...", "info");
 
-    const labelInput = tr.querySelector('[data-role="labelCode"]');
-    const priceInput = tr.querySelector('[data-role="suggestPrice"]');
+  const data = await apiPost(API_SAVE_DRAFT, { items });
 
-    if (labelInput && draft.labelCode != null) {
-      labelInput.value = String(draft.labelCode || "");
-    }
-    if (priceInput && draft.suggestPrice != null) {
-      priceInput.value = String(draft.suggestPrice || "");
-    }
-  });
-}
+  clearDraftLocal();
 
-function clearDraftLocal() {
-  localStorage.removeItem(DRAFT_KEY);
+  const lines = [];
+  lines.push(`✅ 已暫存 ${data.updated_count || 0} 筆資料`);
+
+  if (data.failed_count) {
+    lines.push(`⚠️ 失敗 ${data.failed_count} 筆`);
+  }
+
+  if (Array.isArray(data.errors) && data.errors.length) {
+    lines.push("");
+    lines.push("失敗明細：");
+    data.errors.slice(0, 10).forEach((msg, idx) => {
+      lines.push(`${idx + 1}. ${msg}`);
+    });
+  }
+
+  setStatus(lines.join("\n"), data.failed_count ? "info" : "ok");
 }
     function isRowSavableByTr(tr) {
   const labelCode = String(tr.querySelector('[data-role="labelCode"]')?.value || "").trim();
@@ -728,11 +736,26 @@ await loadList();
       }
     }
 
-   $("btnReload").addEventListener("click", () => {
-  saveDraftToLocal();
-  loadList();
+  $("btnReload").addEventListener("click", async () => {
+  try {
+    const items = getDraftPayload();
+    if (items.length) {
+      await saveDraftToServer();
+    }
+    await loadList();
+  } catch (err) {
+    setStatus(`❌ ${err.message || err}`, "err");
+  }
 });
-$("btnDraft").addEventListener("click", saveDraftToLocal);
+
+$("btnDraft").addEventListener("click", async () => {
+  try {
+    await saveDraftToServer();
+  } catch (err) {
+    setStatus(`❌ ${err.message || err}`, "err");
+  }
+});
+
 $("btnSaveExport").addEventListener("click", saveAndExport);
 
 loadList();
