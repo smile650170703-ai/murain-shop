@@ -974,67 +974,12 @@ refreshTopShortcutBadges();
   }
 
 else if (mode === 'remind_today'){
-  const nowMs = Date.now();
-  const H24 = 24 * 60 * 60 * 1000;
-  const H48 = 48 * 60 * 60 * 1000;
-
-  const isBankPm = (pm) => [
-    'atm_full',
-    'atm_deposit',
-    'atm_full_tail',
-    'bank_transfer',
-    'deposit_new',
-    'deposit_old',
-    'deposit_new_partial',
-    'deposit_old_partial',
-    'deposit_new_full',
-    'deposit_old_full',
-    'deposit_new_full_711',
-    'deposit_new_full_post'
-  ].includes(String(pm || '').trim().toLowerCase());
-
-  rows = rows
-    .filter(rec => {
-      const f = rec.fields || rec || {};
-      const ps = String(f.pay_status || '').toLowerCase();
-      const pm = String(f.payment_method || '').toLowerCase();
-      return ps === 'pending' && isBankPm(pm);
-    })
-    .map(rec => {
-      const f = rec.fields || rec || {};
-      const createdMs =
-        Date.parse(String(f.created_at || '')) ||
-        Date.parse(String(f.updated_at || '')) ||
-        0;
-
-      const overdueMs = createdMs ? (nowMs - createdMs) : 0;
-      const overdue24 = overdueMs >= H24;
-      const overdue48 = overdueMs >= H48;
-
-      return {
-        ...rec,
-        __overdue24: overdue24,
-        __overdue48: overdue48,
-        __sortOverdue: overdue48 ? 2 : overdue24 ? 1 : 0,
-        __createdMs: createdMs || 0
-      };
-    })
-    .sort((a, b) => {
-      const sa = Number(a.__sortOverdue || 0);
-      const sb = Number(b.__sortOverdue || 0);
-      if (sb !== sa) return sb - sa;
-      return Number(a.__createdMs || 0) - Number(b.__createdMs || 0);
-    });
-
-  emptyText = '目前沒有「匯款待確認」的訂單。';
-  okText = `僅顯示「匯款／訂金匯款，且 pay_status = pending」的訂單。共 ${rows.length} 筆。`;
-
-  const over48 = rows.filter(x => x.__overdue48).length;
-  const over24 = rows.filter(x => !x.__overdue48 && x.__overdue24).length;
-
-  if (over48 || over24) {
-    okText += `　🔴 逾 48h：${over48} 筆　🟠 逾 24h：${over24} 筆`;
-  }
+  rows = rows.filter(rec => {
+    const f = rec.fields || rec || {};
+    return String(f.pay_status || '').toLowerCase() === 'pending';
+  });
+  emptyText = '目前沒有「付款狀態＝待確認」的訂單。';
+  okText = '僅顯示「付款狀態＝待確認(pay_status = pending)」的訂單。';
 }
 
   else if (mode === 'pickup_need'){
@@ -2618,19 +2563,56 @@ function renderOrderList(){
   const html = currentOrders.map(rec=>{
     const f = rec.fields || rec || {};
 
-    const shipInfo = parseShippingInfo(f);
+const shipInfo = parseShippingInfo(f);
 const lineName = getLineName(f, shipInfo);
 const pickReg  = String(f['取貨登記'] || '').trim();
 const ship = shipInfo.ship || {};
-    const store = ship.store || {};
-    const post = ship.post || {};
-    const note = shipInfo.note || '';
+const store = ship.store || {};
+const post = ship.post || {};
+const note = shipInfo.note || '';
 
-    const dep = shipInfo.deposit || {};
-    const depAmount = (f.deposit_amount ?? dep.amount ?? dep.deposit_amount ?? '');
-    const depLast5 = (f.deposit_last5 ?? dep.last5 ?? dep.deposit_last5 ?? '');
-    const atmLast5 = String(shipInfo.atm_last5 || "").trim();
-    const last5Show = String(depLast5 || atmLast5 || "").trim(); // 訂金匯款/尾款匯款共用顯示
+const dep = shipInfo.deposit || {};
+const depAmount = (f.deposit_amount ?? dep.amount ?? dep.deposit_amount ?? '');
+const depLast5 = (f.deposit_last5 ?? dep.last5 ?? dep.deposit_last5 ?? '');
+const atmLast5 = String(shipInfo.atm_last5 || "").trim();
+const last5Show = String(depLast5 || atmLast5 || "").trim(); // 訂金匯款/尾款匯款共用顯示
+
+const createdMs =
+  Date.parse(String(f.created_at || '')) ||
+  Date.parse(String(f.updated_at || '')) ||
+  0;
+
+const overdueMs = createdMs ? (Date.now() - createdMs) : 0;
+const overdue24 = overdueMs >= 24 * 60 * 60 * 1000;
+const overdue48 = overdueMs >= 48 * 60 * 60 * 1000;
+
+const pmLower = String(f.payment_method || '').trim().toLowerCase();
+const psLower = String(f.pay_status || '').trim().toLowerCase();
+
+const isBankPending =
+  psLower === 'pending' &&
+  [
+    'atm_full',
+    'atm_deposit',
+    'atm_full_tail',
+    'bank_transfer',
+    'deposit_new',
+    'deposit_old',
+    'deposit_new_partial',
+    'deposit_old_partial',
+    'deposit_new_full',
+    'deposit_old_full',
+    'deposit_new_full_711',
+    'deposit_new_full_post'
+  ].includes(pmLower);
+
+const overdueTag = isBankPending
+  ? (
+      overdue48
+        ? ' <span class="badge red">逾 48h 未匯款</span>'
+        : (overdue24 ? ' <span class="badge yellow">逾 24h 未匯款</span>' : '')
+    )
+  : '';
 
     // ✅ 出貨時間顯示用（唯讀）
     const shipAtRaw  = (f.shipped_at || f.ship_at || '');
@@ -2678,9 +2660,10 @@ const ship = shipInfo.ship || {};
           </label>
 
           <div>
-            <div class="ord-id">
+<div class="ord-id">
   ${escapeHtml(f.order_id || '(無編號)')}
   ${lineName ? ' <span class="ln">｜' + escapeHtml(lineName) + '</span>' : ''}
+  ${overdueTag}
   ${pickReg ? ' <span class="pickup-reg-inline">｜' + escapeHtml(pickReg) + '</span>' : ''}
 </div>
             <div class="tag-small">${created}</div>
