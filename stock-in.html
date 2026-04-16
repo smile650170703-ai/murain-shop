@@ -1630,10 +1630,26 @@ function buildExcelHtml(headers, rows, title) {
   `;
 
   const tbody = rows.map(row => `
+  <tr>
+    ${headers.map(h => {
+      const raw = row[h] ?? '';
+      const isMoneyCol = ['售價', '建議售價', '起標價格', '一標多少', 'Price'].includes(h);
+
+      if (isMoneyCol) {
+        const n = String(raw).trim() === '' ? '' : Number(String(raw).replace(/,/g, ''));
+        return `<td style="border:1px solid #000;padding:8px;mso-number-format:'\\$#,##0';">${Number.isFinite(n) ? n : ''}</td>`;
+      }
+
+      return `<td style="border:1px solid #000;padding:8px;mso-number-format:'\\@';">${excelEscape(raw)}</td>`;
+    }).join('')}
+  </tr>
+`).join('');
+
+  const titleRow = title ? `
     <tr>
-      ${headers.map(h => `<td style="border:1px solid #000;padding:8px;mso-number-format:'\\@';">${excelEscape(row[h])}</td>`).join('')}
+      <td colspan="${headers.length}" style="font-size:16pt;font-weight:700;padding:10px 8px;">${excelEscape(title)}</td>
     </tr>
-  `).join('');
+  ` : '';
 
   return `
   <html xmlns:o="urn:schemas-microsoft-com:office:office"
@@ -1646,7 +1662,7 @@ function buildExcelHtml(headers, rows, title) {
         <x:ExcelWorkbook>
           <x:ExcelWorksheets>
             <x:ExcelWorksheet>
-              <x:Name>${excelEscape(title)}</x:Name>
+              <x:Name>${excelEscape(title || '工作表')}</x:Name>
               <x:WorksheetOptions>
                 <x:DisplayGridlines/>
               </x:WorksheetOptions>
@@ -1667,9 +1683,7 @@ function buildExcelHtml(headers, rows, title) {
     </head>
     <body>
       <table>
-        <tr>
-          <td colspan="${headers.length}" style="font-size:16pt;font-weight:700;padding:10px 8px;">${excelEscape(title)}</td>
-        </tr>
+        ${titleRow}
         ${thead}
         ${tbody}
       </table>
@@ -1717,9 +1731,17 @@ function downloadLabelExcel() {
       return false;
     }
 
-    const headers = ['SKU', 'Name', 'Price', 'StockQty', 'sub_category'];
-    const html = buildExcelHtml(headers, expandedRows, '自有入庫標籤');
-    downloadExcelFile(`自有入庫標籤_${labelFileDate()}.xls`, html);
+    const exportRows = expandedRows.map(row => ({
+  標籤碼: String(row.SKU || '').trim(),
+  名稱: String(row.Name || '').trim(),
+  售價: normalizeNumber(row.Price, 0),
+  數量: normalizeNumber(row.StockQty, 0),
+  品牌: String(row.sub_category || '').trim()
+}));
+
+const headers = ['標籤碼', '名稱', '售價', '數量', '品牌'];
+const html = buildExcelHtml(headers, exportRows, '');
+downloadExcelFile(`自有入庫標籤_${labelFileDate()}.xls`, html);
     return true;
   }
 
