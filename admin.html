@@ -2711,19 +2711,16 @@ const overdueTag = isBankPending
   });
 
   if(currentRecord){
-    const f = currentRecord.fields || currentRecord || {};
-   const noteText = String(f.internal_note || '').trim();
-const mRetry = /\[RETRY_CART=([^\]]+)\]/.exec(noteText);
-const retryCart = mRetry ? String(mRetry[1] || '').trim() : '';
-    const key = f.order_id || currentRecord.id || '';
-    const row = $(`#orderList .order-row[data-id="${key}"]`);
-    if(row){
-      row.classList.add('active');
-    }else{
-      currentRecord = null;
-      $('#orderDetail').innerHTML = '<div class="muted">請從左邊點選一筆訂單</div>';
-    }
+  const f = currentRecord.fields || currentRecord || {};
+  const key = f.order_id || currentRecord.id || '';
+  const row = $(`#orderList .order-row[data-id="${key}"]`);
+  if(row){
+    row.classList.add('active');
+  }else{
+    currentRecord = null;
+    $('#orderDetail').innerHTML = '<div class="muted">請從左邊點選一筆訂單</div>';
   }
+}
 
   updateSummary();
 }
@@ -2741,10 +2738,14 @@ function selectOrder(key){
 }
 
 /* ===== 右側詳細資料 ===== */
-function renderDetail(rec){
+async function renderDetail(rec){
   currentRecord = rec;
   const f   = rec.fields || rec || {};
   const dEl = $('#orderDetail');
+
+  const noteText = String(f.internal_note || '').trim();
+  const mRetry = /\[RETRY_CART=([^\]]+)\]/.exec(noteText);
+  const retryCart = mRetry ? String(mRetry[1] || '').trim() : '';
 
   const shipInfo = parseShippingInfo(f);
 const lineName = getLineName(f, shipInfo);
@@ -2866,18 +2867,18 @@ ${renderTailInfoBlock(f)}
 
       <div>
         <div class="section-title">付款 / 出貨狀態</div>
-        <div class="row">
-          <div>
-            <label>付款狀態</label>
-<div class="ro-field ro-sm" id="d_pay_status_ro">${displayPayStatus(f.pay_status)}</div>
+<div class="row">
+  <div>
+    <label>付款狀態</label>
+    <div class="ro-field ro-sm" id="d_pay_status_ro">${displayPayStatus(f.pay_status)}</div>
+  </div>
+  <div>
+    <label>出貨狀態 (ship_status)</label>
+    <div class="ro-field ro-sm" id="d_ship_status_ro">${displayShipStatusText(f.ship_status)}</div>
+  </div>
+</div>
 
-          </div>
-          <div>
-            <label>出貨狀態 (ship_status)</label>
-            <div class="ro-field ro-sm" id="d_ship_status_ro">${displayShipStatusText(f.ship_status)}</div>
-          </div>
-        </div>
-        <div class="row mt-2">
+<div class="row mt-2">
   <div>
     <label>重新結帳車號</label>
     <div class="ro-field ro-sm" id="d_retry_cart_ro">${retryCart || '—'}</div>
@@ -2886,6 +2887,19 @@ ${renderTailInfoBlock(f)}
     <label>重結狀態</label>
     <div class="ro-field ro-sm" id="d_retry_tip_ro">
       ${retryCart ? '已建立重新結帳車' : '尚未建立'}
+    </div>
+  </div>
+</div>
+
+<div class="row mt-2">
+  <div>
+    <label>重新結帳後新單號</label>
+    <div class="ro-field ro-sm" id="d_retry_new_order_ro">尚未重新結單</div>
+  </div>
+  <div>
+    <label>重結結果</label>
+    <div class="ro-field ro-sm" id="d_retry_result_ro">
+      ${retryCart ? '查詢中…' : '尚未建立 retry 車'}
     </div>
   </div>
 </div>
@@ -3035,7 +3049,52 @@ if (btnPick) {
   btnPick.addEventListener('click', savePickupRegOnly);
 }
  
-   const btnSaveAndShip = $('#btnSaveAndShip');
+   if (retryCart) {
+  try {
+    const params = new URLSearchParams();
+    params.set('op_key', OP_KEY);
+    params.set('cart_token', retryCart);
+
+    const r = await fetch(`${API}/admin/cart/brief?` + params.toString());
+    const j = await r.json().catch(() => ({}));
+
+    const retryNewOrderId =
+      (r.ok && j.ok && j.cart)
+        ? String(j.cart.checked_out_order_id || '').trim()
+        : '';
+
+    const retryStatus =
+      (r.ok && j.ok && j.cart)
+        ? String(j.cart.status || '').trim()
+        : '';
+
+    const elNew = $('#d_retry_new_order_ro');
+    const elResult = $('#d_retry_result_ro');
+    const elTip = $('#d_retry_tip_ro');
+
+    if (elNew) {
+      elNew.textContent = retryNewOrderId || '尚未重新結單';
+    }
+
+    if (elResult) {
+      elResult.textContent = retryNewOrderId
+        ? '已重結成功'
+        : (retryStatus ? `狀態：${retryStatus}` : '尚未重新結單');
+    }
+
+    if (elTip) {
+      elTip.textContent = retryNewOrderId
+        ? '已建立重新結帳車，且已產生新單'
+        : '已建立重新結帳車';
+    }
+  } catch (e) {
+    console.error('load retry cart brief failed', e);
+    const elResult = $('#d_retry_result_ro');
+    if (elResult) elResult.textContent = '查詢失敗';
+  }
+}
+
+const btnSaveAndShip = $('#btnSaveAndShip');
 if (btnSaveAndShip) {
   btnSaveAndShip.addEventListener('click', saveAndShipAndLine);
 }
