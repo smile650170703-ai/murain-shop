@@ -331,28 +331,34 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 <div class="filter-group">
   <button class="filter-btn active" data-filter="all">全部訂單</button>
 
-  <button class="filter-btn btn-badge-wrap" id="btnQuickPaidTop" type="button">
-    <span>⭐待出貨訂單</span>
-    <span id="quickPaidBadge" class="count-badge" style="display:none;">0</span>
-  </button>
+  <button class="filter-btn btn-badge-wrap" id="btnCartOpenTop" type="button">
+  <span>🛒 未結單購物車</span>
+  <span id="cartOpenBadge" class="count-badge" style="display:none;">0</span>
+</button>
 
-  <button class="filter-btn btn-badge-wrap" id="btnRemindTodayTop" type="button">
-    <span>匯款待確認</span>
-    <span id="remindTodayBadge" class="count-badge" style="display:none;">0</span>
-  </button>
+<button class="filter-btn btn-badge-wrap" id="btnQuickPaidTop" type="button">
+  <span>⭐待出貨訂單</span>
+  <span id="quickPaidBadge" class="count-badge" style="display:none;">0</span>
+</button>
 
-  <button class="filter-btn btn-badge-wrap" id="btnPickupNeedTop" type="button">
-    <span>賣貨便登記</span>
-    <span id="pickupNeedBadge" class="count-badge" style="display:none;">0</span>
-  </button>
- <button class="filter-btn btn-badge-wrap" id="btnConsignTop" type="button">
+<button class="filter-btn btn-badge-wrap" id="btnRemindTodayTop" type="button">
+  <span>匯款待確認</span>
+  <span id="remindTodayBadge" class="count-badge" style="display:none;">0</span>
+</button>
+
+<button class="filter-btn btn-badge-wrap" id="btnPickupNeedTop" type="button">
+  <span>賣貨便登記</span>
+  <span id="pickupNeedBadge" class="count-badge" style="display:none;">0</span>
+</button>
+
+<button class="filter-btn btn-badge-wrap" id="btnConsignTop" type="button">
   <span>寄賣</span>
   <span id="consignBadge" class="count-badge" style="display:none;">0</span>
 </button>
- <button class="filter-btn" id="btnConsignAccountingTop" type="button">
+
+<button class="filter-btn" id="btnConsignAccountingTop" type="button">
   一時貿易
 </button>
- <button class="filter-btn" id="btnCartOpenTop" type="button">🛒 未結單購物車</button>
 </div>
 <div class="filter-row">
     <div class="field">
@@ -1145,11 +1151,7 @@ function renderCartList(){
   }
 
   listEl.innerHTML = currentCartRows.map(row => {
-    const title = row.customer_name || row.cart_token || '未命名購物車';
-    const sub1 = [
-      row.streamer_name || '',
-      row.line_user_id ? `LINE:${row.line_user_id}` : ''
-    ].filter(Boolean).join(' / ');
+    const title = row.customer_name || '未命名購物車';
 
     return `
       <div class="order-row" data-id="${escapeHtml(row.cart_token || '')}">
@@ -1160,11 +1162,10 @@ function renderCartList(){
           </div>
         </div>
 
-        <div class="ord-sub">${escapeHtml(row.cart_token || '')}</div>
-        <div class="ord-sub">${escapeHtml(sub1 || '尚未綁定 LINE')}</div>
+        ${row.items_text ? `<div class="ord-sub">${escapeHtml(row.items_text)}</div>` : ''}
 
         <div class="badges">
-          <span class="badge">${escapeHtml(row.status || 'open')}</span>
+          <span class="badge">${escapeHtml(displayCartStatus(row.status || 'open'))}</span>
           ${row.link_sent_at ? '<span class="badge green">已發購物車卡</span>' : ''}
           ${row.link_copied_at ? '<span class="badge blue">已複製連結</span>' : ''}
         </div>
@@ -1193,25 +1194,39 @@ function renderCartList(){
   }
 }
 
-function renderCartDetail(row){
+async function renderCartDetail(row){
   currentCartRecord = row;
   const dEl = $('#orderDetail');
   if (!dEl) return;
 
+  let itemText = row.items_text || '';
+
+  try {
+    const r = await fetch(`${API}/cart/${encodeURIComponent(row.cart_token || '')}`);
+    const j = await r.json().catch(() => ({}));
+
+    if (r.ok && j.ok && Array.isArray(j.items)) {
+      itemText = j.items.map(it => {
+        const name = String(it.name || it.Name || it.title || '').trim();
+        const qty = Number(it.qty || 0) || 0;
+        return `${name}${qty > 0 ? ` × ${qty}` : ''}`;
+      }).filter(Boolean).join('\n');
+    }
+  } catch (e) {
+    console.warn('load cart items failed', e);
+  }
+
   dEl.innerHTML = `
     <div class="section-title">未結單購物車</div>
 
-    <label>購物車 Token</label>
-    <div class="ro-field">${escapeHtml(row.cart_token || '-')}</div>
-
     <div class="row mt-2">
       <div>
-        <label>客人名稱</label>
+        <label>LINE名稱</label>
         <div class="ro-field">${escapeHtml(row.customer_name || '-')}</div>
       </div>
       <div>
-        <label>LINE User ID</label>
-        <div class="ro-field">${escapeHtml(row.line_user_id || '-')}</div>
+        <label>狀態</label>
+        <div class="ro-field">${escapeHtml(displayCartStatus(row.status || 'open'))}</div>
       </div>
     </div>
 
@@ -1221,19 +1236,8 @@ function renderCartDetail(row){
         <div class="ro-field">${escapeHtml(String(row.item_count || 0))}</div>
       </div>
       <div>
-        <label>狀態</label>
-        <div class="ro-field">${escapeHtml(row.status || 'open')}</div>
-      </div>
-    </div>
-
-    <div class="row mt-2">
-      <div>
         <label>已發購物車卡時間</label>
         <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.link_sent_at) || '-')}</div>
-      </div>
-      <div>
-        <label>已複製連結時間</label>
-        <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.link_copied_at) || '-')}</div>
       </div>
     </div>
 
@@ -1246,6 +1250,11 @@ function renderCartDetail(row){
         <label>最後更新</label>
         <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.updated_at) || '-')}</div>
       </div>
+    </div>
+
+    <label class="mt-2">商品明細</label>
+    <div class="ro-field" style="height:auto;min-height:88px;align-items:flex-start;padding-top:10px;white-space:pre-wrap;">
+      ${escapeHtml(itemText || '-')}
     </div>
 
     <div class="mt-3" style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -1912,10 +1921,11 @@ async function refreshTopShortcutBadges(){
     console.warn('consign badge load failed', e);
   }
 
-  setCountBadge($('#quickPaidBadge'), quickCount);
-  setCountBadge($('#remindTodayBadge'), remindCount);
-  setCountBadge($('#pickupNeedBadge'), pickupCount);
-  setCountBadge($('#consignBadge'), consignCount);
+  setCountBadge($('#cartOpenBadge'), cartOpenCount);
+setCountBadge($('#quickPaidBadge'), quickCount);
+setCountBadge($('#remindTodayBadge'), remindCount);
+setCountBadge($('#pickupNeedBadge'), pickupCount);
+setCountBadge($('#consignBadge'), consignCount);
 }
 
  async function loadBenefitRequests(){
@@ -2046,6 +2056,13 @@ function toggleBenefitReviewPanel(forceOpen = null){
   } else {
     panel.classList.add('hidden');
   }
+}
+ function displayCartStatus(st){
+  const s = String(st || '').trim().toLowerCase();
+  if (s === 'open') return '未結單';
+  if (s === 'checking_out') return '結帳中';
+  if (s === 'submitted') return '已送出';
+  return st || '';
 }
 
 async function loadOrders(filter='all', extra = {}){
