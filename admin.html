@@ -203,6 +203,17 @@
   }
 .ro-field.ro-sm{ height: 38px; }
 
+ .retry-mini label{
+  font-size:11px;
+  margin:4px 0 2px;
+}
+
+.retry-mini .ro-field{
+  height:34px;
+  font-size:12px;
+  padding:0 10px;
+}
+
 /* ===== 唯讀顯示欄位 ===== */
 .ro-field{
   height: 44px;
@@ -1873,6 +1884,19 @@ async function refreshTopShortcutBadges(){
     return filled1 || filled2;
   };
 
+  let cartOpenCount = 0;
+  try {
+    if (OP_KEY) {
+      const rCart = await fetch(`${API}/admin/cart/pending-list?op_key=${encodeURIComponent(OP_KEY)}&limit=200`);
+      const jCart = await rCart.json().catch(() => ({}));
+      if (rCart.ok && jCart.ok) {
+        cartOpenCount = Array.isArray(jCart.carts) ? jCart.carts.length : 0;
+      }
+    }
+  } catch (e) {
+    console.warn('cart badge load failed', e);
+  }
+
   const quickCount = rows.filter(rec => {
     const f = rec.fields || rec || {};
     return String(f.pay_status || '').toLowerCase() === 'paid_ok' && !hasFee(f);
@@ -1922,10 +1946,10 @@ async function refreshTopShortcutBadges(){
   }
 
   setCountBadge($('#cartOpenBadge'), cartOpenCount);
-setCountBadge($('#quickPaidBadge'), quickCount);
-setCountBadge($('#remindTodayBadge'), remindCount);
-setCountBadge($('#pickupNeedBadge'), pickupCount);
-setCountBadge($('#consignBadge'), consignCount);
+  setCountBadge($('#quickPaidBadge'), quickCount);
+  setCountBadge($('#remindTodayBadge'), remindCount);
+  setCountBadge($('#pickupNeedBadge'), pickupCount);
+  setCountBadge($('#consignBadge'), consignCount);
 }
 
  async function loadBenefitRequests(){
@@ -2895,31 +2919,6 @@ ${renderTailInfoBlock(f)}
   </div>
 </div>
 
-<div class="row mt-2">
-  <div>
-    <label>重新結帳車號</label>
-    <div class="ro-field ro-sm" id="d_retry_cart_ro">${retryCart || '—'}</div>
-  </div>
-  <div>
-    <label>重結狀態</label>
-    <div class="ro-field ro-sm" id="d_retry_tip_ro">
-      ${retryCart ? '已建立重新結帳車' : '尚未建立'}
-    </div>
-  </div>
-</div>
-
-<div class="row mt-2">
-  <div>
-    <label>重新結帳後新單號</label>
-    <div class="ro-field ro-sm" id="d_retry_new_order_ro">尚未重新結單</div>
-  </div>
-  <div>
-    <label>重結結果</label>
-    <div class="ro-field ro-sm" id="d_retry_result_ro">
-      ${retryCart ? '查詢中…' : '尚未建立 retry 車'}
-    </div>
-  </div>
-</div>
 
 <!-- ★ 新增：賣貨便名稱 + 取貨登記（同一排兩欄） -->
 <div class="row mt-1">
@@ -2962,7 +2961,35 @@ ${renderTailInfoBlock(f)}
   </div>
 </div>
 
-        <label class="mt-2">出貨時間</label>
+<div class="retry-mini">
+  <div class="row mt-2">
+    <div>
+      <label>重新結帳車號</label>
+      <div class="ro-field ro-sm" id="d_retry_cart_ro">${retryCart || '—'}</div>
+    </div>
+    <div>
+      <label>重結狀態</label>
+      <div class="ro-field ro-sm" id="d_retry_tip_ro">
+        ${retryCart ? '已建立重新結帳車' : '尚未建立'}
+      </div>
+    </div>
+  </div>
+
+  <div class="row mt-2">
+    <div>
+      <label>重新結帳後新單號</label>
+      <div class="ro-field ro-sm" id="d_retry_new_order_ro">尚未重新結單</div>
+    </div>
+    <div>
+      <label>重結結果</label>
+      <div class="ro-field ro-sm" id="d_retry_result_ro">
+        ${retryCart ? '查詢中…' : '尚未建立 retry 車'}
+      </div>
+    </div>
+  </div>
+</div>
+
+<label class="mt-2">出貨時間</label>
 <div class="ro-field ${shipAtText ? '' : 'ro-empty'}" id="d_ship_at_ro">${shipAtText || '—'}</div>
 <input id="d_ship_at" type="hidden" value="${toDatetimeLocal(f.shipped_at || f.ship_at)}">
 
