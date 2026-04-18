@@ -538,11 +538,13 @@
       white-space:nowrap;
     }
     .p-price{
-      margin-top:8px;
-      font-family:var(--serif);
-      font-size:16px;
-      color:#7f625d;
-    }
+  margin-top:8px;
+  font-family:var(--sans);
+  font-size:16px;
+  font-weight:700;
+  color:#6e5753;
+  letter-spacing:0;
+}
 
     .detail-modal{
       display:none;
@@ -633,19 +635,22 @@
       margin-bottom:12px;
     }
     .d-price{
-      font-family:var(--serif);
-      font-size:21px;
-      color:#7f625d;
-      margin-bottom:22px;
-      padding-bottom:18px;
-      border-bottom:1px solid rgba(120,90,86,.10);
-    }
+  font-family:var(--sans);
+  font-size:22px;
+  font-weight:700;
+  color:#6e5753;
+  margin-bottom:22px;
+  padding-bottom:18px;
+  border-bottom:1px solid rgba(120,90,86,.10);
+  letter-spacing:0;
+}
     .d-desc{
-      font-size:13px;
-      line-height:1.9;
-      color:var(--text-soft);
-      white-space:pre-line;
-    }
+  font-size:14px;
+  line-height:1.95;
+  color:#766360;
+  white-space:pre-line;
+  letter-spacing:.01em;
+}
     .detail-actions{
       padding:18px 24px 24px;
       border-top:1px solid rgba(120,90,86,.08);
@@ -1199,7 +1204,7 @@ function writeShopCache(items, categories){
   function openProductDetail(product){
     $('detailBrand').innerHTML = topLine(product) || 'XUYUAN';
     $('detailTitle').textContent = product.title || product.sku;
-    $('detailPrice').textContent = 'NT$ ' + Number(product.price || 0).toLocaleString();
+    $('detailPrice').textContent = 'NT$' + Number(product.price || 0).toLocaleString();
     $('detailDesc').textContent = product.description || '';
     currentProductImages = product.images && product.images.length ? product.images : [product.image || product.image_url || ''];
     currentImgIdx = 0;
@@ -1423,70 +1428,81 @@ async function fetchProducts(){
     return words[0].slice(0,4).toUpperCase();
   }
 
-  function renderCategoryBar(categories){
-    const listEl = $('brandList');
-    listEl.innerHTML = '';
+function renderCategoryBar(categories){
+  const listEl = $('brandList');
+  listEl.innerHTML = '';
 
-    const addBtn = (key, label) => {
-      const item = document.createElement('div');
-      item.className = 'brand-item' + (key === 'ALL' ? ' all-btn' : '');
-      if ((key === 'ALL' && selectedCat === 'ALL') || key === selectedCat) item.classList.add('active');
-      item.innerHTML = `
-        <div class="brand-avatar"><div class="brand-text-logo">${avatarText(label, key)}</div></div>
-        <span class="brand-name-label">${label}</span>
-      `;
-      item.onclick = () => {
-        selectedCat = key;
-        selectedSub = 'ALL';
-        syncQS();
-        renderCategoryBar(categories);
-        renderSubcatBar(categories, selectedCat);
-        renderProducts(filterItems(allItems));
-        scrollToProducts();
-      };
-      listEl.appendChild(item);
+  const addBtn = (key, label, circleText) => {
+    const item = document.createElement('div');
+    item.className = 'brand-item' + (key === 'ALL' ? ' all-btn' : '');
+    if ((key === 'ALL' && selectedCat === 'ALL') || key === selectedCat) item.classList.add('active');
+    item.innerHTML = `
+      <div class="brand-avatar"><div class="brand-text-logo">${circleText}</div></div>
+      <span class="brand-name-label">${label}</span>
+    `;
+    item.onclick = () => {
+      selectedCat = key;
+      selectedSub = 'ALL';
+      syncQS();
+      renderCategoryBar(categories);
+      renderSubcatBar(categories, selectedCat);
+      renderProducts(filterItems(allItems));
+      scrollToProducts();
     };
+    listEl.appendChild(item);
+  };
 
-    addBtn('ALL', '全部');
-    (categories || []).forEach(c => {
-      const code = String(c.code || '').trim();
-      if (!code) return;
-      addBtn(code, labelOfCat(c));
-    });
-  }
+  addBtn('ALL', '最新', 'NEW');
+
+  (categories || []).forEach(c => {
+    const code = String(c.code || '').trim();
+    const label = labelOfCat(c);
+    if (!code) return;
+    addBtn(code, label, avatarText(code, code));
+  });
+}
 
   function renderSubcatBar(categories, catCode){
-    const subEl = $('subcatList');
-    subEl.innerHTML = '';
+  const subEl = $('subcatList');
+  subEl.innerHTML = '';
 
-    const addBtn = (key, label) => {
-      const item = document.createElement('div');
-      item.className = 'brand-item' + (key === 'ALL' ? ' all-btn' : '');
-      if ((key === 'ALL' && selectedSub === 'ALL') || key === selectedSub) item.classList.add('active');
-      item.innerHTML = `
-        <div class="brand-avatar"><div class="brand-text-logo">${avatarText(label, key)}</div></div>
-        <span class="brand-name-label">${label}</span>
-      `;
-      item.onclick = () => {
-        selectedSub = key;
-        syncQS();
-        renderSubcatBar(categories, catCode);
-        renderProducts(filterItems(allItems));
-        scrollToProducts();
-      };
-      subEl.appendChild(item);
-    };
-
-    if (catCode === 'ALL') return;
-    addBtn('ALL', '全部');
-    const cat = (categories || []).find(x => String(x.code || '').trim() === String(catCode).trim());
-    const subs = (cat && Array.isArray(cat.subcategories)) ? cat.subcategories : [];
-    subs.forEach(s => {
-      const code = String(s.code || '').trim();
-      if (!code) return;
-      addBtn(code, labelOfSub(s));
-    });
+  if (catCode === 'ALL'){
+    subEl.style.display = 'none';
+    return;
   }
+
+  subEl.style.display = 'flex';
+
+  const addBtn = (key, label, circleText) => {
+    const item = document.createElement('div');
+    item.className = 'brand-item' + (key === 'ALL' ? ' all-btn' : '');
+    if ((key === 'ALL' && selectedSub === 'ALL') || key === selectedSub) item.classList.add('active');
+    item.innerHTML = `
+      <div class="brand-avatar"><div class="brand-text-logo">${circleText}</div></div>
+      <span class="brand-name-label">${label}</span>
+    `;
+    item.onclick = () => {
+      selectedSub = key;
+      syncQS();
+      renderSubcatBar(categories, catCode);
+      renderProducts(filterItems(allItems));
+      scrollToProducts();
+    };
+    subEl.appendChild(item);
+  };
+
+  addBtn('ALL', '全部', 'ALL');
+
+  const cat = (categories || []).find(x => String(x.code || '').trim() === String(catCode).trim());
+  const subs = (cat && Array.isArray(cat.subcategories)) ? cat.subcategories : [];
+
+  subs.forEach(s => {
+    const code = String(s.code || '').trim();
+    const label = labelOfSub(s);
+    if (!code) return;
+    addBtn(code, label, avatarText(code, code));
+  });
+}
 
   function scrollToProducts(){
     const grid = $('productList');
