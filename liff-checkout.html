@@ -152,7 +152,72 @@
         letter-spacing: 0.05em;
     }
 
-    textarea { min-height: 80px; resize: vertical; line-height: 1.6; }
+        textarea { min-height: 80px; resize: vertical; line-height: 1.6; }
+
+    .cart-item-list{
+      display:grid;
+      gap:12px;
+      margin-top:4px;
+    }
+
+    .cart-item-card{
+      border:1px solid rgba(255,255,255,0.10);
+      background:rgba(255,255,255,0.03);
+      border-radius:6px;
+      padding:14px 14px;
+    }
+
+    .cart-item-top{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+    }
+
+    .cart-item-name{
+      font-size:14px;
+      line-height:1.6;
+      color:#fff;
+      flex:1;
+    }
+
+    .cart-item-meta{
+      margin-top:8px;
+      font-size:12px;
+      color:#999;
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+
+    .cart-remove-btn{
+      flex:0 0 auto;
+      border:1px solid rgba(239,68,68,.35);
+      background:rgba(239,68,68,.08);
+      color:#ffb4b4;
+      border-radius:999px;
+      min-width:34px;
+      height:34px;
+      padding:0 10px;
+      font-size:12px;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+    }
+
+    .cart-remove-btn:active{
+      transform:scale(.98);
+    }
+
+    .cart-remove-tip{
+      font-size:11px;
+      color:#777;
+      margin-top:8px;
+      line-height:1.6;
+    }
+
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
     /* 三欄用（例如裕富 7-11 那排：收件人/電話/Email） */
 .row3 { 
@@ -553,7 +618,8 @@
     <input id="subtotal" readonly />
 
     <label>商品明細</label>
-    <textarea id="itemsText" readonly></textarea>
+<div id="cartItemList" class="cart-item-list"></div>
+<textarea id="itemsText" readonly hidden></textarea>
 
     <label>應付金額 (未扣除購物金)</label>
     <input id="total" readonly />
@@ -2418,6 +2484,85 @@ document.getElementById('yufu_ship_method')?.addEventListener('change', updateYu
 })();
 
 /* ===== 購物車載入 ===== */
+let CART_CUSTOMER_TYPE = '';
+let CART_CAN_SELF_REMOVE = false;
+
+function renderCartItemList(items){
+  const wrap = document.getElementById('cartItemList');
+  const tip = document.getElementById('cartRemoveTip');
+  if (!wrap) return;
+
+  wrap.innerHTML = '';
+
+  if (tip) {
+    tip.hidden = !!CART_CAN_SELF_REMOVE;
+  }
+
+  if (!items.length) {
+    wrap.innerHTML = `<div class="cart-item-card"><div class="cart-item-name">目前購物車沒有商品</div></div>`;
+    return;
+  }
+
+  items.forEach(it => {
+    const sku = String(it.sku || '').trim();
+    const name = String(it.name || sku || '商品').trim();
+    const qty = Number(it.qty || 0) || 0;
+    const price = Number(it.price || 0) || 0;
+    const lineTotal = qty * price;
+
+    const row = document.createElement('div');
+    row.className = 'cart-item-card';
+    row.innerHTML = `
+      <div class="cart-item-top">
+        <div class="cart-item-name">${name}</div>
+        ${CART_CAN_SELF_REMOVE ? `<button type="button" class="cart-remove-btn" data-sku="${sku}" aria-label="刪除此商品">✕</button>` : ``}
+      </div>
+      <div class="cart-item-meta">
+        <span>數量：${qty}</span>
+        <span>單價：NT$ ${price.toLocaleString('zh-TW')}</span>
+        <span>小計：NT$ ${lineTotal.toLocaleString('zh-TW')}</span>
+      </div>
+    `;
+    wrap.appendChild(row);
+  });
+
+  if (CART_CAN_SELF_REMOVE) {
+    wrap.querySelectorAll('.cart-remove-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const sku = String(btn.dataset.sku || '').trim();
+        if (!sku) return;
+        await removeCartItemSelf(sku);
+      });
+    });
+  }
+}
+
+async function removeCartItemSelf(sku){
+  if (!cartToken || !sku) return;
+
+  const yes = confirm('確定要刪除此商品嗎？');
+  if (!yes) return;
+
+  try {
+    const r = await fetch(`${API}/cart/remove-self`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ cart_token: cartToken, sku })
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j || j.ok === false) {
+      throw new Error(j?.error || j?.message || 'cart_remove_failed');
+    }
+
+    await loadCart();
+  } catch (e) {
+    console.error('removeCartItemSelf error', e);
+    alert('刪除商品失敗，請再試一次。');
+  }
+}
+
 async function loadCart(){
   if (!cartToken) {
     console.warn('missing cart_token');
@@ -2426,30 +2571,33 @@ async function loadCart(){
   try {
     const r = await fetch(`${API}/cart/${cartToken}`);
     const j = await r.json();
-    
 
     if (!r.ok || !j || j.ok === false) {
-  throw new Error(j?.error || j?.message || 'cart_api_error');
-}
-if (!Array.isArray(j.items)) {
-  throw new Error('cart_items_missing');
-}
+      throw new Error(j?.error || j?.message || 'cart_api_error');
+    }
+    if (!Array.isArray(j.items)) {
+      throw new Error('cart_items_missing');
+    }
 
     const items = j.items || [];
     const total = Number(j.total_amount || 0);
     CART_TOTAL_RAW = total;
 
-    const detail = items.map(it => 
+    CART_CUSTOMER_TYPE = String(j.customer_type || '').trim().toLowerCase();
+    CART_CAN_SELF_REMOVE = !!j.can_self_remove;
+
+    const detail = items.map(it =>
       `${it.name || it.sku} x ${it.qty}（NT$${Number(it.price || 0)}）`
     ).join('\n');
 
     const detailBox = document.querySelector('#itemsText');
     if (detailBox) detailBox.value = detail;
 
+    renderCartItemList(items);
     setTotal(total);
     calcZC();
 
-CART_LOADED = true; // ✅ 加在這裡
+    CART_LOADED = true;
   } catch (e) {
     console.error('loadCart error', e);
     alert('讀取購物車失敗，請再試一次。');
