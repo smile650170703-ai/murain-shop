@@ -347,7 +347,6 @@ td{
   <col style="width:58px;">
   <col style="width:110px;">
   <col style="width:90px;">
-  <col style="width:300px;">
 </colgroup>
 <thead>
   <tr>
@@ -360,7 +359,6 @@ td{
     <th>數量</th>
     <th>累計實收數量</th>
     <th>異常數量</th>
-    <th>異常處理</th>
   </tr>
 </thead>
     <tbody id="rows"></tbody>
@@ -409,26 +407,15 @@ function getDraftPayload() {
     const labelCode = String(tr.querySelector('[data-role="labelCode"]')?.value || "").trim();
     const suggestPrice = normalizePrice(tr.querySelector('[data-role="suggestPrice"]')?.value || "");
     const receivedQty = normalizeInt(tr.querySelector('[data-role="receivedQty"]')?.value || "");
-    const abnormalStatus = String(tr.querySelector('[data-role="abnormalStatus"]')?.value || "").trim();
-    const abnormalReason = String(tr.querySelector('[data-role="abnormalReason"]')?.value || "").trim();
-    const abnormalMethod = String(tr.querySelector('[data-role="abnormalMethod"]')?.value || "").trim();
-    const abnormalNote = String(tr.querySelector('[data-role="abnormalNote"]')?.value || "").trim();
 
-    const hasAnyValue =
-      labelCode || suggestPrice || receivedQty ||
-      abnormalStatus || abnormalReason || abnormalMethod || abnormalNote;
-
+    const hasAnyValue = labelCode || suggestPrice || receivedQty;
     if (!hasAnyValue) return;
 
     items.push({
       id,
       labelCode,
       suggestPrice,
-      receivedQty,
-      abnormalStatus,
-      abnormalReason,
-      abnormalMethod,
-      abnormalNote
+      receivedQty
     });
   });
 
@@ -439,7 +426,7 @@ async function saveDraftToServer() {
   const items = getDraftPayload();
 
   if (!items.length) {
-    throw new Error("請先至少輸入 1 筆標籤碼、建議售價、累計實收數量或異常資料，再進行暫存。");
+    throw new Error("請先至少輸入 1 筆標籤碼、建議售價或累計實收數量，再進行暫存。");
   }
 
   setStatus("暫存中...", "info");
@@ -557,7 +544,7 @@ function renderRows(rows) {
   currentRows = Array.isArray(rows) ? rows : [];
 
   if (!currentRows.length) {
-    rowsEl.innerHTML = `<tr><td colspan="10"><div class="empty">目前沒有需要處理的資料。</div></td></tr>`;
+    rowsEl.innerHTML = `<tr><td colspan="9"><div class="empty">目前沒有需要處理的資料。</div></td></tr>`;
     refreshSummary();
     return;
   }
@@ -565,7 +552,6 @@ function renderRows(rows) {
   rowsEl.innerHTML = currentRows.map((row) => {
     const receivedQty = String(row.receivedQty || "").trim();
     const abnormalQty = computeAbnormalQty(row.qty || "", receivedQty);
-    const showAbnormal = shouldShowAbnormalBox(row, abnormalQty);
 
     return `
       <tr data-id="${escapeHtml(row.id)}">
@@ -606,41 +592,6 @@ function renderRows(rows) {
         <td>
           <span data-role="abnormalQtyText">${escapeHtml(abnormalQty)}</span>
         </td>
-        <td>
-          <div data-role="abnormalBox" style="${showAbnormal ? '' : 'display:none;'}">
-            <input
-              class="cell-input"
-              type="text"
-              data-role="abnormalStatus"
-              value="${escapeHtml(row.abnormalStatus || "")}"
-              placeholder="異常狀態"
-              style="margin-bottom:6px;"
-            />
-            <input
-              class="cell-input"
-              type="text"
-              data-role="abnormalReason"
-              value="${escapeHtml(row.abnormalReason || "")}"
-              placeholder="異常原因"
-              style="margin-bottom:6px;"
-            />
-            <input
-              class="cell-input"
-              type="text"
-              data-role="abnormalMethod"
-              value="${escapeHtml(row.abnormalMethod || "")}"
-              placeholder="處理方式"
-              style="margin-bottom:6px;"
-            />
-            <input
-              class="cell-input"
-              type="text"
-              data-role="abnormalNote"
-              value="${escapeHtml(row.abnormalNote || "")}"
-              placeholder="異常備註"
-            />
-          </div>
-        </td>
       </tr>
     `;
   }).join("");
@@ -663,34 +614,19 @@ function renderRows(rows) {
     const abnormalQty = computeAbnormalQty(qty, receivedQty);
 
     const abnormalQtyText = tr.querySelector('[data-role="abnormalQtyText"]');
-    const abnormalBox = tr.querySelector('[data-role="abnormalBox"]');
-
-    const hasAbnormalData =
-      String(tr.querySelector('[data-role="abnormalStatus"]')?.value || "").trim() ||
-      String(tr.querySelector('[data-role="abnormalReason"]')?.value || "").trim() ||
-      String(tr.querySelector('[data-role="abnormalMethod"]')?.value || "").trim() ||
-      String(tr.querySelector('[data-role="abnormalNote"]')?.value || "").trim();
-
     if (abnormalQtyText) abnormalQtyText.textContent = abnormalQty;
-    if (abnormalBox) {
-      abnormalBox.style.display = (Number(abnormalQty || 0) > 0 || hasAbnormalData) ? "" : "none";
-    }
   }
 
   allRows.forEach((tr) => {
     const labelInput = tr.querySelector('[data-role="labelCode"]');
     const priceInput = tr.querySelector('[data-role="suggestPrice"]');
     const receivedInput = tr.querySelector('[data-role="receivedQty"]');
-    const abnormalStatus = tr.querySelector('[data-role="abnormalStatus"]');
-    const abnormalReason = tr.querySelector('[data-role="abnormalReason"]');
-    const abnormalMethod = tr.querySelector('[data-role="abnormalMethod"]');
-    const abnormalNote = tr.querySelector('[data-role="abnormalNote"]');
 
-    [labelInput, priceInput, receivedInput, abnormalStatus, abnormalReason, abnormalMethod, abnormalNote]
+    [labelInput, priceInput, receivedInput]
       .filter(Boolean)
       .forEach((el) => {
         el.addEventListener("input", () => {
-          if (el === receivedInput || el === abnormalStatus || el === abnormalReason || el === abnormalMethod || el === abnormalNote) {
+          if (el === receivedInput) {
             refreshAbnormalUI(tr);
           }
           refreshSummary();
@@ -714,24 +650,6 @@ function renderRows(rows) {
       e.preventDefault();
       focusNextSameRole(tr, "receivedQty");
     });
-
-    abnormalStatus?.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-      e.preventDefault();
-      focusNextSameRole(tr, "abnormalStatus");
-    });
-
-    abnormalReason?.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-      e.preventDefault();
-      focusNextSameRole(tr, "abnormalReason");
-    });
-
-    abnormalMethod?.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter") return;
-      e.preventDefault();
-      focusNextSameRole(tr, "abnormalMethod");
-    });
   });
 
   applyDraftToScreen();
@@ -742,7 +660,7 @@ function renderRows(rows) {
       return String(v || "").replaceAll(",", "").trim();
     }
 
-   function getSelectedPayload() {
+function getSelectedPayload() {
   const rows = [];
 
   [...rowsEl.querySelectorAll("tr[data-id]")].forEach((tr) => {
@@ -754,20 +672,12 @@ function renderRows(rows) {
     const labelCode = String(tr.querySelector('[data-role="labelCode"]')?.value || "").trim();
     const suggestPrice = normalizePrice(tr.querySelector('[data-role="suggestPrice"]')?.value || "");
     const receivedQty = normalizeInt(tr.querySelector('[data-role="receivedQty"]')?.value || "");
-    const abnormalStatus = String(tr.querySelector('[data-role="abnormalStatus"]')?.value || "").trim();
-    const abnormalReason = String(tr.querySelector('[data-role="abnormalReason"]')?.value || "").trim();
-    const abnormalMethod = String(tr.querySelector('[data-role="abnormalMethod"]')?.value || "").trim();
-    const abnormalNote = String(tr.querySelector('[data-role="abnormalNote"]')?.value || "").trim();
 
     rows.push({
       id,
       labelCode,
       suggestPrice,
       receivedQty,
-      abnormalStatus,
-      abnormalReason,
-      abnormalMethod,
-      abnormalNote,
       newBarcode: row.newBarcode || "",
       brand: row.brand || "",
       productName: row.productName || "",
@@ -874,7 +784,7 @@ function renderRows(rows) {
     renderRows(data.rows || []);
     setStatus(`✅ 清單已更新，共 ${Array.isArray(data.rows) ? data.rows.length : 0} 筆`, "ok");
   } catch (err) {
-    rowsEl.innerHTML = `<tr><td colspan="10"><div class="empty">❌ ${escapeHtml(err.message || String(err))}</div></td></tr>`;
+    rowsEl.innerHTML = `<tr><td colspan="9"><div class="empty">❌ ${escapeHtml(err.message || String(err))}</div></td></tr>`;
 refreshSummary();
     setStatus(`❌ ${err.message || err}`, "err");
   }
