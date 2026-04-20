@@ -81,18 +81,38 @@
   gap:8px;
 }
     .nav-btn{
-      width:40px;
-      height:40px;
-      border-radius:999px;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,.86);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      font-size:16px;
-      color:var(--text);
-      box-shadow:0 8px 18px rgba(0,0,0,.04);
-    }
+  width:40px;
+  height:40px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  background:rgba(255,255,255,.86);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:16px;
+  color:var(--text);
+  box-shadow:0 8px 18px rgba(0,0,0,.04);
+  position:relative;
+  overflow:visible;
+}
+
+.cart-badge{
+  position:absolute;
+  top:-4px;
+  right:-4px;
+  min-width:18px;
+  height:18px;
+  padding:0 5px;
+  border-radius:999px;
+  background:#e56a82;
+  color:#fff;
+  font-size:10px;
+  font-weight:700;
+  line-height:18px;
+  text-align:center;
+  border:2px solid rgba(255,255,255,.96);
+  box-shadow:0 6px 14px rgba(229,106,130,.28);
+}
     .brand-wrap{text-align:center}
     .brand{
       font-family:var(--serif);
@@ -951,7 +971,10 @@
 
       <div class="nav-right">
   <a class="nav-btn" href="/member.html" aria-label="會員中心">👤</a>
-  <button class="nav-btn" id="cartBtn" type="button" aria-label="購物車">🛒</button>
+  <button class="nav-btn" id="cartBtn" type="button" aria-label="購物車">
+  🛒
+  <span class="cart-badge" id="cartBadge" hidden>0</span>
+</button>
 </div>
     </div>
   </nav>
@@ -1159,14 +1182,55 @@
   <img src="https://upload.wikimedia.org/wikipedia/commons/4/41/LINE_logo.svg" alt="LINE">
 </a>
   <script>
+  const HOME_API = 'https://api.murain.tw';
   const HOME_CART_KEY = 'MURAIN_WEB_CART_TOKEN';
   const HOME_LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
 
   const cartBtn = document.getElementById('cartBtn');
+  const cartBadge = document.getElementById('cartBadge');
+
+  function setCartBadge(count){
+    if (!cartBadge) return;
+    const n = Number(count || 0) || 0;
+    if (n > 0){
+      cartBadge.textContent = String(n);
+      cartBadge.hidden = false;
+    } else {
+      cartBadge.textContent = '0';
+      cartBadge.hidden = true;
+    }
+  }
+
+  async function refreshCartBadge(){
+    try{
+      const cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
+      if (!cartToken){
+        setCartBadge(0);
+        return;
+      }
+
+      const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`);
+      if (!r.ok){
+        setCartBadge(0);
+        return;
+      }
+
+      const j = await r.json().catch(() => ({}));
+      const items = Array.isArray(j.items) ? j.items : [];
+      let count = 0;
+      items.forEach(it => {
+        count += Number(it.qty || 0) || 0;
+      });
+
+      setCartBadge(count);
+    }catch(e){
+      setCartBadge(0);
+    }
+  }
 
   function goCartCheckout(){
     try{
-      const cartToken = localStorage.getItem(HOME_CART_KEY) || '';
+      const cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
       if (!cartToken){
         alert('目前購物車是空的');
         return;
@@ -1180,6 +1244,15 @@
   if (cartBtn){
     cartBtn.addEventListener('click', goCartCheckout);
   }
+
+  window.addEventListener('DOMContentLoaded', refreshCartBadge);
+  window.addEventListener('focus', refreshCartBadge);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshCartBadge();
+  });
+  window.addEventListener('storage', (e) => {
+    if (e.key === HOME_CART_KEY) refreshCartBadge();
+  });
 </script>
 </body>
 </html>
