@@ -376,12 +376,6 @@
 }
 .brand-list::-webkit-scrollbar{display:none}
 
-.subcat-list{
-  margin-top:12px;
-  padding-top:12px;
-  border-top:1px solid rgba(120,90,86,.08);
-}
-
 .brand-item{
   display:flex;
   flex-direction:column;
@@ -434,14 +428,40 @@
 
 .brand-item.all-btn .brand-text-logo{font-size:13px}
 
-.subcat-list .brand-avatar{
-  width:54px;
-  height:54px;
+.subcat-list{
+  margin-top:12px;
+  padding:12px 18px 0;
+  border-top:1px solid rgba(120,90,86,.08);
+  background:linear-gradient(180deg, rgba(255,245,240,.88), rgba(255,250,247,0));
 }
-.subcat-list .brand-text-logo{font-size:10px}
+
+.subcat-list .brand-item{
+  min-width:70px;
+}
+
+.subcat-list .brand-avatar{
+  width:52px;
+  height:52px;
+  background:#fff8f2;
+  border:1px solid rgba(183,146,105,.16);
+  box-shadow:none;
+}
+
+.subcat-list .brand-text-logo{
+  font-size:10px;
+  color:#9a7a72;
+}
+
 .subcat-list .brand-name-label{
   font-size:10px;
-  max-width:80px;
+  max-width:86px;
+  color:#9a7d76;
+}
+
+.subcat-list .brand-item.active .brand-avatar{
+  background:linear-gradient(135deg,#fff1ea,#f7e6d3);
+  border-color:rgba(183,146,105,.34);
+  box-shadow:0 8px 18px rgba(220,170,178,.10);
 }
 
     .toolbar{
@@ -482,14 +502,16 @@
       padding-bottom:38px;
     }
     .product-card{
-      background:rgba(255,255,255,.90);
-      border:1px solid rgba(220,196,162,.24);
-      border-radius:24px;
-      padding:12px;
-      box-shadow:var(--shadow);
-      cursor:pointer;
-      transition:transform .18s ease, box-shadow .18s ease;
-    }
+  display:flex;
+  flex-direction:column;
+  background:rgba(255,255,255,.90);
+  border:1px solid rgba(220,196,162,.24);
+  border-radius:24px;
+  padding:12px;
+  box-shadow:var(--shadow);
+  cursor:pointer;
+  transition:transform .18s ease, box-shadow .18s ease;
+}
     .product-card:active{transform:scale(.985)}
     .img-wrapper{
       position:relative;
@@ -506,7 +528,11 @@
       object-fit:contain;
       background:transparent;
     }
-    .card-info{display:flex;flex-direction:column}
+    .card-info{
+  display:flex;
+  flex-direction:column;
+  flex:1;
+}
     .p-meta{
       display:flex;
       align-items:center;
@@ -538,7 +564,9 @@
       white-space:nowrap;
     }
     .p-price{
-  margin-top:8px;
+  margin-top:auto;
+  padding-top:10px;
+  text-align:right;
   font-family:var(--sans);
   font-size:16px;
   font-weight:700;
@@ -646,10 +674,31 @@
 }
     .d-desc{
   font-size:14px;
-  line-height:1.95;
-  color:#766360;
-  white-space:pre-line;
+  line-height:1.9;
+  color:#6f5d59;
   letter-spacing:.01em;
+}
+
+.desc-heading{
+  margin:18px 0 8px;
+  font-size:15px;
+  font-weight:700;
+  color:#5a4643;
+  letter-spacing:.03em;
+}
+
+.desc-line{
+  margin:0 0 8px;
+}
+
+.desc-bullet{
+  margin:0 0 6px;
+  padding-left:1em;
+  text-indent:-1em;
+}
+
+.desc-space{
+  height:10px;
 }
     .detail-actions{
       padding:18px 24px 24px;
@@ -816,12 +865,12 @@
 
 .subcat-list{
   margin-top:8px;
-  padding-top:8px;
+  padding:8px 12px 0;
 }
 
 .subcat-list .brand-avatar{
-  width:40px;
-  height:40px;
+  width:38px;
+  height:38px;
 }
 
     .toolbar{
@@ -1205,10 +1254,11 @@ function writeShopCache(items, categories){
     $('detailBrand').innerHTML = topLine(product) || 'XUYUAN';
     $('detailTitle').textContent = product.title || product.sku;
     $('detailPrice').textContent = 'NT$' + Number(product.price || 0).toLocaleString();
-    $('detailDesc').textContent = product.description || '';
-    currentProductImages = product.images && product.images.length ? product.images : [product.image || product.image_url || ''];
-    currentImgIdx = 0;
-    updateGalleryImage();
+    $('detailDesc').innerHTML = formatDetailDesc(product.description || '');
+currentProductImages = product.images && product.images.length ? product.images : [product.image || product.image_url || ''];
+currentImgIdx = 0;
+preloadGalleryImages(currentProductImages);
+updateGalleryImage();
     $('detailAddBtn').onclick = () => {
       handleAddToCart(product.sku, 1);
       closeDetail();
@@ -1246,6 +1296,13 @@ function writeShopCache(items, categories){
       el.style.display = showNav ? 'flex' : 'none';
     });
   }
+  function preloadGalleryImages(arr){
+  (arr || []).forEach(src => {
+    if (!src) return;
+    const img = new Image();
+    img.src = src;
+  });
+}
 
   function prevImage(e){
     e.stopPropagation();
@@ -1418,6 +1475,31 @@ async function fetchProducts(){
     const name = String(s?.name || '').trim();
     return name || code || '';
   }
+  function updateToolbarTitle(){
+  const el = document.querySelector('.toolbar-title');
+  if (!el) return;
+
+  if (selectedCat === 'ALL'){
+    el.textContent = '新品上市';
+    return;
+  }
+
+  const cat = (allCats || []).find(x => String(x.code || '').trim() === String(selectedCat).trim());
+  if (!cat){
+    el.textContent = '新品上市';
+    return;
+  }
+
+  if (selectedSub !== 'ALL' && Array.isArray(cat.subcategories)){
+    const sub = cat.subcategories.find(x => String(x.code || '').trim() === String(selectedSub).trim());
+    if (sub){
+      el.textContent = labelOfSub(sub);
+      return;
+    }
+  }
+
+  el.textContent = labelOfCat(cat);
+}
   function avatarText(label, code){
     const s = String(label || code || '').trim();
     if (!s) return '';
@@ -1538,6 +1620,23 @@ function renderCategoryBar(categories){
     return String(s ?? '').replace(/<[^>]*>/g, '').trim();
   }
 
+  function formatDetailDesc(text){
+  const lines = String(text || '').split(/\r?\n/);
+
+  return lines.map(line => {
+    const s = escapeHtml(line.trim());
+
+    if (!s) return '<div class="desc-space"></div>';
+
+    const m = s.match(/^【(.+?)】$/);
+    if (m) return `<div class="desc-heading">${m[1]}</div>`;
+
+    if (/^[•・\-]/.test(s)) return `<div class="desc-bullet">${s}</div>`;
+
+    return `<div class="desc-line">${s}</div>`;
+  }).join('');
+}
+
   function topLine(p){
     const cName = String(p.category_name || p.category || p.category_code || '').trim();
     const sName = String(p.subcategory_name || p.subcategory || p.subcategory_code || '').trim();
@@ -1548,29 +1647,32 @@ function renderCategoryBar(categories){
     return `<span class="p-sub">${one}</span>`;
   }
 
-  function renderProducts(list){
-    const wrap = $('productList');
-    $('emptyTip').style.display = list.length ? 'none' : 'block';
-    wrap.innerHTML = '';
-    list.forEach(p => {
-      const card = document.createElement('div');
-      card.className = 'product-card';
-      const img = String(p.thumb_url || p.image_url || p.image || '').trim();
-      const safeTitle = escapeHtml(stripTags(p.title || ''));
-      card.innerHTML = `
-        <div class="img-wrapper">
+ function renderProducts(list){
+  const wrap = $('productList');
+  $('emptyTip').style.display = list.length ? 'none' : 'block';
+  wrap.innerHTML = '';
+
+  list.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'product-card';
+    const img = String(p.thumb_url || p.image_url || p.image || '').trim();
+    const safeTitle = escapeHtml(stripTags(p.title || ''));
+    card.innerHTML = `
+      <div class="img-wrapper">
           <img src="${escapeHtml(img)}" loading="lazy" alt="${safeTitle}">
-        </div>
-        <div class="card-info">
-          <div class="p-meta">${topLine(p)}</div>
-          <div class="p-title">${safeTitle}${p.brand ? ` <span class="title-brand">${escapeHtml(p.brand)}</span>` : ''}</div>
-          <div class="p-price">NT$${Number(p.price || 0).toLocaleString()}</div>
-        </div>
-      `;
-      card.onclick = () => openProductDetail(p);
-      wrap.appendChild(card);
-    });
-  }
+      </div>
+      <div class="card-info">
+        <div class="p-meta">${topLine(p)}</div>
+        <div class="p-title">${safeTitle}${p.brand ? ` <span class="title-brand">${escapeHtml(p.brand)}</span>` : ''}</div>
+        <div class="p-price">NT$${Number(p.price || 0).toLocaleString()}</div>
+      </div>
+    `;
+    card.onclick = () => openProductDetail(p);
+    wrap.appendChild(card);
+  });
+
+  updateToolbarTitle();
+}
 
   async function handleAddToCart(sku, qty){
     showToast('加入中...');
