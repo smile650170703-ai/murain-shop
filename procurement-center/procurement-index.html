@@ -200,6 +200,32 @@
       .hero{ grid-template-columns:1fr; }
       .module-grid{ grid-template-columns:1fr; }
     }
+    .module-btn{
+  position: relative;
+}
+
+.module-badge{
+  position:absolute;
+  top:-8px;
+  right:-8px;
+  min-width:22px;
+  height:22px;
+  padding:0 6px;
+  border-radius:999px;
+  background:#dc2626;
+  color:#fff;
+  font-size:12px;
+  font-weight:800;
+  display:none;
+  align-items:center;
+  justify-content:center;
+  line-height:22px;
+  box-shadow:0 4px 12px rgba(220,38,38,.25);
+}
+
+.module-badge.show{
+  display:inline-flex;
+}
   </style>
 </head>
 <body>
@@ -226,7 +252,7 @@
           <div class="pill">3. 待入庫</div>
           <div class="pill">4. 標籤列印</div>
           <div class="pill">5. 列印完成</div>
-          <div class="pill">6. 退款登記</div>
+          <div class="pill">6. 待確認追蹤</div>
         </div>
       </div>
 
@@ -279,9 +305,10 @@
           <span>查詢已完成列印的批次與資料。</span>
         </a>
 
-        <a class="module-btn" href="/procurement-center/procurement-refund-register.html">
-  <strong>退款登記</strong>
-  <span>建立退款案件、更新退款狀態、連結信用卡退款明細與對帳。</span>
+        <a class="module-btn" href="/procurement-center/procurement-refund-register.html" id="pendingReviewBtn">
+  <strong>待確認追蹤</strong>
+  <span>追蹤少件、缺貨、規格錯誤、顏色錯誤等異常商品。</span>
+  <span id="pendingReviewBadge" class="module-badge"></span>
 </a>
       </div>
     </div>
@@ -297,7 +324,36 @@
     const btnLogout = document.getElementById("btnLogout");
     const btnUnlockLocal = document.getElementById("btnUnlockLocal");
     const inputPassword = document.getElementById("entryPassword");
+const API_PENDING_REVIEW_LIST = "https://api.murain.tw/op/procurement/pending-review/list";
 
+async function loadPendingReviewBadge() {
+  const badge = document.getElementById("pendingReviewBadge");
+  if (!badge) return;
+
+  try {
+    const r = await fetch(API_PENDING_REVIEW_LIST);
+    const data = await r.json().catch(() => ({}));
+
+    if (!r.ok || !data.ok) {
+      badge.textContent = "";
+      badge.classList.remove("show");
+      return;
+    }
+
+    const count = Number(data.count || 0);
+
+    if (count > 0) {
+      badge.textContent = count > 99 ? "99+" : String(count);
+      badge.classList.add("show");
+    } else {
+      badge.textContent = "";
+      badge.classList.remove("show");
+    }
+  } catch (e) {
+    badge.textContent = "";
+    badge.classList.remove("show");
+  }
+}
     function setMsg(text, type) {
       msgEl.textContent = text || "";
       msgEl.className = "msg";
@@ -306,10 +362,11 @@
     }
 
     function showUnlocked() {
-      moduleCard.classList.remove("hidden");
-      btnLogout.classList.remove("hidden");
-      setMsg("✅ 已通過首頁驗證，可以進入模組。", "ok");
-    }
+  moduleCard.classList.remove("hidden");
+  btnLogout.classList.remove("hidden");
+  setMsg("✅ 已通過首頁驗證，可以進入模組。", "ok");
+  loadPendingReviewBadge();
+}
 
     function showLocked() {
       moduleCard.classList.add("hidden");
