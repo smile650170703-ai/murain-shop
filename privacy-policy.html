@@ -75,37 +75,60 @@
   }
 
   .nav-inner{
-    height:58px;
-    display:grid;
-    grid-template-columns:52px 1fr auto;
-    align-items:center;
-    gap:10px;
-  }
+  height:58px;
+  display:grid;
+  grid-template-columns:52px 1fr 96px;
+  align-items:center;
+}
 
-  .nav-left,.nav-right{
-    display:flex;
-    align-items:center;
-  }
+.nav-left,.nav-right{
+  display:flex;
+}
 
-  .nav-left{ justify-content:flex-start; }
-  .nav-right{ justify-content:flex-end; gap:8px; }
+.nav-left{
+  justify-content:flex-start;
+}
 
-  .nav-btn{
-    width:40px;
-    height:40px;
-    border-radius:999px;
-    border:1px solid rgba(141,119,116,.14);
-    background:rgba(255,255,255,.86);
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size:16px;
-    color:#53423f;
-    box-shadow:0 8px 18px rgba(0,0,0,.04);
-    text-decoration:none;
-    cursor:pointer;
-    flex:0 0 auto;
-  }
+.nav-right{
+  justify-content:flex-end;
+  gap:8px;
+}
+
+.nav-btn{
+  width:40px;
+  height:40px;
+  border-radius:999px;
+  border:1px solid rgba(141,119,116,.14);
+  background:rgba(255,255,255,.86);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:16px;
+  color:#53423f;
+  box-shadow:0 8px 18px rgba(0,0,0,.04);
+  text-decoration:none;
+  cursor:pointer;
+  position:relative;
+  overflow:visible;
+}
+
+.cart-badge{
+  position:absolute;
+  top:-4px;
+  right:-4px;
+  min-width:18px;
+  height:18px;
+  padding:0 5px;
+  border-radius:999px;
+  background:#e56a82;
+  color:#fff;
+  font-size:10px;
+  font-weight:700;
+  line-height:18px;
+  text-align:center;
+  border:2px solid rgba(255,255,255,.96);
+  box-shadow:0 6px 14px rgba(229,106,130,.28);
+}
 
   .brand-wrap{text-align:center}
 
@@ -867,9 +890,12 @@
     </div>
 
     <div class="nav-right">
-      <a class="nav-btn" href="/shop.html" aria-label="購物車或商城">👜</a>
-      <a class="nav-btn" href="/member.html" aria-label="會員中心">♡</a>
-    </div>
+  <a class="nav-btn" href="/member.html" aria-label="會員中心">👤</a>
+  <button class="nav-btn" id="cartBtn" type="button" aria-label="購物車">
+    🛒
+    <span class="cart-badge" id="cartBadge" hidden>0</span>
+  </button>
+</div>
   </div>
 </nav>
 
@@ -1025,6 +1051,79 @@
     if (e.key === "Escape") closeSiteMenu();
   });
 </script>
+<script>
+  const HOME_API = 'https://api.murain.tw';
+  const HOME_CART_KEY = 'MURAIN_WEB_CART_TOKEN';
+  const HOME_LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
 
+  const cartBtn = document.getElementById('cartBtn');
+  const cartBadge = document.getElementById('cartBadge');
+
+  function setCartBadge(count){
+    if (!cartBadge) return;
+    const n = Number(count || 0) || 0;
+    if (n > 0){
+      cartBadge.textContent = String(n);
+      cartBadge.hidden = false;
+    } else {
+      cartBadge.textContent = '0';
+      cartBadge.hidden = true;
+    }
+  }
+
+  async function refreshCartBadge(){
+    try{
+      const cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
+      if (!cartToken){
+        setCartBadge(0);
+        return;
+      }
+
+      const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`);
+      if (!r.ok){
+        setCartBadge(0);
+        return;
+      }
+
+      const j = await r.json().catch(() => ({}));
+      const items = Array.isArray(j.items) ? j.items : [];
+      let count = 0;
+
+      items.forEach(it => {
+        count += Number(it.qty || 0) || 0;
+      });
+
+      setCartBadge(count);
+    } catch(e){
+      setCartBadge(0);
+    }
+  }
+
+  function goCartCheckout(){
+    try{
+      const cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
+      if (!cartToken){
+        alert('目前購物車是空的');
+        return;
+      }
+      location.href = `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(cartToken)}`;
+    } catch(e){
+      alert('目前無法開啟購物車');
+    }
+  }
+
+  if (cartBtn){
+    cartBtn.addEventListener('click', goCartCheckout);
+  }
+
+  window.addEventListener('DOMContentLoaded', refreshCartBadge);
+  window.addEventListener('focus', refreshCartBadge);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) refreshCartBadge();
+  });
+  window.addEventListener('storage', (e) => {
+    if (e.key === HOME_CART_KEY) refreshCartBadge();
+  });
+</script>
 </body>
 </html>
