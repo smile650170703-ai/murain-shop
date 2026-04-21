@@ -234,10 +234,10 @@
     }
 
     table{
-      width:100%;
-      min-width:1300px;
-      border-collapse:collapse;
-    }
+  width:100%;
+  min-width:1500px;
+  border-collapse:collapse;
+}
 
     th,td{
       border-bottom:1px solid var(--line);
@@ -263,6 +263,18 @@
       background:#fff;
       color:var(--text);
     }
+    .note-input{
+  min-width:260px;
+}
+
+.refund-input{
+  min-width:120px;
+}
+
+.th-refund{
+  color:#dc2626;
+  font-weight:800;
+}
 
     .empty{
       color:var(--muted);
@@ -332,19 +344,20 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr>
-              <th>品牌</th>
-              <th>商品名稱</th>
-              <th>數量</th>
-              <th>累計實收數量</th>
-              <th>異常數量</th>
-              <th>異常狀態</th>
-              <th>異常原因</th>
-              <th>處理方式</th>
-              <th>異常備註</th>
-              <th>操作</th>
-            </tr>
-          </thead>
+  <tr>
+    <th>品牌</th>
+    <th>商品名稱</th>
+    <th>數量</th>
+    <th>累計實收數量</th>
+    <th>異常數量</th>
+    <th>異常狀態</th>
+    <th>異常原因</th>
+    <th>處理方式</th>
+    <th>異常備註</th>
+    <th class="th-refund">退款金額</th>
+    <th>操作</th>
+  </tr>
+</thead>
           <tbody id="pendingReviewRows">
             <tr><td colspan="10" class="empty">載入中...</td></tr>
           </tbody>
@@ -447,79 +460,90 @@
       }).join("");
     }
 
-    function renderPendingReviewRows(list) {
-      const rows = Array.isArray(list) ? list : [];
-      setBadgeCount(rows.length);
+ function renderPendingReviewRows(list) {
+  const rows = Array.isArray(list) ? list : [];
+  setBadgeCount(rows.length);
 
-      if (!rows.length) {
-        $("pendingReviewRows").innerHTML = `<tr><td colspan="10" class="empty">目前沒有待確認追蹤資料。</td></tr>`;
-        return;
+  if (!rows.length) {
+    $("pendingReviewRows").innerHTML = `<tr><td colspan="11" class="empty">目前沒有待確認追蹤資料。</td></tr>`;
+    return;
+  }
+
+  $("pendingReviewRows").innerHTML = rows.map((row) => `
+    <tr data-id="${escapeHtml(row.id)}">
+      <td>${escapeHtml(row.brand || "")}</td>
+      <td>${escapeHtml(row.productName || "")}</td>
+      <td>${escapeHtml(row.qty || "")}</td>
+      <td>${escapeHtml(row.receivedQty || "")}</td>
+      <td>${escapeHtml(row.abnormalQty || "")}</td>
+      <td>
+        <select class="cell-select" data-role="abnormalStatus">
+          ${buildSelectOptions(STATUS_OPTIONS, row.abnormalStatus)}
+        </select>
+      </td>
+      <td>
+        <select class="cell-select" data-role="abnormalReason">
+          ${buildSelectOptions(REASON_OPTIONS, row.abnormalReason)}
+        </select>
+      </td>
+      <td>
+        <select class="cell-select" data-role="abnormalMethod">
+          ${buildSelectOptions(METHOD_OPTIONS, row.abnormalMethod)}
+        </select>
+      </td>
+      <td>
+        <input
+          class="cell-input note-input"
+          type="text"
+          data-role="abnormalNote"
+          value="${escapeHtml(row.abnormalNote || "")}"
+          placeholder="輸入備註"
+        />
+      </td>
+      <td>
+        <input
+          class="cell-input refund-input"
+          type="text"
+          inputmode="decimal"
+          data-role="refundAmount"
+          value="${escapeHtml(row.refundAmount || "")}"
+          placeholder="退款金額"
+        />
+      </td>
+      <td>
+        <button class="btn small secondary btnSaveRow" type="button" data-id="${escapeHtml(row.id)}">儲存</button>
+      </td>
+    </tr>
+  `).join("");
+
+  document.querySelectorAll(".btnSaveRow").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const tr = btn.closest("tr[data-id]");
+      const payload = {
+        id: btn.dataset.id,
+        abnormal_status: String(tr.querySelector('[data-role="abnormalStatus"]')?.value || "").trim(),
+        abnormal_reason: String(tr.querySelector('[data-role="abnormalReason"]')?.value || "").trim(),
+        abnormal_method: String(tr.querySelector('[data-role="abnormalMethod"]')?.value || "").trim(),
+        abnormal_note: String(tr.querySelector('[data-role="abnormalNote"]')?.value || "").trim(),
+        refund_amount: String(tr.querySelector('[data-role="refundAmount"]')?.value || "").trim()
+      };
+
+      const oldText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "儲存中...";
+
+      try {
+        await apiPost(API_PENDING_REVIEW_UPDATE, payload);
+        setStatus("✅ 已更新待確認追蹤資料", "ok");
+        await loadPendingReviewList();
+      } catch (err) {
+        setStatus(`❌ ${err.message || err}`, "err");
+        btn.disabled = false;
+        btn.textContent = oldText;
       }
-
-      $("pendingReviewRows").innerHTML = rows.map((row) => `
-        <tr data-id="${escapeHtml(row.id)}">
-          <td>${escapeHtml(row.brand || "")}</td>
-          <td>${escapeHtml(row.productName || "")}</td>
-          <td>${escapeHtml(row.qty || "")}</td>
-          <td>${escapeHtml(row.receivedQty || "")}</td>
-          <td>${escapeHtml(row.abnormalQty || "")}</td>
-          <td>
-            <select class="cell-select" data-role="abnormalStatus">
-              ${buildSelectOptions(STATUS_OPTIONS, row.abnormalStatus)}
-            </select>
-          </td>
-          <td>
-            <select class="cell-select" data-role="abnormalReason">
-              ${buildSelectOptions(REASON_OPTIONS, row.abnormalReason)}
-            </select>
-          </td>
-          <td>
-            <select class="cell-select" data-role="abnormalMethod">
-              ${buildSelectOptions(METHOD_OPTIONS, row.abnormalMethod)}
-            </select>
-          </td>
-          <td>
-            <input
-              class="cell-input"
-              type="text"
-              data-role="abnormalNote"
-              value="${escapeHtml(row.abnormalNote || "")}"
-              placeholder="輸入備註"
-            />
-          </td>
-          <td>
-            <button class="btn small secondary btnSaveRow" type="button" data-id="${escapeHtml(row.id)}">儲存</button>
-          </td>
-        </tr>
-      `).join("");
-
-      document.querySelectorAll(".btnSaveRow").forEach((btn) => {
-        btn.addEventListener("click", async () => {
-          const tr = btn.closest("tr[data-id]");
-          const payload = {
-            id: btn.dataset.id,
-            abnormal_status: String(tr.querySelector('[data-role="abnormalStatus"]')?.value || "").trim(),
-            abnormal_reason: String(tr.querySelector('[data-role="abnormalReason"]')?.value || "").trim(),
-            abnormal_method: String(tr.querySelector('[data-role="abnormalMethod"]')?.value || "").trim(),
-            abnormal_note: String(tr.querySelector('[data-role="abnormalNote"]')?.value || "").trim()
-          };
-
-          const oldText = btn.textContent;
-          btn.disabled = true;
-          btn.textContent = "儲存中...";
-
-          try {
-            await apiPost(API_PENDING_REVIEW_UPDATE, payload);
-            setStatus("✅ 已更新待確認追蹤資料", "ok");
-            await loadPendingReviewList();
-          } catch (err) {
-            setStatus(`❌ ${err.message || err}`, "err");
-            btn.disabled = false;
-            btn.textContent = oldText;
-          }
-        });
-      });
-    }
+    });
+  });
+}
 
     async function loadPendingReviewList() {
       setStatus("載入中...", "info");
@@ -528,7 +552,7 @@
         renderPendingReviewRows(data.rows || []);
         setStatus(`✅ 待確認追蹤已更新，共 ${data.count || 0} 筆`, "ok");
       } catch (err) {
-        $("pendingReviewRows").innerHTML = `<tr><td colspan="10" class="empty">❌ ${escapeHtml(err.message || String(err))}</td></tr>`;
+        $("pendingReviewRows").innerHTML = `<tr><td colspan="11" class="empty">❌ ${escapeHtml(err.message || String(err))}</td></tr>`;
         setBadgeCount(0);
         setStatus(`❌ ${err.message || err}`, "err");
       }
