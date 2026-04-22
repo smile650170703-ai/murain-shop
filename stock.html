@@ -807,46 +807,271 @@ function safeFileName(s){
   return String(s || "").replace(/[\\/:*?"<>|]/g, "_").trim();
 }
 
-$("btnCSV").addEventListener("click", ()=>{
-  if (!rows.length) return setMsg("err", "目前沒有資料可供匯出");
+function getTodayFileDate(){
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
-  const currentConsignor = String(consignorEl?.value || "").trim();
-
-const headers = ["寄賣人","SKU","品牌","商品名稱","在庫數量","起標價格","一標多少","建議售價","上架狀態","寄賣出庫日期"];
-const lines = [
-  headers.join(","),
-  ...rows.map(r => [
-    `"${String(r.consignor_name || "").replace(/"/g,'""')}"`,
-    `"${String(r.sku || "").replace(/"/g,'""')}"`,
-    `"${String(r.brand || "").replace(/"/g,'""')}"`,
-    `"${String(r.name || "").replace(/"/g,'""')}"`,
-    String(Number(r.stock || 0) || 0),
-    String(Number(r.start_price || 0) || 0),
-    String(Number(r.bid_step || 0) || 0),
-    String(Number(r.price || 0) || 0),
-    r.active ? "銷售中" : "已下架",
-    `"${String(r.consign_out_date || "").replace(/"/g,'""')}"`
-  ].join(","))
-].join("\n");
-
-  const blob = new Blob(
-    [new Uint8Array([0xEF, 0xBB, 0xBF]), lines],
-    { type: "text/csv;charset=utf-8" }
-  );
-
+function downloadBlob(blob, filename){
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1200);
+}
 
-  if (currentConsignor) {
-    a.download = `寄賣清冊_${safeFileName(currentConsignor)}_${new Date().toISOString().slice(0,10)}.csv`;
-  } else {
-    a.download = `庫存匯出_${new Date().toISOString().slice(0,10)}.csv`;
+function thinBorder(){
+  return {
+    top:    { style: "thin", color: { argb: "FF000000" } },
+    left:   { style: "thin", color: { argb: "FF000000" } },
+    bottom: { style: "thin", color: { argb: "FF000000" } },
+    right:  { style: "thin", color: { argb: "FF000000" } }
+  };
+}
+
+function styleHeaderCell(cell){
+  cell.font = {
+    name: "Microsoft JhengHei",
+    bold: true,
+    size: 11
+  };
+  cell.alignment = {
+    vertical: "middle",
+    horizontal: "center",
+    wrapText: true
+  };
+  cell.border = thinBorder();
+  cell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFF3F4F6" }
+  };
+}
+
+function styleBodyCell(cell, horizontal = "center"){
+  cell.font = {
+    name: "Microsoft JhengHei",
+    size: 11
+  };
+  cell.alignment = {
+    vertical: "middle",
+    horizontal,
+    wrapText: true
+  };
+  cell.border = thinBorder();
+}
+
+async function imageUrlToDataUrl(url){
+  const resp = await fetch(url, { mode: "cors" });
+  if (!resp.ok) throw new Error(`image_fetch_failed_${resp.status}`);
+
+  const blob = await resp.blob();
+
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("image_read_failed"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function extFromDataUrl(dataUrl){
+  const m = /^data:image\/(png|jpeg|jpg|gif|webp);base64,/i.exec(String(dataUrl || ""));
+  const ext = String(m?.[1] || "png").toLowerCase();
+  return ext === "jpg" ? "jpeg" : ext;
+}
+
+async function buildConsignorSheet(workbook, list, consignorName){
+  const ws = workbook.addWorksheet("附件一_寄售清冊");
+
+  ws.columns = [
+    { header: "序號",     key: "seq",    width: 8  },
+    { header: "直播截圖", key: "photo",  width: 18 },
+    { header: "商品名稱", key: "name",   width: 34 },
+    { header: "數量",     key: "qty",    width: 10 },
+    { header: "寄賣方式", key: "method", width: 12 },
+    { header: "競標底價", key: "base",   width: 14 },
+    { header: "每標加價", key: "step",   width: 14 }
+  ];
+
+  ws.views = [{ state: "frozen", ySplit: 1 }];
+  ws.pageSetup = {
+    orientation: "landscape",
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0
+  };
+
+  const headerRow = ws.getRow(1);
+  headerRow.height = 24;
+  headerRow.eachCell(cell => styleHeaderCell(cell));
+
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i] || {};
+
+    const row = ws.addRow({
+      seq: i + 1,
+      photo: "",
+      name: String(r.name || "").trim(),
+      qty: Number(r.stock || 0) || 0,
+      method: "競標",
+      base: Number(r.start_price || 0) || 0,
+      step: Number(r.bid_step || 0) || 0
+    });
+
+    row.height = 88;
+
+    ["A","B","C","D","E","F","G"].forEach(col => {
+      styleBodyCell(
+        ws.getCell(`${col}${row.number}`),
+        col === "C" ? "left" : "center"
+      );
+    });
+
+    ws.getCell(`F${row.number}`).numFmt = "#,##0";
+    ws.getCell(`G${row.number}`).numFmt = "#,##0";
+
+    const imgUrl = String(r.live_screenshot_url || "").trim();
+
+    if (imgUrl) {
+      try {
+        const dataUrl = await imageUrlToDataUrl(imgUrl);
+        const imageId = workbook.addImage({
+          base64: dataUrl,
+          extension: extFromDataUrl(dataUrl)
+        });
+
+        const zeroRow = row.number - 1;
+
+        ws.addImage(imageId, {
+          tl: { col: 1.08, row: zeroRow + 0.08 },
+          br: { col: 1.92, row: zeroRow + 0.92 },
+          editAs: "oneCell"
+        });
+      } catch (e) {
+        ws.getCell(`B${row.number}`).value = "圖片讀取失敗";
+        ws.getCell(`B${row.number}`).font = {
+          name: "Microsoft JhengHei",
+          size: 10,
+          color: { argb: "FF666666" }
+        };
+      }
+    }
   }
 
-  a.click();
-  URL.revokeObjectURL(a.href);
+  return ws;
+}
 
-  setMsg("good", `匯出成功：已下載 ${rows.length} 筆資料。`);
+function buildStockSheet(workbook, list){
+  const ws = workbook.addWorksheet("庫存匯出");
+
+  ws.columns = [
+    { header: "寄賣人",       key: "consignor", width: 16 },
+    { header: "SKU",          key: "sku",       width: 16 },
+    { header: "品牌",         key: "brand",     width: 14 },
+    { header: "商品名稱",     key: "name",      width: 34 },
+    { header: "在庫數量",     key: "stock",     width: 10 },
+    { header: "起標價格",     key: "base",      width: 12 },
+    { header: "一標多少",     key: "step",      width: 12 },
+    { header: "建議售價",     key: "price",     width: 12 },
+    { header: "上架狀態",     key: "active",    width: 12 },
+    { header: "寄賣出庫日期", key: "outDate",   width: 14 },
+    { header: "直播截圖網址", key: "liveUrl",   width: 42 }
+  ];
+
+  ws.views = [{ state: "frozen", ySplit: 1 }];
+
+  const headerRow = ws.getRow(1);
+  headerRow.height = 24;
+  headerRow.eachCell(cell => styleHeaderCell(cell));
+
+  for (const r of list) {
+    const row = ws.addRow({
+      consignor: String(r.consignor_name || "").trim(),
+      sku: String(r.sku || "").trim(),
+      brand: String(r.brand || "").trim(),
+      name: String(r.name || "").trim(),
+      stock: Number(r.stock || 0) || 0,
+      base: Number(r.start_price || 0) || 0,
+      step: Number(r.bid_step || 0) || 0,
+      price: Number(r.price || 0) || 0,
+      active: r.active ? "銷售中" : "已下架",
+      outDate: String(r.consign_out_date || "").trim(),
+      liveUrl: String(r.live_screenshot_url || "").trim()
+    });
+
+    row.height = 24;
+
+    ["A","B","C","D","E","F","G","H","I","J","K"].forEach(col => {
+      styleBodyCell(
+        ws.getCell(`${col}${row.number}`),
+        col === "D" || col === "K" ? "left" : "center"
+      );
+    });
+
+    ws.getCell(`E${row.number}`).numFmt = "#,##0";
+    ws.getCell(`F${row.number}`).numFmt = "#,##0";
+    ws.getCell(`G${row.number}`).numFmt = "#,##0";
+    ws.getCell(`H${row.number}`).numFmt = "#,##0";
+  }
+
+  return ws;
+}
+
+$("btnCSV").textContent = "匯出 EXCEL";
+
+$("btnCSV").addEventListener("click", async ()=>{
+  const btn = $("btnCSV");
+
+  try {
+    if (!rows.length) {
+      return setMsg("err", "目前沒有資料可供匯出");
+    }
+
+    if (!window.ExcelJS) {
+      return setMsg("err", "Excel 匯出套件尚未載入，請重新整理後再試");
+    }
+
+    btn.disabled = true;
+    setMsg("muted", "Excel 匯出中，請稍候...");
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "MURAIN";
+    workbook.created = new Date();
+
+    const currentConsignor = String(consignorEl?.value || "").trim();
+    const fileDate = getTodayFileDate();
+
+    if (currentConsignor) {
+      await buildConsignorSheet(workbook, rows, currentConsignor);
+    } else {
+      buildStockSheet(workbook, rows);
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob(
+      [buffer],
+      { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
+    );
+
+    const filename = currentConsignor
+      ? `附件一_寄售清冊_${safeFileName(currentConsignor)}_${fileDate}.xlsx`
+      : `庫存匯出_${fileDate}.xlsx`;
+
+    downloadBlob(blob, filename);
+
+    setMsg("good", `匯出成功：已下載 ${rows.length} 筆 Excel 資料。`);
+  } catch (e) {
+    setMsg("err", String(e?.message || e || "匯出失敗"));
+  } finally {
+    btn.disabled = false;
+  }
 });
 consignOutDateEl.value = todayLocal();
 (async ()=>{
@@ -860,5 +1085,6 @@ consignOutDateEl.value = todayLocal();
 })();
 </script>
 <div id="toastWrap" class="toast-wrap"></div>
+  <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
 </body>
 </html>
