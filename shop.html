@@ -1288,8 +1288,6 @@ html, body {
   let cartCount = 0;
   let cartToken = '';
   let isDemoMode = false;
-  let currentImgIdx = 0;
-  let currentProductImages = [];
   let allCats = [];
 
   const params = new URLSearchParams(location.search);
@@ -1360,22 +1358,6 @@ function stripTags(s){
   return String(s ?? '').replace(/<[^>]*>/g, '').trim();
 }
 
-function formatDetailDesc(text){
-  const lines = String(text || '').split(/\r?\n/);
-
-  return lines.map(line => {
-    const s = escapeHtml(line.trim());
-
-    if (!s) return '<div class="desc-space"></div>';
-
-    const m = s.match(/^【(.+?)】$/);
-    if (m) return `<div class="desc-heading">${m[1]}</div>`;
-
-    if (/^[•・\-]/.test(s)) return `<div class="desc-bullet">${s}</div>`;
-
-    return `<div class="desc-line">${s}</div>`;
-  }).join('');
-}
   window.addEventListener('scroll', () => {
     const bar = $('brandBarWrapper');
     if (window.scrollY > 120) bar.classList.add('stuck');
@@ -1387,16 +1369,6 @@ function formatDetailDesc(text){
     el.textContent = msg;
     el.classList.add('show');
     setTimeout(() => el.classList.remove('show'), 1800);
-  }
-
-  function clearCart(){
-    if (confirm('確定要清空購物車嗎？')){
-      cartToken = '';
-      localStorage.removeItem(CART_KEY);
-      cartCount = 0;
-      updateCartUI(0);
-      showToast('購物車已清空');
-    }
   }
 
   async function jfetch(url, opt){
@@ -1735,30 +1707,6 @@ function renderProducts(list){
 
   updateToolbarTitle();
 }
-
-  async function handleAddToCart(sku, qty){
-    showToast('加入中...');
-    const token = await ensureCart();
-    if (isDemoMode){
-      setTimeout(() => {
-        cartCount += 1;
-        updateCartUI(cartCount);
-        showToast('已加入購物車');
-      }, 260);
-      return;
-    }
-    const res = await jfetch(API_BASE + '/cart/add', {
-      method:'POST',
-      body: JSON.stringify({ cart_token: token, sku, qty: qty || 1 })
-    });
-    if (res && res.items){
-      let c = 0;
-      res.items.forEach(i => c += Number(i.qty || 0));
-      updateCartUI(c);
-      showToast('已加入購物車');
-    }
-  }
-
   async function goCheckout(){
     if (!cartToken) await restoreCart();
     if (isDemoMode){ alert('目前為演示模式'); return; }
