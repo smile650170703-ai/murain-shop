@@ -1387,7 +1387,7 @@ html, body {
 </script>
 <script>
   const API_BASE      = 'https://api.murain.tw';
-  const PRODUCT_API   = API_BASE + '/public/products';
+  const PRODUCT_API   = API_BASE + '/public/products-paged';
   const CART_KEY      = 'MURAIN_WEB_CART_TOKEN';
   const LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
 
@@ -1420,13 +1420,21 @@ html, body {
 
   const params = new URLSearchParams(location.search);
   let selectedCat = params.get('cat') || 'ALL';
-  let selectedSub = params.get('sub') || 'ALL';
-  const PAGE_SIZE = 8;
+let selectedSub = params.get('sub') || 'ALL';
+const PAGE_SIZE = 8;
 const MAX_VISIBLE_PAGES = 5;
-let currentPage = 1;
+let currentPage = Math.max(1, Number(params.get('page') || 1));
+let paginationState = {
+  page: currentPage,
+  limit: PAGE_SIZE,
+  total: 0,
+  total_pages: 1,
+  has_prev: false,
+  has_next: false
+};
 
   const $ = (id) => document.getElementById(id);
-  const SHOP_CACHE_KEY = 'XUYUAN_SHOP_CACHE_V1';
+  const SHOP_CACHE_KEY = 'XUYUAN_SHOP_PAGED_CACHE_V1';
 const SHOP_CACHE_TTL = 1000 * 60 * 10;
 
 function readShopCache(){
@@ -1570,80 +1578,91 @@ async function fetchProducts(){
   const loader = $('loading');
   const grid = $('productList');
 
-  const cached = readShopCache();
-  if (cached && Array.isArray(cached.items) && cached.items.length){
-    allItems = cached.items || [];
-    allCats = cached.categories || [];
-    currentPage = 1;
+  loader.style.display = 'block';
+  grid.innerHTML = '';
+  $('emptyTip').style.display = 'none';
+
+  try {
+    const u = new URL(PRODUCT_API, location.origin);
+    u.searchParams.set('page', String(currentPage));
+    u.searchParams.set('limit', String(PAGE_SIZE));
+
+    if (selectedCat !== 'ALL') u.searchParams.set('cat', selectedCat);
+    if (selectedSub !== 'ALL') u.searchParams.set('sub', selectedSub);
+
+    const res = await fetch(u.toString(), { cache:'no-store' });
+    const json = await res.json();
+
+    allItems = Array.isArray(json.items) ? json.items : [];
+    allCats = Array.isArray(json.categories) ? json.categories : [];
+    paginationState = json.pagination || {
+      page: currentPage,
+      limit: PAGE_SIZE,
+      total: allItems.length,
+      total_pages: 1,
+      has_prev: false,
+      has_next: false
+    };
+
+    currentPage = Math.max(1, Number(paginationState.page || currentPage));
+    syncQS();
+
     loader.style.display = 'none';
     renderCategoryBar(allCats);
     renderSubcatBar(allCats, selectedCat);
-    renderProducts(filterItems(allItems));
-  } else {
-    loader.style.display = 'block';
-    grid.innerHTML = '';
-  }
+    renderProducts(allItems);
+    renderPagination(paginationState);
 
-  try {
-    const res = await fetch(PRODUCT_API);
-    const json = await res.json();
-    allItems = json.items || [];
-    allCats = json.categories || [];
-
-    if (!Array.isArray(allCats) || allCats.length === 0){
-      const catMap = new Map();
-      allItems.forEach(it => {
-        const c = String(it.category || it.category_code || '').trim();
-        if (!c) return;
-        if (!catMap.has(c)) catMap.set(c, { code:c, name:c, subcategories:[] });
-        const s = String(it.subcategory || it.subcategory_code || it.brand || '').trim();
-        if (s){
-          const node = catMap.get(c);
-          if (!node.subcategories.find(x => x.code === s)) node.subcategories.push({ code:s, name:s });
-        }
-      });
-      allCats = Array.from(catMap.values());
+    if (!allItems.length){
+      $('emptyTip').style.display = 'block';
     }
 
-    writeShopCache(allItems, allCats);
+  } catch(err) {
+    /* fallback：本地 demo / 後端未改好時先用 mock */
+    allItems = mockProducts;
+    isDemoMode = true;
+
+    const filtered = filterItems(allItems);
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    currentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const pageItems = filtered.slice(start, start + PAGE_SIZE);
+
+    const catMap = new Map();
+    allItems.forEach(it => {
+      const c = String(it.category || it.category_code || '').trim();
+      if (!c) return;
+      if (!catMap.has(c)) catMap.set(c, { code:c, name:c, subcategories:[] });
+
+      const s = String(it.subcategory || it.subcategory_code || it.brand || '').trim();
+      if (s){
+        const node = catMap.get(c);
+        if (!node.subcategories.find(x => x.code === s)){
+          node.subcategories.push({ code:s, name:s });
+        }
+      }
+    });
+    allCats = Array.from(catMap.values());
+
+    paginationState = {
+      page: currentPage,
+      limit: PAGE_SIZE,
+      total,
+      total_pages: totalPages,
+      has_prev: currentPage > 1,
+      has_next: currentPage < totalPages
+    };
 
     loader.style.display = 'none';
-    if (allItems.length > 0){
-      if (selectedCat !== 'ALL' && !allCats.find(c => String(c.code || '').trim() === String(selectedCat).trim())) {
-        selectedCat = 'ALL';
-        selectedSub = 'ALL';
-      }
-      currentPage = 1;
-      renderCategoryBar(allCats);
-      renderSubcatBar(allCats, selectedCat);
-      renderProducts(filterItems(allItems));
-    } else {
+    renderCategoryBar(allCats);
+    renderSubcatBar(allCats, selectedCat);
+    renderProducts(pageItems);
+    renderPagination(paginationState);
+
+    if (!pageItems.length){
       $('emptyTip').style.display = 'block';
-      $('paginationWrap').style.display = 'none';
-    }
-  } catch(err){
-    if (!allItems.length){
-      allItems = mockProducts;
-      isDemoMode = true;
-
-      const catMap = new Map();
-      allItems.forEach(it => {
-        const c = String(it.category || '').trim();
-        if (!c) return;
-        if (!catMap.has(c)) catMap.set(c, { code:c, name:c, subcategories:[] });
-        const s = String(it.subcategory || it.brand || '').trim();
-        if (s){
-          const node = catMap.get(c);
-          if (!node.subcategories.find(x => x.code === s)) node.subcategories.push({ code:s, name:s });
-        }
-      });
-      allCats = Array.from(catMap.values());
-
-      loader.style.display = 'none';
-      currentPage = 1;
-      renderCategoryBar(allCats);
-      renderSubcatBar(allCats, selectedCat);
-      renderProducts(filterItems(allItems));
     }
   }
 }
@@ -1715,14 +1734,14 @@ function renderCategoryBar(categories){
     }
 
     item.innerHTML = `<span class="brand-name-label">${escapeHtml(label)}</span>`;
-    item.onclick = () => {
+    item.onclick = async () => {
       selectedCat = key;
       selectedSub = 'ALL';
       currentPage = 1;
       syncQS();
       renderCategoryBar(categories);
       renderSubcatBar(categories, selectedCat);
-      renderProducts(filterItems(allItems));
+      await fetchProducts();
       scrollToProducts();
     };
     listEl.appendChild(item);
@@ -1756,12 +1775,12 @@ function renderSubcatBar(categories, catCode){
     }
 
     item.innerHTML = `<span class="brand-name-label">${escapeHtml(label)}</span>`;
-    item.onclick = () => {
+    item.onclick = async () => {
       selectedSub = key;
       currentPage = 1;
       syncQS();
       renderSubcatBar(categories, catCode);
-      renderProducts(filterItems(allItems));
+      await fetchProducts();
       scrollToProducts();
     };
     subEl.appendChild(item);
@@ -1803,23 +1822,23 @@ function topLine(p){
   return `<span class="p-sub">XUYUAN SELECT</span>`;
 }
 
-function renderPagination(totalItems){
+function renderPagination(meta){
   const wrap = $('paginationWrap');
   const prev = $('pagerPrev');
   const next = $('pagerNext');
   const nums = $('pagerNumbers');
 
-  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const totalPages = Math.max(1, Number(meta?.total_pages || 1));
 
-  if (totalItems <= PAGE_SIZE){
+  if (totalPages <= 1){
     wrap.style.display = 'none';
     nums.innerHTML = '';
     return;
   }
 
   wrap.style.display = 'flex';
-  prev.disabled = currentPage <= 1;
-  next.disabled = currentPage >= totalPages;
+  prev.disabled = !meta?.has_prev;
+  next.disabled = !meta?.has_next;
 
   const half = Math.floor(MAX_VISIBLE_PAGES / 2);
   let start = Math.max(1, currentPage - half);
@@ -1830,54 +1849,45 @@ function renderPagination(totalItems){
   }
 
   nums.innerHTML = '';
+
   for (let i = start; i <= end; i++){
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'pager-num' + (i === currentPage ? ' active' : '');
     btn.textContent = String(i);
-    btn.onclick = () => {
+    btn.onclick = async () => {
       currentPage = i;
-      renderProducts(filterItems(allItems));
+      syncQS();
+      await fetchProducts();
       scrollToProducts();
     };
     nums.appendChild(btn);
   }
 
-  prev.onclick = () => {
-    if (currentPage <= 1) return;
+  prev.onclick = async () => {
+    if (!meta?.has_prev) return;
     currentPage -= 1;
-    renderProducts(filterItems(allItems));
+    syncQS();
+    await fetchProducts();
     scrollToProducts();
   };
 
-  next.onclick = () => {
-    if (currentPage >= totalPages) return;
+  next.onclick = async () => {
+    if (!meta?.has_next) return;
     currentPage += 1;
-    renderProducts(filterItems(allItems));
+    syncQS();
+    await fetchProducts();
     scrollToProducts();
   };
 }
 
 function renderProducts(list){
   const wrap = $('productList');
-  const total = list.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  currentPage = Math.min(Math.max(1, currentPage), totalPages);
-
-  $('emptyTip').style.display = total ? 'none' : 'block';
   wrap.innerHTML = '';
 
-  if (!total){
-    renderPagination(0);
-    updateToolbarTitle();
-    return;
-  }
+  $('emptyTip').style.display = list.length ? 'none' : 'block';
 
-  const start = (currentPage - 1) * PAGE_SIZE;
-  const pageItems = list.slice(start, start + PAGE_SIZE);
-
-  pageItems.forEach((p, idx) => {
+  list.forEach((p, idx) => {
     const card = document.createElement('div');
     card.className = 'product-card';
 
@@ -1886,6 +1896,7 @@ function renderProducts(list){
     const price = Number(p.price || 0);
     const listPrice = Number(p.list_price || 0);
     const hasSale = listPrice > price;
+
     const eager = idx < 4 ? 'eager' : 'lazy';
     const priority = idx < 4 ? 'high' : 'low';
 
@@ -1920,7 +1931,6 @@ function renderProducts(list){
     wrap.appendChild(card);
   });
 
-  renderPagination(total);
   updateToolbarTitle();
 }
   async function goCheckout(){
@@ -1930,12 +1940,20 @@ function renderProducts(list){
     location.href = `${LIFF_CHECKOUT}?cart_token=${encodeURIComponent(cartToken)}`;
   }
 
-  function syncQS(){
-    const u = new URL(location.href);
-    if (selectedCat && selectedCat !== 'ALL') u.searchParams.set('cat', selectedCat); else u.searchParams.delete('cat');
-    if (selectedSub && selectedSub !== 'ALL') u.searchParams.set('sub', selectedSub); else u.searchParams.delete('sub');
-    history.replaceState({}, '', u.toString());
-  }
+function syncQS(){
+  const u = new URL(location.href);
+
+  if (selectedCat && selectedCat !== 'ALL') u.searchParams.set('cat', selectedCat);
+  else u.searchParams.delete('cat');
+
+  if (selectedSub && selectedSub !== 'ALL') u.searchParams.set('sub', selectedSub);
+  else u.searchParams.delete('sub');
+
+  if (currentPage > 1) u.searchParams.set('page', String(currentPage));
+  else u.searchParams.delete('page');
+
+  history.replaceState({}, '', u.toString());
+}
 
   window.addEventListener('DOMContentLoaded', async () => {
   await restoreCart();
