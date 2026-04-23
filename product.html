@@ -985,7 +985,7 @@ html, body {
                 <div>
                   <div class="option-label">數量</div>
                   <div class="qty-box">
-                    <div style="font-size:13px;color:#8b7470;">可直接加入購物車或立即結帳</div>
+<div id="qtyHint" style="font-size:13px;color:#8b7470;">可直接加入購物車或立即結帳</div>
                     <div class="qty-stepper">
                       <button class="qty-btn" id="qtyMinus" type="button">−</button>
                       <input class="qty-input" id="qtyInput" type="number" min="1" step="1" value="1">
@@ -1013,16 +1013,11 @@ html, body {
         <section class="tabs-card">
           <div class="tabs-head">
             <button class="tab-btn active" type="button" data-tab="intro">商品介紹</button>
-            <button class="tab-btn" type="button" data-tab="reviews">商品評價(0)</button>
           </div>
 
           <div class="tab-pane active" id="tab-intro">
             <div class="desc-body" id="detailDesc"></div>
             <div class="spec-list" id="specList"></div>
-          </div>
-
-          <div class="tab-pane" id="tab-reviews">
-            <div class="review-empty">目前這個商品尚未顯示評價內容。<br>先保留正式版評價分頁位置，之後妳要接 Airtable / 表單 / 手動評語都可以直接往這裡放。</div>
           </div>
         </section>
 
@@ -1192,14 +1187,61 @@ const LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
       };
     }
 
-    function buildSpecRows(product){
-      const rows = [];
-      if(product.color) rows.push(['顏色', product.color]);
-      if(product.size) rows.push(['尺寸', product.size]);
-      if(product.material) rows.push(['材質', product.material]);
-      if(product.stockQty != null) rows.push(['庫存', product.stockQty > 0 ? '現貨供應中' : '目前缺貨']);
-      return rows;
-    }
+   function buildSpecRows(product){
+  const rows = [];
+  if(product.color) rows.push(['顏色', product.color]);
+  if(product.size) rows.push(['尺寸', product.size]);
+  if(product.material) rows.push(['材質', product.material]);
+
+  if(product.stockQty != null){
+    rows.push([
+      '庫存',
+      product.stockQty > 0
+        ? `現貨供應中（剩餘 ${product.stockQty} 件）`
+        : '目前缺貨'
+    ]);
+  }
+
+  return rows;
+}
+    function applyStockUI(product){
+  const stock = Math.max(0, Number(product.stockQty || 0) || 0);
+  const qtyInput = $('qtyInput');
+  const minusBtn = $('qtyMinus');
+  const plusBtn = $('qtyPlus');
+  const addBtn = $('addCartBtn');
+  const buyBtn = $('buyNowBtn');
+  const hint = $('qtyHint');
+
+  if(stock <= 0){
+    qtyInput.value = '0';
+    qtyInput.min = '0';
+    qtyInput.max = '0';
+    qtyInput.disabled = true;
+    minusBtn.disabled = true;
+    plusBtn.disabled = true;
+    addBtn.disabled = true;
+    buyBtn.disabled = true;
+    if(hint) hint.textContent = '目前缺貨，暫時無法加入購物車';
+    return;
+  }
+
+  qtyInput.disabled = false;
+  minusBtn.disabled = false;
+  plusBtn.disabled = false;
+  addBtn.disabled = false;
+  buyBtn.disabled = false;
+
+  qtyInput.min = '1';
+  qtyInput.max = String(stock);
+
+  let v = Number(qtyInput.value || 1) || 1;
+  if(v < 1) v = 1;
+  if(v > stock) v = stock;
+  qtyInput.value = String(v);
+
+  if(hint) hint.textContent = `可直接加入購物車或立即結帳（最多 ${stock} 件）`;
+}
 
     function formatDetailDesc(text){
       const lines = String(text || '').split(/\r?\n/);
@@ -1223,8 +1265,11 @@ const LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
         nodes.push({label: product.category, href: `/shop.html?cat=${encodeURIComponent(product.raw.category_code || product.category)}`});
       }
       if(product.brand && product.brand !== product.category){
-        nodes.push({label: product.brand, href: '#'});
-      }
+  nodes.push({
+    label: product.brand,
+    href: `/shop.html?cat=${encodeURIComponent(product.raw.category_code || product.category || '')}&brand=${encodeURIComponent(product.brand)}`
+  });
+}
       nodes.push({label: product.title, href: ''});
 
       $('breadcrumb').innerHTML = nodes.map((item, idx) => {
@@ -1333,18 +1378,19 @@ $('shortDesc').textContent = shortLine;
       });
     }
 
-    function renderProductPage(product){
-      currentProduct = product;
-      document.title = `${product.title} | XUYUAN`;
-      $('loading').style.display = 'none';
-      $('notFound').style.display = 'none';
-      $('productPage').style.display = '';
-      buildBreadcrumb(product);
-      renderMeta(product);
-      renderGallery(product);
-      renderTabs(product);
-      renderRelated(product);
-    }
+  function renderProductPage(product){
+  currentProduct = product;
+  document.title = `${product.title} | XUYUAN`;
+  $('loading').style.display = 'none';
+  $('notFound').style.display = 'none';
+  $('productPage').style.display = '';
+  buildBreadcrumb(product);
+  renderMeta(product);
+  renderGallery(product);
+  renderTabs(product);
+  applyStockUI(product);
+  renderRelated(product);
+}
 
     async function jfetch(url, opt){
       try{
@@ -1402,38 +1448,58 @@ $('shortDesc').textContent = shortLine;
       return 'DEMO';
     }
 
-    async function addToCartAndMaybeCheckout(goCheckoutAfter){
-      if(!currentProduct || !currentProduct.sku) return;
-      const qty = Math.max(1, Number($('qtyInput').value || 1));
-      showToast(goCheckoutAfter ? '處理中...' : '加入中...');
-      const token = await ensureCart();
+  async function addToCartAndMaybeCheckout(goCheckoutAfter){
+  if(!currentProduct || !currentProduct.sku) return;
 
-      if(isDemoMode){
-        updateCartUI(cartCount + qty);
-        showToast(goCheckoutAfter ? '演示模式：已加入購物車' : '已加入購物車');
-        if(goCheckoutAfter) alert('目前為演示模式');
-        return;
-      }
+  const stock = Math.max(0, Number(currentProduct.stockQty || 0) || 0);
+  if(stock <= 0){
+    showToast('目前缺貨');
+    return;
+  }
 
-      const res = await jfetch(API_BASE + '/cart/add', {
-        method:'POST',
-        body: JSON.stringify({ cart_token: token, sku: currentProduct.sku, qty })
-      });
+  const qty = Math.max(1, Math.min(
+    stock,
+    Number($('qtyInput').value || 1) || 1
+  ));
 
-      if(res && res.items){
-        let c = 0;
-        res.items.forEach(i => c += Number(i.qty || 0));
-        updateCartUI(c);
-        if(goCheckoutAfter){
-          location.href = `${LIFF_CHECKOUT}?cart_token=${encodeURIComponent(token)}`;
-        }else{
-          showToast('已加入購物車');
-        }
-        return;
-      }
+  $('qtyInput').value = String(qty);
+  showToast(goCheckoutAfter ? '處理中...' : '加入中...');
+  const token = await ensureCart();
 
-      showToast('加入失敗，請稍後再試');
+  if(isDemoMode){
+    updateCartUI(cartCount + qty);
+    showToast(goCheckoutAfter ? '演示模式：已加入購物車' : '已加入購物車');
+    if(goCheckoutAfter) alert('目前為演示模式');
+    return;
+  }
+
+  const res = await jfetch(API_BASE + '/cart/add', {
+    method:'POST',
+    body: JSON.stringify({ cart_token: token, sku: currentProduct.sku, qty })
+  });
+
+  if(res && res.ok === false && (res.error === 'out_of_stock' || res.error === 'insufficient_stock')){
+    showToast(res.message || '庫存不足');
+    if(typeof res.available === 'number' && res.available > 0){
+      $('qtyInput').value = String(res.available);
     }
+    return;
+  }
+
+  if(res && res.items){
+    let c = 0;
+    res.items.forEach(i => c += Number(i.qty || 0));
+    updateCartUI(c);
+    if(goCheckoutAfter){
+      location.href = `${LIFF_CHECKOUT}?cart_token=${encodeURIComponent(token)}`;
+    }else{
+      showToast('已加入購物車');
+    }
+    return;
+  }
+
+  showToast('加入失敗，請稍後再試');
+}
 
     async function goCheckout(){
       if(!cartToken) await restoreCart();
@@ -1441,7 +1507,16 @@ $('shortDesc').textContent = shortLine;
       if(!cartToken || cartCount <= 0){ showToast('購物車是空的'); return; }
       location.href = `${LIFF_CHECKOUT}?cart_token=${encodeURIComponent(cartToken)}`;
     }
-
+async function fetchRelatedItems(product){
+  try{
+    const res = await fetch(`${API_BASE}/public/products-paged`);
+    const json = await res.json();
+    allItems = Array.isArray(json.items) ? json.items : [];
+    renderRelated(product);
+  }catch(err){
+    $('relatedSection').style.display = 'none';
+  }
+}
 async function fetchProduct(){
   try{
     const res = await fetch(`${PRODUCT_API_BASE}${encodeURIComponent(productSku)}`);
@@ -1457,6 +1532,7 @@ async function fetchProduct(){
     if(product && product.sku){
       allItems = [];
       renderProductPage(product);
+      fetchRelatedItems(product);
     }else{
       $('loading').style.display = 'none';
       $('notFound').style.display = '';
@@ -1478,17 +1554,36 @@ async function fetchProduct(){
     }
 
     function bindQty(){
-      $('qtyMinus').addEventListener('click', () => {
-        $('qtyInput').value = String(Math.max(1, Number($('qtyInput').value || 1) - 1));
-      });
-      $('qtyPlus').addEventListener('click', () => {
-        $('qtyInput').value = String(Math.max(1, Number($('qtyInput').value || 1) + 1));
-      });
-      $('qtyInput').addEventListener('change', () => {
-        const v = Math.max(1, Number($('qtyInput').value || 1));
-        $('qtyInput').value = String(v);
-      });
+  $('qtyMinus').addEventListener('click', () => {
+    const stock = Math.max(0, Number(currentProduct?.stockQty || 0) || 0);
+    let v = Number($('qtyInput').value || 1) || 1;
+    if(stock <= 0) return;
+    v = Math.max(1, v - 1);
+    $('qtyInput').value = String(v);
+  });
+
+  $('qtyPlus').addEventListener('click', () => {
+    const stock = Math.max(0, Number(currentProduct?.stockQty || 0) || 0);
+    let v = Number($('qtyInput').value || 1) || 1;
+    if(stock <= 0) return;
+    v = Math.min(stock, v + 1);
+    $('qtyInput').value = String(v);
+  });
+
+  $('qtyInput').addEventListener('change', () => {
+    const stock = Math.max(0, Number(currentProduct?.stockQty || 0) || 0);
+    let v = Number($('qtyInput').value || 1) || 1;
+
+    if(stock <= 0){
+      $('qtyInput').value = '0';
+      return;
     }
+
+    if(v < 1) v = 1;
+    if(v > stock) v = stock;
+    $('qtyInput').value = String(v);
+  });
+}
 
     function bindGallery(){
       $('galleryPrev').addEventListener('click', () => stepImage(-1));
