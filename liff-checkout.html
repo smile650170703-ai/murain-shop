@@ -2117,12 +2117,25 @@ function setTotal(v){
 
 
 /* ===== Tabs ===== */
-const tabs=$$('#payTabs .tab');
-tabs.forEach(t=>t.addEventListener('click',()=>{
-  tabs.forEach(x=>x.classList.remove('active'));
+const tabs = $$('#payTabs .tab');
+tabs.forEach(t => t.addEventListener('click', () => {
+  tabs.forEach(x => x.classList.remove('active'));
   t.classList.add('active');
-  const kt=t.dataset.pay;
-  ['COD','PAID','DEPOSIT','ZEROCARD','YUFU'].forEach(x=>$('#pane'+x).hidden=(x!==kt));
+
+  const kt = t.dataset.pay;
+  ['COD','PAID','DEPOSIT','ZEROCARD','CASHINST','YUFU'].forEach(x => {
+    const pane = $('#pane' + x);
+    if (pane) pane.hidden = (x !== kt);
+  });
+
+  try { updatePaidChannelBox(); } catch(e){}
+  try { updatePaidShip(); } catch(e){}
+  try { updateZcShip(); } catch(e){}
+  try { updateCashInstShip(); } catch(e){}
+  try { updateYufuShip(); } catch(e){}
+  try { updateYufuPhoneOwnerUI(); } catch(e){}
+  try { refreshCodType(); } catch(e){}
+  try { refreshDepType(); } catch(e){}
 }));
 
 // ✅ C1) 用 pm 切到正確 Tab（只切 Tab，不動其他）
@@ -2480,6 +2493,18 @@ document.getElementById('yufu_ship_method')?.addEventListener('change', updateYu
     delete window.__prefill_payment_method;
     return;
   }
+  // --- CASHINST（現金分期：cash_inst_2 / cash_inst_3） ---
+if (p.includes('cash_inst') || p.includes('cashinst')) {
+  clickTab('CASHINST');
+
+  const m = p.match(/(\d+)\s*$/) || p.match(/cash_inst_(\d+)/);
+  const months = m ? (m[1] || m[0]) : '';
+  if (months) setSelect('cash_inst_months', months);
+
+  try { updateCashInstShip(); } catch(e) {}
+  delete window.__prefill_payment_method;
+  return;
+}
 
   // --- YUFU（裕富分期：yufu_inst_3/6/9/12/24/36...） ---
   if (p.includes('yufu')) {
@@ -2700,13 +2725,14 @@ try { sessionStorage.setItem('murain_skip_restore_once','1'); } catch(e){}
     document.querySelector(`#payTabs .tab[data-pay="${mode}"]`)?.click();
   } else {
     const tabMap = {
-      cod: 'COD',
-      paid: 'PAID',
-      yufu: 'YUFU',
-      dep_old: 'DEPOSIT',
-      dep_new_f: 'DEPOSIT',
-      zc: 'ZEROCARD'
-    };
+  cod: 'COD',
+  paid: 'PAID',
+  yufu: 'YUFU',
+  dep_old: 'DEPOSIT',
+  dep_new_f: 'DEPOSIT',
+  zc: 'ZEROCARD',
+  cashinst: 'CASHINST'
+};
     const kt = tabMap[src];
     if (kt) document.querySelector(`#payTabs .tab[data-pay="${kt}"]`)?.click();
   }
@@ -3525,9 +3551,96 @@ shipping_info.deposit = { ...(shipping_info.deposit || {}), agree: true };
     }
 
     // =========================
-    // YUFU：裕富分期
-    // =========================
-    if (activeTab === 'YUFU') {
+// CASHINST：現金分期
+// =========================
+if (activeTab === 'CASHINST') {
+  const agree = !!document.getElementById('cash_inst_agree')?.checked;
+  if (!agree) {
+    alert('請先勾選現金分期同意條款');
+    return;
+  }
+
+  const months = String(document.getElementById('cash_inst_months')?.value || '').trim();
+  const startDate = String(document.getElementById('cash_inst_start_date')?.value || '').trim();
+
+  if (!months) {
+    alert('請選擇分期期數');
+    return;
+  }
+  if (!startDate) {
+    alert('請選擇第一期付款日期');
+    return;
+  }
+
+  payment_method = `cash_inst_${months}`;
+
+  shipping_info.cash_inst = {
+    months: Number(months),
+    deposit_amount: 1000,
+    start_date: startDate,
+    agree: true
+  };
+
+  const shipMethod = String(document.getElementById('cash_inst_ship_method')?.value || '').trim();
+  if (!shipMethod) {
+    alert('請選擇寄送方式');
+    return;
+  }
+
+  if (shipMethod === '711') {
+    const name  = (document.getElementById('cash_inst_name')?.value || '').trim();
+    const phone = (document.getElementById('cash_inst_phone')?.value || '').trim();
+    const email = (document.getElementById('cash_inst_email')?.value || '').trim();
+    const id    = (document.getElementById('cash_inst_store_id')?.value || '').trim();
+    const sname = (document.getElementById('cash_inst_store_name')?.value || '').trim();
+    const addr  = (document.getElementById('cash_inst_store_addr')?.value || '').trim();
+
+    if (![name, phone, email, id, sname, addr].every(required)) {
+      alert('請填完現金分期 7-11 收件資料（含 Email）');
+      return;
+    }
+
+    ship = { type:'711', name, phone, email, store:{ id, name:sname, addr } };
+
+  } else if (shipMethod === 'post') {
+    const name  = (document.getElementById('cash_inst_post_name')?.value || '').trim();
+    const phone = (document.getElementById('cash_inst_post_phone')?.value || '').trim();
+    const email = (document.getElementById('cash_inst_post_email')?.value || '').trim();
+    const zip   = (document.getElementById('cash_inst_post_zip')?.value || '').trim();
+    const addr  = (document.getElementById('cash_inst_post_addr')?.value || '').trim();
+
+    if (![name, phone, email, addr].every(required)) {
+      alert('請填完現金分期郵寄資料（含 Email）');
+      return;
+    }
+
+    ship = { type:'post', name, phone, email, post:{ zip, addr } };
+
+  } else if (shipMethod === 'meetup') {
+    const mi = getMeetupInfo('cashinst');
+    if (!mi) return;
+
+    const name  = (document.getElementById('cash_inst_meet_name')?.value || '').trim();
+    const phone = (document.getElementById('cash_inst_meet_phone')?.value || '').trim();
+    const email = (document.getElementById('cash_inst_meet_email')?.value || '').trim();
+
+    if (![name, phone, email].every(required)) {
+      alert('請填完現金分期面交聯絡資料（含 Email）');
+      return;
+    }
+
+    ship = { type:'meetup', name, phone, email, meetup_place: mi.meetup_place, meetup_time: mi.meetup_time };
+
+  } else {
+    alert('請選擇寄送方式');
+    return;
+  }
+}
+
+// =========================
+// YUFU：裕富分期
+// =========================
+if (activeTab === 'YUFU') {
       const agree1 = !!document.getElementById('yufu_agree_privacy')?.checked;
       const agree2 = !!document.getElementById('yufu_agree_rate')?.checked;
       if (!agree1 || !agree2) {
