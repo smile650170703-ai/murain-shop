@@ -2848,6 +2848,18 @@ const cashInstDate3 = date10(
   cashInst.third_date ||
   ''
 );
+ const cashInstPaidParts = Number(f.cash_inst_paid_parts || 0) || 0;
+
+const cashInstPart1PaidAt = String(f.cash_inst_part1_paid_at || '').trim();
+const cashInstPart2PaidAt = String(f.cash_inst_part2_paid_at || '').trim();
+const cashInstPart3PaidAt = String(f.cash_inst_part3_paid_at || '').trim();
+
+const cashInstCompleted =
+  f.cash_inst_completed === true ||
+  String(f.cash_inst_completed || '').trim().toLowerCase() === 'true' ||
+  String(f.cash_inst_completed || '').trim() === '1';
+
+const cashInstTotalParts = isCashInst3 ? 3 : (isCashInst2 ? 2 : 0);
 
 const shipAtLocal = toDatetimeLocal(f.shipped_at || f.ship_at);
  const shipAtRaw  = (f.shipped_at || f.ship_at || '');
@@ -3056,6 +3068,28 @@ ${isCashInstOrder ? `
       <div></div>
     </div>
   ` : ''}
+
+  <div class="row mt-2">
+    <div>
+      <label>已收進度</label>
+      <div class="ro-field" id="d_cash_inst_progress_ro">
+        ${cashInstPaidParts} / ${cashInstTotalParts}
+      </div>
+    </div>
+
+    <div>
+      <label>全部收齊</label>
+      <div class="ro-field ${cashInstCompleted ? '' : 'ro-empty'}" id="d_cash_inst_completed_ro">
+        ${cashInstCompleted ? '是' : '—'}
+      </div>
+    </div>
+  </div>
+
+  <input id="d_cash_inst_paid_parts" type="hidden" value="${cashInstPaidParts}">
+  <input id="d_cash_inst_part1_paid_at" type="hidden" value="${cashInstPart1PaidAt}">
+  <input id="d_cash_inst_part2_paid_at" type="hidden" value="${cashInstPart2PaidAt}">
+  <input id="d_cash_inst_part3_paid_at" type="hidden" value="${cashInstPart3PaidAt}">
+  <input id="d_cash_inst_completed" type="hidden" value="${cashInstCompleted ? '1' : ''}">
 ` : ''}
         <label class="mt-3">訂金 / 匯款資訊</label>
 
@@ -3113,8 +3147,38 @@ ${isCashInstOrder ? `
   <button class="btn-secondary" id="btnConfirmPayOk">✅ 確認已收款／審核通過 並 發 LINE</button>
   <button class="btn-secondary" id="btnMarkZcFail">❌ 中租審核未通過 ＋ 發 LINE</button>
   <button class="btn-secondary" id="btnSaveDetailOnly">📑 僅儲存資料（寫入 LINE，不改狀態）</button>
+
+  ${isCashInstOrder ? `
+    <div class="mt-2" style="display:flex;gap:8px;flex-wrap:wrap;">
+      ${cashInstPaidParts < 1 ? `
+        <button class="btn-secondary" id="btnCashInstPart1" type="button">
+          💵 現金分期｜第 1 期已收
+        </button>
+      ` : ''}
+
+      ${cashInstTotalParts >= 2 && cashInstPaidParts < 2 ? `
+        <button class="btn-secondary" id="btnCashInstPart2" type="button">
+          💵 現金分期｜第 2 期已收
+        </button>
+      ` : ''}
+
+      ${isCashInst3 && cashInstPaidParts < 3 ? `
+        <button class="btn-secondary" id="btnCashInstPart3" type="button">
+          💵 現金分期｜第 3 期已收
+        </button>
+      ` : ''}
+
+      ${cashInstPaidParts < cashInstTotalParts ? `
+        <button class="btn-secondary" id="btnCashInstAllDone" type="button">
+          ✅ 現金分期｜全部收齊
+        </button>
+      ` : ''}
+    </div>
+  ` : ''}
+
   <button class="btn small" id="btnSendTailLink">發尾款結帳鏈結 ＋ 發 LINE</button>
   <div id="detailMsg" class="tag-small mt-2"></div>
+
   <div class="mt-2">
     <button class="btn-secondary" id="btnMeetupNotify">❗ 預約面交通知（發 LINE）</button>
   </div>
@@ -3143,6 +3207,32 @@ ${isCashInstOrder ? `
       }
     });
   }
+ const btnCashInstPart1 = $('#btnCashInstPart1');
+if (btnCashInstPart1) {
+  btnCashInstPart1.addEventListener('click', ()=> markCashInstProgress(1));
+}
+
+const btnCashInstPart2 = $('#btnCashInstPart2');
+if (btnCashInstPart2) {
+  btnCashInstPart2.addEventListener('click', ()=> markCashInstProgress(2));
+}
+
+const btnCashInstPart3 = $('#btnCashInstPart3');
+if (btnCashInstPart3) {
+  btnCashInstPart3.addEventListener('click', ()=> markCashInstProgress(3));
+}
+
+const btnCashInstAllDone = $('#btnCashInstAllDone');
+if (btnCashInstAllDone) {
+  btnCashInstAllDone.addEventListener('click', ()=> {
+    const totalParts = getCurrentCashInstTotalParts();
+    if (!totalParts) {
+      alert('這筆不是現金分期訂單');
+      return;
+    }
+    markCashInstProgress(totalParts);
+  });
+}
 
  // ★ 賣貨便名稱選單：帶入目前欄位值，並更新當月累積金額
   const vendorSel = $('#d_vendor_name');
@@ -3593,6 +3683,27 @@ fields.tracking_no = tracking || '';
   fields.deposit_received = $('#d_deposit_received').checked;
   fields.pay_notice_sent  = $('#d_pay_notice_sent').checked;
   fields.internal_note    = $('#d_internal_note').value || '';
+ const ciPaidParts = $('#d_cash_inst_paid_parts');
+const ciPart1 = $('#d_cash_inst_part1_paid_at');
+const ciPart2 = $('#d_cash_inst_part2_paid_at');
+const ciPart3 = $('#d_cash_inst_part3_paid_at');
+const ciCompleted = $('#d_cash_inst_completed');
+
+if (ciPaidParts) {
+  fields.cash_inst_paid_parts = Number(ciPaidParts.value || 0) || 0;
+}
+if (ciPart1) {
+  fields.cash_inst_part1_paid_at = (ciPart1.value || '').trim() || null;
+}
+if (ciPart2) {
+  fields.cash_inst_part2_paid_at = (ciPart2.value || '').trim() || null;
+}
+if (ciPart3) {
+  fields.cash_inst_part3_paid_at = (ciPart3.value || '').trim() || null;
+}
+if (ciCompleted) {
+  fields.cash_inst_completed = !!String(ciCompleted.value || '').trim();
+}
 
   const y_name   = $('#d_yufu_name');
   const y_idno   = $('#d_yufu_idno');
@@ -3645,6 +3756,66 @@ fields.tracking_no = tracking || '';
     msgEl.textContent = '儲存失敗：' + (e.message || e);
     return false;
   }
+}
+ function getCurrentCashInstTotalParts(){
+  const f = currentRecord?.fields || currentRecord || {};
+  const pm = String(f.payment_method || '').trim().toLowerCase();
+  if (pm === 'cash_inst_3') return 3;
+  if (pm === 'cash_inst_2') return 2;
+  return 0;
+}
+
+async function markCashInstProgress(targetParts){
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const totalParts = getCurrentCashInstTotalParts();
+
+  if (!totalParts) {
+    alert('這筆不是現金分期訂單');
+    return;
+  }
+
+  const payStatus = String(f.pay_status || '').trim().toLowerCase();
+  if (payStatus !== 'deposit_ok' && targetParts < totalParts) {
+    alert('請先按「✅ 已收到訂金+發保留通知」後，再記錄現金分期進度');
+    return;
+  }
+
+  const paidPartsEl = $('#d_cash_inst_paid_parts');
+  const completedEl = $('#d_cash_inst_completed');
+  const p1El = $('#d_cash_inst_part1_paid_at');
+  const p2El = $('#d_cash_inst_part2_paid_at');
+  const p3El = $('#d_cash_inst_part3_paid_at');
+
+  const currentPaid = Number(paidPartsEl?.value || 0) || 0;
+  const finalParts = Math.max(currentPaid, Math.min(targetParts, totalParts));
+  const nowIso = new Date().toISOString();
+
+  if (finalParts >= 1 && p1El && !p1El.value) p1El.value = nowIso;
+  if (finalParts >= 2 && p2El && !p2El.value) p2El.value = nowIso;
+  if (finalParts >= 3 && p3El && !p3El.value) p3El.value = nowIso;
+
+  if (paidPartsEl) paidPartsEl.value = String(finalParts);
+  if (completedEl) completedEl.value = (finalParts >= totalParts) ? '1' : '';
+
+  const depReceived = $('#d_deposit_received');
+  if (depReceived && finalParts >= 1) depReceived.checked = true;
+
+  const saved = await saveDetailOnly(true);
+  if (!saved) return;
+
+  if (finalParts >= totalParts) {
+    await confirmPay('ok');
+    return;
+  }
+
+  const keepKey = f.order_id || currentRecord.id || '';
+  await reloadCurrentView();
+  restoreSelectedOrder(keepKey);
 }
 /* ===== 一鍵：先儲存，再出貨＋發 LINE（上面那顆大按鈕用） ===== */
 async function saveDetailAndShip(){
