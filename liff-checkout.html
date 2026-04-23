@@ -1071,7 +1071,6 @@
       </div>
     </div>
         <!-- CASH INSTALL -->
-    <!-- CASH INSTALL -->
 <div id="paneCASHINST" hidden>
   <div class="row">
     <div>
@@ -1087,8 +1086,24 @@
     </div>
   </div>
 
+  <!-- 匯款資訊卡：改成和定金保留同款 -->
+  <div class="bank-card" style="margin-top:18px;">
+    <div class="bank-info-row">
+      <div>
+        <div class="bank-label">銀行代碼</div>
+        <div class="bank-val">541 白河區農會</div>
+      </div>
+      <div>
+        <div class="bank-label" style="text-align:right;">幣別</div>
+        <div class="bank-val" style="text-align:right;">TWD</div>
+      </div>
+    </div>
+    <div class="account-number" id="cashInstBankAccount">54101110252025</div>
+    <button type="button" class="btn-copy-gold" id="copyCashInstBankAccount">一鍵複製帳號</button>
+  </div>
+
   <div class="warning-text">
-    定金請自行填寫：一般款每款 NT$1,000、TB 每款 NT$2,000；請於下單後 3 日內完成匯款。
+    定金請自行填寫：一般款每款 NT$1,000、TB 每款 NT$2,000；請於下單後 2 日內完成定金匯款。
   </div>
 
   <div class="row">
@@ -1102,23 +1117,26 @@
     </div>
   </div>
 
+  <label>匯款帳號後五碼</label>
+  <input id="cash_inst_last5" placeholder="請填寫匯款帳號後五碼" />
+
   <div id="cashInstDatesWrap">
     <div>
       <label>第 1 期付款日期</label>
       <input id="cash_inst_date_1" type="date" />
-      <div class="muted">僅可選擇下單日往後第 1 個月內的日期</div>
+      <div class="muted">固定為下單日往後 1 個月同日</div>
     </div>
 
     <div id="cashInstDate2Wrap" style="margin-top:14px;">
       <label>第 2 期付款日期</label>
       <input id="cash_inst_date_2" type="date" />
-      <div class="muted">僅可選擇下單日往後第 2 個月內的日期</div>
+      <div class="muted">固定為下單日往後 2 個月同日</div>
     </div>
 
     <div id="cashInstDate3Wrap" style="margin-top:14px;" hidden>
       <label>第 3 期付款日期</label>
       <input id="cash_inst_date_3" type="date" />
-      <div class="muted">僅可選擇下單日往後第 3 個月內的日期</div>
+      <div class="muted">固定為下單日往後 3 個月同日</div>
     </div>
   </div>
 
@@ -1215,15 +1233,15 @@
     <div class="notice-title">現金分期說明</div>
     <ul class="notice-list">
       <li>定金請依商品件數自行填寫：一般款每款 NT$1,000、TB 每款 NT$2,000。</li>
-      <li>定金請於下單後 3 日內完成匯款，逾期未匯視同取消。</li>
-      <li>可分 2 期或 3 期，系統會依期數顯示對應付款日期欄位。</li>
-      <li>第 1 / 2 / 3 期日期僅可分別選擇下單日往後第 1 / 2 / 3 個月內的日期。</li>
+      <li>請於下單後 2 日內完成定金匯款，並填寫匯款帳號後五碼。</li>
+      <li>可分 2 期或 3 期，系統會依期數顯示對應付款日期。</li>
+      <li>第 1 / 2 / 3 期日期固定為下單日往後第 1 / 2 / 3 個月同日。</li>
       <li>若任一期未於約定日期完成付款，視同棄標作廢，商品不保留，已付定金不退還。</li>
     </ul>
 
     <label class="agree" style="margin-top:14px;">
       <input id="cash_inst_agree" type="checkbox" />
-      我已閱讀並同意：現金分期之定金需於 3 日內匯款；若任一期逾期未付款，視同棄標作廢，商品不保留，已付定金不退還。
+      我已閱讀並同意：現金分期之定金需於 2 日內完成匯款並填寫後五碼；若任一期逾期未付款，視同棄標作廢，商品不保留，已付定金不退還。
     </label>
   </div>
 </div>
@@ -2367,24 +2385,23 @@ function updateZcShip(){
   const meet = $('#zcShipMeetup');
   if (meet) meet.hidden = (m !== 'meetup');
 }
- function cashInstFmtYmd(d){
+function cashInstFmtYmd(d){
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
 
-function cashInstMonthRange(offset){
+function cashInstExactDate(offset){
   const now = new Date();
   now.setHours(0,0,0,0);
 
-  const first = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-  const last  = new Date(now.getFullYear(), now.getMonth() + offset + 1, 0);
+  const baseDay = now.getDate();
+  const target = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
 
-  return {
-    min: cashInstFmtYmd(first),
-    max: cashInstFmtYmd(last)
-  };
+  target.setDate(Math.min(baseDay, lastDay));
+  return target;
 }
 
 function cashInstApplyDateLimits(){
@@ -2398,18 +2415,18 @@ function cashInstApplyDateLimits(){
     const el = document.getElementById(id);
     if (!el) return;
 
-    const r = cashInstMonthRange(offset);
-    el.min = r.min;
-    el.max = r.max;
+    const exact = cashInstFmtYmd(cashInstExactDate(offset));
+    el.min = exact;
+    el.max = exact;
 
-    if (el.value && (el.value < r.min || el.value > r.max)) {
-      el.value = '';
+    if (!el.value || el.value !== exact) {
+      el.value = exact;
     }
   });
 
   const due = new Date();
   due.setHours(0,0,0,0);
-  due.setDate(due.getDate() + 3);
+  due.setDate(due.getDate() + 2);
 
   const dueEl = document.getElementById('cash_inst_due_date');
   if (dueEl) dueEl.value = cashInstFmtYmd(due);
@@ -2470,10 +2487,21 @@ document.getElementById('cash_inst_ship_method')?.addEventListener('change', upd
     const el = document.getElementById(id);
     if (!el || !el.value) return;
     if ((el.min && el.value < el.min) || (el.max && el.value > el.max)) {
-      alert('此付款日期不可選，請依欄位指定月份重新選擇。');
-      el.value = '';
+      alert('此付款日期為固定日期，請勿更改。');
+      el.value = el.min || '';
     }
   });
+});
+
+document.getElementById('copyCashInstBankAccount')?.addEventListener('click', async () => {
+  const txt = document.getElementById('cashInstBankAccount')?.textContent?.trim() || '';
+  if (!txt) return;
+  try {
+    await navigator.clipboard.writeText(txt);
+    alert('銀行帳號已複製');
+  } catch(e) {
+    alert('複製失敗，請手動複製');
+  }
 });
 
 try { updateCashInstDateRows(); } catch(e){}
@@ -3685,6 +3713,7 @@ if (activeTab === 'CASHINST') {
 
   const months  = Number(document.getElementById('cash_inst_months')?.value || 0);
   const deposit = Math.max(0, Math.floor(Number(document.getElementById('cash_inst_deposit')?.value || 0) || 0));
+  const last5   = String(document.getElementById('cash_inst_last5')?.value || '').trim();
 
   if (![2,3].includes(months)) {
     alert('請選擇分期期數');
@@ -3692,9 +3721,14 @@ if (activeTab === 'CASHINST') {
   }
 
   if (!deposit || deposit < 1) {
-    alert('請填寫正確的定金金額');
-    return;
-  }
+  alert('請填寫正確的定金金額');
+  return;
+}
+
+if (!last5 || last5.length < 5) {
+  alert('請填寫匯款帳號後五碼');
+  return;
+}
 
   const base = Math.max((CART_TOTAL_RAW || 0) - (CREDIT_USED || 0), 0);
   if (deposit > base) {
@@ -3715,13 +3749,14 @@ if (activeTab === 'CASHINST') {
 
   const due = new Date();
   due.setHours(0,0,0,0);
-  due.setDate(due.getDate() + 3);
+  due.setDate(due.getDate() + 2);
 
   payment_method = `cash_inst_${months}`;
 
   shipping_info.cash_inst = {
     months,
     deposit_amount: deposit,
+    deposit_last5: last5,
     deposit_due_date: cashInstFmtYmd(due),
     payment_dates: paymentDates,
     first_date: d1,
