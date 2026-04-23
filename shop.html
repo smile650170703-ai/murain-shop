@@ -1322,104 +1322,144 @@
     };
   }
 
-  async function fetchProducts(){
-    const loader = $('loading');
-    const grid = $('productList');
+async function fetchProducts(){
+  const loader = $('loading');
+  const grid = $('productList');
 
-    loader.style.display = 'block';
-    grid.innerHTML = '';
-    $('emptyTip').style.display = 'none';
+  const cacheKey = [
+    'SHOP_LIST_CACHE_V1',
+    String(currentPage || 1),
+    String(selectedCat || 'ALL'),
+    String(selectedSub || 'ALL')
+  ].join('|');
 
+  loader.style.display = 'block';
+  grid.innerHTML = '';
+  $('emptyTip').style.display = 'none';
+
+  try {
+    // 先吃 session cache（包含空陣列也要吃）
     try {
-      const u = new URL(PRODUCT_API);
-      u.searchParams.set('page', String(currentPage));
-      u.searchParams.set('limit', String(PAGE_SIZE));
+      const raw = sessionStorage.getItem(cacheKey);
+      if (raw) {
+        const cached = JSON.parse(raw);
+        if (cached && Array.isArray(cached.items) && cached.pagination) {
+          allItems = cached.items || [];
+          allCats = cached.categories || [];
+          paginationState = cached.pagination || {
+            page: currentPage,
+            limit: PAGE_SIZE,
+            total: allItems.length,
+            total_pages: 1,
+            has_prev: false,
+            has_next: false
+          };
 
-      if (selectedCat !== 'ALL') u.searchParams.set('cat', selectedCat);
-      if (selectedSub !== 'ALL') u.searchParams.set('sub', selectedSub);
+          loader.style.display = 'none';
+          renderCategoryBar(allCats);
+          renderSubcatBar(allCats, selectedCat);
+          renderProducts(allItems);
+          renderPagination(paginationState);
 
-      const res = await fetch(u.toString(), { cache:'no-store' });
-      const json = await res.json();
-
-      allItems = Array.isArray(json.items) ? json.items : [];
-      allCats = Array.isArray(json.categories) ? json.categories : [];
-      paginationState = json.pagination || {
-        page: currentPage,
-        limit: PAGE_SIZE,
-        total: allItems.length,
-        total_pages: 1,
-        has_prev: false,
-        has_next: false
-      };
-
-      currentPage = Math.max(1, Number(paginationState.page || currentPage));
-      syncQS();
-
-      loader.style.display = 'none';
-      renderCategoryBar(allCats);
-      renderSubcatBar(allCats, selectedCat);
-      renderProducts(allItems);
-      renderPagination(paginationState);
-
-      if (!allItems.length){
-        $('emptyTip').style.display = 'block';
-      }
-
-    } catch(err) {
-      allItems = mockProducts;
-
-      const filtered = allItems.filter(p => {
-        const c = String(p.category || p.category_code || '').trim();
-        const s = String(p.subcategory || p.subcategory_code || p.brand || '').trim();
-        if (selectedCat !== 'ALL' && c !== selectedCat) return false;
-        if (selectedSub !== 'ALL' && s !== selectedSub) return false;
-        return true;
-      });
-
-      const total = filtered.length;
-      const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-      currentPage = Math.min(Math.max(1, currentPage), totalPages);
-
-      const start = (currentPage - 1) * PAGE_SIZE;
-      const pageItems = filtered.slice(start, start + PAGE_SIZE);
-
-      const catMap = new Map();
-      allItems.forEach(it => {
-        const c = String(it.category || it.category_code || '').trim();
-        if (!c) return;
-        if (!catMap.has(c)) catMap.set(c, { code:c, name:c, subcategories:[] });
-
-        const s = String(it.subcategory || it.subcategory_code || it.brand || '').trim();
-        if (s){
-          const node = catMap.get(c);
-          if (!node.subcategories.find(x => x.code === s)){
-            node.subcategories.push({ code:s, name:s });
+          if (!allItems.length){
+            $('emptyTip').style.display = 'block';
           }
         }
-      });
-
-      allCats = Array.from(catMap.values());
-
-      paginationState = {
-        page: currentPage,
-        limit: PAGE_SIZE,
-        total,
-        total_pages: totalPages,
-        has_prev: currentPage > 1,
-        has_next: currentPage < totalPages
-      };
-
-      loader.style.display = 'none';
-      renderCategoryBar(allCats);
-      renderSubcatBar(allCats, selectedCat);
-      renderProducts(pageItems);
-      renderPagination(paginationState);
-
-      if (!pageItems.length){
-        $('emptyTip').style.display = 'block';
       }
+    } catch(e){}
+
+    const u = new URL(PRODUCT_API, location.origin);
+    u.searchParams.set('page', String(currentPage));
+    u.searchParams.set('limit', String(PAGE_SIZE));
+
+    if (selectedCat !== 'ALL') u.searchParams.set('cat', selectedCat);
+    if (selectedSub !== 'ALL') u.searchParams.set('sub', selectedSub);
+
+    // 拿掉 no-store，改成預設快取行為
+    const res = await fetch(u.toString());
+    const json = await res.json();
+
+    allItems = Array.isArray(json.items) ? json.items : [];
+    allCats = Array.isArray(json.categories) ? json.categories : [];
+    paginationState = json.pagination || {
+      page: currentPage,
+      limit: PAGE_SIZE,
+      total: allItems.length,
+      total_pages: 1,
+      has_prev: false,
+      has_next: false
+    };
+
+    currentPage = Math.max(1, Number(paginationState.page || currentPage));
+    syncQS();
+
+    loader.style.display = 'none';
+    renderCategoryBar(allCats);
+    renderSubcatBar(allCats, selectedCat);
+    renderProducts(allItems);
+    renderPagination(paginationState);
+
+    if (!allItems.length){
+      $('emptyTip').style.display = 'block';
+    }
+
+    try {
+      sessionStorage.setItem(cacheKey, JSON.stringify({
+        items: allItems,
+        categories: allCats,
+        pagination: paginationState,
+        ts: Date.now()
+      }));
+    } catch(e){}
+
+  } catch(err) {
+    allItems = mockProducts;
+    isDemoMode = true;
+
+    const filtered = filterItems(allItems);
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    currentPage = Math.min(Math.max(1, currentPage), totalPages);
+
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const pageItems = filtered.slice(start, start + PAGE_SIZE);
+
+    const catMap = new Map();
+    allItems.forEach(it => {
+      const c = String(it.category || it.category_code || '').trim();
+      if (!c) return;
+      if (!catMap.has(c)) catMap.set(c, { code:c, name:c, subcategories:[] });
+
+      const s = String(it.subcategory || it.subcategory_code || it.brand || '').trim();
+      if (s){
+        const node = catMap.get(c);
+        if (!node.subcategories.find(x => x.code === s)){
+          node.subcategories.push({ code:s, name:s });
+        }
+      }
+    });
+    allCats = Array.from(catMap.values());
+
+    paginationState = {
+      page: currentPage,
+      limit: PAGE_SIZE,
+      total,
+      total_pages: totalPages,
+      has_prev: currentPage > 1,
+      has_next: currentPage < totalPages
+    };
+
+    loader.style.display = 'none';
+    renderCategoryBar(allCats);
+    renderSubcatBar(allCats, selectedCat);
+    renderProducts(pageItems);
+    renderPagination(paginationState);
+
+    if (!pageItems.length){
+      $('emptyTip').style.display = 'block';
     }
   }
+}
 
   window.addEventListener('scroll', () => {
     const bar = $('brandBarWrapper');
