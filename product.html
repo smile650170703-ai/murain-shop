@@ -1090,12 +1090,10 @@ html, body {
   
   <script>
     const API_BASE = 'https://api.murain.tw';
-    const PRODUCT_API = API_BASE + '/public/products';
-    const CART_KEY = 'MURAIN_WEB_CART_TOKEN';
-    const LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
-    const SHOP_CACHE_KEY = 'XUYUAN_SHOP_CACHE_V1';
-    const SHOP_CACHE_TTL = 1000 * 60 * 10;
-
+const PRODUCT_API_BASE = API_BASE + '/product/';
+const CART_KEY = 'MURAIN_WEB_CART_TOKEN';
+const LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
+    
     let cartToken = '';
     let cartCount = 0;
     let isDemoMode = false;
@@ -1308,7 +1306,11 @@ $('shortDesc').textContent = shortLine;
       $('detailDesc').innerHTML = formatDetailDesc(product.description || '【商品介紹】\n這裡可放妳 Airtable 商品描述、尺寸、顏色、材質、重點整理。');
     }
 
-    function renderRelated(product){
+   function renderRelated(product){
+  if(!Array.isArray(allItems) || !allItems.length){
+    $('relatedSection').style.display = 'none';
+    return;
+  }
       const related = allItems
         .map(normalizeProduct)
         .filter(x => x.sku && x.sku !== product.sku)
@@ -1440,33 +1442,30 @@ $('shortDesc').textContent = shortLine;
       location.href = `${LIFF_CHECKOUT}?cart_token=${encodeURIComponent(cartToken)}`;
     }
 
-    async function fetchProducts(){
-      const cached = readShopCache();
-      if(cached && Array.isArray(cached.items) && cached.items.length){
-        allItems = cached.items;
-        const found = allItems.map(normalizeProduct).find(p => p.sku === productSku);
-        if(found) renderProductPage(found);
-      }
+async function fetchProduct(){
+  try{
+    const res = await fetch(`${PRODUCT_API_BASE}${encodeURIComponent(productSku)}`);
+    const json = await res.json();
 
-      try{
-        const res = await fetch(PRODUCT_API);
-        const json = await res.json();
-        allItems = Array.isArray(json.items) ? json.items : [];
-        writeShopCache(allItems, json.categories || []);
-        const found = allItems.map(normalizeProduct).find(p => p.sku === productSku);
-        if(found){
-          renderProductPage(found);
-        }else if(!currentProduct){
-          $('loading').style.display = 'none';
-          $('notFound').style.display = '';
-        }
-      }catch(err){
-        if(!currentProduct){
-          $('loading').style.display = 'none';
-          $('notFound').style.display = '';
-        }
-      }
+    const raw =
+      json?.item ||
+      json?.product ||
+      json?.data ||
+      json;
+
+    const product = normalizeProduct(raw || {});
+    if(product && product.sku){
+      allItems = [];
+      renderProductPage(product);
+    }else{
+      $('loading').style.display = 'none';
+      $('notFound').style.display = '';
     }
+  }catch(err){
+    $('loading').style.display = 'none';
+    $('notFound').style.display = '';
+  }
+}
 
     function bindTabs(){
       document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1568,7 +1567,7 @@ $('shortDesc').textContent = shortLine;
       }
 
       await restoreCart();
-      await fetchProducts();
+      await fetchProduct();
 
       $('cartBtn').addEventListener('click', goCheckout);
       $('addCartBtn').addEventListener('click', () => addToCartAndMaybeCheckout(false));
