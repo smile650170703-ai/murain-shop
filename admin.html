@@ -1582,13 +1582,14 @@ function parseShippingInfo(fields){
 }
 // 付款方式代碼 → 中文名稱（列表＋右側 pill 共用）
 function displayPaymentMethod(code){
-  switch (code) {
+  const c = String(code || '').trim().toLowerCase();
+
+  switch (c) {
     case 'cod_711':
       return '7-11 貨到付款';
     case 'cod_post':
       return '郵局貨到付款';
 
-    // 線上刷卡
     case 'paid_card_once':
       return '線上付款－信用卡一次付清';
     case 'paid_card_inst_3':
@@ -1597,18 +1598,19 @@ function displayPaymentMethod(code){
       return '線上付款－信用卡 6 期';
     case 'paid_card_inst_9':
       return '線上付款－信用卡 9 期';
+
     case 'meetup_cash':
       return '面交付現';
     case 'deposit_new_full_meetup':
       return '匯款全額 - 面交';
 
-    // AFTEE / LINE PAY
     case 'paid_af':
       return 'AF先享後付';
     case 'paid_linepay':
       return 'LINE PAY';
+    case 'paid_aftee_direct':
+      return 'AF 先享後付';
 
-    // 中租 / 零卡分期
     case 'zero_card_3':
       return '中租分期 3 期';
     case 'zero_card_6':
@@ -1622,7 +1624,6 @@ function displayPaymentMethod(code){
     case 'zero_card_24':
       return '中租分期 24 期';
 
-    // 裕富分期
     case 'yufu_inst_3':
       return '裕富 3 期';
     case 'yufu_inst_6':
@@ -1635,46 +1636,31 @@ function displayPaymentMethod(code){
       return '裕富 24 期';
     case 'yufu_inst_36':
       return '裕富 36 期';
-    
-    // 現金分期
-case 'cash_inst_3':
-      return '現金分期3期';
-case 'cash_inst_2':
-      return '現金分期2期';
-    
-    case 'paid_aftee_direct':
-      return 'AF 先享後付';
+
+    case 'cash_inst_2':
+      return '現金分期 2 期';
+    case 'cash_inst_3':
+      return '現金分期 3 期';
 
     case 'atm_full_tail':
-      return '尾款:匯款/購物金';
+      return '尾款：匯款 / 購物金';
 
-    // ATM / 匯款（訂金 / 尾款）
     case 'deposit_new_partial':
-      return '訂金匯款';
-    case 'deposit_new_full':
-      return '全額匯款';
     case 'deposit_old_partial':
-      return '訂金匯款';
-    case 'deposit_old_full':
-      return '全額匯款';
-     // ★ 新增：新客全額匯款（7-11 / 郵寄）兩種代碼，顯示同一個中文
-    case 'deposit_new_full_711':
-    case 'deposit_new_full_post':
-      return '全額匯款';
-
-    // 🔧 新增這兩個，對應你現在實際用的代碼
-case 'deposit_new':
-  return '訂金匯款';
-case 'deposit_old':
-  return '訂金匯款';
-
-    case 'atm_full':
-      return '全額匯款';
+    case 'deposit_new':
+    case 'deposit_old':
     case 'atm_deposit':
       return '訂金匯款';
 
+    case 'deposit_new_full':
+    case 'deposit_old_full':
+    case 'deposit_new_full_711':
+    case 'deposit_new_full_post':
+    case 'atm_full':
+      return '全額匯款';
+
     default:
-      return code || '';
+      return String(code || '').trim();
   }
 }
 
@@ -2829,6 +2815,39 @@ const depExpireRaw = (f.deposit_expire_at ?? dep.deposit_expire_at ?? dep.expire
 const date10 = (v)=> (v ? String(v).slice(0,10) : '');
 const holdUntil10 = date10(holdUntilRaw);
 const depExpire10 = date10(depExpireRaw);
+ const pmCode = String(f.payment_method || '').trim().toLowerCase();
+const isCashInst2 = pmCode === 'cash_inst_2';
+const isCashInst3 = pmCode === 'cash_inst_3';
+const isCashInstOrder = isCashInst2 || isCashInst3;
+
+const cashInst = shipInfo.cash_inst || shipInfo.cashInstallment || shipInfo.installment || {};
+
+const cashInstDate1 = date10(
+  f.cash_inst_date_1 ||
+  cashInst.date_1 ||
+  cashInst.date1 ||
+  cashInst.inst1 ||
+  cashInst.first_date ||
+  ''
+);
+
+const cashInstDate2 = date10(
+  f.cash_inst_date_2 ||
+  cashInst.date_2 ||
+  cashInst.date2 ||
+  cashInst.inst2 ||
+  cashInst.second_date ||
+  ''
+);
+
+const cashInstDate3 = date10(
+  f.cash_inst_date_3 ||
+  cashInst.date_3 ||
+  cashInst.date3 ||
+  cashInst.inst3 ||
+  cashInst.third_date ||
+  ''
+);
 
 const shipAtLocal = toDatetimeLocal(f.shipped_at || f.ship_at);
  const shipAtRaw  = (f.shipped_at || f.ship_at || '');
@@ -3007,7 +3026,37 @@ ${renderTailInfoBlock(f)}
 <label class="mt-2">出貨時間</label>
 <div class="ro-field ${shipAtText ? '' : 'ro-empty'}" id="d_ship_at_ro">${shipAtText || '—'}</div>
 <input id="d_ship_at" type="hidden" value="${toDatetimeLocal(f.shipped_at || f.ship_at)}">
+${isCashInstOrder ? `
+  <label class="mt-3">現金分期日期</label>
 
+  <div class="row">
+    <div>
+      <label>第 1 期日期</label>
+      <div class="ro-field ${cashInstDate1 ? '' : 'ro-empty'}" id="d_cash_inst_date_1_ro">
+        ${cashInstDate1 || '—'}
+      </div>
+    </div>
+
+    <div>
+      <label>第 2 期日期</label>
+      <div class="ro-field ${cashInstDate2 ? '' : 'ro-empty'}" id="d_cash_inst_date_2_ro">
+        ${cashInstDate2 || '—'}
+      </div>
+    </div>
+  </div>
+
+  ${isCashInst3 ? `
+    <div class="row">
+      <div>
+        <label>第 3 期日期</label>
+        <div class="ro-field ${cashInstDate3 ? '' : 'ro-empty'}" id="d_cash_inst_date_3_ro">
+          ${cashInstDate3 || '—'}
+        </div>
+      </div>
+      <div></div>
+    </div>
+  ` : ''}
+` : ''}
         <label class="mt-3">訂金 / 匯款資訊</label>
 
 <div class="row">
