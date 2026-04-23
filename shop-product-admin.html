@@ -216,13 +216,80 @@
       .card{padding:14px;}
       .btn{width:100%; justify-content:center;}
     }
+    .page-tabs{
+  margin:0 0 18px;
+}
+
+.page-tabs-bar{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  padding:12px 14px;
+  border-radius:18px;
+  background:#020617;
+  border:1px solid rgba(148,163,184,.28);
+  box-shadow:0 10px 30px rgba(15,23,42,.12);
+}
+
+.page-tab{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:44px;
+  padding:0 18px;
+  border-radius:999px;
+  text-decoration:none;
+  font-size:14px;
+  font-weight:800;
+  letter-spacing:.01em;
+  background:rgba(15,23,42,.92);
+  color:#e2e8f0;
+  border:1px solid rgba(148,163,184,.55);
+  transition:.18s ease;
+}
+
+.page-tab:hover{
+  transform:translateY(-1px);
+  border-color:#22d3ee;
+  box-shadow:0 8px 20px rgba(34,211,238,.18);
+}
+
+.page-tab.is-active{
+  background:#22d3ee;
+  color:#0f172a;
+  border-color:#22d3ee;
+  box-shadow:0 8px 20px rgba(34,211,238,.32);
+}
+
+@media (max-width:900px){
+  .page-tabs-bar{
+    gap:8px;
+    padding:10px;
+  }
+  .page-tab{
+    min-height:40px;
+    padding:0 14px;
+    font-size:13px;
+  }
+}
   </style>
 </head>
 <body>
   <div class="wrap">
+    <div class="page-tabs">
+  <div class="page-tabs-bar">
+    <a class="page-tab" href="op.html">直播主開單</a>
+    <a class="page-tab" href="admin.html">訂單後台</a>
+    <a class="page-tab" href="stock-in.html">入庫／自有+寄賣</a>
+    <a class="page-tab" href="op/preorder-order.html">預購入庫＋發送</a>
+    <a class="page-tab is-active" href="shop-product-admin.html">上架官網</a>
+    <a class="page-tab" href="stock.html">庫存查詢</a>
+    <a class="page-tab" href="/procurement-center/procurement-index.html">採購／到貨入庫</a>
+    <a class="page-tab" href="/company-files/company-index.html">公司檔案管理</a>
+  </div>
+</div>
     <section class="hero">
       <h1>官網商品上架後台</h1>
-      <p>這頁只做：登入、選分類、上傳圖片、儲存草稿、正式上架。員工不用直接碰 Airtable 主表。</p>
     </section>
 
     <section class="card" id="loginCard">
@@ -249,6 +316,27 @@
         <div class="pill">STEP 2</div>
         <div class="hint">先存草稿，再正式上架</div>
       </div>
+
+      <div class="card" style="box-shadow:none;border-style:dashed;margin-bottom:14px;">
+  <div class="topbar">
+    <div class="pill">STEP 2A</div>
+    <div class="hint">先搜尋現有已入庫商品，再帶入下方表單</div>
+  </div>
+
+  <div class="grid">
+    <div class="field full">
+      <label for="searchKeyword">搜尋現有商品</label>
+      <input id="searchKeyword" type="text" placeholder="輸入 SKU / 商品名稱，例如 C000123 / KIRA / TORY BURCH">
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-secondary" id="btnSearchExisting" type="button">搜尋現有商品</button>
+  </div>
+
+  <div class="status" id="searchMsg"></div>
+  <div id="searchResults" class="thumbs" style="grid-template-columns:1fr;"></div>
+</div>
 
       <div class="grid">
         <div class="field">
@@ -329,7 +417,7 @@
 
     const ROUTES = {
       auth: API_BASE + '/op/auth',
-      skuState: API_BASE + '/op/products/next-sku/state',
+      productSearch: API_BASE + '/op/shop/product-search',
       categories: API_BASE + '/op/shop/categories',
       uploadImages: API_BASE + '/op/shop/upload-images',
       saveDraft: API_BASE + '/op/shop/save-draft',
@@ -341,6 +429,8 @@
       categories: [],
       uploadedImages: [],
       draftRecordId: '',
+      selectedProductRecordId: '',
+selectedProductData: null,
       sku: ''
     };
 
@@ -357,7 +447,86 @@
       el.textContent = text || '';
       el.style.color = isError ? '#b85d6d' : '#7c6763';
     }
+async function searchExistingProduct(){
+  const keyword = $('searchKeyword').value.trim();
+  if (!keyword) {
+    setStatus('searchMsg', '請先輸入 SKU 或商品名稱', true);
+    return;
+  }
 
+  try {
+    setStatus('searchMsg', '查詢中...');
+    const url = ROUTES.productSearch
+      + '?op_key=' + encodeURIComponent(state.opKey)
+      + '&keyword=' + encodeURIComponent(keyword);
+
+    const data = await jfetch(url, { method: 'GET' });
+    const items = Array.isArray(data.items) ? data.items : [];
+
+    renderSearchResults(items);
+    setStatus('searchMsg', items.length ? `共找到 ${items.length} 筆` : '查無商品');
+  } catch (err) {
+    setStatus('searchMsg', '查詢失敗：' + err.message, true);
+  }
+}
+
+function renderSearchResults(items){
+  const wrap = $('searchResults');
+  wrap.innerHTML = '';
+
+  if (!items.length) return;
+
+  items.forEach(item => {
+    const el = document.createElement('div');
+    el.className = 'thumb-card';
+    el.innerHTML = `
+      <div style="display:grid;grid-template-columns:72px 1fr auto;gap:12px;align-items:center;padding:10px;">
+        <img src="${item.thumb_url || item.image_url || ''}" alt="${item.name}" style="width:72px;height:72px;object-fit:cover;border-radius:12px;background:#f7f4f2;">
+        <div>
+          <div style="font-weight:800;">${item.name || '-'}</div>
+          <div class="hint">SKU：${item.sku || '-'}｜庫存：${item.stock_qty || 0}｜來源：${item.source || '-'}</div>
+        </div>
+        <button type="button" class="btn btn-primary">帶入</button>
+      </div>
+    `;
+    el.querySelector('button').addEventListener('click', () => fillFormFromExisting(item));
+    wrap.appendChild(el);
+  });
+}
+
+function fillFormFromExisting(item){
+  state.selectedProductRecordId = item.record_id || '';
+  state.selectedProductData = item || null;
+  state.draftRecordId = item.record_id || '';
+
+  $('sku').value = item.sku || '';
+  $('name').value = item.name || '';
+  $('desc').value = item.description || '';
+  $('price').value = item.price || '';
+  $('listPrice').value = item.list_price || '';
+  $('stockQty').value = item.stock_qty || '';
+  $('source').value = item.source || '自有';
+
+  if (item.category_code) $('catCode').value = item.category_code;
+  renderSubcategoryOptions();
+  if (item.subcategory_code) $('subCode').value = item.subcategory_code;
+
+  $('coverFile').value = '';
+  $('galleryFiles').value = '';
+
+  state.uploadedImages = [];
+  if (item.image_id || item.thumb_url || item.image_url) {
+    state.uploadedImages = [{
+      image_id: item.image_id || '',
+      thumb_url: item.thumb_url || item.image_url || '',
+      image_url: item.image_url || item.thumb_url || ''
+    }];
+  }
+  renderImagePreviews();
+
+  $('btnPublish').disabled = !state.draftRecordId;
+  setStatus('saveMsg', '已帶入現有商品，現在可補圖片、描述或直接存草稿。');
+}
     async function jfetch(url, options = {}){
       const res = await fetch(url, {
         ...options,
@@ -373,14 +542,7 @@
       return data;
     }
 
-    function pad6(n){
-      return String(n).padStart(6, '0');
-    }
 
-    function calcNextSkuFromState(data){
-      const lastNo = Number(data?.last_no || 0) || 0;
-      return 'C' + pad6(lastNo + 1);
-    }
 
     async function toBase64(file){
       return new Promise((resolve, reject) => {
@@ -473,26 +635,11 @@
         $('loginCard').classList.add('hidden');
         $('editorCard').classList.remove('hidden');
 
-        await Promise.all([
-          loadSkuState(),
-          loadCategories()
-        ]);
+        await loadCategories();
 
         setStatus('loginMsg', '');
       } catch (err) {
         setStatus('loginMsg', '登入失敗：' + err.message, true);
-      }
-    }
-
-    async function loadSkuState(){
-      try {
-        const url = ROUTES.skuState + '?op_key=' + encodeURIComponent(state.opKey);
-        const data = await jfetch(url, { method: 'GET' });
-        const nextSku = calcNextSkuFromState(data);
-        state.sku = nextSku;
-        $('sku').value = nextSku;
-      } catch (err) {
-        setStatus('saveMsg', 'SKU 讀取失敗：' + err.message, true);
       }
     }
 
@@ -571,11 +718,11 @@
     }
 
     async function ensureImagesUploadedIfNeeded(){
-      const hasFilesSelected = ($('coverFile').files.length > 0) || ($('galleryFiles').files.length > 0);
-      if (hasFilesSelected && !state.uploadedImages.length) {
-        await uploadImages();
-      }
-    }
+  const hasFilesSelected = ($('coverFile').files.length > 0) || ($('galleryFiles').files.length > 0);
+  if (hasFilesSelected) {
+    await uploadImages();
+  }
+}
 
     async function saveDraft(){
       try {
@@ -634,6 +781,7 @@
     }
 
     $('btnLogin').addEventListener('click', login);
+    $('btnSearchExisting').addEventListener('click', searchExistingProduct);
     $('btnUploadImages').addEventListener('click', async () => {
       try {
         await uploadImages();
