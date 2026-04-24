@@ -184,8 +184,21 @@
 #btnRemindToday,
 #btnPickupNeed,
 #btnConsign,
-#btnConsignAccounting,
-#btnSyncTailToParentTop{
+#btnConsignAccounting{
+  display:none !important;
+}
+
+/* ✅ 收款按鈕統一：隱藏「已收定金」與「現金分期第幾期」多餘按鈕 */
+#btnDepositPayAndNoticeTop,
+#btnCashInstPart1Top,
+#btnCashInstPart2Top,
+#btnCashInstPart3Top,
+#btnCashInstAllDoneTop,
+#orderDetail #btnDepositPayAndNotice,
+#orderDetail #btnCashInstPart1,
+#orderDetail #btnCashInstPart2,
+#orderDetail #btnCashInstPart3,
+#orderDetail #btnCashInstAllDone{
   display:none !important;
 }
   .label-inline{display:flex;align-items:center;gap:5px;font-size:12px;margin-top:4px}
@@ -485,10 +498,6 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
         <button class="btn-secondary" id="btnSendTailLinkTop" type="button">
           💰發尾款結帳連結+發LINE
         </button>
-       <!-- ✅ 新增：同步尾款→主單（只在選到 TL 才會顯示） -->
-<button class="btn-secondary" id="btnSyncTailToParentTop" type="button" style="display:none;">
-  🔄 同步尾款→主單
-</button>
         <button class="btn-secondary" id="btnSaveDetailOnlyTop" type="button">
           💾 儲存資料
         </button>
@@ -3198,33 +3207,11 @@ ${isCashInstOrder ? `
       }
     });
   }
- const btnCashInstPart1 = $('#btnCashInstPart1');
-if (btnCashInstPart1) {
-  btnCashInstPart1.addEventListener('click', ()=> markCashInstProgress(1));
-}
-
-const btnCashInstPart2 = $('#btnCashInstPart2');
-if (btnCashInstPart2) {
-  btnCashInstPart2.addEventListener('click', ()=> markCashInstProgress(2));
-}
-
-const btnCashInstPart3 = $('#btnCashInstPart3');
-if (btnCashInstPart3) {
-  btnCashInstPart3.addEventListener('click', ()=> markCashInstProgress(3));
-}
-
-const btnCashInstAllDone = $('#btnCashInstAllDone');
-if (btnCashInstAllDone) {
-  btnCashInstAllDone.addEventListener('click', ()=> {
-    const totalParts = getCurrentCashInstTotalParts();
-    if (!totalParts) {
-      alert('這筆不是現金分期訂單');
-      return;
-    }
-    markCashInstProgress(totalParts);
-  });
-}
- const btnCashInstPart1Top = $('#btnCashInstPart1Top');
+// ✅ 收款已統一：右側現金分期第 1 / 2 / 3 期按鈕不再綁定
+// 實際收款請一律按上方「✅ 收款/審核通過+發LINE」
+// 後端會依 cash_inst_status / paid_count 自動推進下一期
+// ✅ 收款按鈕統一：不再顯示現金分期第 1 / 2 / 3 期獨立按鈕
+const btnCashInstPart1Top = $('#btnCashInstPart1Top');
 const btnCashInstPart2Top = $('#btnCashInstPart2Top');
 const btnCashInstPart3Top = $('#btnCashInstPart3Top');
 const btnCashInstAllDoneTop = $('#btnCashInstAllDoneTop');
@@ -3233,25 +3220,36 @@ const btnCashInstAllDoneTop = $('#btnCashInstAllDoneTop');
   if (btn) btn.style.display = 'none';
 });
 
-if (isCashInstOrder) {
-  if (btnCashInstPart1Top && cashInstPaidParts < 1) btnCashInstPart1Top.style.display = '';
-  if (btnCashInstPart2Top && cashInstTotalParts >= 2 && cashInstPaidParts < 2) btnCashInstPart2Top.style.display = '';
-  if (btnCashInstPart3Top && isCashInst3 && cashInstPaidParts < 3) btnCashInstPart3Top.style.display = '';
-  if (btnCashInstAllDoneTop && cashInstPaidParts < cashInstTotalParts) btnCashInstAllDoneTop.style.display = '';
-}
+// ✅ 只改上方唯一確認收款按鈕的文字，實際判斷交給後端 /admin/order/confirm-pay
+const btnConfirmPayOkTop = $('#btnConfirmPayOkTop');
+if (btnConfirmPayOkTop) {
+  const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+  const payStatus  = String(f.pay_status || '').trim().toLowerCase();
 
-if (btnCashInstPart1Top) btnCashInstPart1Top.onclick = () => markCashInstProgress(1);
-if (btnCashInstPart2Top) btnCashInstPart2Top.onclick = () => markCashInstProgress(2);
-if (btnCashInstPart3Top) btnCashInstPart3Top.onclick = () => markCashInstProgress(3);
-if (btnCashInstAllDoneTop) {
-  btnCashInstAllDoneTop.onclick = () => {
-    const totalParts = getCurrentCashInstTotalParts();
-    if (!totalParts) {
-      alert('這筆不是現金分期訂單');
-      return;
+  if (isCashInstOrder) {
+    if (cashStatus === 'pending_deposit') {
+  btnConfirmPayOkTop.textContent = '✅ 已收定金／啟動現金分期+發LINE';
+  btnConfirmPayOkTop.disabled = false;
+  btnConfirmPayOkTop.style.opacity = '';
+  btnConfirmPayOkTop.style.cursor = '';
+} else if (cashStatus === 'completed' || payStatus === 'paid_ok') {
+  btnConfirmPayOkTop.textContent = '✅ 現金分期已收齊';
+  btnConfirmPayOkTop.disabled = true;
+  btnConfirmPayOkTop.style.opacity = '.55';
+  btnConfirmPayOkTop.style.cursor = 'not-allowed';
+} else {
+  btnConfirmPayOkTop.disabled = false;
+  btnConfirmPayOkTop.style.opacity = '';
+  btnConfirmPayOkTop.style.cursor = '';
+      const nextPart = Math.min((Number(cashInstPaidParts || 0) || 0) + 1, Number(cashInstTotalParts || 0) || 1);
+      btnConfirmPayOkTop.textContent = `💵 現金分期｜第 ${nextPart} 期已收+發LINE`;
     }
-    markCashInstProgress(totalParts);
-  };
+  } else {
+  btnConfirmPayOkTop.textContent = '✅ 收款/審核通過+發LINE';
+  btnConfirmPayOkTop.disabled = false;
+  btnConfirmPayOkTop.style.opacity = '';
+  btnConfirmPayOkTop.style.cursor = '';
+}
 }
 
  // ★ 賣貨便名稱選單：帶入目前欄位值，並更新當月累積金額
@@ -4898,9 +4896,9 @@ if (meetupDoneTop) {
   // ★ 這行拿掉，因為取消已經上面直接綁 cancelCurrentOrder 了
   // proxyButton('btnCancelOrderTop',   'btnCancelOrder');
   proxyButton('btnMeetupNotifyTop',  'btnMeetupNotify');
-  // ★ 新增：上方兩顆「訂金＋保留通知」＆「僅儲存」
-  proxyButton('btnDepositPayAndNoticeTop', 'btnDepositPayAndNotice');
-  proxyButton('btnSaveDetailOnlyTop',      'btnSaveDetailOnly');
+  // ✅ 收款已統一到 btnConfirmPayOkTop，不再使用「已收定金+發保留通知」獨立按鈕
+// proxyButton('btnDepositPayAndNoticeTop', 'btnDepositPayAndNotice');
+proxyButton('btnSaveDetailOnlyTop',      'btnSaveDetailOnly');
 
 await ensureOpKey();
 
