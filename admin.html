@@ -3788,7 +3788,35 @@ if (ciCompleted) {
   if (pm === 'cash_inst_2') return 2;
   return 0;
 }
+async function sendCashInstLineNotify(phase, paidParts, totalParts) {
+  if (!currentRecord) return { ok:false, line_sent:false };
 
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = String(f.order_id || '').trim();
+
+  if (!orderId) {
+    throw new Error('missing_order_id');
+  }
+
+  const r = await fetch(`${API}/admin/order/cash-inst-notify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      op_key: OP_KEY,
+      order_id: orderId,
+      phase,
+      paid_parts: paidParts || 0,
+      total_parts: totalParts || getCurrentCashInstTotalParts()
+    })
+  });
+
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) {
+    throw new Error(j.error || ('HTTP ' + r.status));
+  }
+
+  return j;
+}
 async function markCashInstProgress(targetParts){
   if (!currentRecord) {
     alert('請先在左邊選一筆訂單');
@@ -3845,13 +3873,20 @@ if (!depositReady && targetParts < totalParts) {
     saveOpts.forcePayStatus = 'deposit_ok';
   }
 
-  const saved = await saveDetail(saveOpts);
-  if (!saved) return;
+ const saved = await saveDetail(saveOpts);
+if (!saved) return;
 
-  if (finalParts >= totalParts) {
-    await confirmPay('ok');
-    return;
-  }
+if (finalParts >= totalParts) {
+  await confirmPay('ok');
+  return;
+}
+
+try {
+  await sendCashInstLineNotify(`part_${finalParts}`, finalParts, totalParts);
+} catch (e) {
+  console.error(e);
+  alert('分期狀態已儲存，但 LINE 通知發送失敗：' + (e.message || e));
+}
 
   const keepKey = f.order_id || currentRecord.id || '';
   await reloadCurrentView();
@@ -4022,12 +4057,22 @@ async function depositReceivedAndNotify() {
   if (noticeChk) noticeChk.checked = true;
   if (msgEl) msgEl.textContent = '儲存訂金狀態中…';
 
-  const ok = await saveDetail({
-    skipReload: true,
-    forcePayStatus: 'deposit_ok'
-  });
+ const ok = await saveDetail({
+  skipReload: true,
+  forcePayStatus: 'deposit_ok'
+});
 
-  if (!ok) return;
+if (!ok) return;
+
+let lineText = '';
+try {
+  const totalParts = getCurrentCashInstTotalParts();
+  const lineRes = await sendCashInstLineNotify('deposit', 0, totalParts);
+  lineText = lineRes.line_sent ? '，LINE 保留通知已發送' : '，但找不到 LINE 綁定';
+} catch (e) {
+  console.error(e);
+  lineText = '，但 LINE 發送失敗：' + (e.message || e);
+}
 
   const keepF = currentRecord.fields || currentRecord || {};
   const keepKey = keepF.order_id || currentRecord.id || '';
@@ -4037,7 +4082,7 @@ async function depositReceivedAndNotify() {
 
   const newMsgEl = $('#detailMsg');
   if (newMsgEl) {
-    newMsgEl.textContent = '✅ 已收到訂金，已寫入 pay_status = deposit_ok，並已儲存保留通知';
+    newMsgEl.textContent = '✅ 已收到訂金，已寫入 pay_status = deposit_ok，並已儲存保留通知' + lineText;
   }
 }
  
