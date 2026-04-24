@@ -167,7 +167,7 @@
         <span class="info-label">訂單金額</span>
         <span class="info-val highlight-val" id="amountText">--</span>
       </div>
-
+<div id="cashInstInfoRows" style="display:none;"></div>
       <div class="divider"></div>
 
       <div class="note-box">
@@ -219,7 +219,53 @@
   const errorBlock = document.getElementById('errorBlock');
   const subtitleEl = document.getElementById('statusSubtitle');
   const redirectMsg = document.getElementById('autoRedirectMsg');
+const cashInstInfoRows = document.getElementById('cashInstInfoRows');
 
+function fmtMoney(n) {
+  const v = Math.round(Number(n || 0) || 0);
+  return 'NT$ ' + v.toLocaleString();
+}
+
+function renderCashInstInfo(info) {
+  if (!cashInstInfoRows || !info) return;
+
+  const pm = String(info.payment_method || '').toLowerCase();
+  const isCashInst =
+    pm.startsWith('cash_inst_') ||
+    pm.startsWith('cash_install_');
+
+  if (!isCashInst) {
+    cashInstInfoRows.style.display = 'none';
+    cashInstInfoRows.innerHTML = '';
+    return;
+  }
+
+  const months =
+    pm.endsWith('_3') ? 3 :
+    pm.endsWith('_2') ? 2 :
+    (String(info.cash_inst_plan || '').includes('3') ? 3 : 2);
+
+  const rows = [
+    ['付款方式', `現金分期 ${months} 期`],
+    ['訂金金額', info.cash_inst_deposit_amount ? fmtMoney(info.cash_inst_deposit_amount) : '—'],
+    ['匯款後五碼', info.cash_inst_deposit_last5 || '—'],
+    ['第 1 期金額', info.cash_inst_part1_amount ? fmtMoney(info.cash_inst_part1_amount) : '—'],
+    ['第 2 期金額', info.cash_inst_part2_amount ? fmtMoney(info.cash_inst_part2_amount) : '—']
+  ];
+
+  if (months === 3) {
+    rows.push(['第 3 期金額', info.cash_inst_part3_amount ? fmtMoney(info.cash_inst_part3_amount) : '—']);
+  }
+
+  cashInstInfoRows.innerHTML = rows.map(([label, value]) => `
+    <div class="info-row">
+      <span class="info-label">${label}</span>
+      <span class="info-val">${value}</span>
+    </div>
+  `).join('');
+
+  cashInstInfoRows.style.display = '';
+}
   function setSubtitle(text) {
     if (subtitleEl) subtitleEl.textContent = text;
   }
@@ -305,7 +351,7 @@
   // ✅ 初始 UI（先用 querystring）
   applyUiByStatus(statusRaw);
 
- (async function hydrateFromApi() {
+(async function hydrateFromApi() {
   if (!orderId) return;
   const info = await fetchOrderStatus();
   if (!info || !info.ok) return;
@@ -315,6 +361,8 @@
     const el = document.getElementById('amountText');
     if (el) el.textContent = 'NT$ ' + n.toLocaleString();
   }
+
+  renderCashInstInfo(info);
 })();
 
   // ✅ ZeroCard（或 status=PENDING）才輪詢：審核中 → 自動更新成 SUCCESS/FAILED
