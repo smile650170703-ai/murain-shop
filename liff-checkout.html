@@ -2556,19 +2556,51 @@ function cashInstApplyDateLimits(){
   });
 }
 
+function buildCashInstPlan(base, deposit, months){
+  const safeMonths = [2, 3].includes(Number(months)) ? Number(months) : 2;
+  const safeBase = Math.max(Math.floor(Number(base || 0) || 0), 0);
+  const safeDeposit = Math.max(Math.floor(Number(deposit || 0) || 0), 0);
+  const remain = Math.max(safeBase - safeDeposit, 0);
+
+  const baseEach = safeMonths ? Math.floor(remain / safeMonths) : 0;
+  const extra = safeMonths ? (remain % safeMonths) : 0;
+
+  const amounts = Array.from({ length: safeMonths }, (_, i) => {
+    return baseEach + (i < extra ? 1 : 0);
+  });
+
+  return {
+    total_amount: safeBase,
+    deposit_amount: safeDeposit,
+    remaining_amount: remain,
+    months: safeMonths,
+    installment_amounts: amounts,
+    part1_amount: amounts[0] || 0,
+    part2_amount: amounts[1] || 0,
+    part3_amount: amounts[2] || 0
+  };
+}
+
 function calcCashInst(){
   const months  = Number(document.getElementById('cash_inst_months')?.value || 2);
   const deposit = Math.max(0, Math.floor(Number(document.getElementById('cash_inst_deposit')?.value || 0) || 0));
   const base    = Math.max((CART_TOTAL_RAW || 0) - (CREDIT_USED || 0), 0);
-  const remain  = Math.max(base - deposit, 0);
-  const each    = months ? Math.ceil(remain / months) : 0;
+  const plan    = buildCashInstPlan(base, deposit, months);
 
   const el = document.getElementById('cash_inst_each');
   if (el) {
     el.value = deposit > 0
-      ? `${money(each)} × ${months} 期（定金 NT$ ${deposit.toLocaleString()}）`
+      ? [
+          `定金：${money(plan.deposit_amount)}`,
+          `第 1 期：${money(plan.part1_amount)}`,
+          `第 2 期：${money(plan.part2_amount)}`,
+          plan.months === 3 ? `第 3 期：${money(plan.part3_amount)}` : '',
+          `剩餘分期金額：${money(plan.remaining_amount)}`
+        ].filter(Boolean).join('　／　')
       : '';
   }
+
+  return plan;
 }
 
 function updateCashInstDateRows(){
@@ -4045,23 +4077,39 @@ if (deposit >= base) {
 
   const paymentDates = months === 2 ? [d1, d2] : [d1, d2, d3];
 
-  if (paymentDates.some(v => !v)) {
-    alert(`請選擇完整的 ${months} 期付款日期`);
-    return;
-  }
+if (paymentDates.some(v => !v)) {
+  alert(`請選擇完整的 ${months} 期付款日期`);
+  return;
+}
 
-  payment_method = `cash_inst_${months}`;
+const cashInstPlan = buildCashInstPlan(base, deposit, months);
+
+payment_method = `cash_inst_${months}`;
 
 shipping_info.cash_inst = {
   months,
   deposit_amount: deposit,
   deposit_last5: last5,
+
   payment_dates: paymentDates,
   first_date: d1,
   second_date: d2,
   third_date: months === 3 ? d3 : '',
 
-  // ✅ 客人已勾選現金分期同意條款
+  total_amount: cashInstPlan.total_amount,
+  remaining_amount: cashInstPlan.remaining_amount,
+  installment_amounts: cashInstPlan.installment_amounts,
+  part1_amount: cashInstPlan.part1_amount,
+  part2_amount: cashInstPlan.part2_amount,
+  part3_amount: months === 3 ? cashInstPlan.part3_amount : 0,
+
+  summary_text: [
+    `定金：${money(deposit)}`,
+    `第 1 期：${money(cashInstPlan.part1_amount)}`,
+    `第 2 期：${money(cashInstPlan.part2_amount)}`,
+    months === 3 ? `第 3 期：${money(cashInstPlan.part3_amount)}` : ''
+  ].filter(Boolean).join(' / '),
+
   agree: true,
   agree_at: new Date().toISOString(),
   agree_text: '我已閱讀並同意現金分期條款'
