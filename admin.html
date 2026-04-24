@@ -3875,7 +3875,48 @@ if (!depositReady && targetParts < totalParts) {
 if (!saved) return;
 
 if (finalParts >= totalParts) {
-  await confirmPay('ok');
+  const orderId = String(f.order_id || '').trim();
+
+  try {
+    const r = await fetch(`${API}/admin/order/update?op_key=${encodeURIComponent(OP_KEY)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        record_id: currentRecord.id || null,
+        order_id: orderId || null,
+        fields: {
+          pay_status: 'paid_ok',
+          status: 'paid',
+          cash_inst_status: 'completed',
+          cash_inst_paid_parts: finalParts,
+          cash_inst_paid_count: finalParts,
+          cash_inst_completed: true,
+          cash_inst_remaining_amount: 0,
+          cash_inst_next_due_date: ''
+        }
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      throw new Error(j.error || ('HTTP ' + r.status));
+    }
+  } catch (e) {
+    console.error(e);
+    alert('現金分期最後一期狀態更新失敗：' + (e.message || e));
+    return;
+  }
+
+  try {
+    await sendCashInstLineNotify('all_done', finalParts, totalParts);
+  } catch (e) {
+    console.error(e);
+    alert('現金分期已收齊，但 LINE 通知發送失敗：' + (e.message || e));
+  }
+
+  const keepKey = orderId || currentRecord.id || '';
+  await reloadCurrentView();
+  restoreSelectedOrder(keepKey);
   return;
 }
 
@@ -4881,8 +4922,69 @@ if (btnPrintSlips) btnPrintSlips.addEventListener('click', printShipSlipsRange);
   }
 
   proxyButton('btnSaveAndShipTop',   'btnSaveAndShip');
-  proxyButton('btnConfirmPayOkTop',  'btnConfirmPayOk');
-  proxyButton('btnMarkZcFailTop',    'btnMarkZcFail');
+
+// ✅ 上方唯一「收款/審核通過+發LINE」：現金分期改走專用流程
+const btnConfirmPayOkTopBind = $('#btnConfirmPayOkTop');
+if (btnConfirmPayOkTopBind) {
+  btnConfirmPayOkTopBind.addEventListener('click', async () => {
+    if (!currentRecord) {
+      alert('請先在左邊選一筆訂單');
+      return;
+    }
+
+    const f = currentRecord.fields || currentRecord || {};
+    const pm = String(f.payment_method || '').trim().toLowerCase();
+    const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+    const payStatus = String(f.pay_status || '').trim().toLowerCase();
+
+    const isCashInstOrder =
+      pm === 'cash_inst_2' ||
+      pm === 'cash_inst_3' ||
+      pm.startsWith('cash_install_');
+
+    // 非現金分期：維持原本一般收款/審核通過流程
+    if (!isCashInstOrder) {
+      const orig = $('#btnConfirmPayOk');
+      if (orig) orig.click();
+      else await confirmPay('ok');
+      return;
+    }
+
+    const totalParts = getCurrentCashInstTotalParts();
+
+    if (!totalParts) {
+      alert('這筆現金分期訂單缺少分期期數，請檢查 payment_method。');
+      return;
+    }
+
+    if (cashStatus === 'completed' || payStatus === 'paid_ok') {
+      alert('這筆現金分期已收齊。');
+      return;
+    }
+
+    // 第一次：收定金、啟動現金分期，然後發「定金已收」專用卡
+    if (cashStatus === 'pending_deposit') {
+      await confirmPay('ok');
+
+      try {
+        await sendCashInstLineNotify('deposit', 0, totalParts);
+      } catch (e) {
+        console.error(e);
+        alert('定金狀態已更新，但現金分期 LINE 通知發送失敗：' + (e.message || e));
+      }
+      return;
+    }
+
+    // 已進入分期：推進下一期，markCashInstProgress 會儲存並發專用卡
+    const currentPaid =
+      Number(f.cash_inst_paid_count || f.cash_inst_paid_parts || 0) || 0;
+
+    const nextPart = Math.min(currentPaid + 1, totalParts);
+    await markCashInstProgress(nextPart);
+  });
+}
+
+proxyButton('btnMarkZcFailTop',    'btnMarkZcFail');
   proxyButton('btnConsignTop', 'btnConsign');
 
 // ✅ 面交付現：完成收款（標記已收款 + 出貨完成）
