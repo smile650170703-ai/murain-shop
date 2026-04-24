@@ -2834,12 +2834,64 @@ const yufuPhoneOwner = String(
   ""
 ).trim();
 
- // ✅ 訂金資訊：優先用 Orders 欄位，沒有就改讀 shipping_info.deposit
+// ✅ 訂金資訊：一般訂金 + 現金分期訂金都支援
 const dep = shipInfo.deposit || {};
-const depAmount = (f.deposit_amount ?? dep.amount ?? dep.deposit_amount ?? '');
-const depLast5  = (f.deposit_last5  ?? dep.last5  ?? dep.deposit_last5  ?? '');
-const holdUntilRaw = (f.hold_until ?? dep.hold_until ?? dep.holdUntil ?? '');
-const depExpireRaw = (f.deposit_expire_at ?? dep.deposit_expire_at ?? dep.expire_at ?? holdUntilRaw ?? '');
+const cashInstDep = shipInfo.cash_inst || shipInfo.cashInstallment || shipInfo.installment || {};
+
+const pickDepositValue = (...vals) => {
+  for (const v of vals) {
+    if (v === 0 || v === '0') return v;
+    const s = String(v ?? '').trim();
+    if (s) return v;
+  }
+  return '';
+};
+
+const pickDepositText = (...vals) => {
+  for (const v of vals) {
+    const s = String(v ?? '').trim();
+    if (s) return s;
+  }
+  return '';
+};
+
+const depAmount = pickDepositValue(
+  f.cash_inst_deposit_amount,
+  f.deposit_amount,
+  dep.cash_inst_deposit_amount,
+  dep.amount,
+  dep.deposit_amount,
+  cashInstDep.deposit_amount,
+  cashInstDep.depositAmount
+);
+
+const depLast5 = pickDepositText(
+  f.cash_inst_deposit_last5,
+  f.deposit_last5,
+  f.atm_last5,
+  dep.cash_inst_deposit_last5,
+  dep.last5,
+  dep.deposit_last5,
+  dep.atm_last5,
+  shipInfo.atm_last5,
+  cashInstDep.deposit_last5,
+  cashInstDep.depositLast5
+);
+
+const holdUntilRaw = pickDepositValue(
+  f.hold_until,
+  dep.hold_until,
+  dep.holdUntil
+);
+
+const depExpireRaw = pickDepositValue(
+  f.cash_inst_deposit_due_date,
+  f.deposit_expire_at,
+  dep.cash_inst_deposit_due_date,
+  dep.deposit_expire_at,
+  dep.expire_at,
+  holdUntilRaw
+);
 
 const date10 = (v)=> (v ? String(v).slice(0,10) : '');
 const holdUntil10 = date10(holdUntilRaw);
