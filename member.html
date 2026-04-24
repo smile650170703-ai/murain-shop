@@ -2438,47 +2438,379 @@ function progressStage(o){
     return `https://liff.line.me/${LIFF_ID}?url=${encodeURIComponent(endpoint)}`;
   }
 
-  function displayPaymentMethod(pm) {
-    const k = String(pm || "").toLowerCase();
-    const map = {
-      cod_711: "7-11 貨到付款",
-      cod_post: "宅配 / 貨到付款",
-      meetup_cash: "面交付款",
-      paid_af: "AFTEE先享後付",
-      paid_linepay: "LINE Pay",
-      paid_card_once: "信用卡一次付清",
-      paid_card_inst_3: "信用卡分 3 期",
-      paid_card_inst_6: "信用卡分 6 期",
-      paid_card_inst_9: "信用卡分 9 期",
-      zero_card_3: "零卡分 3 期",
-      zero_card_6: "零卡分 6 期",
-      zero_card_9: "零卡分 9 期",
-      zero_card_12: "零卡分 12 期",
-      zero_card_18: "零卡分 18 期",
-      zero_card_24: "零卡分 24 期",
-      yufu_inst_3: "裕富 3 期",
-      yufu_inst_6: "裕富 6 期",
-      yufu_inst_9: "裕富 9 期",
-      yufu_inst_12: "裕富 12 期",
-      yufu_inst_24: "裕富 24 期",
-      yufu_inst_36: "裕富 36 期",
-      cash_install_2: "現金分期 2 期",
-cash_install_3: "現金分期 3 期",
-      paid_aftee_direct: "AF 先享後付",
-      atm_full: "全額匯款",
-      atm_deposit: "定金匯款",
-      deposit_new_full_meetup: "匯款全額 - 面交",
-      meetup_cash: "面交付現",
-      deposit_old: "定金匯款",
-      deposit_new_full: "全額匯款",
-      deposit_new_full_711: "定金匯款",
-      deposit_new_full_post: "定金匯款",
-      deposit_new_partial_711: "定金匯款",
-      deposit_new_partial_post: "定金匯款",
-      deposit_old_partial: "定金匯款"
-    };
-    return map[k] || pm || "—";
+function displayPaymentMethod(pm) {
+  const raw = String(pm || "").trim();
+  const k = raw.toLowerCase();
+
+  // ✅ 兼容 cash_inst_2 / cash_inst_3 / cash_install_2 / cash_install_3
+  const cashMatch =
+    k.match(/^cash[_-]inst[_-](\d+)$/) ||
+    k.match(/^cash[_-]install[_-](\d+)$/);
+
+  if (cashMatch) return `現金分期 ${cashMatch[1]} 期`;
+
+  const map = {
+    cod_711: "7-11 貨到付款",
+    cod_post: "宅配貨到付款",
+    meetup_cash: "面交付現",
+
+    paid_af: "AFTEE 先享後付",
+    paid_aftee_direct: "AFTEE 先享後付",
+    paid_linepay: "LINE Pay",
+    paid_card_once: "信用卡一次付清",
+    paid_card_inst_3: "信用卡分 3 期",
+    paid_card_inst_6: "信用卡分 6 期",
+    paid_card_inst_9: "信用卡分 9 期",
+
+    zero_card_3: "零卡分 3 期",
+    zero_card_6: "零卡分 6 期",
+    zero_card_9: "零卡分 9 期",
+    zero_card_12: "零卡分 12 期",
+    zero_card_18: "零卡分 18 期",
+    zero_card_24: "零卡分 24 期",
+
+    yufu_inst_3: "裕富 3 期",
+    yufu_inst_6: "裕富 6 期",
+    yufu_inst_9: "裕富 9 期",
+    yufu_inst_12: "裕富 12 期",
+    yufu_inst_24: "裕富 24 期",
+    yufu_inst_36: "裕富 36 期",
+
+    cash_inst_2: "現金分期 2 期",
+    cash_inst_3: "現金分期 3 期",
+    cash_install_2: "現金分期 2 期",
+    cash_install_3: "現金分期 3 期",
+
+    atm_full: "全額匯款",
+    atm_deposit: "定金匯款",
+    deposit_old: "定金匯款",
+    deposit_old_partial: "定金匯款",
+    deposit_new_full: "全額匯款",
+    deposit_new_full_meetup: "全額匯款｜面交",
+    deposit_new_full_711: "定金匯款",
+    deposit_new_full_post: "定金匯款",
+    deposit_new_partial_711: "定金匯款",
+    deposit_new_partial_post: "定金匯款"
+  };
+
+  return map[k] || raw || "—";
+}
+
+function firstFilled(...vals) {
+  for (const v of vals) {
+    if (v === 0 || v === "0") return v;
+    if (v === null || v === undefined) continue;
+    const s = String(v).trim();
+    if (s !== "") return v;
   }
+  return "";
+}
+
+function readMoneyValue(v) {
+  if (v === 0 || v === "0") return 0;
+  const s = String(v ?? "").replace(/[^\d.-]/g, "");
+  const n = Number(s);
+  return Number.isFinite(n) ? Math.round(n) : 0;
+}
+
+function isCashInstallmentOrder(o) {
+  const pm = String(o?.payment_method || "").toLowerCase();
+  return (
+    pm.startsWith("cash_inst_") ||
+    pm.startsWith("cash_install_") ||
+    pm.includes("cash_inst") ||
+    pm.includes("cash_install")
+  );
+}
+
+function getCashInstCount(o) {
+  const pm = String(o?.payment_method || "").toLowerCase();
+  const m =
+    pm.match(/^cash[_-]inst[_-](\d+)$/) ||
+    pm.match(/^cash[_-]install[_-](\d+)$/);
+
+  return readMoneyValue(firstFilled(
+    o?.cash_inst_count,
+    o?.cashInstCount,
+    o?.installment_count,
+    o?.installmentCount,
+    m ? m[1] : ""
+  ));
+}
+
+function getCashInstRows(o) {
+  const ship = o?.ship || {};
+  const si = safeObj(o?.shipping_info || o?.shippingInfo || ship?.shipping_info || ship?.shippingInfo || {});
+  const ci = safeObj(o?.cash_inst_info || o?.cashInstInfo || si?.cash_inst || si?.cashInst || {});
+
+  const names = ["第一期", "第二期", "第三期"];
+  const en = ["first", "second", "third"];
+  const count = Math.max(0, Math.min(3, getCashInstCount(o) || 0));
+  const max = count || 3;
+
+  const rows = [];
+
+  for (let i = 1; i <= max; i++) {
+    const word = en[i - 1];
+
+    const amountRaw = firstFilled(
+      o?.[`cash_inst_part${i}_amount`],
+      o?.[`cash_inst_${word}_amount`],
+      o?.[`cash_inst_amount_${i}`],
+      o?.[`cash_inst_${i}_amount`],
+      o?.[`part${i}_amount`],
+      o?.[`${word}_amount`],
+
+      si?.[`cash_inst_part${i}_amount`],
+      si?.[`cash_inst_${word}_amount`],
+      si?.[`part${i}_amount`],
+      si?.[`${word}_amount`],
+
+      ci?.[`part${i}_amount`],
+      ci?.[`${word}_amount`],
+      ci?.[`amount_${i}`]
+    );
+
+    const dateRaw = firstFilled(
+      o?.[`cash_inst_part${i}_date`],
+      o?.[`cash_inst_part${i}_due_date`],
+      o?.[`cash_inst_${word}_date`],
+      o?.[`cash_inst_due_date_${i}`],
+      o?.[`cash_inst_date_${i}`],
+      o?.[`part${i}_date`],
+      o?.[`part${i}_due_date`],
+      o?.[`${word}_date`],
+
+      si?.[`cash_inst_part${i}_date`],
+      si?.[`cash_inst_part${i}_due_date`],
+      si?.[`part${i}_date`],
+      si?.[`${word}_date`],
+
+      ci?.[`part${i}_date`],
+      ci?.[`part${i}_due_date`],
+      ci?.[`${word}_date`],
+      ci?.[`date_${i}`]
+    );
+
+    const paidAt = firstFilled(
+      o?.[`cash_inst_part${i}_paid_at`],
+      o?.[`cash_inst_${word}_paid_at`],
+      o?.[`part${i}_paid_at`],
+      o?.[`${word}_paid_at`],
+
+      si?.[`cash_inst_part${i}_paid_at`],
+      si?.[`part${i}_paid_at`],
+
+      ci?.[`part${i}_paid_at`],
+      ci?.[`${word}_paid_at`],
+      ci?.[`paid_at_${i}`]
+    );
+
+    const statusRaw = String(firstFilled(
+      o?.[`cash_inst_part${i}_status`],
+      o?.[`cash_inst_${word}_status`],
+      o?.[`part${i}_status`],
+      o?.[`${word}_status`],
+
+      si?.[`cash_inst_part${i}_status`],
+      si?.[`part${i}_status`],
+
+      ci?.[`part${i}_status`],
+      ci?.[`${word}_status`],
+      ci?.[`status_${i}`]
+    ) || "").toLowerCase();
+
+    const paid = !!paidAt || ["paid", "paid_ok", "done", "received", "已收", "已收款"].includes(statusRaw);
+
+    rows.push({
+      label: names[i - 1],
+      hasAmount: amountRaw !== "",
+      amount: readMoneyValue(amountRaw),
+      date: String(dateRaw || "").trim(),
+      paid
+    });
+  }
+
+  return rows;
+}
+
+function getDepositDisplayAmount(o) {
+  const ship = o?.ship || {};
+  const si = safeObj(o?.shipping_info || o?.shippingInfo || ship?.shipping_info || ship?.shippingInfo || {});
+  const dep = safeObj(si?.deposit || {});
+
+  return readMoneyValue(firstFilled(
+    o?.cash_inst_deposit_amount,
+    o?.cashInstDepositAmount,
+    o?.deposit_amount,
+    o?.depositAmount,
+    o?.deposit_paid,
+    o?.depositPaid,
+
+    ship?.cash_inst_deposit_amount,
+    ship?.deposit_amount,
+    ship?.depositAmount,
+    ship?.deposit_paid,
+    ship?.depositPaid,
+
+    si?.cash_inst_deposit_amount,
+    si?.deposit_amount,
+    si?.depositAmount,
+    si?.deposit_paid,
+    si?.depositPaid,
+
+    dep?.amount,
+    dep?.paid
+  ));
+}
+
+function getReceiveStatusText(o) {
+  const ps = String(o?.pay_status || "").toLowerCase();
+
+  if (isCashInstallmentOrder(o)) {
+    const rows = getCashInstRows(o);
+    const paidCount = rows.filter(r => r.paid).length;
+
+    if (ps === "paid" || ps === "paid_ok") return "已收齊";
+    if (rows.length && paidCount >= rows.length) return "已收齊";
+    if (paidCount > 0) return `已收 ${paidCount} / ${rows.length} 期`;
+    if (ps === "failed") return "付款失敗";
+    if (ps === "pending" || ps === "deposit_hold" || ps === "submitted") return "核對中";
+
+    return shipBadgeText(o) || "核對中";
+  }
+
+  if (ps === "paid" || ps === "paid_ok") return "已收齊";
+  if (isDepositConfirmed(o)) return "已收定金";
+  if (isDepositChecking(o)) return "核對中";
+  if (ps === "failed") return "付款失敗";
+  if (ps === "pending") return "核對中";
+
+  return shipBadgeText(o) || "—";
+}
+
+function buildCashInstRowsHtml(o) {
+  if (!isCashInstallmentOrder(o)) return "";
+
+  const rows = getCashInstRows(o);
+  if (!rows.length) return "";
+
+  return rows.map(r => `
+    <div class="amount-line">
+      <span class="k">${r.label}</span>
+      <span class="v" style="text-align:right; line-height:1.45;">
+        ${r.hasAmount ? money(r.amount) : "—"}
+        <span class="tag ${r.paid ? "tag-ok" : "tag-pending"}">${r.paid ? "已收款" : "待收款"}</span>
+        <span style="display:block; margin-top:3px; font-size:10px; font-weight:500; color:var(--text-sub);">
+          日期：${r.date ? escapeHtml(formatDate(r.date)) : "—"}
+        </span>
+      </span>
+    </div>
+  `).join("");
+}
+
+function buildOrderAmountBreakdownHtml(o, currentFilter, tail) {
+  const total = readMoneyValue(firstFilled(o?.total_amount, o?.totalAmount, o?.amount));
+  const isDeposit = isDepositHoldOrder(o);
+  const isCashInst = isCashInstallmentOrder(o);
+  const depositAmount = getDepositDisplayAmount(o);
+  const paidAmount = getPaidAmount(o);
+
+  const shouldShowDepositAmount = isDeposit || isCashInst || depositAmount > 0;
+
+  return `
+    <div class="amount-breakdown">
+      <div class="amount-line">
+        <span class="k">總訂單金額</span>
+        <span class="v">${money(total)}</span>
+      </div>
+
+      ${
+        shouldShowDepositAmount
+          ? `
+            <div class="amount-line">
+              <span class="k">訂金金額</span>
+              <span class="v">${depositAmount > 0 ? money(depositAmount) : "—"}</span>
+            </div>
+          `
+          : ``
+      }
+
+      ${buildCashInstRowsHtml(o)}
+
+      ${
+        (currentFilter === "deposit" && isDeposit)
+          ? `
+            <div class="amount-line">
+              <span class="k">保留到期日</span>
+              <span class="v">${formatDate(getDepositExpireAt(o)) || "—"}</span>
+            </div>
+          `
+          : ``
+      }
+
+      ${
+        (tail && tail.order_id && currentFilter !== "history")
+          ? `
+            <div class="amount-line">
+              <span class="k">尾款單號</span>
+              <span class="v" style="font-family:monospace;">${escapeHtml(tail.order_id)}</span>
+            </div>
+          `
+          : ``
+      }
+
+      ${
+        (tail && currentFilter !== "history")
+          ? `
+            <div class="amount-line">
+              <span class="k">尾款狀態</span>
+              <span class="v">${isPaidOk(tail.pay_status) ? "尾款已付" : "尾款待付款"}</span>
+            </div>
+          `
+          : ``
+      }
+
+      ${
+        !isCashInst
+          ? `
+            <div class="amount-line">
+              <span class="k">${isDeposit ? "已付定金" : "已付款"}</span>
+              <span class="v">
+                ${money(paidAmount)}
+                ${
+                  isDeposit
+                    ? (isDepositConfirmed(o)
+                        ? `<span class="tag tag-ok">已確認</span>`
+                        : (isDepositChecking(o) ? `<span class="tag tag-pending">核對中</span>` : ``))
+                    : ((String(o?.pay_status || "").toLowerCase() === "paid" || String(o?.pay_status || "").toLowerCase() === "paid_ok")
+                        ? `<span class="tag tag-ok">完成</span>`
+                        : ``)
+                }
+              </span>
+            </div>
+          `
+          : ``
+      }
+
+      ${
+        (currentFilter !== "history" || isCashInst)
+          ? `
+            <div class="amount-line">
+              <span class="k">剩餘尾款</span>
+              <span class="v">${money(getRemainingAmount(o))}</span>
+            </div>
+          `
+          : ``
+      }
+
+      <div class="amount-line" style="border-bottom:none;">
+        <span class="k">收款狀態</span>
+        <span class="v">${escapeHtml(getReceiveStatusText(o))}</span>
+      </div>
+    </div>
+  `;
+}
 
   function escapeHtml(s) {
     return String(s ?? "").replace(/[&<>"']/g, (c) => ({
@@ -2898,69 +3230,7 @@ const tail = (!isTailOrder(o) && String(o?.order_id || "").toUpperCase().startsW
           ${itemsHtml}
         </div>
 
-        <div class="amount-breakdown">
-          <div class="amount-line">
-            <span class="k">訂單金額</span>
-            <span class="v">NT$ ${total.toLocaleString("zh-TW")}</span>
-          </div>
-
-          ${
-  (currentFilter === "deposit" && isDepositHoldOrder(o))
-    ? `
-      <div class="amount-line">
-        <span class="k">保留到期日</span>
-        <span class="v">${formatDate(getDepositExpireAt(o)) || "—"}</span>
-      </div>
-    `
-    : ``
-}
-
-          ${
-  (tail && tail.order_id && currentFilter !== "history")
-    ? `
-      <div class="amount-line">
-        <span class="k">尾款單號</span>
-        <span class="v" style="font-family: monospace;">${escapeHtml(tail.order_id)}</span>
-      </div>
-    `
-    : ``
-}
-${
-  (tail && currentFilter !== "history")
-    ? `
-      <div class="amount-line">
-        <span class="k">尾款狀態</span>
-        <span class="v">
-          ${isPaidOk(tail.pay_status) ? '尾款已付' : '尾款待付款'}
-        </span>
-      </div>
-    `
-    : ``
-}
-
-          <div class="amount-line">
-            <span class="k">${(String(o.payment_method||"").toLowerCase().includes("deposit") || isDepositHoldOrder(o)) ? "已付定金" : "已付款"}</span>
-            <span class="v">
-              ${money(getPaidAmount(o))}
-              ${
-                (String(o.payment_method||"").toLowerCase().includes("deposit") || isDepositHoldOrder(o))
-                  ? (isDepositConfirmed(o) ? `<span class="tag tag-ok">已確認</span>` : (isDepositChecking(o) ? `<span class="tag tag-pending">核對中</span>` : ``))
-                  : ((String(o?.pay_status||"").toLowerCase()==="paid" || String(o?.pay_status||"").toLowerCase()==="paid_ok") ? `<span class="tag tag-ok">完成</span>` : ``)
-              }
-            </span>
-          </div>
-
-          ${
-            (currentFilter === "history")
-              ? ``
-              : `
-                <div class="amount-line">
-                  <span class="k">剩餘尾款</span>
-                  <span class="v">${money(getRemainingAmount(o))}</span>
-                </div>
-              `
-          }
-        </div>
+           ${buildOrderAmountBreakdownHtml(o, currentFilter, tail)}
 
         <div class="progress">
           ${
