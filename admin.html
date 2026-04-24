@@ -318,6 +318,11 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     font-size:13px;
   }
 }
+ #d_cash_inst_progress_ro,
+#d_cash_inst_completed_ro{
+  font-size:12px;
+  font-weight:600;
+}
 </style>
 </head>
 <body>
@@ -458,6 +463,21 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
         </button>
        <button class="btn-secondary" id="btnDepositPayAndNoticeTop" type="button">
   ✅ 已收定金+發保留通知
+</button>
+       <button class="btn-secondary cash-inst-top-btn" id="btnCashInstPart1Top" type="button" style="display:none;">
+  💵 現金分期｜第 1 期已收
+</button>
+
+<button class="btn-secondary cash-inst-top-btn" id="btnCashInstPart2Top" type="button" style="display:none;">
+  💵 現金分期｜第 2 期已收
+</button>
+
+<button class="btn-secondary cash-inst-top-btn" id="btnCashInstPart3Top" type="button" style="display:none;">
+  💵 現金分期｜第 3 期已收
+</button>
+
+<button class="btn-secondary cash-inst-top-btn" id="btnCashInstAllDoneTop" type="button" style="display:none;">
+  ✅ 現金分期｜全部收齊
 </button>
        <button class="btn-secondary" id="btnMeetupCashDoneTop" type="button">
   🤝 完成面交收款（已收款＋出貨完成）
@@ -3147,35 +3167,6 @@ ${isCashInstOrder ? `
   <button class="btn-secondary" id="btnConfirmPayOk">✅ 確認已收款／審核通過 並 發 LINE</button>
   <button class="btn-secondary" id="btnMarkZcFail">❌ 中租審核未通過 ＋ 發 LINE</button>
   <button class="btn-secondary" id="btnSaveDetailOnly">📑 僅儲存資料（寫入 LINE，不改狀態）</button>
-
-  ${isCashInstOrder ? `
-    <div class="mt-2" style="display:flex;gap:8px;flex-wrap:wrap;">
-      ${cashInstPaidParts < 1 ? `
-        <button class="btn-secondary" id="btnCashInstPart1" type="button">
-          現金分期｜第 1 期已收
-        </button>
-      ` : ''}
-
-      ${cashInstTotalParts >= 2 && cashInstPaidParts < 2 ? `
-        <button class="btn-secondary" id="btnCashInstPart2" type="button">
-          💵 現金分期｜第 2 期已收
-        </button>
-      ` : ''}
-
-      ${isCashInst3 && cashInstPaidParts < 3 ? `
-        <button class="btn-secondary" id="btnCashInstPart3" type="button">
-          💵 現金分期｜第 3 期已收
-        </button>
-      ` : ''}
-
-      ${cashInstPaidParts < cashInstTotalParts ? `
-        <button class="btn-secondary" id="btnCashInstAllDone" type="button">
-          ✅ 現金分期｜全部收齊
-        </button>
-      ` : ''}
-    </div>
-  ` : ''}
-
   <button class="btn small" id="btnSendTailLink">發尾款結帳鏈結 ＋ 發 LINE</button>
   <div id="detailMsg" class="tag-small mt-2"></div>
 
@@ -3232,6 +3223,35 @@ if (btnCashInstAllDone) {
     }
     markCashInstProgress(totalParts);
   });
+}
+ const btnCashInstPart1Top = $('#btnCashInstPart1Top');
+const btnCashInstPart2Top = $('#btnCashInstPart2Top');
+const btnCashInstPart3Top = $('#btnCashInstPart3Top');
+const btnCashInstAllDoneTop = $('#btnCashInstAllDoneTop');
+
+[btnCashInstPart1Top, btnCashInstPart2Top, btnCashInstPart3Top, btnCashInstAllDoneTop].forEach(btn => {
+  if (btn) btn.style.display = 'none';
+});
+
+if (isCashInstOrder) {
+  if (btnCashInstPart1Top && cashInstPaidParts < 1) btnCashInstPart1Top.style.display = '';
+  if (btnCashInstPart2Top && cashInstTotalParts >= 2 && cashInstPaidParts < 2) btnCashInstPart2Top.style.display = '';
+  if (btnCashInstPart3Top && isCashInst3 && cashInstPaidParts < 3) btnCashInstPart3Top.style.display = '';
+  if (btnCashInstAllDoneTop && cashInstPaidParts < cashInstTotalParts) btnCashInstAllDoneTop.style.display = '';
+}
+
+if (btnCashInstPart1Top) btnCashInstPart1Top.onclick = () => markCashInstProgress(1);
+if (btnCashInstPart2Top) btnCashInstPart2Top.onclick = () => markCashInstProgress(2);
+if (btnCashInstPart3Top) btnCashInstPart3Top.onclick = () => markCashInstProgress(3);
+if (btnCashInstAllDoneTop) {
+  btnCashInstAllDoneTop.onclick = () => {
+    const totalParts = getCurrentCashInstTotalParts();
+    if (!totalParts) {
+      alert('這筆不是現金分期訂單');
+      return;
+    }
+    markCashInstProgress(totalParts);
+  };
 }
 
  // ★ 賣貨便名稱選單：帶入目前欄位值，並更新當月累積金額
@@ -3666,6 +3686,7 @@ async function saveDetail(opts = {}){
   if(!currentRecord) return false;
 
   const skipReload = !!opts.skipReload;
+const forcePayStatus = opts.forcePayStatus || '';
   const msgEl = $('#detailMsg');
   msgEl.textContent = '儲存中…';
 
@@ -3683,6 +3704,9 @@ fields.tracking_no = tracking || '';
   fields.deposit_received = $('#d_deposit_received').checked;
   fields.pay_notice_sent  = $('#d_pay_notice_sent').checked;
   fields.internal_note    = $('#d_internal_note').value || '';
+ if (forcePayStatus) {
+  fields.pay_status = forcePayStatus;
+}
  const ciPaidParts = $('#d_cash_inst_paid_parts');
 const ciPart1 = $('#d_cash_inst_part1_paid_at');
 const ciPart2 = $('#d_cash_inst_part2_paid_at');
@@ -3806,10 +3830,22 @@ if (!depositReady && targetParts < totalParts) {
   if (paidPartsEl) paidPartsEl.value = String(finalParts);
   if (completedEl) completedEl.value = (finalParts >= totalParts) ? '1' : '';
 
-  const depReceived = $('#d_deposit_received');
-  if (depReceived && finalParts >= 1) depReceived.checked = true;
+    const depReceived = $('#d_deposit_received');
+  const payNotice = $('#d_pay_notice_sent');
 
-  const saved = await saveDetail({ skipReload: true });
+  if (finalParts >= 1) {
+    if (depReceived) depReceived.checked = true;
+    if (payNotice) payNotice.checked = true;
+  }
+
+  const saveOpts = { skipReload: true };
+
+  // 現金分期尚未全部收齊時，付款狀態維持「訂金已收」
+  if (finalParts < totalParts) {
+    saveOpts.forcePayStatus = 'deposit_ok';
+  }
+
+  const saved = await saveDetail(saveOpts);
   if (!saved) return;
 
   if (finalParts >= totalParts) {
@@ -3971,6 +4007,7 @@ async function confirmPay(mode){
   }
 }
  // ★ 新增：已收訂金＋發保留通知（自動勾勾）
+// ★ 已收訂金＋發保留通知：同時寫入 pay_status = deposit_ok
 async function depositReceivedAndNotify() {
   if (!currentRecord) {
     alert('請先在左邊選一筆訂單');
@@ -3979,11 +4016,17 @@ async function depositReceivedAndNotify() {
 
   const depChk    = $('#d_deposit_received');
   const noticeChk = $('#d_pay_notice_sent');
+  const msgEl     = $('#detailMsg');
 
   if (depChk) depChk.checked = true;
   if (noticeChk) noticeChk.checked = true;
+  if (msgEl) msgEl.textContent = '儲存訂金狀態中…';
 
-  const ok = await saveDetail({ skipReload: true });
+  const ok = await saveDetail({
+    skipReload: true,
+    forcePayStatus: 'deposit_ok'
+  });
+
   if (!ok) return;
 
   const keepF = currentRecord.fields || currentRecord || {};
@@ -3992,9 +4035,12 @@ async function depositReceivedAndNotify() {
   await reloadCurrentView();
   restoreSelectedOrder(keepKey);
 
-  const msgEl = $('#detailMsg');
-  if (msgEl) msgEl.textContent = '✅ 已儲存訂金／保留通知欄位';
+  const newMsgEl = $('#detailMsg');
+  if (newMsgEl) {
+    newMsgEl.textContent = '✅ 已收到訂金，已寫入 pay_status = deposit_ok，並已儲存保留通知';
+  }
 }
+ 
 async function markMeetupCashDone(){
   if (!currentRecord) {
     alert('請先在左邊選一筆訂單');
