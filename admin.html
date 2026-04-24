@@ -2835,8 +2835,19 @@ const yufuPhoneOwner = String(
 ).trim();
 
 // ✅ 訂金資訊：一般訂金 + 現金分期訂金都支援
+const date10 = (v)=> (v ? String(v).slice(0,10) : '');
+
+const pmCode = String(f.payment_method || '').trim().toLowerCase();
+const isCashInst2 = pmCode === 'cash_inst_2' || pmCode === 'cash_install_2';
+const isCashInst3 = pmCode === 'cash_inst_3' || pmCode === 'cash_install_3';
+const isCashInstOrder =
+  pmCode.startsWith('cash_inst_') ||
+  pmCode.startsWith('cash_install_');
+
 const dep = shipInfo.deposit || {};
-const cashInstDep = shipInfo.cash_inst || shipInfo.cashInstallment || shipInfo.installment || {};
+const cashInst = shipInfo.cash_inst || shipInfo.cashInstallment || shipInfo.installment || {};
+const cashInstMeta = safeJsonParse(f.cash_inst_due_dates_json, {}) || {};
+const cashInstSchedule = Array.isArray(cashInstMeta.schedule) ? cashInstMeta.schedule : [];
 
 const pickDepositValue = (...vals) => {
   for (const v of vals) {
@@ -2855,28 +2866,41 @@ const pickDepositText = (...vals) => {
   return '';
 };
 
-const depAmount = pickDepositValue(
-  f.cash_inst_deposit_amount,
-  f.deposit_amount,
-  dep.cash_inst_deposit_amount,
-  dep.amount,
-  dep.deposit_amount,
-  cashInstDep.deposit_amount,
-  cashInstDep.depositAmount
-);
+const depAmount = isCashInstOrder
+  ? pickDepositValue(
+      f.cash_inst_deposit_amount,
+      cashInst.deposit_amount,
+      cashInstMeta.deposit_amount,
+      f.deposit_amount,
+      dep.amount,
+      dep.deposit_amount
+    )
+  : pickDepositValue(
+      f.deposit_amount,
+      dep.amount,
+      dep.deposit_amount
+    );
 
-const depLast5 = pickDepositText(
-  f.cash_inst_deposit_last5,
-  f.deposit_last5,
-  f.atm_last5,
-  dep.cash_inst_deposit_last5,
-  dep.last5,
-  dep.deposit_last5,
-  dep.atm_last5,
-  shipInfo.atm_last5,
-  cashInstDep.deposit_last5,
-  cashInstDep.depositLast5
-);
+const depLast5 = isCashInstOrder
+  ? pickDepositText(
+      f.cash_inst_deposit_last5,
+      cashInst.deposit_last5,
+      cashInstMeta.deposit_last5,
+      f.deposit_last5,
+      f.atm_last5,
+      dep.last5,
+      dep.deposit_last5,
+      dep.atm_last5,
+      shipInfo.atm_last5
+    )
+  : pickDepositText(
+      f.deposit_last5,
+      f.atm_last5,
+      dep.last5,
+      dep.deposit_last5,
+      dep.atm_last5,
+      shipInfo.atm_last5
+    );
 
 const holdUntilRaw = pickDepositValue(
   f.hold_until,
@@ -2884,24 +2908,33 @@ const holdUntilRaw = pickDepositValue(
   dep.holdUntil
 );
 
-const depExpireRaw = pickDepositValue(
-  f.cash_inst_deposit_due_date,
-  f.deposit_expire_at,
-  dep.cash_inst_deposit_due_date,
-  dep.deposit_expire_at,
-  dep.expire_at,
-  holdUntilRaw
-);
+const depExpireRaw = isCashInstOrder
+  ? pickDepositValue(
+      f.cash_inst_deposit_due_date,
+      cashInst.deposit_due_date,
+      cashInstMeta.deposit_due_date,
+      f.deposit_expire_at,
+      dep.deposit_expire_at,
+      dep.expire_at,
+      holdUntilRaw
+    )
+  : pickDepositValue(
+      f.deposit_expire_at,
+      dep.deposit_expire_at,
+      dep.expire_at,
+      holdUntilRaw
+    );
 
-const date10 = (v)=> (v ? String(v).slice(0,10) : '');
 const holdUntil10 = date10(holdUntilRaw);
 const depExpire10 = date10(depExpireRaw);
- const pmCode = String(f.payment_method || '').trim().toLowerCase();
-const isCashInst2 = pmCode === 'cash_inst_2';
-const isCashInst3 = pmCode === 'cash_inst_3';
-const isCashInstOrder = isCashInst2 || isCashInst3;
 
-const cashInst = shipInfo.cash_inst || shipInfo.cashInstallment || shipInfo.installment || {};
+const cashInstDates = Array.isArray(cashInstMeta.payment_dates)
+  ? cashInstMeta.payment_dates
+  : (
+      Array.isArray(cashInst.payment_dates)
+        ? cashInst.payment_dates
+        : []
+    );
 
 const cashInstDate1 = date10(
   f.cash_inst_date_1 ||
@@ -2909,6 +2942,9 @@ const cashInstDate1 = date10(
   cashInst.date1 ||
   cashInst.inst1 ||
   cashInst.first_date ||
+  cashInstMeta.first_date ||
+  cashInstDates[0] ||
+  cashInstSchedule?.[0]?.due_date ||
   ''
 );
 
@@ -2918,6 +2954,9 @@ const cashInstDate2 = date10(
   cashInst.date2 ||
   cashInst.inst2 ||
   cashInst.second_date ||
+  cashInstMeta.second_date ||
+  cashInstDates[1] ||
+  cashInstSchedule?.[1]?.due_date ||
   ''
 );
 
@@ -2927,9 +2966,18 @@ const cashInstDate3 = date10(
   cashInst.date3 ||
   cashInst.inst3 ||
   cashInst.third_date ||
+  cashInstMeta.third_date ||
+  cashInstDates[2] ||
+  cashInstSchedule?.[2]?.due_date ||
   ''
 );
- const cashInstPaidParts = Number(f.cash_inst_paid_parts || 0) || 0;
+
+const cashInstPaidParts = Number(
+  f.cash_inst_paid_parts ??
+  f.cash_inst_paid_count ??
+  cashInst.paid_count ??
+  0
+) || 0;
 
 const cashInstPart1PaidAt = String(f.cash_inst_part1_paid_at || '').trim();
 const cashInstPart2PaidAt = String(f.cash_inst_part2_paid_at || '').trim();
@@ -2938,17 +2986,27 @@ const cashInstPart3PaidAt = String(f.cash_inst_part3_paid_at || '').trim();
 const cashInstCompleted =
   f.cash_inst_completed === true ||
   String(f.cash_inst_completed || '').trim().toLowerCase() === 'true' ||
-  String(f.cash_inst_completed || '').trim() === '1';
+  String(f.cash_inst_completed || '').trim() === '1' ||
+  String(f.cash_inst_status || '').trim().toLowerCase() === 'completed';
 
 const cashInstTotalParts = isCashInst3 ? 3 : (isCashInst2 ? 2 : 0);
 
- const cashInstAmounts = Array.isArray(cashInst.installment_amounts)
+const cashInstAmounts = Array.isArray(cashInst.installment_amounts)
   ? cashInst.installment_amounts
-  : safeJsonParse(f.cash_inst_amounts_json, []);
+  : (
+      Array.isArray(cashInstMeta.installment_amounts)
+        ? cashInstMeta.installment_amounts
+        : (
+            cashInstSchedule.length
+              ? cashInstSchedule.map(x => Number(x?.amount || 0) || 0)
+              : safeJsonParse(f.cash_inst_amounts_json, [])
+          )
+    );
 
 const cashInstPart1Amount = Number(
   f.cash_inst_part1_amount ||
   cashInst.part1_amount ||
+  cashInstMeta.part1_amount ||
   cashInst.amount_1 ||
   cashInstAmounts?.[0] ||
   0
@@ -2957,6 +3015,7 @@ const cashInstPart1Amount = Number(
 const cashInstPart2Amount = Number(
   f.cash_inst_part2_amount ||
   cashInst.part2_amount ||
+  cashInstMeta.part2_amount ||
   cashInst.amount_2 ||
   cashInstAmounts?.[1] ||
   0
@@ -2965,6 +3024,7 @@ const cashInstPart2Amount = Number(
 const cashInstPart3Amount = Number(
   f.cash_inst_part3_amount ||
   cashInst.part3_amount ||
+  cashInstMeta.part3_amount ||
   cashInst.amount_3 ||
   cashInstAmounts?.[2] ||
   0
