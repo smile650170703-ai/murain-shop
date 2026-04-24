@@ -2193,27 +2193,47 @@ function creditKey(cartToken){
 }
 
 // ✅ A) 綁定：隨打隨存（只存 sessionStorage；不寫 localStorage）
+// 兼容新版 #credit_input 與舊版 #credit_used
 function attachCreditPersist(){
-  const el = document.getElementById('credit_used');
+  const el =
+    document.getElementById('credit_input') ||
+    document.getElementById('credit_used');
+
   if (!el) return;
 
   const key = creditKey(cartToken);
-  el.addEventListener('input', () => {
+
+  const save = () => {
     const v = String(el.value || '').trim();
     try { sessionStorage.setItem(key, v); } catch(e){}
-  });
+  };
+
+  el.addEventListener('input', save);
+  el.addEventListener('change', save);
+  el.addEventListener('blur', save);
 }
 
 // ✅ B) 進頁面：讀回（只讀「本 cartToken」）
+// 兼容新版 #credit_input 與舊版 #credit_used
 function restoreCreditInput(){
-  const el = document.getElementById('credit_used');
+  const el =
+    document.getElementById('credit_input') ||
+    document.getElementById('credit_used');
+
   if (!el) return;
 
   const key = creditKey(cartToken);
   let v = "";
   try { v = sessionStorage.getItem(key) || ""; } catch(e){}
 
-  if (String(v || "").trim() !== "") el.value = String(v);
+  if (String(v || "").trim() !== "") {
+    el.value = String(v);
+
+    try {
+      el.dispatchEvent(new Event('input', { bubbles:true }));
+      el.dispatchEvent(new Event('change', { bubbles:true }));
+    } catch(e){}
+  }
 }
 
 // ✅ C) 成功結帳後清掉（避免下次回來還在）
@@ -3549,11 +3569,40 @@ if (__btn) {
     if (!cartToken) { alert('缺少 cart_token，請由正確結帳連結進入'); return; }
     if (!CART_TOTAL_RAW || Number(CART_TOTAL_RAW) <= 0) { alert('金額為 0，請確認購物車內容'); return; }
 
-    // ✅ 購物金尚未 ready 不給送（避免第一次就被洗成 0/鎖死）
-    if (typeof CREDIT_READY !== "undefined" && !CREDIT_READY) {
-      alert('購物金資料載入中，請稍候 1-2 秒再送出');
-      return;
-    }
+   // ✅ 只有「客人真的要使用購物金」時，才需要等購物金資料 ready
+// 沒用購物金的人，不應該因為 CREDIT_READY 卡住不能送單
+const creditInputForReady =
+  document.getElementById('credit_input') ||
+  document.getElementById('credit_used');
+
+const creditWantedForReady = Math.max(
+  0,
+  Math.floor(Number(creditInputForReady?.value || 0) || 0)
+);
+
+const activeTabForCreditReady =
+  document.querySelector('#payTabs .tab.active')?.dataset?.pay ||
+  'COD';
+
+const depTypeForCreditReady =
+  document.querySelector('input[name="depType"]:checked')?.value ||
+  'new_full';
+
+const creditBlockedByPayment =
+  activeTabForCreditReady === 'CASHINST' ||
+  activeTabForCreditReady === 'ZEROCARD' ||
+  activeTabForCreditReady === 'YUFU' ||
+  (activeTabForCreditReady === 'DEPOSIT' && depTypeForCreditReady === 'old');
+
+if (
+  !creditBlockedByPayment &&
+  creditWantedForReady > 0 &&
+  typeof CREDIT_READY !== "undefined" &&
+  !CREDIT_READY
+) {
+  alert('購物金資料載入中，請稍候 1-2 秒再送出');
+  return;
+}
 
     const note = (document.getElementById('note')?.value || '').trim();
 
