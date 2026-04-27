@@ -574,7 +574,17 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
 const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
 
-const ADMIN_PAGE_FILE = (location.pathname.split('/').pop() || 'admin.html') || 'admin.html';
+function normalizeAdminPageFile(){
+  const raw = String(location.pathname.split('/').pop() || 'admin').trim();
+
+  if (!raw || raw === '/') return 'admin.html';
+
+  // ✅ Cloudflare / murain.tw 可能會把 admin-ship.html 顯示成 /admin-ship
+  // 所以這裡自動補回 .html，讓 ADMIN_PAGE_MAP 找得到
+  return raw.endsWith('.html') ? raw : `${raw}.html`;
+}
+
+const ADMIN_PAGE_FILE = normalizeAdminPageFile();
 
 const ADMIN_PAGE_MAP = {
   'admin.html': {
@@ -1071,6 +1081,7 @@ function applyLineNameSearch(rows){
 
 function finalizeOrderRows(rows, emptyText = '查無符合條件的訂單。', okText = ''){
   currentOrders = applyLineNameSearch(rows || []);
+ updateCurrentSubTabCount(currentOrders.length);
   ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
   renderOrderList();
 
@@ -1148,7 +1159,9 @@ async function applyFullView(mode = 'all', save = true){
 
   await loadOrders('all', dateRange);
  ALL_ORDERS_CACHE = [...(currentOrders || [])];
-refreshTopShortcutBadges();
+if (ADMIN_PAGE_FILE === 'admin.html') {
+  refreshTopShortcutBadges();
+}
 
   const hasFee = (f) => {
     if (!f) return false;
@@ -1584,48 +1597,9 @@ function restoreViewInputs(){
 }
 
 function setTopFilterActive(mode){
-  const btnAll               = $('.filter-btn[data-filter="all"]');
-  const btnQuick             = $('#btnQuickPaidTop');
-  const btnRemind            = $('#btnRemindTodayTop');
-  const btnPickup            = $('#btnPickupNeedTop');
-  const btnConsign           = $('#btnConsignTop');
-  const btnConsignAccounting = $('#btnConsignAccountingTop');
-  const btnCartOpen          = $('#btnCartOpenTop');
-
-  [btnAll, btnQuick, btnRemind, btnPickup, btnConsign, btnConsignAccounting, btnCartOpen]
-    .forEach(btn => { if (btn) btn.classList.remove('active'); });
-
-  if (mode === 'quick_paid') {
-    if (btnQuick) btnQuick.classList.add('active');
-    return;
-  }
-
-  if (mode === 'remind_today') {
-    if (btnRemind) btnRemind.classList.add('active');
-    return;
-  }
-
-  if (mode === 'pickup_need') {
-    if (btnPickup) btnPickup.classList.add('active');
-    return;
-  }
-
-  if (mode === 'consign_settlement') {
-    if (btnConsign) btnConsign.classList.add('active');
-    return;
-  }
-
-  if (mode === 'consign_accounting') {
-    if (btnConsignAccounting) btnConsignAccounting.classList.add('active');
-    return;
-  }
-
-  if (mode === 'cart_open') {
-    if (btnCartOpen) btnCartOpen.classList.add('active');
-    return;
-  }
-
-  if (btnAll) btnAll.classList.add('active');
+  document.querySelectorAll('.admin-sub-tabs [data-admin-file]').forEach(a => {
+    a.classList.toggle('active', a.dataset.adminFile === ADMIN_PAGE_FILE);
+  });
 }
 
 function restoreSelectedOrder(keepKey){
@@ -1659,6 +1633,15 @@ function updatePrintSlipsBtn(){
 
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+ function updateCurrentSubTabCount(count){
+  const btn = document.querySelector(`.admin-sub-tabs [data-admin-file="${ADMIN_PAGE_FILE}"]`);
+  const badge = btn?.querySelector?.('.count-badge');
+  if (!badge) return;
+
+  const n = Number(count || 0);
+  badge.textContent = String(n);
+  badge.style.display = n > 0 ? 'inline-flex' : 'none';
+}
  function setButtonBusy(btn, busy, busyText = '處理中…'){
   if (!btn) return;
 
