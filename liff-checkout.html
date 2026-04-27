@@ -1468,6 +1468,47 @@ textarea[readonly]{
     text-align:center !important;
   }
 }
+    /* ✅ 現金分期｜每期試算可左右滑 */
+@media (max-width:520px){
+  #paneCASHINST #cash_inst_each.cash-inst-each-scroll{
+    width:100% !important;
+    min-height:52px !important;
+    padding:12px 14px !important;
+    border-radius:16px !important;
+    border:1px solid rgba(220,196,162,.18) !important;
+    background:rgba(255,250,247,.58) !important;
+    color:#8a6a52 !important;
+    font-size:14px !important;
+    font-weight:900 !important;
+    line-height:28px !important;
+
+    display:block !important;
+    white-space:nowrap !important;
+    overflow-x:auto !important;
+    overflow-y:hidden !important;
+    -webkit-overflow-scrolling:touch !important;
+
+    box-shadow:none !important;
+    cursor:grab !important;
+    scrollbar-width:none !important;
+  }
+
+  #paneCASHINST #cash_inst_each.cash-inst-each-scroll::-webkit-scrollbar{
+    display:none !important;
+  }
+
+  #paneCASHINST #cash_inst_each.cash-inst-each-scroll.is-placeholder{
+    color:rgba(90,71,68,.30) !important;
+    font-weight:600 !important;
+  }
+
+  #paneCASHINST .cash-inst-scroll-tip{
+    margin-top:5px !important;
+    font-size:10.5px !important;
+    color:#aa8d79 !important;
+    text-align:right !important;
+  }
+}
     </style>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 </head>
@@ -1991,7 +2032,10 @@ textarea[readonly]{
   <input id="cash_inst_last5" placeholder="請填寫匯款帳號後五碼" />
 
   <label>每期試算</label>
-  <input id="cash_inst_each" readonly placeholder="會依定金與期數自動試算" />
+<div id="cash_inst_each" class="cash-inst-each-scroll is-placeholder" role="textbox" aria-readonly="true" tabindex="0">
+  會依定金與期數自動試算
+</div>
+<div class="muted cash-inst-scroll-tip">可左右滑動查看完整分期明細</div>
 
   <!-- ✅ 保留 hidden，避免原本 JS 找不到欄位；前台不顯示給客人 -->
   <input id="cash_inst_due_date" type="hidden" />
@@ -3394,18 +3438,22 @@ function calcCashInst(){
   const base    = Math.max((CART_TOTAL_RAW || 0) - (CREDIT_USED || 0), 0);
   const plan    = buildCashInstPlan(base, deposit, months);
 
-  const el = document.getElementById('cash_inst_each');
-  if (el) {
-    el.value = deposit > 0
-      ? [
-          `定金：${money(plan.deposit_amount)}`,
-          `第 1 期：${money(plan.part1_amount)}`,
-          `第 2 期：${money(plan.part2_amount)}`,
-          plan.months === 3 ? `第 3 期：${money(plan.part3_amount)}` : '',
-          `剩餘分期金額：${money(plan.remaining_amount)}`
-        ].filter(Boolean).join('　／　')
-      : '';
-  }
+ const el = document.getElementById('cash_inst_each');
+if (el) {
+  const text = deposit > 0
+    ? [
+        `定金：${money(plan.deposit_amount)}`,
+        `第 1 期：${money(plan.part1_amount)}`,
+        `第 2 期：${money(plan.part2_amount)}`,
+        plan.months === 3 ? `第 3 期：${money(plan.part3_amount)}` : '',
+        `剩餘分期金額：${money(plan.remaining_amount)}`
+      ].filter(Boolean).join('　／　')
+    : '';
+
+  el.textContent = text || '會依定金與期數自動試算';
+  el.classList.toggle('is-placeholder', !text);
+  el.scrollLeft = 0;
+}
 
   return plan;
 }
@@ -4861,8 +4909,8 @@ if (activeTab === 'CASHINST') {
   return;
 }
 
-if (!last5 || last5.length < 5) {
-  alert('請填寫匯款帳號後五碼');
+if (!/^\d{5}$/.test(last5)) {
+  alert('請填寫正確的匯款帳號後五碼，需為 5 位數字');
   return;
 }
 
