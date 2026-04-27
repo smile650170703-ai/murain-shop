@@ -86,13 +86,10 @@
 
   <section class="card login-card" id="loginCard">
     <h2 style="margin:0 0 4px;font-size:18px;">進入審核頁</h2>
-    <div class="hint">請輸入後台 OP_KEY 與本頁入口密碼。入口密碼可在本檔案上方的 <b>BENEFIT_PAGE_PASSWORD</b> 修改。</div>
+    <div class="hint">請輸入購物金審核頁密碼。密碼可在本檔案上方的 <b>BENEFIT_PAGE_PASSWORD</b> 修改。</div>
 
-    <label>後台 OP_KEY</label>
-    <input id="opKeyInput" type="password" autocomplete="current-password" placeholder="輸入 OP_KEY">
-
-    <label>購物金審核頁密碼</label>
-    <input id="pagePassInput" type="password" autocomplete="current-password" placeholder="輸入本頁密碼">
+<label>購物金審核頁密碼</label>
+<input id="pagePassInput" type="password" autocomplete="current-password" placeholder="輸入購物金審核頁密碼">
 
     <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
       <button class="btn btn-primary" id="btnLogin" type="button">進入審核頁</button>
@@ -124,7 +121,15 @@
  * ✅ 只要改這一行：購物金審核頁入口密碼
  * 注意：前端密碼只能防誤入；真正安全要後端也驗 benefit_key。
  */
-const BENEFIT_PAGE_PASSWORD = 'benefit-review-888';
+const BENEFIT_PAGE_PASSWORDS = [
+  '830703',
+  '850413'
+];
+
+function isValidBenefitPagePassword(pass){
+  const s = String(pass || '').trim();
+  return BENEFIT_PAGE_PASSWORDS.includes(s);
+}
 
 const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
 const OP_STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
@@ -190,7 +195,6 @@ function showLogin(){
   $('#loginCard').classList.remove('hidden');
   $('#reviewCard').classList.add('hidden');
   $('#btnLogout').classList.add('hidden');
-  $('#opKeyInput').value = OP_KEY || '';
 }
 
 function highlightMeta(v){
@@ -355,22 +359,22 @@ async function reviewBenefitRequest(btn, recordId, action, approvedAmount, revie
 }
 
 $('#btnLogin').addEventListener('click', async () => {
-  const op = String($('#opKeyInput').value || '').trim();
   const pass = String($('#pagePassInput').value || '').trim();
-
-  if (!op) {
-    alert('請輸入 OP_KEY');
-    return;
-  }
 
   if (pass !== BENEFIT_PAGE_PASSWORD) {
     alert('購物金審核頁密碼錯誤');
     return;
   }
 
-  OP_KEY = op;
+  OP_KEY = localStorage.getItem(OP_STORAGE_KEY) || '';
+
+  if (!OP_KEY) {
+    alert('尚未取得後台 OP_KEY，請先進入「訂單後台」登入一次，再回來購物金審核頁。');
+    location.href = 'admin.html';
+    return;
+  }
+
   PAGE_PASS = pass;
-  localStorage.setItem(OP_STORAGE_KEY, OP_KEY);
   sessionStorage.setItem(PAGE_UNLOCK_KEY, '1');
 
   showApp();
@@ -393,8 +397,9 @@ $('#btnLogout').addEventListener('click', () => {
   showLogin();
 });
 
-['opKeyInput','pagePassInput'].forEach(id => {
+['pagePassInput'].forEach(id => {
   const el = $('#' + id);
+  if (!el) return;
   el.addEventListener('keydown', e => {
     if (e.key === 'Enter') $('#btnLogin').click();
   });
