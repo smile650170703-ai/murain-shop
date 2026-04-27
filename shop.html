@@ -1727,6 +1727,82 @@
     user-select:none;
   }
 }
+    /* ===== 快速預覽｜目前商品多圖點點 / 按鈕高度 / 下方商品留白 ===== */
+@media (max-width:767px){
+
+  .shop-preview-dots{
+    flex:0 0 auto !important;
+    display:flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    gap:16px !important;
+    height:28px !important;
+    margin:6px auto 18px !important;
+  }
+
+  .shop-preview-dot{
+    width:8px !important;
+    height:8px !important;
+    border-radius:999px !important;
+    background:rgba(17,17,17,.34) !important;
+    margin:0 !important;
+  }
+
+  .shop-preview-dot.active{
+    width:24px !important;
+    height:8px !important;
+    background:#111 !important;
+  }
+
+  .shop-preview-actions{
+    gap:10px !important;
+    padding:0 24px 18px !important;
+  }
+
+  .shop-preview-detail,
+  .shop-preview-cart{
+    height:48px !important;
+    min-height:48px !important;
+    border-radius:999px !important;
+    font-size:14.5px !important;
+    font-weight:400 !important;
+    letter-spacing:.04em !important;
+  }
+
+  .shop-preview-related{
+    padding:16px 0 calc(26px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .shop-preview-related-row{
+    gap:12px !important;
+    padding:0 14px 10px !important;
+  }
+
+  .shop-preview-related-item{
+    flex:0 0 94px !important;
+    width:94px !important;
+    height:94px !important;
+    border-radius:22px !important;
+  }
+
+  .shop-preview-related-item img{
+    padding:10px !important;
+  }
+
+  .shop-preview-main,
+  .shop-preview-image-wrap{
+    touch-action:pan-y !important;
+    -webkit-user-select:none !important;
+    user-select:none !important;
+  }
+
+  .shop-preview-image-wrap img,
+  #previewImg{
+    pointer-events:none !important;
+    -webkit-user-drag:none !important;
+    user-select:none !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -1932,7 +2008,7 @@
         <img id="previewImg" src="" alt="商品圖片">
       </div>
 
-      <div class="shop-preview-dot"></div>
+      <div class="shop-preview-dots" id="previewDots"></div>
 
       <div class="shop-preview-info">
         <div class="shop-preview-sku" id="previewSku"></div>
@@ -2492,8 +2568,8 @@ let crumb = '官方商城 / 新品上市';
   }
 
   /* ===== 商城商品快速預覽頁 ===== */
-let previewProduct = null;
-let previewRelatedItems = [];
+let previewImages = [];
+let previewImageIdx = 0;
 
 function previewSku(p){
   return String(
@@ -2600,20 +2676,200 @@ function previewSub(p){
 
   return 'XUYUAN SELECT';
 }
+function collectPreviewImages(product){
+  const out = [];
+  const seen = new Set();
 
+  function addOne(v){
+    if(!v) return;
+
+    if(Array.isArray(v)){
+      v.forEach(addOne);
+      return;
+    }
+
+    if(typeof v === 'string'){
+      const s = v.trim();
+      if(!s) return;
+
+      if((s.startsWith('[') && s.endsWith(']')) || (s.startsWith('{') && s.endsWith('}'))){
+        try{
+          addOne(JSON.parse(s));
+          return;
+        }catch(e){}
+      }
+
+      s.split(/\s*,\s*/).forEach(url => {
+        if(/^https?:\/\//i.test(url) && !seen.has(url)){
+          seen.add(url);
+          out.push(url);
+        }
+      });
+
+      return;
+    }
+
+    if(typeof v === 'object'){
+      const url =
+        v.url ||
+        v.image_url ||
+        v.thumb_url ||
+        v.large_url ||
+        v.full_url ||
+        v.full ||
+        v.src ||
+        v.thumbnails?.large?.url ||
+        v.thumbnails?.full?.url ||
+        v.thumbnails?.small?.url ||
+        '';
+
+      if(url) addOne(url);
+    }
+  }
+
+  addOne(product?.images);
+  addOne(product?.ProductImages);
+  addOne(product?.product_images);
+  addOne(product?.gallery);
+  addOne(product?.gallery_images);
+  addOne(product?.fields?.ProductImages);
+  addOne(product?.fields?.product_images);
+  addOne(product?.fields?.gallery);
+  addOne(product?.image_url);
+  addOne(product?.image);
+  addOne(product?.thumb_url);
+  addOne(product?.thumb);
+
+  return out;
+}
+
+function setPreviewImages(product){
+  previewImages = collectPreviewImages(product);
+
+  if(!previewImages.length){
+    const cover = previewImage(product);
+    previewImages = cover ? [cover] : [];
+  }
+
+  previewImageIdx = 0;
+  updatePreviewImage();
+}
+
+function updatePreviewImage(){
+  const img = previewImages[previewImageIdx] || '';
+  const title = previewProduct ? previewTitle(previewProduct) : '商品圖片';
+
+  const imgEl = $('previewImg');
+  if(imgEl){
+    imgEl.src = img;
+    imgEl.alt = title || '商品圖片';
+  }
+
+  const dots = $('previewDots');
+  if(dots){
+    dots.innerHTML = previewImages.map((_, idx) => `
+      <button class="shop-preview-dot ${idx === previewImageIdx ? 'active' : ''}" type="button" data-idx="${idx}" aria-label="第 ${idx + 1} 張圖片"></button>
+    `).join('');
+
+    dots.querySelectorAll('.shop-preview-dot').forEach(btn => {
+      btn.addEventListener('click', () => {
+        previewImageIdx = Number(btn.dataset.idx || 0);
+        updatePreviewImage();
+      });
+    });
+
+    dots.style.display = previewImages.length > 1 ? 'flex' : 'none';
+  }
+}
+
+function previewStepImage(step){
+  if(!previewImages || previewImages.length <= 1) return;
+
+  previewImageIdx = (previewImageIdx + step + previewImages.length) % previewImages.length;
+  updatePreviewImage();
+}
+
+async function loadPreviewImages(product){
+  const sku = previewSku(product);
+  if(!sku) return;
+
+  try{
+    const apiBase = (typeof HOME_API !== 'undefined') ? HOME_API : 'https://api.murain.tw';
+    const res = await fetch(`${apiBase}/product/${encodeURIComponent(sku)}`);
+    const json = await res.json().catch(() => ({}));
+
+    const detail =
+      json.product ||
+      json.item ||
+      json.data ||
+      json;
+
+    const merged = Object.assign({}, product, detail);
+    const imgs = collectPreviewImages(merged);
+
+    if(imgs.length > previewImages.length){
+      previewImages = imgs;
+      previewImageIdx = 0;
+      updatePreviewImage();
+    }
+  }catch(e){}
+}
+
+function bindPreviewImageSwipe(){
+  const main = document.querySelector('.shop-preview-image-wrap');
+  if(!main) return;
+
+  let startX = 0;
+  let startY = 0;
+  let moveX = 0;
+  let tracking = false;
+
+  main.addEventListener('pointerdown', (e) => {
+    if(e.target.closest('button')) return;
+
+    tracking = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    moveX = 0;
+
+    try{
+      main.setPointerCapture(e.pointerId);
+    }catch(err){}
+  });
+
+  main.addEventListener('pointermove', (e) => {
+    if(!tracking) return;
+
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    if(Math.abs(dx) > Math.abs(dy)){
+      moveX = dx;
+    }
+  });
+
+  function endSwipe(){
+    if(!tracking) return;
+    tracking = false;
+
+    if(Math.abs(moveX) < 42) return;
+
+    previewStepImage(moveX > 0 ? -1 : 1);
+  }
+
+  main.addEventListener('pointerup', endSwipe);
+  main.addEventListener('pointercancel', endSwipe);
+  main.addEventListener('pointerleave', endSwipe);
+}
 function openProductPreview(p){
   previewProduct = p;
 
   const title = previewTitle(p);
-  const img = previewImage(p);
   const price = previewPriceValue(p);
   const listPrice = previewListPriceValue(p);
 
-  const imgEl = $('previewImg');
-  if(imgEl){
-    imgEl.src = img || '';
-    imgEl.alt = title || '商品圖片';
-  }
+  setPreviewImages(p);
+  loadPreviewImages(p);
 
   if($('previewSku')) $('previewSku').textContent = previewBrand(p);
   if($('previewTitle')) $('previewTitle').textContent = title || 'XUYUAN SELECT';
@@ -2723,86 +2979,6 @@ function renderPreviewRelatedList(list){
   });
 }
 
-  function previewMoveProduct(step){
-  if(!previewProduct) return;
-
-  const currentSku = previewSku(previewProduct);
-
-  const pool = [
-    previewProduct,
-    ...(Array.isArray(previewRelatedItems) ? previewRelatedItems : [])
-  ].filter(item => previewSku(item));
-
-  const unique = [];
-  const seen = new Set();
-
-  pool.forEach(item => {
-    const sku = previewSku(item);
-    if(!sku || seen.has(sku)) return;
-    seen.add(sku);
-    unique.push(item);
-  });
-
-  if(unique.length <= 1) return;
-
-  let idx = unique.findIndex(item => previewSku(item) === currentSku);
-  if(idx < 0) idx = 0;
-
-  const nextIdx = (idx + step + unique.length) % unique.length;
-  const nextItem = unique[nextIdx];
-
-  if(nextItem && previewSku(nextItem) !== currentSku){
-    openProductPreview(nextItem);
-  }
-}
-
-function bindPreviewMainSwipe(){
-  const main = document.querySelector('.shop-preview-main');
-  if(!main) return;
-
-  let startX = 0;
-  let startY = 0;
-  let moveX = 0;
-  let tracking = false;
-
-  main.addEventListener('pointerdown', (e) => {
-    if(e.target.closest('button, .shop-preview-actions, .shop-preview-related')) return;
-
-    tracking = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    moveX = 0;
-
-    try{
-      main.setPointerCapture(e.pointerId);
-    }catch(err){}
-  });
-
-  main.addEventListener('pointermove', (e) => {
-    if(!tracking) return;
-
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-
-    if(Math.abs(dx) > Math.abs(dy)){
-      moveX = dx;
-    }
-  });
-
-  function endSwipe(){
-    if(!tracking) return;
-    tracking = false;
-
-    if(Math.abs(moveX) < 42) return;
-
-    previewMoveProduct(moveX > 0 ? -1 : 1);
-  }
-
-  main.addEventListener('pointerup', endSwipe);
-  main.addEventListener('pointercancel', endSwipe);
-  main.addEventListener('pointerleave', endSwipe);
-}
-
 async function previewEnsureCart(){
   const key = 'MURAIN_WEB_CART_TOKEN';
   let token = String(localStorage.getItem(key) || '').trim();
@@ -2884,7 +3060,7 @@ async function previewAddToCart(){
 
 document.addEventListener('DOMContentLoaded', () => {
   $('previewCloseBtn')?.addEventListener('click', closeProductPreview);
-  bindPreviewMainSwipe();
+  bindPreviewImageSwipe();
 
   $('previewDetailBtn')?.addEventListener('click', () => {
     if(!previewProduct) return;
