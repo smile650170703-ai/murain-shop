@@ -1656,6 +1656,33 @@ function updatePrintSlipsBtn(){
 
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+ function setButtonBusy(btn, busy, busyText = '處理中…'){
+  if (!btn) return;
+
+  if (busy) {
+    btn.dataset.originalText = btn.textContent || '';
+    btn.disabled = true;
+    btn.textContent = busyText;
+    btn.style.opacity = '.65';
+    btn.style.pointerEvents = 'none';
+  } else {
+    btn.disabled = false;
+    btn.textContent = btn.dataset.originalText || btn.textContent || '';
+    btn.style.opacity = '';
+    btn.style.pointerEvents = '';
+  }
+}
+
+async function runButtonJob(btn, job, busyText = '處理中…'){
+  if (!btn || btn.disabled) return;
+
+  setButtonBusy(btn, true, busyText);
+  try {
+    await job();
+  } finally {
+    setButtonBusy(btn, false);
+  }
+}
 
 function money(n){ return 'NT$ ' + Number(n||0).toLocaleString(); }
 function calcAmounts(f){
@@ -2639,10 +2666,19 @@ async function reloadCurrentView(){
 // 更新下方 summary + 匯出按鈕狀態
 function updateSummary(){
   const sumEl         = $('#summary');
-  const btnExport     = $('#exportBtn');       // 可能不存在：允許為 null
+  const btnExport     = $('#exportBtn');
   const btnExportShip = $('#btnExportShip');
   const btnExportZero = $('#btnExportZero');
   if (!sumEl) return;
+
+  // ✅ 只有全部訂單頁顯示總筆數＋合計金額
+  if (ADMIN_PAGE_FILE !== 'admin.html') {
+    sumEl.textContent = '';
+    if (btnExport) btnExport.disabled = true;
+    if (btnExportShip) btnExportShip.disabled = true;
+    if (btnExportZero) btnExportZero.disabled = true;
+    return;
+  }
 
   // 沒有任何訂單時：清空 summary，三顆匯出按鈕都變灰色
   if (!currentOrders.length){
@@ -5281,7 +5317,9 @@ if (vendorMonthEl){
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   vendorMonthEl.value = `${yyyy}-${mm}`;
   vendorMonthEl.addEventListener('change', ()=>{
-    renderVendorMonthSummary();
+    if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+  renderVendorMonthSummary();
+}
   });
 }
 
@@ -5309,19 +5347,22 @@ if (btnPrintSlips) btnPrintSlips.addEventListener('click', printShipSlipsRange);
     });
   }
 
-  // 上方工具列：快捷操作目前選取的訂單（這幾顆如果你有保留）
   function proxyButton(topId, originalId){
-    const top = $('#' + topId);
-    if (!top) return;
-    top.addEventListener('click', () => {
+  const top = $('#' + topId);
+  if (!top) return;
+
+  top.addEventListener('click', async () => {
+    await runButtonJob(top, async () => {
       const orig = $('#' + originalId);
       if (orig) {
         orig.click();
+        await new Promise(resolve => setTimeout(resolve, 900));
       } else {
         alert('請先在右側選一筆訂單');
       }
-    });
-  }
+    }, '執行中…');
+  });
+}
 
   proxyButton('btnSaveAndShipTop',   'btnSaveAndShip');
 
