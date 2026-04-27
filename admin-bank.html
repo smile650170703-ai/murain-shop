@@ -780,7 +780,8 @@ async function loadConsignAccountingList(){
     });
 
     renderConsignAccountingBuckets();
-   setTopFilterActive('consign_accounting');
+updateCurrentSubTabCount(currentConsignAccountingRows.length);
+setTopFilterActive('consign_accounting');
 
     if (msgEl) {
       msgEl.textContent = currentConsignAccountingRows.length
@@ -1643,13 +1644,24 @@ function updatePrintSlipsBtn(){
 
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
- function updateCurrentSubTabCount(count){
+function updateCurrentSubTabCount(count){
   const btn = document.querySelector(`.admin-sub-tabs [data-admin-file="${ADMIN_PAGE_FILE}"]`);
-  const badge = btn?.querySelector?.('.count-badge');
-  if (!badge) return;
+  if (!btn) return;
+
+  let badge = btn.querySelector('.count-badge');
+
+  // ✅ 如果這個頁籤原本沒有小圓圈，就自動補一個
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'count-badge';
+    badge.style.display = 'none';
+    btn.appendChild(badge);
+  }
 
   const n = Number(count || 0);
   badge.textContent = String(n);
+
+  // 0 筆就隱藏；如果你想 0 也顯示，把這行改成 inline-flex
   badge.style.display = n > 0 ? 'inline-flex' : 'none';
 }
  function setButtonBusy(btn, busy, busyText = '處理中…'){
@@ -2058,15 +2070,34 @@ async function ensureOpKey(){
   }catch(e){}
 }
 
- function setCountBadge(el, n){
+function setCountBadge(el, n){
   if (!el) return;
   const count = Number(n || 0);
   el.textContent = String(count);
   el.style.display = count > 0 ? 'inline-flex' : 'none';
 }
 
+// ✅ 給「原本沒有小圓圈 span」的頁籤自動補一顆
+function setAdminTabBadge(adminFile, n){
+  const tab = document.querySelector(`.admin-sub-tabs [data-admin-file="${adminFile}"]`);
+  if (!tab) return;
+
+  let badge = tab.querySelector('.count-badge');
+
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'count-badge';
+    badge.style.display = 'none';
+    tab.appendChild(badge);
+  }
+
+  setCountBadge(badge, n);
+}
+
 async function refreshTopShortcutBadges(){
   const rows = ALL_ORDERS_CACHE || [];
+
+  const getF = (rec) => rec.fields || rec || {};
 
   const hasFee = (f) => {
     if (!f) return false;
@@ -2077,15 +2108,63 @@ async function refreshTopShortcutBadges(){
     return filled1 || filled2;
   };
 
+  const isCancelledLike = (f) => {
+    const st = String(f.status || '').trim().toLowerCase();
+    const ps = String(f.pay_status || '').trim().toLowerCase();
+    return (
+      st === 'cancelled' ||
+      ps === 'cancelled' ||
+      ps === 'failed'
+    );
+  };
+
+  const isCashInstOrder = (f) => {
+    const pm = String(f.payment_method || f.pay_method || '').trim().toLowerCase();
+    const plan = String(f.cash_inst_plan || '').trim();
+    const cs = String(f.cash_inst_status || '').trim();
+    return (
+      pm.startsWith('cash_inst') ||
+      !!plan ||
+      !!cs
+    );
+  };
+
+  const isCashInstUnpaid = (f) => {
+    if (!isCashInstOrder(f)) return false;
+
+    const ps = String(f.pay_status || '').trim().toLowerCase();
+    const st = String(f.status || '').trim().toLowerCase();
+    const cs = String(f.cash_inst_status || '').trim().toLowerCase();
+
+    if (ps === 'paid_ok') return false;
+    if (ps === 'cancelled' || ps === 'failed') return false;
+    if (st === 'cancelled') return false;
+    if (cs === 'all_done' || cs === 'completed' || cs === 'paid_ok') return false;
+
+    return true;
+  };
+
+  const isDepositUnshipped = (rec) => {
+    const f = getF(rec);
+    const ps = String(f.pay_status || '').trim().toLowerCase();
+
+    // 現金分期不要混到「已收定金未出貨」
+    if (isCashInstOrder(f)) return false;
+
+    return ps === 'deposit_ok' && isUnshippedOrder(rec);
+  };
+
+  // 🛒 未結單購物車：用專用 API，不吃 Orders
   let cartOpenCount = 0;
   try {
     if (OP_KEY) {
       const cartParams = new URLSearchParams();
-cartParams.set('op_key', OP_KEY);
-cartParams.set('limit', '80');
+      cartParams.set('op_key', OP_KEY);
+      cartParams.set('limit', '80');
 
-const rCart = await fetch(`${API}/admin/cart/pending-list?` + cartParams.toString());
+      const rCart = await fetch(`${API}/admin/cart/pending-list?` + cartParams.toString());
       const jCart = await rCart.json().catch(() => ({}));
+
       if (rCart.ok && jCart.ok) {
         cartOpenCount = Array.isArray(jCart.carts) ? jCart.carts.length : 0;
       }
@@ -2094,18 +2173,21 @@ const rCart = await fetch(`${API}/admin/cart/pending-list?` + cartParams.toStrin
     console.warn('cart badge load failed', e);
   }
 
+  // ⭐ 待出貨訂單：沿用你原本邏輯
   const quickCount = rows.filter(rec => {
-    const f = rec.fields || rec || {};
+    const f = getF(rec);
     return String(f.pay_status || '').toLowerCase() === 'paid_ok' && !hasFee(f);
   }).length;
 
+  // 匯款待確認：沿用你原本邏輯
   const remindCount = rows.filter(rec => {
-    const f = rec.fields || rec || {};
+    const f = getF(rec);
     return String(f.pay_status || '').toLowerCase() === 'pending';
   }).length;
 
+  // 賣貨便登記：沿用你原本邏輯
   const pickupCount = rows.filter(rec => {
-    const f  = rec.fields || rec || {};
+    const f  = getF(rec);
     const ps = String(f.pay_status || '').toLowerCase();
     if (ps === 'failed' || ps === 'cancelled') return false;
 
@@ -2118,10 +2200,31 @@ const rCart = await fetch(`${API}/admin/cart/pending-list?` + cartParams.toStrin
     const is711 = String(ship.type || '').toLowerCase() === '711';
 
     const pickReg = String(f['取貨登記'] || '').trim();
+
     return shipped && is711 && pickReg !== '已取貨';
   }).length;
 
+  // ✅ 已收定金未出貨
+  const depositCount = rows.filter(rec => {
+    return isDepositUnshipped(rec);
+  }).length;
+
+  // ✅ 現金分期未收齊
+  const cashInstCount = rows.filter(rec => {
+    const f = getF(rec);
+    return isCashInstUnpaid(f);
+  }).length;
+
+  // ✅ 已取消／棄標
+  const cancelledCount = rows.filter(rec => {
+    const f = getF(rec);
+    return isCancelledLike(f);
+  }).length;
+
+  // 寄賣 + 一時貿易：用寄賣專用 API
   let consignCount = 0;
+  let tradeCount = 0;
+
   try {
     if (OP_KEY) {
       const r = await fetch(`${API}/op/consign/settlement/list`, {
@@ -2132,21 +2235,46 @@ const rCart = await fetch(`${API}/admin/cart/pending-list?` + cartParams.toStrin
           status: 'all'
         })
       });
+
       const j = await r.json().catch(() => ({}));
+
       if (r.ok && j.ok) {
         const items = j.items || [];
-        consignCount = items.filter(x => String(x.status || '') !== 'settled').length;
+
+        // 寄賣：未完成結算
+        consignCount = items.filter(x => {
+          return String(x.status || '').trim().toLowerCase() !== 'settled';
+        }).length;
+
+        // 一時貿易：已完成匯款／購物金
+        tradeCount = items.filter(x => {
+          const st = String(x.status || '').trim().toLowerCase();
+          const method = String(x.method || '').trim().toLowerCase();
+          return st === 'settled' && (method === 'bank_transfer' || method === 'store_credit');
+        }).length;
       }
     }
   } catch (e) {
-    console.warn('consign badge load failed', e);
+    console.warn('consign/trade badge load failed', e);
   }
 
+  // ✅ 原本就有 id 的小圓圈
   setCountBadge($('#cartOpenBadge'), cartOpenCount);
   setCountBadge($('#quickPaidBadge'), quickCount);
   setCountBadge($('#remindTodayBadge'), remindCount);
   setCountBadge($('#pickupNeedBadge'), pickupCount);
   setCountBadge($('#consignBadge'), consignCount);
+
+  // ✅ 原本沒有小圓圈的頁籤，這裡自動補
+  setAdminTabBadge('admin-deposit.html', depositCount);
+  setAdminTabBadge('admin-cashinst.html', cashInstCount);
+  setAdminTabBadge('admin-cancelled.html', cancelledCount);
+  setAdminTabBadge('admin-trade.html', tradeCount);
+
+  // ✅ 審核購物金沿用你的專用函式
+  if (typeof refreshBenefitBadge === 'function') {
+    refreshBenefitBadge();
+  }
 }
 
  async function loadBenefitRequests(){
@@ -2394,7 +2522,8 @@ async function loadOrders(filter='all', extra = {}){
   return st !== 'settled';
 });
     renderConsignList();
-    setTopFilterActive('consign_settlement');
+updateCurrentSubTabCount(currentConsignRows.length);
+setTopFilterActive('consign_settlement');
 
     if (msgEl) {
       msgEl.textContent = currentConsignRows.length
@@ -2619,6 +2748,31 @@ async function consignAction(orderItemId, action){
 async function reloadCurrentView(){
   const mode = VIEW_STATE.mode || 'all';
   const st = $('#status') ? ($('#status').value || '') : '';
+
+  // ✅ 固定子頁：操作後留在目前子頁，不要退回「全部訂單」
+  // 例如：待出貨、匯款待確認、賣貨便登記、已收定金、現金分期、已取消
+  if (ADMIN_PAGE.mode === 'orders' && ADMIN_PAGE.viewKey) {
+    setBatchActionMode('none');
+
+    saveViewState(`page_${ADMIN_PAGE.viewKey}`, {
+      filter: 'all',
+      date_from: '',
+      date_to: '',
+      status: st
+    });
+
+    await loadOrders('all', { view_key: ADMIN_PAGE.viewKey });
+    ALL_ORDERS_CACHE = [...(currentOrders || [])];
+
+    updateCurrentSubTabCount(currentOrders.length);
+
+    const msgEl = $('#msg');
+    if (msgEl) {
+      msgEl.textContent = `目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`;
+    }
+
+    return;
+  }
 
   if (mode === 'cart_open' || currentPanelMode === 'cart_open') {
     return loadOpenCartList();
@@ -5096,21 +5250,24 @@ async function loadAdminDefaultPage(){
   }
 
   if (ADMIN_PAGE.viewKey) {
-    await loadOrders('all', { view_key: ADMIN_PAGE.viewKey });
-    ALL_ORDERS_CACHE = [...(currentOrders || [])];
+  await loadOrders('all', { view_key: ADMIN_PAGE.viewKey });
+  ALL_ORDERS_CACHE = [...(currentOrders || [])];
 
-    const msgEl = $('#msg');
-    if (msgEl) {
-      msgEl.textContent = `目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`;
-    }
+  // ✅ 補：固定子頁載入後，更新當頁小圓圈
+  updateCurrentSubTabCount(currentOrders.length);
 
-    const sumEl = $('#summary');
-    if (sumEl) {
-      sumEl.innerHTML = `<span>${ADMIN_PAGE.title}：${currentOrders.length} 筆</span>`;
-    }
-
-    return;
+  const msgEl = $('#msg');
+  if (msgEl) {
+    msgEl.textContent = `目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`;
   }
+
+  const sumEl = $('#summary');
+  if (sumEl) {
+    sumEl.innerHTML = `<span>${ADMIN_PAGE.title}：${currentOrders.length} 筆</span>`;
+  }
+
+  return;
+}
 
   // 全部訂單頁維持原本最近 30 天，避免一開頁就撈全部歷史訂單
   const last30 = getLast30DaysRange();
