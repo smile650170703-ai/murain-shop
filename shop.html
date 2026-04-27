@@ -1711,6 +1711,22 @@
     right:18px !important;
   }
 }
+    /* ===== 快速預覽頁｜主圖左右滑切換商品 ===== */
+@media (max-width:767px){
+  .shop-preview-main,
+  .shop-preview-image-wrap{
+    touch-action:pan-y;
+    -webkit-user-select:none;
+    user-select:none;
+  }
+
+  .shop-preview-image-wrap img,
+  #previewImg{
+    pointer-events:none;
+    -webkit-user-drag:none;
+    user-select:none;
+  }
+}
 </style>
 </head>
 <body>
@@ -2707,6 +2723,86 @@ function renderPreviewRelatedList(list){
   });
 }
 
+  function previewMoveProduct(step){
+  if(!previewProduct) return;
+
+  const currentSku = previewSku(previewProduct);
+
+  const pool = [
+    previewProduct,
+    ...(Array.isArray(previewRelatedItems) ? previewRelatedItems : [])
+  ].filter(item => previewSku(item));
+
+  const unique = [];
+  const seen = new Set();
+
+  pool.forEach(item => {
+    const sku = previewSku(item);
+    if(!sku || seen.has(sku)) return;
+    seen.add(sku);
+    unique.push(item);
+  });
+
+  if(unique.length <= 1) return;
+
+  let idx = unique.findIndex(item => previewSku(item) === currentSku);
+  if(idx < 0) idx = 0;
+
+  const nextIdx = (idx + step + unique.length) % unique.length;
+  const nextItem = unique[nextIdx];
+
+  if(nextItem && previewSku(nextItem) !== currentSku){
+    openProductPreview(nextItem);
+  }
+}
+
+function bindPreviewMainSwipe(){
+  const main = document.querySelector('.shop-preview-main');
+  if(!main) return;
+
+  let startX = 0;
+  let startY = 0;
+  let moveX = 0;
+  let tracking = false;
+
+  main.addEventListener('pointerdown', (e) => {
+    if(e.target.closest('button, .shop-preview-actions, .shop-preview-related')) return;
+
+    tracking = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    moveX = 0;
+
+    try{
+      main.setPointerCapture(e.pointerId);
+    }catch(err){}
+  });
+
+  main.addEventListener('pointermove', (e) => {
+    if(!tracking) return;
+
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+
+    if(Math.abs(dx) > Math.abs(dy)){
+      moveX = dx;
+    }
+  });
+
+  function endSwipe(){
+    if(!tracking) return;
+    tracking = false;
+
+    if(Math.abs(moveX) < 42) return;
+
+    previewMoveProduct(moveX > 0 ? -1 : 1);
+  }
+
+  main.addEventListener('pointerup', endSwipe);
+  main.addEventListener('pointercancel', endSwipe);
+  main.addEventListener('pointerleave', endSwipe);
+}
+
 async function previewEnsureCart(){
   const key = 'MURAIN_WEB_CART_TOKEN';
   let token = String(localStorage.getItem(key) || '').trim();
@@ -2788,6 +2884,7 @@ async function previewAddToCart(){
 
 document.addEventListener('DOMContentLoaded', () => {
   $('previewCloseBtn')?.addEventListener('click', closeProductPreview);
+  bindPreviewMainSwipe();
 
   $('previewDetailBtn')?.addEventListener('click', () => {
     if(!previewProduct) return;
