@@ -623,6 +623,86 @@
     color:#181311;
   }
 }
+
+    /* ===== 手機商品卡價格最終修正版 ===== */
+@media (max-width:767px){
+  .shop-page .p-price-panel{
+    margin-top:auto;
+    padding-top:10px;
+    border-top:1px solid rgba(198,178,160,.16);
+  }
+
+  .shop-page .p-list-price{
+    display:flex !important;
+    align-items:center;
+    gap:6px;
+    margin:0 0 7px;
+    text-decoration:none !important;
+  }
+
+  .shop-page .p-list-price .label{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:34px;
+    height:19px;
+    padding:0 8px;
+    border-radius:999px;
+    background:rgba(188,165,144,.11);
+    color:#a18a79;
+    font-size:9.5px;
+    font-weight:700;
+    letter-spacing:.08em;
+    white-space:nowrap;
+  }
+
+  .shop-page .p-list-price .value{
+    font-size:11.5px;
+    line-height:1;
+    color:rgba(63,52,49,.42);
+    text-decoration:line-through;
+    text-decoration-thickness:1px;
+    white-space:nowrap;
+  }
+
+  .shop-page .p-sale-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    width:100%;
+  }
+
+  .shop-page .p-sale-tag{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    height:22px;
+    padding:0 9px;
+    border-radius:999px;
+    background:rgba(188,165,144,.09);
+    color:#9d7f6b;
+    font-size:9.5px;
+    font-weight:700;
+    letter-spacing:.08em;
+    white-space:nowrap;
+    flex:0 0 auto;
+  }
+
+  .shop-page .p-sale-price{
+    display:block;
+    margin-left:auto;
+    font-family:Georgia, "Times New Roman", serif;
+    font-size:23px;
+    font-weight:700;
+    line-height:1;
+    letter-spacing:-.02em;
+    color:#1d1714;
+    white-space:nowrap;
+    text-align:right;
+    text-decoration:none !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -1130,15 +1210,35 @@
   const $ = (id) => document.getElementById(id);
 
   function escapeHtml(s){
-    return String(s ?? '')
-      .replace(/&/g,'&amp;')
-      .replace(/</g,'&lt;')
-      .replace(/>/g,'&gt;')
-      .replace(/"/g,'&quot;')
-      .replace(/'/g,'&#39;');
-  }
+  return String(s ?? '')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#39;');
+}
 
-  function stripTags(s){
+/* 讀取金額：支援多種欄位名稱，避免後端欄位名不同導致原價消失 */
+function moneyValue(p, keys){
+  for (const key of keys){
+    let v;
+
+    if (key.includes('.')){
+      const parts = key.split('.');
+      v = parts.reduce((obj, k) => obj && obj[k], p);
+    } else {
+      v = p?.[key];
+    }
+
+    if (v !== undefined && v !== null && String(v).trim() !== ''){
+      const n = Number(String(v).replace(/[^\d.-]/g, ''));
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  }
+  return 0;
+}
+
+function stripTags(s){
     return String(s ?? '').replace(/<[^>]*>/g, '').trim();
   }
 
@@ -1352,22 +1452,55 @@ let crumb = '官方商城 / 新品上市';
       const img = String(p.thumb_url || p.image_url || p.image || '').trim();
       const hasImage = !!img;
 
-      const safeTitle = escapeHtml(stripTags(p.title || ''));
+           const safeTitle = escapeHtml(stripTags(
+        p.title ||
+        p.Name ||
+        p.name ||
+        p.fields?.Name ||
+        ''
+      ));
+
       const introRaw = String(
         p.ai_desc ||
         p.short_desc ||
         p.description ||
         p.Description ||
+        p.fields?.ai_desc ||
+        p.fields?.Description ||
         ''
       ).trim();
       const safeIntro = escapeHtml(stripTags(introRaw));
 
-      const price = Number(p.price || 0);
-      const listPrice = Number(p.list_price || 0);
+      const price = moneyValue(p, [
+        'price',
+        'Price',
+        'sale_price',
+        'salePrice',
+        '售價',
+        'fields.price',
+        'fields.Price',
+        'fields.售價'
+      ]);
+
+      const listPrice = moneyValue(p, [
+        'list_price',
+        'listPrice',
+        'ListPrice',
+        'original_price',
+        'originalPrice',
+        'compare_at_price',
+        '原價',
+        '官網原價',
+        'fields.list_price',
+        'fields.listPrice',
+        'fields.ListPrice',
+        'fields.原價',
+        'fields.官網原價'
+      ]);
 
       /* 原價只要有值就顯示，不再限定一定要大於售價 */
       const showListPrice = listPrice > 0;
-      const hasDiscount = showListPrice && listPrice > price;
+      const hasDiscount = showListPrice && price > 0 && listPrice > price;
 
       const eager = idx < 4 ? 'eager' : 'lazy';
       const priority = idx < 4 ? 'high' : 'low';
