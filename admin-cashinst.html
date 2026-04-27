@@ -407,7 +407,10 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   </a>
 
   <a class="filter-btn" data-admin-file="admin-trade.html" id="btnConsignAccountingTop" href="admin-trade.html">一時貿易</a>
-  <a class="filter-btn" data-admin-file="admin-benefit-review.html" href="admin-benefit-review.html">審核購物金</a>
+  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-benefit-review.html" id="btnBenefitReviewLink" href="admin-benefit-review.html">
+  <span>💰 審核購物金</span>
+  <span id="benefitBadge" class="count-badge" style="display:none;">0</span>
+</a>
 </div>
 <div class="filter-row">
     <div class="field">
@@ -531,19 +534,15 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 
 <div class="toolbar-side">
   <span id="opLabel" class="tag-small"></span>
-<button id="btnBenefitReviewTop" class="small-btn btn-badge-wrap" type="button">
-  <span>💰 審核購物金</span>
-  <span id="benefitBadge" class="count-badge" style="display:none;">0</span>
-</button>
   <button id="btnCancelOrderTop" class="small-btn" type="button">
     🚫 棄標(請勿亂按)
   </button>
 
-  <div class="side-box">
-    <label>賣貨便月份</label>
-    <input id="vendor_month" type="month" />
-    <div id="vendor_month_summary" class="tag-small"></div>
-  </div>
+  <div class="side-box" id="vendorMonthBox">
+  <label>賣貨便月份</label>
+  <input id="vendor_month" type="month" />
+  <div id="vendor_month_summary" class="tag-small"></div>
+</div>
 
     <div class="side-box">
     <label>LINE 名稱搜尋</label>
@@ -689,6 +688,10 @@ function setupAdminPageChrome(){
       else if (el) el.classList.add('hidden');
     });
   }
+ const vendorMonthBox = document.getElementById('vendorMonthBox');
+if (vendorMonthBox && ADMIN_PAGE_FILE !== 'admin-pickup.html') {
+  vendorMonthBox.classList.add('hidden');
+}
 }
 
 
@@ -1076,7 +1079,10 @@ function finalizeOrderRows(rows, emptyText = '查無符合條件的訂單。', o
     msgEl.textContent = currentOrders.length ? okText : emptyText;
   }
 
-  renderVendorMonthSummary();
+  // ✅ 賣貨便月份統計只在「賣貨便登記」頁渲染
+  if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+    renderVendorMonthSummary();
+  }
 }
 
 function renderVendorMonthSummary(){
@@ -1122,7 +1128,11 @@ function renderVendorMonthSummary(){
 async function applyFullView(mode = 'all', save = true){
   currentPanelMode = 'orders';
   await ensureOpKey();
-await loadVendorSummaryCache();
+
+  // ✅ 賣貨便月份統計只在「賣貨便登記」頁載入
+  if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+    await loadVendorSummaryCache();
+  }
 
   const dateRange = getCurrentDateRange();
   const statusVal = $('#status') ? ($('#status').value || '') : '';
@@ -1281,14 +1291,11 @@ async function loadOpenCartList(){
   try{
     await ensureOpKey();
 
-    const range = getCurrentDateRange();
     const params = new URLSearchParams();
-    params.set('op_key', OP_KEY);
-    params.set('limit', '200');
-    if (range.date_from) params.set('date_from', range.date_from);
-    if (range.date_to) params.set('date_to', range.date_to);
+params.set('op_key', OP_KEY);
+params.set('limit', '80');
 
-    const r = await fetch(`${API}/admin/cart/pending-list?` + params.toString());
+const r = await fetch(`${API}/admin/cart/pending-list?` + params.toString());
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) {
       throw new Error(j.error || 'cart_pending_list_failed');
@@ -1652,6 +1659,33 @@ function updatePrintSlipsBtn(){
 
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+ function setButtonBusy(btn, busy, busyText = '處理中…'){
+  if (!btn) return;
+
+  if (busy) {
+    btn.dataset.originalText = btn.textContent || '';
+    btn.disabled = true;
+    btn.textContent = busyText;
+    btn.style.opacity = '.65';
+    btn.style.pointerEvents = 'none';
+  } else {
+    btn.disabled = false;
+    btn.textContent = btn.dataset.originalText || btn.textContent || '';
+    btn.style.opacity = '';
+    btn.style.pointerEvents = '';
+  }
+}
+
+async function runButtonJob(btn, job, busyText = '處理中…'){
+  if (!btn || btn.disabled) return;
+
+  setButtonBusy(btn, true, busyText);
+  try {
+    await job();
+  } finally {
+    setButtonBusy(btn, false);
+  }
+}
 
 function money(n){ return 'NT$ ' + Number(n||0).toLocaleString(); }
 function calcAmounts(f){
@@ -2053,12 +2087,9 @@ async function refreshTopShortcutBadges(){
   let cartOpenCount = 0;
   try {
     if (OP_KEY) {
-      const range = getCurrentDateRange();
-const cartParams = new URLSearchParams();
+      const cartParams = new URLSearchParams();
 cartParams.set('op_key', OP_KEY);
-cartParams.set('limit', '200');
-if (range.date_from) cartParams.set('date_from', range.date_from);
-if (range.date_to) cartParams.set('date_to', range.date_to);
+cartParams.set('limit', '80');
 
 const rCart = await fetch(`${API}/admin/cart/pending-list?` + cartParams.toString());
       const jCart = await rCart.json().catch(() => ({}));
@@ -2638,10 +2669,19 @@ async function reloadCurrentView(){
 // 更新下方 summary + 匯出按鈕狀態
 function updateSummary(){
   const sumEl         = $('#summary');
-  const btnExport     = $('#exportBtn');       // 可能不存在：允許為 null
+  const btnExport     = $('#exportBtn');
   const btnExportShip = $('#btnExportShip');
   const btnExportZero = $('#btnExportZero');
   if (!sumEl) return;
+
+  // ✅ 只有全部訂單頁顯示總筆數＋合計金額
+  if (ADMIN_PAGE_FILE !== 'admin.html') {
+    sumEl.textContent = '';
+    if (btnExport) btnExport.disabled = true;
+    if (btnExportShip) btnExportShip.disabled = true;
+    if (btnExportZero) btnExportZero.disabled = true;
+    return;
+  }
 
   // 沒有任何訂單時：清空 summary，三顆匯出按鈕都變灰色
   if (!currentOrders.length){
@@ -5280,7 +5320,9 @@ if (vendorMonthEl){
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   vendorMonthEl.value = `${yyyy}-${mm}`;
   vendorMonthEl.addEventListener('change', ()=>{
-    renderVendorMonthSummary();
+    if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+  renderVendorMonthSummary();
+}
   });
 }
 
@@ -5308,19 +5350,22 @@ if (btnPrintSlips) btnPrintSlips.addEventListener('click', printShipSlipsRange);
     });
   }
 
-  // 上方工具列：快捷操作目前選取的訂單（這幾顆如果你有保留）
   function proxyButton(topId, originalId){
-    const top = $('#' + topId);
-    if (!top) return;
-    top.addEventListener('click', () => {
+  const top = $('#' + topId);
+  if (!top) return;
+
+  top.addEventListener('click', async () => {
+    await runButtonJob(top, async () => {
       const orig = $('#' + originalId);
       if (orig) {
         orig.click();
+        await new Promise(resolve => setTimeout(resolve, 900));
       } else {
         alert('請先在右側選一筆訂單');
       }
-    });
-  }
+    }, '執行中…');
+  });
+}
 
   proxyButton('btnSaveAndShipTop',   'btnSaveAndShip');
 
