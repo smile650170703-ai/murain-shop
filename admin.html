@@ -1723,6 +1723,46 @@ function displayPayStatus(ps){
     default:        return ps || '';
   }
 }
+ function isDepositForfeitOrder(f = {}) {
+  const st = String(f.status || '').trim().toLowerCase();
+  const ps = String(f.pay_status || '').trim().toLowerCase();
+  const cancelReason = String(f['取消原因'] || f.cancel_reason || '').trim();
+  const note = String(f.internal_note || '').trim();
+  const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+
+  return (
+    st === 'cancelled' &&
+    ps === 'deposit_ok' &&
+    (
+      cancelReason.includes('訂金沒收') ||
+      note.includes('[TAIL_OVERDUE_DEPOSIT_FORFEIT]') ||
+      note.includes('[CASH_INST_OVERDUE_CANCEL]') ||
+      cashStatus === 'cancelled_forfeit'
+    )
+  );
+}
+
+function isRestockNeedsAttention(f = {}) {
+  const note = String(f.internal_note || '').trim();
+
+  const didDeductStock =
+    f.stock_deduct_done === true ||
+    String(f.stock_deduct_done || '').trim().toLowerCase() === 'true';
+
+  const hasRestockOk =
+    note.includes('[AUTO_RESTOCK_TAIL_OVERDUE_CANCEL]') ||
+    note.includes('[AUTO_RESTOCK_CASH_INST_OVERDUE]') ||
+    note.includes('[MANUAL_RESTOCK_TAIL_FORFEIT]') ||
+    note.includes('[MANUAL_RESTOCK_CASH_INST_FORFEIT]');
+
+  const hasRestockFail =
+    note.includes('[RESTOCK_FAILED_TAIL_OVERDUE]') ||
+    note.includes('[RESTOCK_FAILED_CASH_INST_OVERDUE]');
+
+  if (hasRestockFail) return true;
+
+  return isDepositForfeitOrder(f) && didDeductStock && !hasRestockOk;
+}
  function hasTailChildInRows(parentOrderId, rows = ALL_ORDERS_CACHE){
   const pid = String(parentOrderId || '').trim();
   if (!pid) return false;
@@ -3003,6 +3043,14 @@ const overdue48 = overdueMs >= 48 * 60 * 60 * 1000;
 const pmLower = String(f.payment_method || '').trim().toLowerCase();
 const psLower = String(f.pay_status || '').trim().toLowerCase();
 
+const forfeitTag = isDepositForfeitOrder(f)
+  ? '<span class="badge red">已棄標｜訂金沒收</span>'
+  : '';
+
+const restockAlertTag = isRestockNeedsAttention(f)
+  ? '<span class="badge red">⚠ 庫存未補</span>'
+  : '';
+
 const isBankPending =
   psLower === 'pending' &&
   [
@@ -3098,6 +3146,8 @@ const overdueTag = isBankPending
 
         <div class="ord-sub">${line2 || '&nbsp;'}</div>
         <div class="badges">
+  ${forfeitTag}
+  ${restockAlertTag}
   ${pay_b}
   ${ship_b}
   ${overdueTag}
@@ -3876,11 +3926,42 @@ if (btnTail) {
 
   const btnZcFail = $('#btnMarkZcFail');
   if (btnZcFail) btnZcFail.addEventListener('click', ()=>confirmPay('zc_fail'));
- // ✅ 顯示/隱藏「完成面交收款」按鈕（只給 meetup_cash）
-const meetupDoneTop = $('#btnMeetupCashDoneTop');
-if (meetupDoneTop) {
-  const pm = String((f.payment_method || ''));
-  meetupDoneTop.style.display = (pm === 'meetup_cash') ? '' : 'none';
+ // ✅ 已棄標／訂金沒收：上方危險按鈕全部隱藏，只保留「儲存資料」
+const isForfeitOrder = isDepositForfeitOrder(f);
+
+const btnSaveAndShipTop = $('#btnSaveAndShipTop');
+const btnConfirmPayTop = $('#btnConfirmPayOkTop');
+const btnFailTop = $('#btnMarkZcFailTop');
+const btnSendTailTop = $('#btnSendTailLinkTop');
+const btnMeetupDoneTop = $('#btnMeetupCashDoneTop');
+const btnMeetupNotifyTop = $('#btnMeetupNotifyTop');
+const btnCancelTopForfeit = $('#btnCancelOrderTop');
+const btnSaveOnlyTop = $('#btnSaveDetailOnlyTop');
+
+if (isForfeitOrder) {
+  if (btnSaveAndShipTop) btnSaveAndShipTop.style.display = 'none';
+  if (btnConfirmPayTop) btnConfirmPayTop.style.display = 'none';
+  if (btnFailTop) btnFailTop.style.display = 'none';
+  if (btnSendTailTop) btnSendTailTop.style.display = 'none';
+  if (btnMeetupDoneTop) btnMeetupDoneTop.style.display = 'none';
+  if (btnMeetupNotifyTop) btnMeetupNotifyTop.style.display = 'none';
+  if (btnCancelTopForfeit) btnCancelTopForfeit.style.display = 'none';
+
+  // 只保留儲存資料，方便改內部備註
+  if (btnSaveOnlyTop) btnSaveOnlyTop.style.display = '';
+} else {
+  if (btnSaveAndShipTop) btnSaveAndShipTop.style.display = '';
+  if (btnConfirmPayTop) btnConfirmPayTop.style.display = '';
+  if (btnFailTop) btnFailTop.style.display = '';
+  if (btnSendTailTop) btnSendTailTop.style.display = '';
+  if (btnCancelTopForfeit) btnCancelTopForfeit.style.display = '';
+  if (btnSaveOnlyTop) btnSaveOnlyTop.style.display = '';
+
+  // ✅ 顯示/隱藏「完成面交收款」按鈕（只給 meetup_cash）
+  const pm = String(f.payment_method || '').trim().toLowerCase();
+  if (btnMeetupDoneTop) {
+    btnMeetupDoneTop.style.display = (pm === 'meetup_cash') ? '' : 'none';
+  }
 }
 
  // ✅ 顯示/綁定「同步尾款→主單」（只在 TL 才顯示）
@@ -5496,21 +5577,45 @@ const btnPrintSlips = $('#btnPrintSlipsRange');
 if (btnPrintSlips) btnPrintSlips.addEventListener('click', printShipSlipsRange);
   // ★ 上方「取消訂單（補回庫存）」按鈕：直接走 cancelCurrentOrder()
   const btnCancelTop = $('#btnCancelOrderTop');
-  if (btnCancelTop) {
-    btnCancelTop.addEventListener('click', () => {
-      if (!currentRecord) {
-        alert('請先在左邊選一筆訂單');
-        return;
-      }
-      cancelCurrentOrder();
-    });
-  }
+if (btnCancelTop) {
+  btnCancelTop.addEventListener('click', () => {
+    if (!currentRecord) {
+      alert('請先在左邊選一筆訂單');
+      return;
+    }
 
-  function proxyButton(topId, originalId){
+    const f = currentRecord.fields || currentRecord || {};
+    if (isDepositForfeitOrder(f)) {
+      alert('這筆訂單已經是棄標／訂金沒收狀態，不需要再按棄標。');
+      return;
+    }
+
+    cancelCurrentOrder();
+  });
+}
+
+function proxyButton(topId, originalId){
   const top = $('#' + topId);
   if (!top) return;
 
   top.addEventListener('click', async () => {
+    const f = currentRecord?.fields || currentRecord || {};
+
+    const dangerousForfeitButtons = [
+      'btnSaveAndShipTop',
+      'btnConfirmPayOkTop',
+      'btnMarkZcFailTop',
+      'btnSendTailLinkTop',
+      'btnMeetupCashDoneTop',
+      'btnMeetupNotifyTop',
+      'btnCancelOrderTop'
+    ];
+
+    if (dangerousForfeitButtons.includes(topId) && isDepositForfeitOrder(f)) {
+      alert('這筆訂單已棄標，訂金已沒收，不能再收款、出貨、發尾款單或重新結帳。');
+      return;
+    }
+
     await runButtonJob(top, async () => {
       const orig = $('#' + originalId);
       if (orig) {
@@ -5535,9 +5640,15 @@ if (btnConfirmPayOkTopBind) {
     }
 
     const f = currentRecord.fields || currentRecord || {};
-    const pm = String(f.payment_method || '').trim().toLowerCase();
-    const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
-    const payStatus = String(f.pay_status || '').trim().toLowerCase();
+
+if (isDepositForfeitOrder(f)) {
+  alert('這筆訂單已棄標，訂金已沒收，不能再收款、出貨、發尾款單或重新結帳。');
+  return;
+}
+
+const pm = String(f.payment_method || '').trim().toLowerCase();
+const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+const payStatus = String(f.pay_status || '').trim().toLowerCase();
 
     const isCashInstOrder =
       pm === 'cash_inst_2' ||
