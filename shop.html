@@ -2856,6 +2856,112 @@
     border-radius:24px !important;
   }
 }
+    /* =========================================================
+   Header 精品 icon｜會員 / 收藏 / 購物車
+   ========================================================= */
+.nav-icons-lux{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+
+.nav-icon-btn{
+  position:relative;
+  width:44px;
+  height:44px;
+  border-radius:999px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(255,255,255,.82);
+  border:1px solid rgba(210,190,174,.35);
+  box-shadow:0 8px 18px rgba(80,55,45,.06);
+  color:#241b18;
+  text-decoration:none;
+}
+
+.nav-icon-btn svg{
+  width:23px;
+  height:23px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+}
+
+.nav-icon-btn:hover{
+  background:#fff;
+}
+
+.cart-badge,
+.wish-badge{
+  position:absolute;
+  top:-4px;
+  right:-4px;
+  min-width:18px;
+  height:18px;
+  padding:0 5px;
+  border-radius:999px;
+  background:#ef6b91;
+  color:#fff;
+  font-size:11px;
+  font-weight:700;
+  line-height:18px;
+  text-align:center;
+  box-shadow:0 4px 10px rgba(239,107,145,.28);
+}
+
+@media (max-width:767px){
+  .nav-icons-lux{
+    gap:8px;
+  }
+
+  .nav-icon-btn{
+    width:42px;
+    height:42px;
+    background:rgba(255,255,255,.88);
+  }
+
+  .nav-icon-btn svg{
+    width:22px;
+    height:22px;
+  }
+}
+    /* 商品卡右上角收藏愛心 */
+.product-wish-btn{
+  position:absolute;
+  top:12px;
+  right:12px;
+  z-index:8;
+  width:36px;
+  height:36px;
+  border:0;
+  border-radius:999px;
+  background:rgba(255,255,255,.72);
+  color:#211815;
+  font-size:24px;
+  font-weight:300;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+}
+
+.product-wish-btn.active{
+  color:#ef6b91;
+}
+
+@media (max-width:767px){
+  .product-wish-btn{
+    top:10px;
+    right:10px;
+    width:34px;
+    height:34px;
+    font-size:23px;
+  }
+}
 </style>
 </head>
 <body>
@@ -2992,13 +3098,29 @@
         <div class="refined-brand-sub">OFFICIAL NAVIGATION</div>
       </a>
 
-      <div class="nav-right">
-        <a class="nav-btn" href="/member.html" aria-label="會員中心">👤</a>
-        <button class="nav-btn" id="cartBtn" type="button" aria-label="購物車">
-          🛒
-          <span class="cart-badge" id="cartBadge" hidden>0</span>
-        </button>
-      </div>
+     <div class="nav-right nav-icons-lux">
+  <a class="nav-btn nav-icon-btn" href="/member.html" aria-label="會員中心">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.5"></circle>
+      <path d="M5.5 20c.9-4 3.3-6 6.5-6s5.6 2 6.5 6"></path>
+    </svg>
+  </a>
+
+  <a class="nav-btn nav-icon-btn nav-wishlist-btn" href="/wishlist.html" aria-label="我的收藏">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 20.5s-7-4.4-8.8-9.2C2 8.1 3.7 5.5 6.6 5.2c1.8-.2 3.5.8 4.4 2.2.9-1.4 2.6-2.4 4.4-2.2 2.9.3 4.6 2.9 3.4 6.1C19 16.1 12 20.5 12 20.5z"></path>
+    </svg>
+    <span class="wish-badge" id="wishBadge" hidden>0</span>
+  </a>
+
+  <button class="nav-btn nav-icon-btn nav-cart-btn" id="cartBtn" type="button" aria-label="購物車">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6.5 8.5h11l-.8 11h-9.4l-.8-11z"></path>
+      <path d="M9 8.5V7a3 3 0 0 1 6 0v1.5"></path>
+    </svg>
+    <span class="cart-badge" id="cartBadge" hidden>0</span>
+  </button>
+</div>
     </div>
   </nav>
 
@@ -3160,6 +3282,85 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeSiteMenu();
     });
+    /* ===== Wishlist 收藏｜localStorage 最小可用版 ===== */
+const XUYUAN_WISHLIST_KEY = 'xuyuan_wishlist_v1';
+
+function getWishlist(){
+  try{
+    return JSON.parse(localStorage.getItem(XUYUAN_WISHLIST_KEY) || '[]');
+  }catch(e){
+    return [];
+  }
+}
+
+function saveWishlist(list){
+  localStorage.setItem(XUYUAN_WISHLIST_KEY, JSON.stringify(list || []));
+  refreshWishBadge();
+}
+
+function getProductKeyForWish(p){
+  return String(
+    p?.sku ||
+    p?.SKU ||
+    p?.barcode ||
+    p?.fields?.SKU ||
+    p?.fields?.sku ||
+    p?.id ||
+    ''
+  ).trim();
+}
+
+function normalizeWishProduct(p){
+  const sku = getProductKeyForWish(p);
+  return {
+    sku,
+    title: String(p?.title || p?.Name || p?.name || p?.fields?.Name || '').trim(),
+    price: Number(p?.price || p?.Price || p?.售價 || p?.fields?.Price || p?.fields?.price || 0),
+    image: String(p?.thumb_url || p?.image_url || p?.image || p?.fields?.thumb_url || p?.fields?.image_url || '').trim(),
+    brand: String(p?.brand || p?.Brand || p?.sub_category || p?.fields?.sub_category || '').trim()
+  };
+}
+
+function isWishlisted(p){
+  const sku = getProductKeyForWish(p);
+  if(!sku) return false;
+  return getWishlist().some(x => String(x.sku) === sku);
+}
+
+function toggleWishlist(p){
+  const item = normalizeWishProduct(p);
+  if(!item.sku){
+    alert('找不到商品資料，暫時無法收藏');
+    return false;
+  }
+
+  const list = getWishlist();
+  const idx = list.findIndex(x => String(x.sku) === item.sku);
+
+  if(idx >= 0){
+    list.splice(idx, 1);
+    saveWishlist(list);
+    return false;
+  }else{
+    list.unshift(item);
+    saveWishlist(list);
+    return true;
+  }
+}
+
+function refreshWishBadge(){
+  const badge = document.getElementById('wishBadge');
+  if(!badge) return;
+
+  const count = getWishlist().length;
+  badge.textContent = String(count);
+  badge.hidden = count <= 0;
+}
+
+window.addEventListener('DOMContentLoaded', refreshWishBadge);
+window.addEventListener('storage', (e) => {
+  if(e.key === XUYUAN_WISHLIST_KEY) refreshWishBadge();
+});
   </script>
 
   <!-- ===== 固定：若某頁有 data-live-group-link / data-tiktok-link，會自動帶入 ===== -->
@@ -4141,6 +4342,11 @@ document.addEventListener('DOMContentLoaded', () => {
     list.forEach((p, idx) => {
       const card = document.createElement('div');
       card.className = 'product-card';
+      const wishBtn = document.createElement('button');
+wishBtn.type = 'button';
+wishBtn.className = 'product-wish-btn';
+wishBtn.setAttribute('aria-label', '加入收藏');
+wishBtn.innerHTML = '♡';
 
       const img = String(p.thumb_url || p.image_url || p.image || '').trim();
       const hasImage = !!img;
@@ -4199,6 +4405,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const priority = idx < 4 ? 'high' : 'low';
 
       card.innerHTML = `
+      <button class="product-wish-btn" type="button" aria-label="加入收藏">♡</button>
         <div class="img-wrapper${hasImage ? '' : ' no-image'}">
           ${hasImage ? `
             <img
@@ -4244,6 +4451,20 @@ document.addEventListener('DOMContentLoaded', () => {
       card.onclick = () => {
   openProductPreview(p);
 };
+      const heartBtn = card.querySelector('.product-wish-btn');
+if(heartBtn){
+  heartBtn.classList.toggle('active', isWishlisted(p));
+  heartBtn.textContent = isWishlisted(p) ? '♥' : '♡';
+
+  heartBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const active = toggleWishlist(p);
+    heartBtn.classList.toggle('active', active);
+    heartBtn.textContent = active ? '♥' : '♡';
+  });
+}
 
       wrap.appendChild(card);
     });
