@@ -2288,8 +2288,8 @@ function getTailPaidAmount(t){
     ship?.deposit?.paid, ship?.deposit?.amount
   );
 
-  // ✅ 把尾款單已付加進來（這就是讓後台/會員中心一致的關鍵）
-  const tail = o?.tail_order || null;
+  // ✅ 只把「有效尾款單」已付金額加進來；作廢/失敗 TL 不計入
+  const tail = getActiveTailOrder(o);
   if (tail) paid += getTailPaidAmount(tail);
 
   return Math.min(total, paid);
@@ -2710,6 +2710,8 @@ function buildCashInstRowsHtml(o) {
 }
 
 function buildOrderAmountBreakdownHtml(o, currentFilter, tail) {
+  tail = tail && !isInactiveTailOrder(tail) ? tail : getActiveTailOrder(o);
+
   const total = readMoneyValue(firstFilled(o?.total_amount, o?.totalAmount, o?.amount));
   const isDeposit = isDepositHoldOrder(o);
   const isCashInst = isCashInstallmentOrder(o);
@@ -2829,14 +2831,58 @@ function buildOrderAmountBreakdownHtml(o, currentFilter, tail) {
   );
 }
 
+function isInactiveTailOrder(tail){
+  if (!tail) return true;
+
+  const ps = String(tail?.pay_status || tail?.payStatus || "").trim().toLowerCase();
+  const st = String(tail?.status || "").trim().toLowerCase();
+  const oid = String(tail?.order_id || "").trim().toUpperCase();
+
+  // 只針對 TL 尾款單做保護；避免一般資料被誤判
+  const looksTail =
+    oid.startsWith("TL") ||
+    tail?.is_tail === true ||
+    String(tail?.order_type || "").trim().toLowerCase() === "tail" ||
+    String(tail?.parent_order_id || "").trim();
+
+  if (!looksTail) return false;
+
+  // 作廢 / 失敗的尾款單，不再當有效 tail_order
+  return (
+    ps === "failed" ||
+    ps === "fail" ||
+    ps === "cancelled" ||
+    ps === "canceled" ||
+    st === "cancelled" ||
+    st === "canceled" ||
+    st === "failed" ||
+    st === "fail"
+  );
+}
+
+function getActiveTailOrder(o){
+  const tail = o?.tail_order || o?.tailOrder || null;
+  if (!tail) return null;
+  return isInactiveTailOrder(tail) ? null : tail;
+}
+
 function tailPaidLike(tail){
-  const ps = String(tail?.pay_status || "").toLowerCase();
-  return (ps === "paid" || ps === "paid_ok");
+  if (!tail || isInactiveTailOrder(tail)) return false;
+
+  const ps = String(tail?.pay_status || tail?.payStatus || "").trim().toLowerCase();
+  const st = String(tail?.status || "").trim().toLowerCase();
+
+  return (
+    ps === "paid" ||
+    ps === "paid_ok" ||
+    st === "paid" ||
+    st === "paid_ok"
+  );
 }
 
 // ✅ 取得「用來顯示給客人看的狀態來源」：有 tail 就優先 tail
 function getDisplayOrder(o){
-  const tail = o?.tail_order || null;
+  const tail = getActiveTailOrder(o);
   if (!tail) return { src: o, tail: null };
 
   // 1) 尾款已出貨：整筆訂單就是已出貨（用 tail 當來源）
