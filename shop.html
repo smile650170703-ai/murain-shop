@@ -2962,6 +2962,45 @@
     font-size:23px;
   }
 }
+    /* ===== 商品內頁真正可點擊的收藏愛心 ===== */
+@media (max-width:767px){
+
+  /* 關掉原本 CSS 畫出來的假愛心 */
+  .shop-preview-info::after{
+    display:none !important;
+  }
+
+  .shop-preview-heart{
+    position:absolute !important;
+    top:-1px !important;
+    right:24px !important;
+    z-index:8 !important;
+    width:34px !important;
+    height:34px !important;
+    border:0 !important;
+    background:transparent !important;
+    color:#111 !important;
+    font-size:32px !important;
+    font-weight:300 !important;
+    line-height:1 !important;
+    display:flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    padding:0 !important;
+    cursor:pointer !important;
+  }
+
+  .shop-preview-heart.active{
+    color:#ef6b91 !important;
+  }
+}
+
+@media (max-width:390px){
+  .shop-preview-heart{
+    right:22px !important;
+    font-size:30px !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -3185,11 +3224,14 @@
 
       <div class="shop-preview-dots" id="previewDots"></div>
 
-      <div class="shop-preview-info">
-        <div class="shop-preview-sku" id="previewSku"></div>
-        <h3 class="shop-preview-title" id="previewTitle"></h3>
-        <div class="shop-preview-price" id="previewPrice"></div>
-      </div>
+     <div class="shop-preview-info">
+  <div class="shop-preview-sku" id="previewSku"></div>
+
+  <button class="shop-preview-heart" id="previewWishBtn" type="button" aria-label="加入收藏">♡</button>
+
+  <h3 class="shop-preview-title" id="previewTitle"></h3>
+  <div class="shop-preview-price" id="previewPrice"></div>
+</div>
 
       <div class="shop-preview-actions">
         <button class="shop-preview-detail" id="previewDetailBtn" type="button">瀏覽詳情</button>
@@ -4115,8 +4157,17 @@ function bindPreviewImageSwipe(){
   main.addEventListener('pointercancel', endSwipe);
   main.addEventListener('pointerleave', endSwipe);
 }
+  function updatePreviewWishBtn(p){
+  const btn = document.getElementById('previewWishBtn');
+  if(!btn || !p) return;
+
+  const active = isWishlisted(p);
+  btn.classList.toggle('active', active);
+  btn.textContent = active ? '♥' : '♡';
+}
 function openProductPreview(p){
   previewProduct = p;
+  updatePreviewWishBtn(p);
 
   const title = previewTitle(p);
   const price = previewPriceValue(p);
@@ -4313,6 +4364,15 @@ async function previewAddToCart(){
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    $('previewWishBtn')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if(!previewProduct) return;
+
+    const active = toggleWishlist(previewProduct);
+    updatePreviewWishBtn(previewProduct);
+  });
   $('previewCloseBtn')?.addEventListener('click', closeProductPreview);
   bindPreviewImageSwipe();
 
@@ -4342,11 +4402,6 @@ document.addEventListener('DOMContentLoaded', () => {
     list.forEach((p, idx) => {
       const card = document.createElement('div');
       card.className = 'product-card';
-      const wishBtn = document.createElement('button');
-wishBtn.type = 'button';
-wishBtn.className = 'product-wish-btn';
-wishBtn.setAttribute('aria-label', '加入收藏');
-wishBtn.innerHTML = '♡';
 
       const img = String(p.thumb_url || p.image_url || p.image || '').trim();
       const hasImage = !!img;
