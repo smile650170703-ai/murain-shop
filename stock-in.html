@@ -2519,6 +2519,31 @@ openConsignLedgerPdfWindow(data, fileBaseName);
     el.btnDownloadConsignLedger.textContent = '列印 / 另存 PDF';
   }
 }
+    function downloadConsignStockInExcel() {
+  showError(el.submitError, '');
+
+  const consignRows = state.drafts.filter(row => String(row.商品來源 || '') === '寄賣');
+
+  if (!consignRows.length) {
+    showError(el.submitError, '目前沒有寄賣入庫資料可產出 Excel');
+    return false;
+  }
+
+  const exportRows = consignRows.map(row => ({
+    SKU: String(row.SKU || '').trim(),
+    寄賣人: String(row.寄賣人 || '').trim(),
+    商品名稱: String(row.Name || '').trim(),
+    起標價格: normalizeNumber(row['起標價格'], 0),
+    一標多少: normalizeNumber(row['一標多少'], 0),
+    入庫日期: String(row.入庫日期 || '').trim()
+  }));
+
+  const headers = ['SKU', '寄賣人', '商品名稱', '起標價格', '一標多少', '入庫日期'];
+  const html = buildExcelHtml(headers, exportRows, '寄賣入庫明細');
+
+  downloadExcelFile(`寄賣入庫明細_${labelFileDate()}.xls`, html);
+  return true;
+}
 function downloadLabelExcel() {
   showError(el.submitError, '');
 
@@ -2572,8 +2597,15 @@ downloadExcelFile(`自有入庫標籤_${labelFileDate()}.xls`, html);
 async function exportAndSubmit() {
   showError(el.submitError, '');
 
+  // 自有入庫：完全維持原本功能，照原本產生自有標籤 Excel
   if (state.mode === 'own') {
     const ok = downloadLabelExcel();
+    if (!ok) return;
+  }
+
+  // 寄賣入庫：送出時額外產出寄賣入庫明細 Excel
+  if (state.mode === 'consign') {
+    const ok = downloadConsignStockInExcel();
     if (!ok) return;
   }
 
