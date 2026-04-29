@@ -603,9 +603,10 @@
 
    <div class="mode-bar">
   <button id="btnModeOwn" class="mode-btn own active" type="button">自有入庫</button>
-  <button id="btnModeConsign" class="mode-btn consign" type="button">寄賣入庫</button>
-  <button id="btnModePatch" class="mode-btn patch" type="button">補資料</button>
-  <button class="mode-btn" type="button" onclick="location.href='op/preorder-cost.html'">預購成本補登</button>
+<button id="btnModeConsign" class="mode-btn consign" type="button">寄賣入庫</button>
+<button id="btnModePatch" class="mode-btn patch" type="button">補資料</button>
+<button id="btnOpenConsignLedger" class="mode-btn" type="button">列印資料</button>
+<button class="mode-btn" type="button" onclick="location.href='op/preorder-cost.html'">預購成本補登</button>
 </div>
 
     <div id="memberSearchCard" class="card member-box">
@@ -634,6 +635,30 @@
 </div>
 
 <div class="muted" style="margin-top:10px;">需先查到會員，再確認是否已有寄賣人主檔，寄賣品才能正式送出。</div>
+    </div>
+
+    <div id="consignLedgerCard" class="card hidden">
+      <div class="card-header">
+        <div>
+          <h2 class="card-title">🖨️ 寄賣清冊</h2>
+          <p class="hint">選擇現有寄賣人後，會下載「寄賣人資料在上方、寄賣品在下方」的 Excel 清冊。</p>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="field span-6">
+          <label for="consignLedgerSelect">選擇寄賣人</label>
+          <select id="consignLedgerSelect">
+            <option value="">請先載入寄賣人</option>
+          </select>
+        </div>
+
+        <div class="field span-6" style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;">
+          <button id="btnDownloadConsignLedger" class="btn btn-success" type="button">下載寄賣清冊</button>
+        </div>
+      </div>
+
+      <div id="consignLedgerError" class="error"></div>
     </div>
 
     <div id="singleInputCard" class="card hidden">
@@ -705,7 +730,7 @@
 <div id="liveScreenshotField" class="field span-4 hidden">
   <label for="liveScreenshot">直播截圖</label>
   <input id="liveScreenshot" type="file" accept="image/*" />
-  <div class="muted" style="margin-top:6px;">寄賣模式可上傳一張直播截圖</div>
+  <div class="muted" style="margin-top:6px;">可選圖，也可點這個區塊後 Ctrl+V 直接貼上直播截圖</div>
   <div id="liveScreenshotPreview" class="muted" style="margin-top:6px;"></div>
 </div>
 
@@ -799,7 +824,7 @@
   <div id="statusText" class="status">先選模式，再按「新增一列」開始批次輸入。</div>
   <div class="actions" style="margin-top:0;">
   <button id="btnAddRow" class="btn btn-secondary" type="button">新增一列</button>
-  <button id="btnExportAndSubmit" class="btn btn-success" type="button">下載標籤 Excel＋確認送出</button>
+  <button id="btnExportAndSubmit" class="btn btn-success" type="button">確認送出</button>
   <button id="btnClearDrafts" class="btn btn-danger" type="button">清空本次清單</button>
 </div>
 </div>
@@ -887,14 +912,13 @@
   <div id="consignorIdBackPreview" class="muted" style="margin-top:6px;"></div>
 </div>
 
-<div class="field span-12">
-  <label>合約照片 / PDF</label>
-  <input type="text" readonly value="請至 Airtable「合約照片」Attachment 欄位上傳 PDF / 圖片" />
-  <div class="muted" style="margin-top:6px;">
-    此欄位不走 Cloudflare Images。PDF 合約請直接到 Airtable 後台的「合約照片」欄位上傳。
-  </div>
-  <div id="consignorContractPhotosPreview" class="muted" style="margin-top:6px;"></div>
+<div class="field span-6">
+  <label for="consignorIdBack">身分證反面</label>
+  <input id="consignorIdBack" type="file" accept="image/*" />
+  <div class="muted" style="margin-top:6px;">可直接選圖，下一步再補貼上功能。</div>
+  <div id="consignorIdBackPreview" class="muted" style="margin-top:6px;"></div>
 </div>
+    </div>
     </div>
 
     <div class="actions" style="margin-top:18px;">
@@ -937,6 +961,7 @@ const CONFIG = {
 
   searchProductUrl: 'https://api.murain.tw/op/products/by-sku',
   updateProductLocationUrl: 'https://api.murain.tw/op/products/location/update',
+consignLedgerDataUrl: 'https://api.murain.tw/op/consign/ledger-print-data',
 
   requestHeaders: {
     'Content-Type': 'application/json'
@@ -953,7 +978,9 @@ const state = {
   selectedLineMember: null,
   selectedConsignor: null,
   selectedConsignorRecordId: '',
-  patchProduct: null
+patchProduct: null,
+consignLedgerConsignors: [],
+liveScreenshotPastedUrl: ''
 };
 
     const $ = (id) => document.getElementById(id);
@@ -962,10 +989,12 @@ const state = {
   btnModeOwn: $('btnModeOwn'),
   btnModeConsign: $('btnModeConsign'),
   btnModePatch: $('btnModePatch'),
+      btnOpenConsignLedger: $('btnOpenConsignLedger'),
 
   memberSearchCard: $('memberSearchCard'),
   patchCard: $('patchCard'),
   draftsCard: $('draftsCard'),
+      consignLedgerCard: $('consignLedgerCard'),
       memberKeyword: $('memberKeyword'),
       btnSearchMember: $('btnSearchMember'),
       memberResults: $('memberResults'),
@@ -1000,6 +1029,10 @@ btnAddRow: $('btnAddRow'),
 btnExportAndSubmit: $('btnExportAndSubmit'),
 btnClearDrafts: $('btnClearDrafts'),
 submitError: $('submitError'),
+
+consignLedgerSelect: $('consignLedgerSelect'),
+btnDownloadConsignLedger: $('btnDownloadConsignLedger'),
+consignLedgerError: $('consignLedgerError'),
             btnNewConsignor: $('btnNewConsignor'),
       btnEditConsignor: $('btnEditConsignor'),
       consignorStatusBox: $('consignorStatusBox'),
@@ -1020,10 +1053,8 @@ submitError: $('submitError'),
       consignorNote: $('consignorNote'),
       consignorIdFront: $('consignorIdFront'),
       consignorIdBack: $('consignorIdBack'),
-      consignorIdFrontPreview: $('consignorIdFrontPreview'),
+            consignorIdFrontPreview: $('consignorIdFrontPreview'),
       consignorIdBackPreview: $('consignorIdBackPreview'),
-      consignorContractPhotos: $('consignorContractPhotos'),
-consignorContractPhotosPreview: $('consignorContractPhotosPreview'),
 liveScreenshotField: $('liveScreenshotField'),
 liveScreenshot: $('liveScreenshot'),
 liveScreenshotPreview: $('liveScreenshotPreview')
@@ -1124,8 +1155,12 @@ function setMode(mode) {
   el.btnModePatch.classList.toggle('active', isPatch);
 
   el.memberSearchCard.classList.toggle('active', isConsign);
-  el.patchCard.classList.toggle('hidden', !isPatch);
-  el.draftsCard.classList.toggle('hidden', isPatch);
+el.patchCard.classList.toggle('hidden', !isPatch);
+el.draftsCard.classList.toggle('hidden', isPatch);
+
+if (!isConsign) {
+  el.consignLedgerCard.classList.add('hidden');
+}
 
   el.sourceType.value = isOwn ? '自有' : '寄賣';
   el.sourceBadge.textContent = `目前模式：${isOwn ? '自有' : '寄賣'}`;
@@ -1160,7 +1195,8 @@ function setMode(mode) {
     el.auctionStartPrice.value = '';
     el.bidStep.value = '';
     el.liveScreenshot.value = '';
-    el.liveScreenshotPreview.textContent = '';
+el.liveScreenshotPreview.textContent = '';
+state.liveScreenshotPastedUrl = '';
     state.selectedConsignorRecordId = '';
     state.selectedLineMember = null;
     state.selectedConsignor = null;
@@ -1499,9 +1535,11 @@ async function addDraft() {
     }
 
     if (state.mode === 'consign' && el.liveScreenshot.files?.[0]) {
-      item['直播截圖Url'] = await uploadSingleImage(el.liveScreenshot.files[0]);
-      el.liveScreenshotPreview.textContent = '已上傳直播截圖';
-    }
+  item['直播截圖Url'] = await uploadSingleImage(el.liveScreenshot.files[0]);
+  el.liveScreenshotPreview.textContent = '已上傳直播截圖';
+} else if (state.mode === 'consign' && state.liveScreenshotPastedUrl) {
+  item['直播截圖Url'] = state.liveScreenshotPastedUrl;
+}
 
     state.drafts.unshift(item);
     saveDrafts();
@@ -1582,11 +1620,11 @@ function getDraftColumns(mode = state.mode) {
       { key: 'SKU', label: 'SKU', type: 'text', readonly: true },
       { key: '寄賣人', label: '寄賣人', type: 'text', readonly: true },
       { key: '庫存位置', label: '庫存位置', type: 'text', placeholder: '可不填', paste: true },
-      { key: 'Name', label: '商品名稱', type: 'text', placeholder: '輸入品牌+商品名稱', paste: true },
-      { key: 'Price', label: '建議售價', type: 'number', paste: true },
+      { key: '直播截圖Url', label: '直播截圖', type: 'text', placeholder: '可貼直播截圖網址', paste: true },
+       { key: 'Name', label: '商品名稱', type: 'text', placeholder: '輸入品牌+商品名稱', paste: true },
+       { key: 'StockQty', label: '數量', type: 'number', paste: true },
       { key: '起標價格', label: '起標價格', type: 'number', paste: true },
       { key: '一標多少', label: '一標多少', type: 'number', paste: true },
-      { key: 'StockQty', label: '數量', type: 'number', paste: true },
       { key: '入庫日期', label: '入庫日期', type: 'date', paste: true },
       { key: 'sub_category', label: '分類', type: 'text', readonly: true }
     ];
@@ -1667,9 +1705,12 @@ function renderDraftCell(row, rowIndex, col) {
     widthStyle = isConsignMode
       ? 'min-width:182px;width:182px;'
       : 'min-width:168px;width:168px;';
-  } else if (col.key === 'Price') {
+   } else if (col.key === 'Price') {
     inputClass = 'table-input small right';
     widthStyle = 'min-width:82px;width:82px;';
+  } else if (col.key === '直播截圖Url') {
+    inputClass = 'table-input xl';
+    widthStyle = 'min-width:220px;width:220px;';
   } else if (col.key === '起標價格') {
     inputClass = 'table-input small right';
     widthStyle = 'min-width:82px;width:82px;';
@@ -1884,7 +1925,7 @@ function buildConsignLabelRows(rows) {
   return rows.map((row) => ({
     SKU: String(row.SKU || '').trim(),
     商品名稱: String(row.Name || '').trim(),
-    建議售價: normalizeNumber(row.Price, 0),
+    直播截圖: String(row['直播截圖Url'] || '').trim(),
     起標價格: normalizeNumber(row['起標價格'], 0),
     一標多少: normalizeNumber(row['一標多少'], 0),
     分類: String(row.sub_category || '寄賣').trim()
@@ -1976,7 +2017,211 @@ function downloadExcelFile(filename, html) {
   a.remove();
   URL.revokeObjectURL(url);
 }
+function safeFilePart(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, '');
+}
 
+function todayFileDate() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}${m}${day}`;
+}
+
+function moneyText(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) && n > 0 ? n : '';
+}
+
+function buildConsignLedgerExcelHtml(data) {
+  const consignor = data?.consignor || {};
+  const items = Array.isArray(data?.items) ? data.items : [];
+
+  const infoRows = [
+    ['姓名', consignor.name || ''],
+    ['LINE名稱', consignor.lineName || ''],
+    ['身分證證號', consignor.nationalId || ''],
+    ['手機', consignor.phone || ''],
+    ['Email', consignor.email || ''],
+    ['匯款資料', consignor.remittanceInfo || ''],
+    ['匯款帳號', consignor.accountNo || ''],
+    ['匯款代號', consignor.bankCode || ''],
+    ['匯款銀行名稱', consignor.bankName || '']
+  ];
+
+  const infoHtml = infoRows.map(([k, v]) => `
+    <tr>
+      <td style="border:1px solid #000;padding:8px;background:#f3f4f6;font-weight:700;mso-number-format:'\\@';">${excelEscape(k)}</td>
+      <td style="border:1px solid #000;padding:8px;mso-number-format:'\\@';">${excelEscape(v || '')}</td>
+    </tr>
+  `).join('');
+
+  const itemHtml = items.length
+    ? items.map((item, index) => `
+      <tr>
+        <td style="border:1px solid #000;padding:8px;text-align:center;">${index + 1}</td>
+        <td style="border:1px solid #000;padding:8px;mso-number-format:'\\@';">
+          ${
+            item.livePhotoUrl
+              ? `<img src="${excelEscape(item.livePhotoUrl)}" style="width:80px;height:80px;object-fit:cover;"><br>${excelEscape(item.livePhotoUrl)}`
+              : ''
+          }
+        </td>
+        <td style="border:1px solid #000;padding:8px;mso-number-format:'\\@';">${excelEscape(item.name || '')}</td>
+        <td style="border:1px solid #000;padding:8px;text-align:center;">${Number(item.qty || 0)}</td>
+        <td style="border:1px solid #000;padding:8px;mso-number-format:'\\@';">${excelEscape(item.consignMethod || '直播競標')}</td>
+        <td style="border:1px solid #000;padding:8px;mso-number-format:'\\$#,##0';">${moneyText(item.auctionStartPrice)}</td>
+        <td style="border:1px solid #000;padding:8px;mso-number-format:'\\$#,##0';">${moneyText(item.bidStep)}</td>
+      </tr>
+    `).join('')
+    : `
+      <tr>
+        <td colspan="7" style="border:1px solid #000;padding:12px;text-align:center;color:#6b7280;">此寄賣人目前沒有寄賣品資料</td>
+      </tr>
+    `;
+
+  return `
+  <html xmlns:o="urn:schemas-microsoft-com:office:office"
+        xmlns:x="urn:schemas-microsoft-com:office:excel"
+        xmlns="http://www.w3.org/TR/REC-html40">
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body {
+          font-family: Arial, "Microsoft JhengHei", sans-serif;
+          font-size: 12pt;
+        }
+        table {
+          border-collapse: collapse;
+        }
+      </style>
+    </head>
+    <body>
+      <table>
+        <tr>
+          <td colspan="7" style="font-size:18pt;font-weight:700;padding:10px 8px;text-align:center;">寄賣清冊</td>
+        </tr>
+        <tr>
+          <td colspan="7" style="padding:8px;text-align:center;">下載日期：${excelEscape(todayFileDate())}</td>
+        </tr>
+      </table>
+
+      <br>
+
+      <table>
+        <tr>
+          <td colspan="2" style="border:1px solid #000;padding:8px;background:#111827;color:#ffffff;font-weight:700;">寄賣人資料</td>
+        </tr>
+        ${infoHtml}
+      </table>
+
+      <br>
+
+      <table>
+        <tr>
+          <td colspan="7" style="border:1px solid #000;padding:8px;background:#111827;color:#ffffff;font-weight:700;">寄賣品清單</td>
+        </tr>
+        <tr>
+          <th style="border:1px solid #000;padding:8px;background:#f3f4f6;">序號</th>
+          <th style="border:1px solid #000;padding:8px;background:#f3f4f6;">直播截圖</th>
+          <th style="border:1px solid #000;padding:8px;background:#f3f4f6;">商品名稱</th>
+          <th style="border:1px solid #000;padding:8px;background:#f3f4f6;">數量</th>
+          <th style="border:1px solid #000;padding:8px;background:#f3f4f6;">寄賣方式</th>
+          <th style="border:1px solid #000;padding:8px;background:#f3f4f6;">競標底價</th>
+          <th style="border:1px solid #000;padding:8px;background:#f3f4f6;">每標加價</th>
+        </tr>
+        ${itemHtml}
+      </table>
+    </body>
+  </html>
+  `;
+}
+
+async function loadConsignLedgerConsignors() {
+  showError(el.consignLedgerError, '');
+
+  el.consignLedgerSelect.innerHTML = '<option value="">載入中...</option>';
+
+  const apiUrl = `${CONFIG.consignLedgerDataUrl}?op_key=${encodeURIComponent(CONFIG.opKey)}`;
+  const resp = await fetch(apiUrl, { method: 'GET' });
+  const data = await resp.json().catch(() => ({}));
+
+  if (!resp.ok || !data.ok) {
+    throw new Error(data.detail || data.error || `寄賣人載入失敗：HTTP ${resp.status}`);
+  }
+
+  state.consignLedgerConsignors = Array.isArray(data.consignors) ? data.consignors : [];
+
+  if (!state.consignLedgerConsignors.length) {
+    el.consignLedgerSelect.innerHTML = '<option value="">目前沒有寄賣人資料</option>';
+    return;
+  }
+
+  el.consignLedgerSelect.innerHTML = `
+    <option value="">請選擇寄賣人</option>
+    ${state.consignLedgerConsignors.map(c => {
+      const lineText = c.lineName ? `｜LINE：${c.lineName}` : '';
+      return `<option value="${excelEscape(c.recordId)}">${excelEscape(c.name || c.recordId)}${excelEscape(lineText)}</option>`;
+    }).join('')}
+  `;
+}
+
+async function openConsignLedgerCard() {
+  setMode('consign');
+  el.consignLedgerCard.classList.remove('hidden');
+
+  try {
+    await loadConsignLedgerConsignors();
+  } catch (err) {
+    showError(el.consignLedgerError, err.message || '載入寄賣人失敗');
+  }
+}
+
+async function downloadConsignLedger() {
+  showError(el.consignLedgerError, '');
+
+  const consignorRecordId = String(el.consignLedgerSelect.value || '').trim();
+  if (!consignorRecordId) {
+    showError(el.consignLedgerError, '請先選擇寄賣人');
+    return;
+  }
+
+  el.btnDownloadConsignLedger.disabled = true;
+  el.btnDownloadConsignLedger.textContent = '下載中...';
+
+  try {
+    const apiUrl =
+      `${CONFIG.consignLedgerDataUrl}?op_key=${encodeURIComponent(CONFIG.opKey)}&consignorRecordId=${encodeURIComponent(consignorRecordId)}`;
+
+    const resp = await fetch(apiUrl, { method: 'GET' });
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.detail || data.error || `讀取清冊失敗：HTTP ${resp.status}`);
+    }
+
+    const consignor = data.consignor || {};
+    const fileName = [
+      safeFilePart(consignor.name || '未命名寄賣人'),
+      safeFilePart(consignor.lineName || ''),
+      todayFileDate(),
+      '寄賣清冊'
+    ].filter(Boolean).join('_') + '.xls';
+
+    const html = buildConsignLedgerExcelHtml(data);
+    downloadExcelFile(fileName, html);
+
+  } catch (err) {
+    showError(el.consignLedgerError, err.message || '下載寄賣清冊失敗');
+  } finally {
+    el.btnDownloadConsignLedger.disabled = false;
+    el.btnDownloadConsignLedger.textContent = '下載寄賣清冊';
+  }
+}
 function downloadLabelExcel() {
   showError(el.submitError, '');
 
@@ -2021,7 +2266,7 @@ downloadExcelFile(`自有入庫標籤_${labelFileDate()}.xls`, html);
   }
 
   const exportRows = buildConsignLabelRows(consignRows);
-  const headers = ['SKU', '商品名稱', '建議售價', '起標價格', '一標多少', '分類'];
+    const headers = ['SKU', '商品名稱', '直播截圖', '起標價格', '一標多少', '分類'];
   const html = buildExcelHtml(headers, exportRows, '寄賣入庫標籤');
   downloadExcelFile(`寄賣入庫標籤_${labelFileDate()}.xls`, html);
   return true;
@@ -2030,8 +2275,10 @@ downloadExcelFile(`自有入庫標籤_${labelFileDate()}.xls`, html);
 async function exportAndSubmit() {
   showError(el.submitError, '');
 
-  const ok = downloadLabelExcel();
-  if (!ok) return;
+  if (state.mode === 'own') {
+    const ok = downloadLabelExcel();
+    if (!ok) return;
+  }
 
   await submitAll();
 }
@@ -2103,7 +2350,7 @@ if (CONFIG.createBatchUrl) {
         showError(el.submitError, err.message || '送出失敗');
       } finally {
         el.btnExportAndSubmit.disabled = false;
-el.btnExportAndSubmit.textContent = '下載標籤 Excel＋確認送出';
+el.btnExportAndSubmit.textContent = '確認送出';  
       }
     }
 
@@ -2219,10 +2466,6 @@ function openConsignorModal(prefill = {}) {
 
   el.consignorIdFrontPreview.textContent = prefill.idFrontUrl ? `已存在：${prefill.idFrontUrl}` : '';
   el.consignorIdBackPreview.textContent = prefill.idBackUrl ? `已存在：${prefill.idBackUrl}` : '';
-  el.consignorContractPhotosPreview.textContent =
-    Array.isArray(prefill.contractPhotoUrls) && prefill.contractPhotoUrls.length
-      ? `已存在：${prefill.contractPhotoUrls.length} 張`
-      : '';
 }
 
 function closeConsignorModal() {
@@ -2247,8 +2490,7 @@ function renderConsignorStatus(consignor) {
     <div class="muted">手機：${escapeHtml(consignor.phone || '')}</div>
     <div class="muted">Email：${escapeHtml(consignor.email || '')}</div>
     <div class="muted">匯款資料：${escapeHtml(consignor.bankCode || '')} ${escapeHtml(consignor.bankName || '')} / ${escapeHtml(consignor.accountLast5 || '')}</div>
-    <div class="muted">身分證圖：${consignor.idFrontUrl ? '正面已上傳' : '正面未上傳'}｜${consignor.idBackUrl ? '反面已上傳' : '反面未上傳'}</div>
-    <div class="muted">合約照片：${Array.isArray(consignor.contractPhotoUrls) && consignor.contractPhotoUrls.length ? `已上傳 ${consignor.contractPhotoUrls.length} 張` : '未上傳'}</div>
+        <div class="muted">身分證圖：${consignor.idFrontUrl ? '正面已上傳' : '正面未上傳'}｜${consignor.idBackUrl ? '反面已上傳' : '反面未上傳'}</div>
   `;
   el.btnEditConsignor.classList.remove('hidden');
 }
@@ -2306,6 +2548,39 @@ if (!resp.ok || !data.ok) {
 }
 
   return data.url || '';
+}
+    function getClipboardImageFile(e) {
+  const items = Array.from(e.clipboardData?.items || []);
+  const imageItem = items.find(item => item.type && item.type.startsWith('image/'));
+  return imageItem ? imageItem.getAsFile() : null;
+}
+
+async function handleLiveScreenshotPaste(e) {
+  if (state.mode !== 'consign') return;
+
+  const file = getClipboardImageFile(e);
+  if (!file) return;
+
+  e.preventDefault();
+  showError(el.formError, '');
+
+  try {
+    el.liveScreenshotPreview.innerHTML = '圖片貼上中，正在上傳...';
+
+    const url = await uploadSingleImage(file);
+    if (!url) throw new Error('圖片上傳後沒有取得網址');
+
+    state.liveScreenshotPastedUrl = url;
+
+    el.liveScreenshotPreview.innerHTML = `
+      <div style="color:#059669;font-weight:800;margin-bottom:6px;">已貼上並上傳直播截圖</div>
+      <img src="${escapeHtml(url)}" style="width:96px;height:96px;object-fit:cover;border-radius:10px;border:1px solid #e5e7eb;">
+    `;
+  } catch (err) {
+    state.liveScreenshotPastedUrl = '';
+    el.liveScreenshotPreview.textContent = '';
+    showError(el.formError, err.message || '直播截圖貼上失敗');
+  }
 }
 
     async function uploadMultipleImages(fileList) {
@@ -2399,8 +2674,9 @@ window.__handleDraftKeydown = (e) => {
 };
 
     el.btnModeOwn.addEventListener('click', () => setMode('own'));
-    el.btnModeConsign.addEventListener('click', () => setMode('consign'));
-    el.btnModePatch.addEventListener('click', () => setMode('patch'));
+el.btnModeConsign.addEventListener('click', () => setMode('consign'));
+el.btnModePatch.addEventListener('click', () => setMode('patch'));
+el.btnOpenConsignLedger.addEventListener('click', openConsignLedgerCard);
 
 el.btnPatchSearch.addEventListener('click', searchProductBySku);
 el.btnPatchSave.addEventListener('click', savePatchLocation);
@@ -2417,6 +2693,18 @@ el.btnAddRow.addEventListener('click', addBlankRow);
 el.btnClearForm.addEventListener('click', () => clearForm(true));
 el.btnClearDrafts.addEventListener('click', clearDrafts);
 el.btnExportAndSubmit.addEventListener('click', exportAndSubmit);
+    if (el.liveScreenshotField) {
+  el.liveScreenshotField.tabIndex = 0;
+  el.liveScreenshotField.addEventListener('click', () => {
+    el.liveScreenshotField.focus();
+  });
+  el.liveScreenshotField.addEventListener('paste', handleLiveScreenshotPaste);
+}
+
+if (el.liveScreenshot) {
+  el.liveScreenshot.addEventListener('paste', handleLiveScreenshotPaste);
+}
+    el.btnDownloadConsignLedger.addEventListener('click', downloadConsignLedger);
 el.draftTableBody.addEventListener('paste', (e) => {
   handleDraftTablePaste(e).catch(err => {
     showError(el.submitError, err.message || '貼上失敗');
