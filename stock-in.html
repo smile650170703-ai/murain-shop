@@ -1792,43 +1792,44 @@ async function handleDraftTablePaste(e) {
   const startKey = String(target.dataset.pasteKey || '');
 
   // ✅ 先處理：在正式入庫表「直播截圖」欄位直接貼圖片
-  if (state.mode === 'consign' && startKey === '直播截圖Url') {
-    const file = getClipboardImageFile(e);
+if (state.mode === 'consign' && startKey === '直播截圖Url') {
+  const file = getClipboardImageFile(e);
+  const pastedUrl = getClipboardImageUrl(e);
 
-    if (file) {
-      e.preventDefault();
+  if (file || pastedUrl) {
+    e.preventDefault();
 
-      const row = state.drafts[startRow];
-      if (!row) return;
+    const row = state.drafts[startRow];
+    if (!row) return;
 
-      try {
-        showError(el.submitError, '');
+    try {
+      showError(el.submitError, '');
 
-        target.disabled = true;
-        target.value = '圖片上傳中...';
+      target.disabled = true;
+      target.value = file ? '圖片上傳中...' : '圖片網址帶入中...';
 
-        const url = await uploadSingleImage(file);
-        if (!url) throw new Error('圖片上傳後沒有取得網址');
+      const url = file ? await uploadSingleImage(file) : pastedUrl;
+      if (!url) throw new Error('沒有取得圖片網址');
 
-        row['直播截圖Url'] = url;
-        row.商品來源 = '寄賣';
-        row.寄賣人 = el.consignor.value.trim();
-        row.consignorRecordId = String(state.selectedConsignorRecordId || '').trim();
-        row.Cost = 0;
-        row.sub_category = '寄賣';
+      row['直播截圖Url'] = url;
+      row.商品來源 = '寄賣';
+      row.寄賣人 = el.consignor.value.trim();
+      row.consignorRecordId = String(state.selectedConsignorRecordId || '').trim();
+      row.Cost = 0;
+      row.sub_category = '寄賣';
 
-        saveDrafts();
-        renderDrafts();
-        return;
+      saveDrafts();
+      renderDrafts();
+      return;
 
-      } catch (err) {
-        target.disabled = false;
-        target.value = '';
-        showError(el.submitError, err.message || '直播截圖貼上失敗');
-        return;
-      }
+    } catch (err) {
+      target.disabled = false;
+      target.value = '';
+      showError(el.submitError, err.message || '直播截圖貼上失敗');
+      return;
     }
   }
+}
 
   // ✅ 原本整列 / 多列文字貼上功能保留
   const pasteText = (e.clipboardData || window.clipboardData).getData('text');
@@ -2846,9 +2847,58 @@ if (!resp.ok || !data.ok) {
   return data.url || '';
 }
     function getClipboardImageFile(e) {
-  const items = Array.from(e.clipboardData?.items || []);
+  const cd = e.clipboardData || window.clipboardData;
+  if (!cd) return null;
+
+  // 1) Windows 截圖 / LINE 圖片 / 瀏覽器複製圖片，通常會在 items
+  const items = Array.from(cd.items || []);
   const imageItem = items.find(item => item.type && item.type.startsWith('image/'));
-  return imageItem ? imageItem.getAsFile() : null;
+  if (imageItem) {
+    const file = imageItem.getAsFile();
+    if (file) return file;
+  }
+
+  // 2) 從檔案總管複製圖片，有時會在 files
+  const files = Array.from(cd.files || []);
+  const imageFile = files.find(file => file.type && file.type.startsWith('image/'));
+  if (imageFile) return imageFile;
+
+  return null;
+}
+
+function getClipboardImageUrl(e) {
+  const cd = e.clipboardData || window.clipboardData;
+  if (!cd) return '';
+
+  // 1) 如果剪貼簿有 HTML，例如從 Word / Excel / 網頁表格複製圖片
+  const html = cd.getData('text/html') || '';
+  if (html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const img = doc.querySelector('img');
+
+    if (img) {
+      const src =
+        img.getAttribute('src') ||
+        img.getAttribute('data-src') ||
+        img.getAttribute('data-original') ||
+        '';
+
+      if (src && /^https?:\/\//i.test(src)) return src;
+    }
+  }
+
+  // 2) 如果剪貼簿純文字本身就是圖片網址
+  const text = (cd.getData('text/plain') || cd.getData('text') || '').trim();
+  if (/^https?:\/\/.+\.(jpg|jpeg|png|webp|gif|heic|svg)(\?.*)?$/i.test(text)) {
+    return text;
+  }
+
+  // 3) Airtable 附件網址常常沒有副檔名，也先接受 v5.airtableusercontent.com
+  if (/^https?:\/\/v5\.airtableusercontent\.com\//i.test(text)) {
+    return text;
+  }
+
+  return '';
 }
 
 async function handleLiveScreenshotPaste(e) {
