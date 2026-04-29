@@ -641,7 +641,7 @@
       <div class="card-header">
         <div>
           <h2 class="card-title">🖨️ 寄賣清冊</h2>
-          <p class="hint">選擇現有寄賣人後，會下載「寄賣人資料在上方、寄賣品在下方」的 Excel 清冊。</p>
+          <p class="hint">選擇現有寄賣人後，會開啟列印版，可直接列印或另存 PDF。</p>
         </div>
       </div>
 
@@ -654,7 +654,7 @@
         </div>
 
         <div class="field span-6" style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;">
-          <button id="btnDownloadConsignLedger" class="btn btn-success" type="button">下載寄賣清冊</button>
+          <button id="btnDownloadConsignLedger" class="btn btn-success" type="button">列印 / 另存 PDF</button>
         </div>
       </div>
 
@@ -1791,7 +1791,7 @@ async function handleDraftTablePaste(e) {
   const startRow = Number(target.dataset.rowIndex || 0);
   const startKey = String(target.dataset.pasteKey || '');
 
-  // ✅ 1. 如果是在「直播截圖」那一格貼圖片：直接上傳圖片，回填網址
+  // ✅ 先處理：在正式入庫表「直播截圖」欄位直接貼圖片
   if (state.mode === 'consign' && startKey === '直播截圖Url') {
     const file = getClipboardImageFile(e);
 
@@ -1803,8 +1803,9 @@ async function handleDraftTablePaste(e) {
 
       try {
         showError(el.submitError, '');
-        target.value = '圖片上傳中...';
+
         target.disabled = true;
+        target.value = '圖片上傳中...';
 
         const url = await uploadSingleImage(file);
         if (!url) throw new Error('圖片上傳後沒有取得網址');
@@ -1818,17 +1819,18 @@ async function handleDraftTablePaste(e) {
 
         saveDrafts();
         renderDrafts();
+        return;
 
       } catch (err) {
-        showError(el.submitError, err.message || '直播截圖貼上失敗');
         target.disabled = false;
+        target.value = '';
+        showError(el.submitError, err.message || '直播截圖貼上失敗');
+        return;
       }
-
-      return;
     }
   }
 
-  // ✅ 2. 原本整列 / 多列文字貼上功能保留
+  // ✅ 原本整列 / 多列文字貼上功能保留
   const pasteText = (e.clipboardData || window.clipboardData).getData('text');
   if (!pasteText) return;
 
@@ -2180,6 +2182,262 @@ function buildConsignLedgerExcelHtml(data) {
   `;
 }
 
+    function buildConsignLedgerPrintHtml(data) {
+  const consignor = data?.consignor || {};
+  const items = Array.isArray(data?.items) ? data.items : [];
+
+  const infoRows = [
+    ['姓名', consignor.name || ''],
+    ['LINE名稱', consignor.lineName || ''],
+    ['身分證證號', consignor.nationalId || ''],
+    ['手機', consignor.phone || ''],
+    ['Email', consignor.email || ''],
+    ['匯款資料', consignor.remittanceInfo || ''],
+    ['匯款帳號', consignor.accountNo || ''],
+    ['匯款代號', consignor.bankCode || ''],
+    ['匯款銀行名稱', consignor.bankName || '']
+  ];
+
+  const infoHtml = infoRows.map(([k, v]) => `
+    <tr>
+      <th>${excelEscape(k)}</th>
+      <td>${excelEscape(v || '-')}</td>
+    </tr>
+  `).join('');
+
+  const itemHtml = items.length
+    ? items.map((item, index) => `
+      <tr>
+        <td class="center">${index + 1}</td>
+        <td class="photo-cell">
+          ${
+            item.livePhotoUrl
+              ? `<img class="ledger-photo" src="${excelEscape(item.livePhotoUrl)}" alt="直播截圖">`
+              : '<span class="muted">無</span>'
+          }
+        </td>
+        <td>${excelEscape(item.name || '')}</td>
+        <td class="center">${Number(item.qty || 0)}</td>
+        <td class="center">${excelEscape(item.consignMethod || '直播競標')}</td>
+        <td class="right">${excelEscape(moneyText(item.auctionStartPrice) || '')}</td>
+        <td class="right">${excelEscape(moneyText(item.bidStep) || '')}</td>
+      </tr>
+    `).join('')
+    : `
+      <tr>
+        <td colspan="7" class="center muted">此寄賣人目前沒有寄賣品資料</td>
+      </tr>
+    `;
+
+  return `
+    <!DOCTYPE html>
+    <html lang="zh-Hant">
+    <head>
+      <meta charset="UTF-8">
+      <title>${excelEscape(consignor.name || '寄賣清冊')}</title>
+      <style>
+        @page {
+          size: A4 landscape;
+          margin: 8mm;
+        }
+
+        * {
+          box-sizing: border-box;
+        }
+
+        body {
+          margin: 0;
+          color: #111827;
+          font-family: "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif;
+          background: #ffffff;
+          font-size: 12px;
+        }
+
+        .page {
+          width: 100%;
+        }
+
+        .title {
+          text-align: center;
+          font-size: 22px;
+          font-weight: 900;
+          margin: 0 0 8px;
+        }
+
+        .sub {
+          text-align: center;
+          color: #6b7280;
+          margin-bottom: 14px;
+        }
+
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          table-layout: fixed;
+        }
+
+        .info-table {
+          margin-bottom: 14px;
+        }
+
+        .info-table th {
+          width: 120px;
+          background: #111827;
+          color: #ffffff;
+          text-align: left;
+          font-weight: 800;
+        }
+
+        th, td {
+          border: 1px solid #111827;
+          padding: 7px;
+          vertical-align: middle;
+          word-break: break-word;
+        }
+
+        .items-table thead th {
+          background: #e8dfcf;
+          color: #111827;
+          font-weight: 900;
+          text-align: center;
+        }
+
+        .center {
+          text-align: center;
+        }
+
+        .right {
+          text-align: right;
+        }
+
+        .muted {
+          color: #6b7280;
+        }
+
+        .photo-cell {
+          width: 130px;
+          text-align: center;
+        }
+
+        .ledger-photo {
+          display: block;
+          width: 110px;
+          height: 110px;
+          object-fit: cover;
+          margin: 0 auto;
+          border: 1px solid #d1d5db;
+          background: #f9fafb;
+        }
+
+        .col-no { width: 52px; }
+        .col-photo { width: 135px; }
+        .col-name { width: 260px; }
+        .col-qty { width: 64px; }
+        .col-method { width: 95px; }
+        .col-price { width: 100px; }
+        .col-step { width: 100px; }
+
+        @media print {
+          body {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="page">
+        <h1 class="title">寄賣清冊</h1>
+        <div class="sub">產生日期：${excelEscape(todayFileDate())}</div>
+
+        <table class="info-table">
+          <tbody>
+            ${infoHtml}
+          </tbody>
+        </table>
+
+        <table class="items-table">
+          <thead>
+            <tr>
+              <th class="col-no">序號</th>
+              <th class="col-photo">直播截圖</th>
+              <th class="col-name">商品名稱</th>
+              <th class="col-qty">數量</th>
+              <th class="col-method">寄賣方式</th>
+              <th class="col-price">競標底價</th>
+              <th class="col-step">每標加價</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemHtml}
+          </tbody>
+        </table>
+      </div>
+
+      <script>
+        function waitImagesThenPrint() {
+          const imgs = Array.from(document.images || []);
+          let pending = imgs.length;
+          let printed = false;
+
+          function doPrint() {
+            if (printed) return;
+            printed = true;
+            setTimeout(function() {
+              window.print();
+            }, 500);
+          }
+
+          if (!pending) {
+            doPrint();
+            return;
+          }
+
+          imgs.forEach(function(img) {
+            if (img.complete) {
+              pending -= 1;
+              if (pending <= 0) doPrint();
+              return;
+            }
+
+            img.onload = function() {
+              pending -= 1;
+              if (pending <= 0) doPrint();
+            };
+
+            img.onerror = function() {
+              pending -= 1;
+              if (pending <= 0) doPrint();
+            };
+          });
+
+          setTimeout(doPrint, 5000);
+        }
+
+        window.addEventListener('load', waitImagesThenPrint);
+      <\/script>
+    </body>
+    </html>
+  `;
+}
+
+function openConsignLedgerPdfWindow(data, fileBaseName) {
+  const html = buildConsignLedgerPrintHtml(data);
+  const w = window.open('', '_blank');
+
+  if (!w) {
+    throw new Error('瀏覽器阻擋彈出視窗，請允許此網站開啟新視窗後再試一次');
+  }
+
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+
+  try {
+    w.document.title = fileBaseName || '寄賣清冊';
+  } catch {}
+}
+
 async function loadConsignLedgerConsignors() {
   showError(el.consignLedgerError, '');
 
@@ -2230,7 +2488,7 @@ async function downloadConsignLedger() {
   }
 
   el.btnDownloadConsignLedger.disabled = true;
-  el.btnDownloadConsignLedger.textContent = '下載中...';
+  el.btnDownloadConsignLedger.textContent = '產生PDF中...';
 
   try {
     const apiUrl =
@@ -2244,21 +2502,20 @@ async function downloadConsignLedger() {
     }
 
     const consignor = data.consignor || {};
-    const fileName = [
-      safeFilePart(consignor.name || '未命名寄賣人'),
-      safeFilePart(consignor.lineName || ''),
-      todayFileDate(),
-      '寄賣清冊'
-    ].filter(Boolean).join('_') + '.xls';
+const fileBaseName = [
+  safeFilePart(consignor.name || '未命名寄賣人'),
+  safeFilePart(consignor.lineName || ''),
+  todayFileDate(),
+  '寄賣清冊'
+].filter(Boolean).join('_');
 
-    const html = buildConsignLedgerExcelHtml(data);
-    downloadExcelFile(fileName, html);
+openConsignLedgerPdfWindow(data, fileBaseName);
 
   } catch (err) {
     showError(el.consignLedgerError, err.message || '下載寄賣清冊失敗');
   } finally {
     el.btnDownloadConsignLedger.disabled = false;
-    el.btnDownloadConsignLedger.textContent = '下載寄賣清冊';
+    el.btnDownloadConsignLedger.textContent = '列印 / 另存 PDF';
   }
 }
 function downloadLabelExcel() {
