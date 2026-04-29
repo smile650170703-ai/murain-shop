@@ -121,6 +121,60 @@
         else window.location.href = "https://line.me/";
       }
 
+      async function ensureXuyuanOfficialFriendBeforeBind() {
+  if (!window.liff) {
+    alert("LINE 功能尚未載入，請重新開啟此頁。");
+    return false;
+  }
+
+  if (!window.liff.isInClient || !window.liff.isInClient()) {
+    alert("請從 LINE 內開啟此綁定頁，並加入栩願官方 LINE 後再完成綁定。");
+    return false;
+  }
+
+  if (
+    typeof window.liff.getFriendship !== "function" ||
+    typeof window.liff.requestFriendship !== "function"
+  ) {
+    alert("目前 LINE 版本不支援好友確認，請先加入栩願官方 LINE 後再回來綁定。");
+    return false;
+  }
+
+  try {
+    const before = await window.liff.getFriendship();
+
+    if (before && before.friendFlag === true) {
+      return true;
+    }
+
+    await window.liff.requestFriendship();
+
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    const after = await window.liff.getFriendship();
+
+    if (after && after.friendFlag === true) {
+      return true;
+    }
+
+    alert("請先加入栩願官方 LINE，才能完成會員綁定。");
+    return false;
+
+  } catch (e) {
+    console.warn("ensureXuyuanOfficialFriendBeforeBind failed:", e);
+
+    alert(
+      "請先加入栩願官方 LINE，才能完成會員綁定。\n\n" +
+      "如果沒有跳出加好友視窗，請確認：\n" +
+      "1. 此頁是從 LINE 內開啟\n" +
+      "2. LIFF 設定為 Full\n" +
+      "3. LINE Login Channel 已連結栩願官方帳號"
+    );
+
+    return false;
+  }
+}
+
       // ===== 狀態 =====
       const [step, setStep] = useState(0); 
       const [isLoading, setIsLoading] = useState(false);
@@ -247,35 +301,55 @@ setFormData((prev) => ({ ...prev, email: autoEmail }));
       function handleBack() { if (step > 0) setStep((p) => p - 1); }
 
       async function handleBind() {
-        if (!formData.name || !formData.phone) return alert("請完整填寫資料");
-        setIsLoading(true);
-        setStatusMsg("資料處理中...");
-        
-        try {
-          const body = {
-            line_user_id: lineProfile?.userId,
-            display_name: lineProfile?.displayName || "",
-            picture_url: lineProfile?.pictureUrl || "",
-            phone: formData.phone,
-            email: formData.email,
-            name: formData.name
-          };
-          
-          const r = await fetch(API_BASE + "/line/bind-member", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body)
-          });
-          const j = await r.json().catch(()=>({}));
-          if(!r.ok || !j.ok) throw new Error(j.error);
+  if (!formData.name || !formData.phone) {
+    return alert("請完整填寫資料");
+  }
 
-          setStep(3);
-          generateFortune();
-          // 成功後倒數回原本結單頁；沒有 return_url 才走原本關閉邏輯
-          setTimeout(goAfterBind, 1500);
-        } catch (e) {
-          alert("綁定失敗，請稍後再試");
-        } finally { setIsLoading(false); }
-      }
+  setIsLoading(true);
+  setStatusMsg("確認官方 LINE 好友狀態...");
+
+  try {
+    const okFriend = await ensureXuyuanOfficialFriendBeforeBind();
+
+    if (!okFriend) {
+      return;
+    }
+
+    setStatusMsg("資料處理中...");
+
+    const body = {
+      line_user_id: lineProfile?.userId,
+      display_name: lineProfile?.displayName || "",
+      picture_url: lineProfile?.pictureUrl || "",
+      phone: formData.phone,
+      email: formData.email,
+      name: formData.name
+    };
+    
+    const r = await fetch(API_BASE + "/line/bind-member", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.error || "bind_failed");
+    }
+
+    setStep(3);
+    generateFortune();
+
+    setTimeout(goAfterBind, 1500);
+
+  } catch (e) {
+    console.error("bind failed:", e);
+    alert("綁定失敗，請稍後再試");
+  } finally {
+    setIsLoading(false);
+  }
+}
 
       function handleClose() {
         goAfterBind();
