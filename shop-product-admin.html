@@ -448,8 +448,9 @@
 </div>
 
 <div class="field w6">
-  <label for="name">官網商品名稱</label>
-  <input id="name" type="text" placeholder="官網正式顯示名稱">
+  <label for="name">商品名稱／簡稱</label>
+  <input id="name" class="readonly-lock" type="text" readonly placeholder="請先搜尋並帶入商品">
+  <div class="hint">商品名稱沿用入庫資料，避免影響購物車與訂單名稱。</div>
 </div>
 
 <div class="field w3">
@@ -459,12 +460,14 @@
 
 <div class="field w3">
   <label for="catCode">大分類</label>
-  <select id="catCode"></select>
+  <select id="catCode" class="readonly-lock" disabled></select>
+  <div class="hint">大分類沿用入庫資料，不可於上架頁修改。</div>
 </div>
 
 <div class="field w3">
   <label for="subCode">子分類</label>
-  <select id="subCode"></select>
+  <select id="subCode" class="readonly-lock" disabled></select>
+  <div class="hint">子分類沿用入庫資料，不可於上架頁修改。</div>
 </div>
 
 <div class="field w4">
@@ -679,7 +682,7 @@ $('material').value = item.material || '';
   renderImagePreviews();
 
   $('btnPublish').disabled = !state.draftRecordId;
-  setStatus('saveMsg', '已帶入現有商品，現在可補圖片、短說明、完整介紹或直接存草稿。');
+  setStatus('saveMsg', '已帶入現有商品。條碼、商品名稱、售價、庫存、大分類、子分類皆鎖定；只能補官網介紹、原價、規格與圖片。');
 }
     async function jfetch(url, options = {}){
       const res = await fetch(url, {
@@ -838,42 +841,32 @@ $('material').value = item.material || '';
     }
 
 function buildDraftPayload(){
-  const categoryCode = $('catCode').value || '';
-  const subCode = $('subCode').value || '';
-
   const cover = state.uploadedImages[0] || null;
   const gallery = state.uploadedImages.map(x => x.image_id).filter(Boolean);
 
   return {
     op_key: state.opKey,
-    record_id: state.draftRecordId || '',
-    sku: $('sku').value.trim(),
-    name: $('name').value.trim(),
+
+    // ✅ 只允許更新「已帶入的那筆 Products record」
+    record_id: state.selectedProductRecordId || state.draftRecordId || '',
+
+    // ✅ 上架可編輯欄位
     ai_desc: $('aiDesc').value.trim(),
     description: $('desc').value.trim(),
+    list_price: Number($('listPrice').value || 0) || 0,
 
     color: $('color').value.trim(),
     size: $('size').value.trim(),
     material: $('material').value.trim(),
 
-    price: Number($('price').value || 0) || 0,
-    list_price: Number($('listPrice').value || 0) || 0,
-    stock_qty: Number($('stockQty').value || 0) || 0,
-    source: $('source').value || '自有',
-    category_code: categoryCode,
-    subcategory_code: subCode,
     cover_image_id: cover?.image_id || '',
     gallery_image_ids: gallery
   };
 }
 
-    function validateDraftPayload(payload){
-  if (!payload.sku) return 'SKU 不可空白';
-  if (!payload.name) return '請輸入官網商品名稱';
-  if (!payload.price) return '售價不可空白';
-  if (!payload.category_code) return '請選擇大分類';
-  if (!payload.subcategory_code) return '請選擇子分類';
-  if (!payload.cover_image_id) return '請先上傳封面圖';
+function validateDraftPayload(payload){
+  if (!payload.record_id) return '請先搜尋並帶入一個已入庫商品';
+  if (!payload.cover_image_id) return '請先上傳封面圖，或帶入已有封面圖的商品';
   return '';
 }
 
@@ -919,10 +912,9 @@ async function publishNow(){
     const data = await jfetch(ROUTES.publish, {
       method: 'POST',
       body: JSON.stringify({
-        op_key: state.opKey,
-        record_id: state.draftRecordId,
-        sku: $('sku').value.trim()
-      })
+  op_key: state.opKey,
+  record_id: state.draftRecordId
+})
     });
 
     setStatus(
