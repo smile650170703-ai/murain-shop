@@ -1620,8 +1620,8 @@ function getDraftColumns(mode = state.mode) {
       { key: 'SKU', label: 'SKU', type: 'text', readonly: true },
       { key: '寄賣人', label: '寄賣人', type: 'text', readonly: true },
       { key: '庫存位置', label: '庫存位置', type: 'text', placeholder: '可不填', paste: true },
-      { key: '直播截圖Url', label: '直播截圖', type: 'text', placeholder: '可貼直播截圖網址', paste: true },
-       { key: 'Name', label: '商品名稱', type: 'text', placeholder: '輸入品牌+商品名稱', paste: true },
+{ key: '直播截圖Url', label: '直播截圖', type: 'text', placeholder: '可貼圖片或圖片網址', paste: true },
+      { key: 'Name', label: '商品名稱', type: 'text', placeholder: '輸入品牌+商品名稱', paste: true },
        { key: 'StockQty', label: '數量', type: 'number', paste: true },
       { key: '起標價格', label: '起標價格', type: 'number', paste: true },
       { key: '一標多少', label: '一標多少', type: 'number', paste: true },
@@ -1788,13 +1788,52 @@ async function handleDraftTablePaste(e) {
   const target = e.target;
   if (!target || !target.dataset || !target.dataset.pasteKey) return;
 
+  const startRow = Number(target.dataset.rowIndex || 0);
+  const startKey = String(target.dataset.pasteKey || '');
+
+  // ✅ 1. 如果是在「直播截圖」那一格貼圖片：直接上傳圖片，回填網址
+  if (state.mode === 'consign' && startKey === '直播截圖Url') {
+    const file = getClipboardImageFile(e);
+
+    if (file) {
+      e.preventDefault();
+
+      const row = state.drafts[startRow];
+      if (!row) return;
+
+      try {
+        showError(el.submitError, '');
+        target.value = '圖片上傳中...';
+        target.disabled = true;
+
+        const url = await uploadSingleImage(file);
+        if (!url) throw new Error('圖片上傳後沒有取得網址');
+
+        row['直播截圖Url'] = url;
+        row.商品來源 = '寄賣';
+        row.寄賣人 = el.consignor.value.trim();
+        row.consignorRecordId = String(state.selectedConsignorRecordId || '').trim();
+        row.Cost = 0;
+        row.sub_category = '寄賣';
+
+        saveDrafts();
+        renderDrafts();
+
+      } catch (err) {
+        showError(el.submitError, err.message || '直播截圖貼上失敗');
+        target.disabled = false;
+      }
+
+      return;
+    }
+  }
+
+  // ✅ 2. 原本整列 / 多列文字貼上功能保留
   const pasteText = (e.clipboardData || window.clipboardData).getData('text');
   if (!pasteText) return;
 
   e.preventDefault();
 
-  const startRow = Number(target.dataset.rowIndex || 0);
-  const startKey = String(target.dataset.pasteKey || '');
   const pasteKeys = getPasteKeys(state.mode);
   const startCol = pasteKeys.indexOf(startKey);
 
