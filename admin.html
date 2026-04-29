@@ -4379,7 +4379,9 @@ if (ciCompleted) {
   return 0;
 }
 async function sendCashInstLineNotify(phase, paidParts, totalParts) {
-  if (!currentRecord) return { ok:false, line_sent:false };
+  if (!currentRecord) {
+    throw new Error('missing_current_record');
+  }
 
   const f = currentRecord.fields || currentRecord || {};
   const orderId = String(f.order_id || '').trim();
@@ -4401,8 +4403,16 @@ async function sendCashInstLineNotify(phase, paidParts, totalParts) {
   });
 
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.ok) {
-    throw new Error(j.error || ('HTTP ' + r.status));
+
+  if (!r.ok || !j.ok || j.line_sent !== true) {
+    const reason =
+      j.message ||
+      j.reason ||
+      j.error ||
+      j.body ||
+      ('HTTP ' + r.status);
+
+    throw new Error(reason);
   }
 
   return j;
