@@ -93,8 +93,9 @@
     function App() {
       // ===== 設定 =====
       const LIFF_ID = "2008430261-kOeNLR9x";
-      const API_BASE = "https://api.murain.tw";
-      const GEMINI_API_KEY = ""; 
+const API_BASE = "https://api.murain.tw";
+const OFFICIAL_LINE_URL = "https://line.me/R/ti/p/@cc0857";
+const GEMINI_API_KEY = "";
 
             function getReturnUrl() {
         try {
@@ -121,58 +122,69 @@
         else window.location.href = "https://line.me/";
       }
 
-      async function ensureXuyuanOfficialFriendBeforeBind() {
+     function openOfficialLineAddPage() {
+  try {
+    window.location.href = OFFICIAL_LINE_URL;
+  } catch (e) {
+    window.open(OFFICIAL_LINE_URL, "_blank");
+  }
+}
+
+async function ensureXuyuanOfficialFriendBeforeBind() {
   if (!window.liff) {
     alert("LINE 功能尚未載入，請重新開啟此頁。");
     return false;
   }
 
   if (!window.liff.isInClient || !window.liff.isInClient()) {
-    alert("請從 LINE 內開啟此綁定頁，並加入栩願官方 LINE 後再完成綁定。");
-    return false;
-  }
+    const goAdd = window.confirm(
+      "請先加入栩願官方 LINE，才能完成會員綁定。\n\n" +
+      "點選「確定」前往加入官方 LINE，加入後請回來重新按一次綁定。"
+    );
 
-  if (
-    typeof window.liff.getFriendship !== "function" ||
-    typeof window.liff.requestFriendship !== "function"
-  ) {
-    alert("目前 LINE 版本不支援好友確認，請先加入栩願官方 LINE 後再回來綁定。");
+    if (goAdd) openOfficialLineAddPage();
     return false;
   }
 
   try {
-    const before = await window.liff.getFriendship();
+    if (typeof window.liff.getFriendship === "function") {
+      const before = await window.liff.getFriendship();
 
-    if (before && before.friendFlag === true) {
-      return true;
+      if (before && before.friendFlag === true) {
+        return true;
+      }
     }
-
-    await window.liff.requestFriendship();
-
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    const after = await window.liff.getFriendship();
-
-    if (after && after.friendFlag === true) {
-      return true;
-    }
-
-    alert("請先加入栩願官方 LINE，才能完成會員綁定。");
-    return false;
-
   } catch (e) {
-    console.warn("ensureXuyuanOfficialFriendBeforeBind failed:", e);
-
-    alert(
-      "請先加入栩願官方 LINE，才能完成會員綁定。\n\n" +
-      "如果沒有跳出加好友視窗，請確認：\n" +
-      "1. 此頁是從 LINE 內開啟\n" +
-      "2. LIFF 設定為 Full\n" +
-      "3. LINE Login Channel 已連結栩願官方帳號"
-    );
-
-    return false;
+    console.warn("getFriendship before failed:", e);
   }
+
+  try {
+    if (typeof window.liff.requestFriendship === "function") {
+      await window.liff.requestFriendship();
+
+      await new Promise(resolve => setTimeout(resolve, 900));
+
+      if (typeof window.liff.getFriendship === "function") {
+        const after = await window.liff.getFriendship();
+
+        if (after && after.friendFlag === true) {
+          return true;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("requestFriendship failed:", e);
+  }
+
+  const goAdd = window.confirm(
+    "請先加入栩願官方 LINE，才能完成會員綁定。\n\n" +
+    "如果沒有自動跳出加好友視窗，請點選「確定」前往加入官方 LINE。\n\n" +
+    "加入後請回到此頁，再按一次完成綁定。"
+  );
+
+  if (goAdd) openOfficialLineAddPage();
+
+  return false;
 }
 
       // ===== 狀態 =====
