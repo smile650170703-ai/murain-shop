@@ -2604,76 +2604,162 @@ async function exportAndSubmit() {
   await submitAll();
 }
 
-    async function submitAll() {
-      showError(el.submitError, '');
+const STOCK_IN_BATCH_SIZE = 6;
 
-      if (!state.drafts.length) {
-        showError(el.submitError, '目前沒有可送出的資料');
-        return;
-      }
+function chunkArray(list, size) {
+  const arr = Array.isArray(list) ? list : [];
+  const n = Math.max(1, Number(size || 1));
+  const out = [];
 
-      for (const row of state.drafts) {
-        const err = validateItem(row);
-        if (err) {
-          showError(el.submitError, `送出前請先修正：${row.SKU || row.Name || '未命名品項'}｜${err}`);
-          return;
-        }
-        if (isDuplicateSkuInDrafts(row.SKU, row.id)) {
-          showError(el.submitError, `本次清單內 SKU 重複：${row.SKU}`);
-          return;
-        }
-      }
-
-      const ok = window.confirm(`確定要送出 ${state.drafts.length} 筆入庫資料嗎？`);
-      if (!ok) return;
-
-      el.btnExportAndSubmit.disabled = true;
-el.btnExportAndSubmit.textContent = '送出中...';
-
-      try {
-if (CONFIG.createBatchUrl) {
-  const resp = await fetch(CONFIG.createBatchUrl, {
-    method: 'POST',
-    headers: CONFIG.requestHeaders,
-    body: JSON.stringify({
-      op_key: CONFIG.opKey,
-      items: state.drafts.map(buildPayload)
-    })
-  });
-
-  const data = await resp.json().catch(() => ({}));
-  if (!resp.ok || data.ok === false) {
-    throw new Error(
-      data.detail ||
-      data.message ||
-      data.error ||
-      `批次送出失敗：HTTP ${resp.status}`
-    );
+  for (let i = 0; i < arr.length; i += n) {
+    out.push(arr.slice(i, i + n));
   }
-} else if (CONFIG.createItemUrl) {
-          for (const row of state.drafts) {
-            const resp = await fetch(CONFIG.createItemUrl, {
-              method: 'POST',
-              headers: CONFIG.requestHeaders,
-              body: JSON.stringify(buildPayload(row))
-            });
-            if (!resp.ok) throw new Error(`單筆送出失敗：${row.SKU}｜HTTP ${resp.status}`);
-          }
-        } else {
-          throw new Error('尚未設定 createBatchUrl 或 createItemUrl');
-        }
 
-        alert(`已送出 ${state.drafts.length} 筆資料`);
-        state.drafts = [];
-        saveDrafts();
-        renderDrafts();
-      } catch (err) {
-        showError(el.submitError, err.message || '送出失敗');
-      } finally {
-        el.btnExportAndSubmit.disabled = false;
-el.btnExportAndSubmit.textContent = '確認送出';  
+  return out;
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function postStockInBatch(rows, batchNo, batchTotal) {
+  if (CONFIG.createBatchUrl) {
+    const resp = await fetch(CONFIG.createBatchUrl, {
+      method: 'POST',
+      headers: CONFIG.requestHeaders,
+      body: JSON.stringify({
+        op_key: CONFIG.opKey,
+        items: rows.map(buildPayload),
+
+        // 這三個只是給後端/Log 看，不影響原本欄位
+        batch_no: batchNo,
+        batch_total: batchTotal,
+        batch_size: rows.length
+      })
+    });
+
+    const data = await resp.json().catch(() => ({}));
+
+    if (!resp.ok || data.ok === false) {
+      throw new Error(
+        data.detail ||
+        data.message ||
+        data.error ||
+        `第 ${batchNo}/${batchTotal} 批送出失敗：HTTP ${resp.status}`
+      );
+    }
+
+    return data;
+  }
+
+  if (CONFIG.createItemUrl) {
+    for (const row of rows) {
+      const resp = await fetch(CONFIG.createItemUrl, {
+        method: 'POST',
+        headers: CONFIG.requestHeaders,
+        body: JSON.stringify(buildPayload(row))
+      });
+
+      if (!resp.ok) {
+        throw new Error(`單筆送出失敗：${row.SKU}｜HTTP ${resp.status}`);
       }
     }
+
+    return { ok: true };
+  }
+
+  throw new Error('尚未設定 createBatchUrl 或 createItemUrl');
+}
+
+async function submitAll() {
+  showError(el.submitError, '');
+
+  if (!state.drafts.length) {
+    showError(el.submitError, '目前沒有可送出的資料');
+    return;
+  }
+
+  for (const row of state.drafts) {
+    const err = validateItem(row);
+    if (err) {
+      showError(el.submitError, `送出前請先修正：${row.SKU || row.Name || '未命名品項'}｜${err}`);
+      return;
+    }
+
+    if (isDuplicateSkuInDrafts(row.SKU, row.id)) {
+      showError(el.submitError, `本次清單內 SKU 重複：${row.SKU}`);
+      return;
+    }
+  }
+
+  const total = state.drafts.length;
+  const batches = chunkArray(state.drafts, STOCK_IN_BATCH_SIZE);
+
+  const ok = window.confirm(
+    `確定要送出 ${total} 筆入庫資料嗎？\n\n` +
+    `系統會自動分成 ${batches.length} 批送出，客人的寄賣總單仍然是一張完整總單。`
+  );
+
+  if (!ok) return;
+
+  el.btnExportAndSubmit.disabled = true;
+  el.btnExportAndSubmit.textContent = '送出中...';
+
+  const submittedIds = [];
+
+  try {
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+      const batchNo = i + 1;
+
+      el.btnExportAndSubmit.textContent = `送出中 ${batchNo}/${batches.length}`;
+      el.statusText.textContent = `正在送出第 ${batchNo}/${batches.length} 批，本批 ${batch.length} 筆，總共 ${total} 筆。`;
+
+      await postStockInBatch(batch, batchNo, batches.length);
+
+      submittedIds.push(...batch.map(row => row.id));
+
+      // 避免連續太快打 API
+      if (batchNo < batches.length) {
+        await wait(250);
+      }
+    }
+
+    alert(`已送出 ${total} 筆資料`);
+
+    state.drafts = [];
+    saveDrafts();
+    renderDrafts();
+    showError(el.submitError, '');
+
+  } catch (err) {
+    const successCount = submittedIds.length;
+
+    if (successCount > 0) {
+      state.drafts = state.drafts.filter(row => !submittedIds.includes(row.id));
+      saveDrafts();
+      renderDrafts();
+    }
+
+    const remainCount = state.drafts.length;
+
+    showError(
+      el.submitError,
+      `送出中斷：已成功 ${successCount} 筆，尚未送出 ${remainCount} 筆。` +
+      `請先確認 Airtable 後，再按一次確認送出剩下的資料。原因：${err.message || '送出失敗'}`
+    );
+
+  } finally {
+    el.btnExportAndSubmit.disabled = false;
+    el.btnExportAndSubmit.textContent = '確認送出';
+
+    if (state.drafts.length) {
+      el.statusText.textContent = `尚有 ${state.drafts.length} 筆未送出，可再次按確認送出。`;
+    } else {
+      el.statusText.textContent = '請先選模式，再按「新增一列」開始批次輸入。';
+    }
+  }
+}
 
 async function searchMember() {
   const keyword = el.memberKeyword.value.trim();
