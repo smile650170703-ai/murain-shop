@@ -4671,14 +4671,17 @@ async function confirmPay(mode){
       const fx = x.fields || x || {};
       return fx.order_id && String(fx.order_id) === String(keepKey);
     });
-    if (found){
+       if (found){
       renderDetail(found);
       const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
       if (row) row.classList.add('active');
     }
+
+    return true;
   }catch(e){
     console.error(e);
     msgEl.textContent = '❌ 付款狀態更新失敗：' + (e.message || e);
+    return false;
   }
 }
  // ★ 新增：已收訂金＋發保留通知（自動勾勾）
@@ -5640,7 +5643,7 @@ function proxyButton(topId, originalId){
 
   proxyButton('btnSaveAndShipTop',   'btnSaveAndShip');
 
-// ✅ 上方唯一「收款/審核通過+發LINE」：現金分期改走專用流程
+// ✅ 上方唯一「收款/審核通過+發LINE」：現金分期也統一走後端完整推進
 const btnConfirmPayOkTopBind = $('#btnConfirmPayOkTop');
 if (btnConfirmPayOkTopBind) {
   btnConfirmPayOkTopBind.addEventListener('click', async () => {
@@ -5651,14 +5654,14 @@ if (btnConfirmPayOkTopBind) {
 
     const f = currentRecord.fields || currentRecord || {};
 
-if (isDepositForfeitOrder(f)) {
-  alert('這筆訂單已棄標，訂金已沒收，不能再收款、出貨、發尾款單或重新結帳。');
-  return;
-}
+    if (isDepositForfeitOrder(f)) {
+      alert('這筆訂單已棄標，訂金已沒收，不能再收款、出貨、發尾款單或重新結帳。');
+      return;
+    }
 
-const pm = String(f.payment_method || '').trim().toLowerCase();
-const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
-const payStatus = String(f.pay_status || '').trim().toLowerCase();
+    const pm = String(f.payment_method || '').trim().toLowerCase();
+    const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+    const payStatus = String(f.pay_status || '').trim().toLowerCase();
 
     const isCashInstOrder =
       pm === 'cash_inst_2' ||
@@ -5687,7 +5690,8 @@ const payStatus = String(f.pay_status || '').trim().toLowerCase();
 
     // 第一次：收定金、啟動現金分期，然後發「定金已收」專用卡
     if (cashStatus === 'pending_deposit') {
-      await confirmPay('ok');
+      const ok = await confirmPay('ok');
+      if (!ok) return;
 
       try {
         await sendCashInstLineNotify('deposit', 0, totalParts);
@@ -5698,12 +5702,31 @@ const payStatus = String(f.pay_status || '').trim().toLowerCase();
       return;
     }
 
-    // 已進入分期：推進下一期，markCashInstProgress 會儲存並發專用卡
+    // ✅ 已進入分期：不要再走 markCashInstProgress 前端自記錄
+    // 改走 /admin/order/confirm-pay，讓後端 advanceCashInstAfterPaid 完整推進：
+    // cash_inst_paid_count / remaining / next_due_date / due_dates_json
     const currentPaid =
-      Number(f.cash_inst_paid_count || f.cash_inst_paid_parts || 0) || 0;
+      Math.max(
+        Number(f.cash_inst_paid_count || 0) || 0,
+        Number(f.cash_inst_paid_parts || 0) || 0
+      );
 
     const nextPart = Math.min(currentPaid + 1, totalParts);
-    await markCashInstProgress(nextPart);
+    const isAllDone = nextPart >= totalParts;
+
+    const ok = await confirmPay('ok');
+    if (!ok) return;
+
+    try {
+      await sendCashInstLineNotify(
+        isAllDone ? 'all_done' : `part_${nextPart}`,
+        nextPart,
+        totalParts
+      );
+    } catch (e) {
+      console.error(e);
+      alert('分期狀態已更新，但現金分期 LINE 通知發送失敗：' + (e.message || e));
+    }
   });
 }
 
