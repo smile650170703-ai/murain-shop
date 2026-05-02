@@ -51,12 +51,6 @@
   .badge.yellow{border-color:#eab308;color:#facc15;background:rgba(234,179,8,.15)}
   .badge.red{border-color:#f97373;color:#fecaca;background:rgba(220,38,38,.2)}
   .badge.blue{border-color:#38bdf8;color:#bae6fd;background:rgba(56,189,248,.2)}
- .badge.notify-sent{
-  border-color:#fca5a5;
-  color:#fecaca;
-  background:rgba(239,68,68,.18);
-  font-weight:800;
-}
   .muted{font-size:13px;color:#94a3b8}
  .credit-red { color:#ff4d4f; font-weight:800; }
 
@@ -708,28 +702,6 @@ function setupAdminPageChrome(){
 if (vendorMonthBox && ADMIN_PAGE_FILE !== 'admin-pickup.html') {
   vendorMonthBox.classList.add('hidden');
 }
- // ✅ 寄賣 / 一時貿易頁：隱藏一般訂單用的上方操作按鈕
-// 不刪 HTML，只在這兩頁隱藏，不影響其他後台頁
-if (ADMIN_PAGE_FILE === 'admin-consign.html' || ADMIN_PAGE_FILE === 'admin-trade.html') {
-  [
-    'btnSaveAndShipTop',
-    'btnConfirmPayOkTop',
-    'btnMarkZcFailTop',
-    'btnDepositPayAndNoticeTop',
-    'btnCashInstPart1Top',
-    'btnCashInstPart2Top',
-    'btnCashInstPart3Top',
-    'btnCashInstAllDoneTop',
-    'btnMeetupCashDoneTop',
-    'btnSendTailLinkTop',
-    'btnSaveDetailOnlyTop',
-    'btnCartRemindTop',
-    'btnCancelOrderTop'
-  ].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.classList.add('hidden');
-  });
-}
 }
 
 
@@ -753,11 +725,7 @@ let currentConsignAccountingBucket = '';
 let currentPanelMode = 'orders';      // orders / consign
 let currentConsignRows = [];
 let currentConsignRecord = null;
-
-// ✅ 寄賣批次勾選用
-let CONSIGN_SELECTED = new Set();
-
-let currentCartRows = [];
+ let currentCartRows = [];
 let currentCartRecord = null;
 
  function getBiMonthLabel(dateLike){
@@ -932,35 +900,10 @@ function renderConsignAccountingDetail(bucket, rows){
   detailEl.innerHTML = `
     <div class="section-title">${bucket} 一時貿易資料</div>
     <div class="tag-small">共 ${rows.length} 筆；列印時會一筆一頁，並附身分證正反面。</div>
-    <div class="top-order-actions mt-3">
-  <button class="btn-primary" id="btnPrintConsignAccountingBucket" type="button">🖨️ 列印本區資料</button>
-  <button class="btn-secondary" id="btnCopyConsignAccountingBucket" type="button">📋 複製本區一時貿易資料</button>
-</div>
+    <button class="btn-primary" id="btnPrintConsignAccountingBucket" type="button">🖨️ 列印本區資料</button>
     <div style="margin-top:12px;max-height:70vh;overflow:auto;">${previewHtml}</div>
   `;
-$('#btnCopyConsignAccountingBucket')?.addEventListener('click', async () => {
-  const txt = rows.map((item, idx) => {
-    const acc = item.accounting || {};
-    const methodText = displayConsignMethod(item.method);
-    const actualAmount = String(item.method || '').trim() === 'bank_transfer'
-      ? Number(item.bankAmount || 0)
-      : Number(item.creditAmount || 0);
 
-    return [
-      `【第 ${idx + 1} 筆｜${bucket}】`,
-      `姓名：${acc.name || ''}`,
-      `身分證字號：${acc.nationalId || ''}`,
-      `訂單編號：${item.orderId || ''}`,
-      `商品名稱：${item.name || ''}`,
-      `售出金額：${Number(item.saleAmount || 0).toLocaleString('zh-TW')}`,
-      `結算方式：${methodText}`,
-      `實際給付金額：${Number(actualAmount || 0).toLocaleString('zh-TW')}`
-    ].join('\n');
-  }).join('\n\n--------------------\n\n');
-
-  await navigator.clipboard.writeText(txt);
-  alert(`已複製 ${rows.length} 筆一時貿易資料`);
-});
   $('#btnPrintConsignAccountingBucket')?.addEventListener('click', () => {
     const printPages = rows.map((item, idx) => {
       const acc = item.accounting || {};
@@ -2618,26 +2561,15 @@ async function loadOrders(filter='all', extra = {}){
   const st = String(row.status || '').trim().toLowerCase();
   return st !== 'settled';
 });
-
-// ✅ 進入寄賣清單後，自動通知尚未通知、尚未選擇的寄賣人
-const autoNotifyResult = await autoNotifyConsignChoiceCards(currentConsignRows);
-
-renderConsignList();
+    renderConsignList();
 updateCurrentSubTabCount(currentConsignRows.length);
 setTopFilterActive('consign_settlement');
 
-if (msgEl) {
-  const baseText = currentConsignRows.length
-    ? `僅顯示寄賣待處理資料，共 ${currentConsignRows.length} 筆。`
-    : '目前沒有待處理的寄賣售出資料。';
-
-  const autoText =
-    autoNotifyResult.sent || autoNotifyResult.skipped || autoNotifyResult.failed
-      ? ` 自動通知：成功 ${autoNotifyResult.sent} 筆，略過 ${autoNotifyResult.skipped} 筆，失敗 ${autoNotifyResult.failed} 筆。`
-      : '';
-
-  msgEl.textContent = baseText + autoText;
-}
+    if (msgEl) {
+      msgEl.textContent = currentConsignRows.length
+        ? `僅顯示寄賣待處理資料，共 ${currentConsignRows.length} 筆。`
+        : '目前沒有待處理的寄賣售出資料。';
+    }
   }catch(e){
     console.error(e);
     listEl.innerHTML = '<div class="error">寄賣資料載入失敗：' + (e.message || e) + '</div>';
@@ -2671,396 +2603,53 @@ function displayConsignMethod(v){
     default: return v ? v : '未選擇';
   }
 }
-function isPendingBankConsign(row = {}) {
-  const method = String(row.method || '').trim().toLowerCase();
-  const status = String(row.status || '').trim().toLowerCase();
-  return method === 'bank_transfer' && status === 'pending_bank';
-}
-
-function isPendingCreditConsign(row = {}) {
-  const method = String(row.method || '').trim().toLowerCase();
-  const status = String(row.status || '').trim().toLowerCase();
-  return method === 'store_credit' && status === 'pending_credit';
-}
-
-function getSelectedConsignRows() {
-  const set = CONSIGN_SELECTED || new Set();
-  return (currentConsignRows || []).filter(row => {
-    return set.has(String(row.orderItemId || ''));
-  });
-}
-
-function updateConsignBatchCount() {
-  const count = (CONSIGN_SELECTED || new Set()).size;
-
-  const bankBtn = $('#btnBatchConsignBankDone');
-  const creditBtn = $('#btnBatchConsignCreditDone');
-  const copyBtn = $('#btnBatchCopyConsignBank');
-
-  if (bankBtn) bankBtn.textContent = count
-    ? `🏦 勾選匯款｜批次標記已匯款（${count}）`
-    : '🏦 勾選匯款｜批次標記已匯款';
-
-  if (creditBtn) creditBtn.textContent = count
-    ? `✅ 勾選購物金｜批次入帳（${count}）`
-    : '✅ 勾選購物金｜批次入帳';
-
-  if (copyBtn) copyBtn.textContent = count
-    ? `📋 勾選匯款｜複製匯款資料（${count}）`
-    : '📋 勾選匯款｜複製匯款資料';
-}
-
 function renderConsignList(){
   const listEl = $('#orderList');
-
   if (!currentConsignRows.length){
-    CONSIGN_SELECTED.clear();
     listEl.innerHTML = '<div class="muted">目前沒有待處理的寄賣售出資料。</div>';
-    $('#orderDetail').innerHTML = '<div class="muted">目前沒有資料</div>';
     return;
   }
 
-  listEl.innerHTML = `
-    <div class="top-order-actions" style="margin-bottom:10px;">
-  <button class="btn-secondary" id="btnBatchSetBank" type="button">
-    🏦 勾選資料｜改為客人選匯款
-  </button>
-
-  <button class="btn-secondary" id="btnBatchSetCredit" type="button">
-    💳 勾選資料｜改為客人選購物金
-  </button>
-
-  <button class="btn-secondary" id="btnBatchCopyConsignBank" type="button">
-    📋 勾選匯款｜複製匯款帳號
-  </button>
-
-  <button class="btn-secondary" id="btnBatchConsignBankDone" type="button">
-    🏦 勾選匯款｜批次標記已匯款
-  </button>
-
-  <button class="btn-secondary" id="btnBatchConsignCreditDone" type="button">
-    ✅ 勾選購物金｜批次入帳
-  </button>
-</div>
-
-    ${
-      currentConsignRows.map(row => {
-        const id = String(row.orderItemId || '');
-        const notifyRaw = String(row.notifyStatus || 'pending').trim().toLowerCase();
-        const notifyBadgeClass = notifyRaw === 'sent' ? 'notify-sent' : 'blue';
-        const checked = CONSIGN_SELECTED.has(id) ? 'checked' : '';
-
-        return `
-          <div class="order-row" data-id="${escapeHtml(id)}">
-            <div class="ord-top">
-              <label class="ord-check" title="勾選批次處理">
-                <input class="ord-cb consign-cb" type="checkbox" data-id="${escapeHtml(id)}" ${checked}>
-              </label>
-
-              <div>
-                <div class="ord-id">${escapeHtml(row.orderId || '')}｜${escapeHtml(row.sku || '')}</div>
-                <div class="tag-small">${escapeHtml(row.name || '')}</div>
-              </div>
-
-              <div class="ord-right">
-                <div class="ord-amount">${money(row.saleAmount || 0)}</div>
-                <div class="tag-small">${escapeHtml(displayConsignMethod(row.method))}</div>
-              </div>
-            </div>
-
-            <div class="ord-sub">
-              ${escapeHtml(row.consignorName || '')}
-              ｜匯款 ${money(row.bankAmount || 0)}
-              ｜購物金 ${money(row.creditAmount || 0)}
-            </div>
-
-            <div class="badges">
-              <span class="badge yellow">${escapeHtml(displayConsignStatus(row.status))}</span>
-              <span class="badge ${notifyBadgeClass}">${escapeHtml(displayConsignNotifyStatus(row.notifyStatus || 'pending'))}</span>
-            </div>
+  listEl.innerHTML = currentConsignRows.map(row => {
+    return `
+      <div class="order-row" data-id="${row.orderItemId}">
+        <div class="ord-top">
+          <div>
+            <div class="ord-id">${escapeHtml(row.orderId || '')}｜${escapeHtml(row.sku || '')}</div>
+            <div class="tag-small">${escapeHtml(row.name || '')}</div>
           </div>
-        `;
-      }).join('')
-    }
-  `;
 
-  $$('#orderList .consign-cb').forEach(cb => {
-    cb.addEventListener('click', e => e.stopPropagation());
+          <div class="ord-right">
+            <div class="ord-amount">${money(row.saleAmount || 0)}</div>
+<div class="tag-small">${escapeHtml(displayConsignMethod(row.method))}</div>
+          </div>
+        </div>
 
-    cb.addEventListener('change', () => {
-      const id = String(cb.dataset.id || '');
-      if (!id) return;
+        <div class="ord-sub">
+          ${escapeHtml(row.consignorName || '')}
+          ｜匯款 ${money(row.bankAmount || 0)}
+          ｜購物金 ${money(row.creditAmount || 0)}
+        </div>
 
-      if (cb.checked) {
-        CONSIGN_SELECTED.add(id);
-      } else {
-        CONSIGN_SELECTED.delete(id);
-      }
-
-      updateConsignBatchCount();
-    });
-  });
+        <div class="badges">
+<span class="badge yellow">${escapeHtml(displayConsignStatus(row.status))}</span>
+<span class="badge blue">${escapeHtml(displayConsignNotifyStatus(row.notifyStatus || 'pending'))}</span>
+</div>
+      </div>
+    `;
+  }).join('');
 
   $$('#orderList .order-row').forEach(rowEl => {
-    rowEl.addEventListener('click', e => {
-      if (e.target.closest('.consign-cb')) return;
-
+    rowEl.addEventListener('click', () => {
       $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
       rowEl.classList.add('active');
-
-      const id = rowEl.getAttribute('data-id') || '';
-      const row = currentConsignRows.find(x => String(x.orderItemId || '') === String(id));
-      if (row) renderConsignDetail(row);
+      const id = rowEl.getAttribute('data-id');
+      const rec = currentConsignRows.find(x => String(x.orderItemId) === String(id));
+      if (rec) renderConsignDetail(rec);
     });
   });
-
-  $('#btnBatchSetBank')?.addEventListener('click', batchSetConsignBank);
-$('#btnBatchSetCredit')?.addEventListener('click', batchSetConsignCredit);
-
-$('#btnBatchCopyConsignBank')?.addEventListener('click', batchCopyConsignBank);
-$('#btnBatchConsignBankDone')?.addEventListener('click', batchConsignBankDone);
-$('#btnBatchConsignCreditDone')?.addEventListener('click', batchConsignCreditDone);
-
-  updateConsignBatchCount();
-}
-async function runConsignActionRaw(orderItemId, action) {
-  await ensureOpKey();
-
-  const r = await fetch(`${API}/op/consign/settlement/action`, {
-    method:'POST',
-    headers:{ 'Content-Type':'application/json' },
-    body: JSON.stringify({
-      op_key: OP_KEY,
-      orderItemId,
-      action
-    })
-  });
-
-  const j = await r.json().catch(() => ({}));
-
-  if (!r.ok || !j.ok) {
-    throw new Error(j.error || ('HTTP ' + r.status));
-  }
-
-  return j;
 }
 
- async function batchSetConsignBank() {
-  const selected = getSelectedConsignRows();
-
-  if (!selected.length) {
-    alert('請先勾選要改為匯款的寄賣資料');
-    return;
-  }
-
-  const targets = selected.filter(row => {
-    const status = String(row.status || '').trim().toLowerCase();
-    return status !== 'settled';
-  });
-
-  if (!targets.length) {
-    alert('你勾選的資料都已完成結算，不能改為匯款。');
-    return;
-  }
-
-  if (!confirm(`確定要將 ${targets.length} 筆改為「客人選匯款」嗎？\n\n這只會改選擇方式，不代表已經匯款完成。`)) return;
-
-  let ok = 0;
-  let failed = 0;
-  const failedMsgs = [];
-
-  for (const row of targets) {
-    try {
-      await runConsignActionRaw(row.orderItemId, 'set_bank_transfer');
-      ok++;
-    } catch (e) {
-      failed++;
-      failedMsgs.push(`${row.orderId || ''}｜${row.sku || ''}：${e.message || e}`);
-    }
-  }
-
-  CONSIGN_SELECTED.clear();
-
-  alert(
-    `批次改為匯款完成\n成功 ${ok} 筆 / 失敗 ${failed} 筆` +
-    (failedMsgs.length ? `\n\n${failedMsgs.slice(0, 8).join('\n')}` : '')
-  );
-
-  await loadConsignSettlementList();
-  await refreshTopShortcutBadges();
-}
-
-async function batchSetConsignCredit() {
-  const selected = getSelectedConsignRows();
-
-  if (!selected.length) {
-    alert('請先勾選要改為購物金的寄賣資料');
-    return;
-  }
-
-  const targets = selected.filter(row => {
-    const status = String(row.status || '').trim().toLowerCase();
-    return status !== 'settled';
-  });
-
-  if (!targets.length) {
-    alert('你勾選的資料都已完成結算，不能改為購物金。');
-    return;
-  }
-
-  if (!confirm(`確定要將 ${targets.length} 筆改為「客人選購物金」嗎？\n\n這只會改成待轉購物金，不會立刻入帳。`)) return;
-
-  let ok = 0;
-  let failed = 0;
-  const failedMsgs = [];
-
-  for (const row of targets) {
-    try {
-      await runConsignActionRaw(row.orderItemId, 'set_store_credit');
-      ok++;
-    } catch (e) {
-      failed++;
-      failedMsgs.push(`${row.orderId || ''}｜${row.sku || ''}：${e.message || e}`);
-    }
-  }
-
-  CONSIGN_SELECTED.clear();
-
-  alert(
-    `批次改為購物金完成\n成功 ${ok} 筆 / 失敗 ${failed} 筆` +
-    (failedMsgs.length ? `\n\n${failedMsgs.slice(0, 8).join('\n')}` : '')
-  );
-
-  await loadConsignSettlementList();
-  await refreshTopShortcutBadges();
-}
-
-async function batchConsignCreditDone() {
-  const selected = getSelectedConsignRows();
-  if (!selected.length) {
-    alert('請先勾選要入帳購物金的寄賣資料');
-    return;
-  }
-
-  const targets = selected.filter(isPendingCreditConsign);
-
-  if (!targets.length) {
-    alert('你勾選的資料裡，沒有「購物金 / 待轉購物金」的資料。');
-    return;
-  }
-
-  const typed = prompt(
-    `即將批次入帳購物金 ${targets.length} 筆。\n此動作會新增 CreditsLedger 並發送入帳通知。\n\n若確定，請輸入：批次入帳`
-  );
-
-  if (typed !== '批次入帳') {
-    alert('已取消，沒有入帳購物金。');
-    return;
-  }
-
-  let ok = 0;
-  let skipped = 0;
-  let failed = 0;
-  const failedMsgs = [];
-
-  for (const row of targets) {
-    try {
-      const j = await runConsignActionRaw(row.orderItemId, 'mark_credit_done');
-
-      if (j.skipped) skipped++;
-      else ok++;
-    } catch (e) {
-      failed++;
-      failedMsgs.push(`${row.orderId || ''}｜${row.sku || ''}：${e.message || e}`);
-    }
-  }
-
-  CONSIGN_SELECTED.clear();
-
-  alert(
-    `批次入帳完成\n成功 ${ok} 筆 / 略過 ${skipped} 筆 / 失敗 ${failed} 筆` +
-    (failedMsgs.length ? `\n\n${failedMsgs.slice(0, 8).join('\n')}` : '')
-  );
-
-  await loadConsignSettlementList();
-  await refreshTopShortcutBadges();
-}
-
-async function batchConsignBankDone() {
-  const selected = getSelectedConsignRows();
-  if (!selected.length) {
-    alert('請先勾選已完成匯款的寄賣資料');
-    return;
-  }
-
-  const targets = selected.filter(isPendingBankConsign);
-
-  if (!targets.length) {
-    alert('你勾選的資料裡，沒有「匯款 / 待匯款」的資料。');
-    return;
-  }
-
-  if (!confirm(`確定要將 ${targets.length} 筆標記為「已完成匯款」嗎？`)) return;
-
-  let ok = 0;
-  let skipped = 0;
-  let failed = 0;
-  const failedMsgs = [];
-
-  for (const row of targets) {
-    try {
-      const j = await runConsignActionRaw(row.orderItemId, 'mark_bank_done');
-
-      if (j.skipped) skipped++;
-      else ok++;
-    } catch (e) {
-      failed++;
-      failedMsgs.push(`${row.orderId || ''}｜${row.sku || ''}：${e.message || e}`);
-    }
-  }
-
-  CONSIGN_SELECTED.clear();
-
-  alert(
-    `批次標記匯款完成\n成功 ${ok} 筆 / 略過 ${skipped} 筆 / 失敗 ${failed} 筆` +
-    (failedMsgs.length ? `\n\n${failedMsgs.slice(0, 8).join('\n')}` : '')
-  );
-
-  await loadConsignSettlementList();
-  await refreshTopShortcutBadges();
-}
-
-async function batchCopyConsignBank() {
-  const selected = getSelectedConsignRows();
-  if (!selected.length) {
-    alert('請先勾選要複製匯款資料的寄賣資料');
-    return;
-  }
-
-  const targets = selected.filter(isPendingBankConsign);
-
-  if (!targets.length) {
-    alert('你勾選的資料裡，沒有「匯款 / 待匯款」的資料。');
-    return;
-  }
-
-  const txt = targets.map(item => {
-    const bankInfo = item.bankInfo || {};
-
-    return [
-      `【${item.orderId || ''}｜${item.sku || ''}｜${item.name || ''}】`,
-      `寄賣人：${item.consignorName || ''}`,
-      `戶名：${bankInfo.accountName || ''}`,
-      `銀行代碼：${bankInfo.bankCode || ''}`,
-      `銀行名稱：${bankInfo.bankName || ''}`,
-      `匯款帳號：${bankInfo.accountNo || ''}`,
-      `實際匯款金額：NT$ ${Number(item.bankAmount || 0).toLocaleString('zh-TW')}`
-    ].join('\n');
-  }).join('\n\n--------------------\n\n');
-
-  await navigator.clipboard.writeText(txt);
-  alert(`已複製 ${targets.length} 筆匯款資料`);
-}
 function renderConsignDetail(item){
   currentConsignRecord = item;
   const dEl = $('#orderDetail');
@@ -3110,9 +2699,37 @@ function renderConsignDetail(item){
     <div class="mt-3 section-title">一時貿易資料</div>
     <div class="ro-field">${escapeHtml(accounting.name || '')}</div>
     <div class="ro-field mt-2">${escapeHtml(accounting.nationalId || '')}</div>
+
+    <div class="top-order-actions mt-3">
+      <button class="btn-primary" id="btnConsignNotify" type="button">📣 一鍵通知客人</button>
+      <button class="btn-secondary" id="btnConsignBank" type="button">🏦 設為匯款</button>
+      <button class="btn-secondary" id="btnConsignCredit" type="button">💳 設為購物金</button>
+      <button class="btn-secondary" id="btnConsignBankDone" type="button">✅ 標記已匯款</button>
+      <button class="btn-secondary" id="btnConsignCreditDone" type="button">✅ 確認轉購物金</button>
+      <button class="btn-secondary" id="btnCopyConsignBank" type="button">📋 複製匯款資料</button>
+      <button class="btn-secondary" id="btnCopyConsignAccounting" type="button">📋 複製一時貿易資料</button>
+    </div>
   `;
 
-    $('#btnCopyConsignAccounting')?.addEventListener('click', async () => {
+  $('#btnConsignNotify')?.addEventListener('click', () => consignNotify(item.orderItemId));
+  $('#btnConsignBank')?.addEventListener('click', () => consignAction(item.orderItemId, 'set_bank_transfer'));
+  $('#btnConsignCredit')?.addEventListener('click', () => consignAction(item.orderItemId, 'set_store_credit'));
+  $('#btnConsignBankDone')?.addEventListener('click', () => consignAction(item.orderItemId, 'mark_bank_done'));
+  $('#btnConsignCreditDone')?.addEventListener('click', () => consignAction(item.orderItemId, 'mark_credit_done'));
+
+  $('#btnCopyConsignBank')?.addEventListener('click', async () => {
+    const txt = [
+  `戶名：${bankInfo.accountName || ''}`,
+  `銀行代碼：${bankInfo.bankCode || ''}`,
+  `銀行名稱：${bankInfo.bankName || ''}`,
+  `匯款帳號：${bankInfo.accountNo || ''}`,
+  `實際匯款金額：NT$ ${Number(item.bankAmount || 0).toLocaleString('zh-TW')}`
+].join('\n');
+    await navigator.clipboard.writeText(txt);
+    alert('已複製匯款資料');
+  });
+
+  $('#btnCopyConsignAccounting')?.addEventListener('click', async () => {
     const txt = [
       `姓名：${accounting.name || ''}`,
       `身分證字號：${accounting.nationalId || ''}`,
@@ -3124,74 +2741,7 @@ function renderConsignDetail(item){
     alert('已複製一時貿易資料');
   });
 }
-function shouldAutoNotifyConsign(row = {}) {
-  const notifyStatus = String(row.notifyStatus || "pending").trim().toLowerCase();
-  const method = String(row.method || "").trim().toLowerCase();
-  const status = String(row.status || "").trim().toLowerCase();
 
-  // 已通知過，不發
-  if (notifyStatus === "sent") return false;
-
-  // 客人或後台已經選過，不發「請選擇」卡
-  if (method) return false;
-  if (status === "pending_bank") return false;
-  if (status === "pending_credit") return false;
-  if (status === "settled") return false;
-
-  // 只針對待選擇 / 待處理 / 空狀態自動發
-  return !status || status === "waiting_choice" || status === "pending";
-}
-
-async function autoNotifyConsignChoiceCards(rows = []) {
-  const targets = (rows || []).filter(shouldAutoNotifyConsign);
-
-  if (!targets.length) {
-    return { sent: 0, skipped: 0, failed: 0 };
-  }
-
-  let sent = 0;
-  let skipped = 0;
-  let failed = 0;
-
-  for (const row of targets) {
-    try {
-      const r = await fetch(`${API}/op/consign/notify-choice`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          op_key: OP_KEY,
-          orderItemId: row.orderItemId
-        })
-      });
-
-      const j = await r.json().catch(() => ({}));
-
-     if (r.ok && j.ok) {
-  if (j.skipped) {
-    skipped++;
-
-    // 只有「後端確認已通知過」才前端同步顯示已通知
-    if (j.reason === "already_notified") {
-      row.notifyStatus = "sent";
-    }
-  } else {
-    sent++;
-    row.notifyStatus = "sent";
-  }
-
-  continue;
-}
-
-      failed++;
-      console.warn("auto consign notify failed", row.orderItemId, j);
-    } catch (e) {
-      failed++;
-      console.warn("auto consign notify exception", row.orderItemId, e);
-    }
-  }
-
-  return { sent, skipped, failed };
-}
 async function consignNotify(orderItemId){
   await ensureOpKey();
   const r = await fetch(`${API}/op/consign/notify-choice`, {
