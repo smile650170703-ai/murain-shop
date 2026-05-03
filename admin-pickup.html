@@ -3262,22 +3262,21 @@ const ship  = shipInfo.ship  || {};
 const store = ship.store     || {};
 const post  = ship.post      || {};
 const note  = shipInfo.note  || '';
- // ✅ 賣貨便登記頁：只顯示賣貨便需要的欄位，不顯示重結/訂金/internal_note
+// ✅ 賣貨便登記頁：只顯示賣貨便需要的欄位
+// ✅ 只有「取貨登記」可以改；賣貨便名稱 / 物流單號 / 運費 TWD 都唯讀
 if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+  const vendorName = String(f['賣貨便名稱'] || '').trim();
+  const pickupReg  = String(f['取貨登記'] || '').trim();
+  const trackingNo = String(f.tracking_no || f.ship_tracking || '').trim();
+  const shipFee    = String(f.shipping_fee ?? f.ship_fee ?? '').trim();
+
   dEl.innerHTML = `
     <div class="section-title">賣貨便登記</div>
 
     <div class="row mt-2">
       <div>
         <label>賣貨便名稱</label>
-        <select id="d_vendor_name">
-          <option value=""></option>
-          <option value="黃承偉">黃承偉</option>
-          <option value="蘇瑞潔">蘇瑞潔</option>
-          <option value="黃爸爸(黃玠銘)">黃爸爸(黃玠銘)</option>
-          <option value="夏雪媽咪">夏雪媽咪</option>
-          <option value="妹妹-京城">妹妹-京城</option>
-        </select>
+        <input id="d_vendor_name" readonly value="${escapeHtml(vendorName)}">
       </div>
 
       <div>
@@ -3285,7 +3284,7 @@ if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
         <div class="pickup-wrap">
           <input
             id="d_pickup_reg"
-            value="${String(f['取貨登記'] ?? '').trim()}"
+            value="${escapeHtml(pickupReg)}"
             placeholder=""
           />
           <button type="button" class="btn-mini" id="btnSavePickupReg">存</button>
@@ -3298,12 +3297,12 @@ if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
     <div class="row mt-2">
       <div>
         <label>物流單號</label>
-        <input id="d_ship_tracking" value="${f.ship_tracking || f.tracking_no || ''}">
+        <input id="d_ship_tracking" readonly value="${escapeHtml(trackingNo)}">
       </div>
 
       <div>
         <label>運費 TWD</label>
-        <input id="d_ship_fee" type="number" step="1" value="${(f.ship_fee ?? f.shipping_fee ?? '')}">
+        <input id="d_ship_fee" readonly value="${escapeHtml(shipFee)}">
       </div>
     </div>
 
@@ -3313,11 +3312,6 @@ if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
       </button>
     </div>
   `;
-
-  const vendorSelect = $('#d_vendor_name');
-  if (vendorSelect) {
-    vendorSelect.value = String(f['賣貨便名稱'] || '').trim();
-  }
 
   $('#btnSavePickupReg')?.addEventListener('click', savePickupRegOnly);
 
@@ -4334,11 +4328,14 @@ async function savePickupRegOnly(){
 
   const v = $('#d_pickup_reg') ? ($('#d_pickup_reg').value || '').trim() : '';
 
-  const payload = {
-    record_id: currentRecord.id || null,  // 有就帶，沒有也沒差
-    order_id : orderId,
-    fields: { '取貨登記': v }
-  };
+ const payload = {
+  record_id: currentRecord.id || null,
+  order_id : orderId,
+  fields: { '取貨登記': v },
+
+  // ✅ 告訴後端：這次取貨登記也要同步到尾款單
+  sync_tail_pickup_reg: true
+};
 
   const msgEl = $('#detailMsg');
   if (msgEl) msgEl.textContent = '儲存取貨登記中…';
@@ -4367,7 +4364,12 @@ const idx = currentOrders.findIndex(x=>{
 });
 if (idx >= 0) setField(currentOrders[idx], '取貨登記', v);
 
-if (msgEl) msgEl.textContent = '取貨登記已儲存 ✅';
+if (msgEl) {
+  const tailText = j.tail_sync_count
+    ? `，已同步尾款單 ${j.tail_sync_count} 筆`
+    : '';
+  msgEl.textContent = '取貨登記已儲存 ✅' + tailText;
+}
 
 // ✅ 只重畫左側列表（不打 API、不跳回首訂單）
 renderOrderList();
