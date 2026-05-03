@@ -388,7 +388,35 @@ body.is-consign-page #btnCartRemindTop{
   background:rgba(234,179,8,.14);
   font-weight:700;
 }
+/* ===== 寄賣批次操作 ===== */
+.consign-batch-actions{
+  margin-top:8px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
 
+.consign-batch-actions .btn-secondary,
+.consign-batch-actions .btn-primary{
+  margin-top:0;
+}
+
+.consign-check-wrap{
+  display:flex;
+  align-items:center;
+  flex:0 0 auto;
+}
+
+.consign-cb{
+  width:18px;
+  height:18px;
+  cursor:pointer;
+}
+
+.order-row.is-checked{
+  border-color:#facc15;
+  box-shadow:0 8px 20px rgba(250,204,21,.16);
+}
 </style>
 </head>
 <body>
@@ -449,14 +477,18 @@ body.is-consign-page #btnCartRemindTop{
 </div>
 <!-- 寄賣頁不需要日期 / 狀態 / 出貨單 / 賣貨便匯出工具列 -->
 <div id="summary" class="summary-row"></div>
-<!-- 寄賣頁不使用一般訂單操作按鈕；四顆寄賣按鈕會在右側明細動態產生 -->
+
+<div class="consign-batch-actions">
+  <button class="btn-secondary" id="btnConsignSelectAll" type="button">☑ 全選本頁</button>
+  <button class="btn-secondary" id="btnConsignClearSelected" type="button">清除勾選</button>
+  <button class="btn-secondary" id="btnConsignBatchCopyBank" type="button">📋 批次複製匯款資料</button>
+  <button class="btn-secondary" id="btnConsignBatchBankDone" type="button">✅ 批次標記已匯款</button>
+  <button class="btn-primary" id="btnConsignBatchCreditDone" type="button">✅ 批次確認轉購物金</button>
+</div>
+
 <div id="msg"></div>
     </div>
 
-<div class="toolbar-side">
-  <span id="opLabel" class="tag-small"></span>
-  <button id="btnCancelOrderTop" class="small-btn" type="button">
-    🚫 棄標(請勿亂按)
 <div class="toolbar-side">
   <span id="opLabel" class="tag-small"></span>
 
@@ -465,7 +497,6 @@ body.is-consign-page #btnCartRemindTop{
     <input id="line_search" type="text" placeholder="輸入 LINE 名稱" />
   </div>
 </div>
-  </div>
 
   <div class="layout">
     <div class="card" id="orderList">
@@ -634,6 +665,7 @@ let currentConsignAccountingBucket = '';
 let currentPanelMode = 'orders';      // orders / consign
 let currentConsignRows = [];
 let currentConsignRecord = null;
+let CONSIGN_SELECTED = new Set();
  let currentCartRows = [];
 let currentCartRecord = null;
 
@@ -2571,18 +2603,31 @@ function renderConsignList(){
 
   if (!currentConsignRows.length){
     listEl.innerHTML = '<div class="muted">目前沒有待處理的寄賣售出資料。</div>';
+    updateConsignBatchButtons();
     return;
   }
 
+  // 清掉已經不在清單裡的勾選
+  const validIds = new Set(currentConsignRows.map(row => String(row.orderItemId || '')));
+  CONSIGN_SELECTED = new Set(
+    Array.from(CONSIGN_SELECTED).filter(id => validIds.has(String(id)))
+  );
+
   listEl.innerHTML = currentConsignRows.map(row => {
+    const id = String(row.orderItemId || '');
     const notifyStatus = String(row.notifyStatus || 'pending').trim();
     const isSent = notifyStatus === 'sent';
     const notifyClass = isSent ? 'notify-sent' : 'notify-pending';
     const notifyText = displayConsignNotifyStatus(notifyStatus || 'pending');
+    const checked = CONSIGN_SELECTED.has(id);
 
     return `
-      <div class="order-row" data-id="${escapeHtml(row.orderItemId || '')}">
+      <div class="order-row ${checked ? 'is-checked' : ''}" data-id="${escapeHtml(id)}">
         <div class="ord-top">
+          <div class="consign-check-wrap">
+            <input class="consign-cb" type="checkbox" data-id="${escapeHtml(id)}" ${checked ? 'checked' : ''}>
+          </div>
+
           <div>
             <div class="ord-id">${escapeHtml(row.orderId || '')}｜${escapeHtml(row.sku || '')}</div>
             <div class="tag-small">${escapeHtml(row.name || '')}</div>
@@ -2608,8 +2653,30 @@ function renderConsignList(){
     `;
   }).join('');
 
+  $$('#orderList .consign-cb').forEach(cb => {
+    cb.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+
+      const id = String(cb.getAttribute('data-id') || '');
+      if (!id) return;
+
+      if (cb.checked) {
+        CONSIGN_SELECTED.add(id);
+      } else {
+        CONSIGN_SELECTED.delete(id);
+      }
+
+      const rowEl = cb.closest('.order-row');
+      if (rowEl) rowEl.classList.toggle('is-checked', cb.checked);
+
+      updateConsignBatchButtons();
+    });
+  });
+
   $$('#orderList .order-row').forEach(rowEl => {
-    rowEl.addEventListener('click', () => {
+    rowEl.addEventListener('click', (ev) => {
+      if (ev.target?.classList?.contains('consign-cb')) return;
+
       $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
       rowEl.classList.add('active');
 
@@ -2619,6 +2686,8 @@ function renderConsignList(){
       if (rec) renderConsignDetail(rec);
     });
   });
+
+  updateConsignBatchButtons();
 }
 
 function renderConsignDetail(item){
@@ -2691,11 +2760,9 @@ function renderConsignDetail(item){
     <label>身分證字號</label>
     <div class="ro-field">${escapeHtml(accounting.nationalId || '')}</div>
 
-    <div class="top-order-actions mt-3">
-      <button class="btn-secondary" id="btnConsignBank" type="button">🏦 設為匯款</button>
-      <button class="btn-secondary" id="btnConsignCredit" type="button">💳 設為購物金</button>
-      <button class="btn-secondary" id="btnConsignBankDone" type="button">✅ 標記已匯款</button>
-      <button class="btn-primary" id="btnConsignCreditDone" type="button">✅ 確認轉購物金</button>
+       <div class="top-order-actions mt-3">
+      <button class="btn-secondary" id="btnConsignBank" type="button">🏦 更改設為匯款</button>
+      <button class="btn-secondary" id="btnConsignCredit" type="button">💳 更改設為購物金</button>
     </div>
   `;
 
@@ -2706,16 +2773,219 @@ function renderConsignDetail(item){
   $('#btnConsignCredit')?.addEventListener('click', () => {
     consignAction(item.orderItemId, 'set_store_credit');
   });
-
-  $('#btnConsignBankDone')?.addEventListener('click', () => {
-    consignAction(item.orderItemId, 'mark_bank_done');
-  });
-
-  $('#btnConsignCreditDone')?.addEventListener('click', () => {
-    consignAction(item.orderItemId, 'mark_credit_done');
-  });
+}
+function getSelectedConsignRows(){
+  const ids = Array.from(CONSIGN_SELECTED || []);
+  return ids
+    .map(id => currentConsignRows.find(row => String(row.orderItemId || '') === String(id)))
+    .filter(Boolean);
 }
 
+function updateConsignBatchButtons(){
+  const rows = getSelectedConsignRows();
+  const n = rows.length;
+
+  const summary = $('#summary');
+  if (summary) {
+    summary.innerHTML = n
+      ? `<span>已勾選：${n} 筆</span>`
+      : '';
+  }
+
+  const btnCopy = $('#btnConsignBatchCopyBank');
+  const btnBankDone = $('#btnConsignBatchBankDone');
+  const btnCreditDone = $('#btnConsignBatchCreditDone');
+  const btnClear = $('#btnConsignClearSelected');
+
+  [btnCopy, btnBankDone, btnCreditDone, btnClear].forEach(btn => {
+    if (!btn) return;
+    btn.disabled = n <= 0;
+    btn.style.opacity = n <= 0 ? '.55' : '';
+    btn.style.cursor = n <= 0 ? 'not-allowed' : '';
+  });
+
+  const btnAll = $('#btnConsignSelectAll');
+  if (btnAll) {
+    const allSelected = currentConsignRows.length > 0 && n === currentConsignRows.length;
+    btnAll.textContent = allSelected ? '☐ 取消全選' : '☑ 全選本頁';
+  }
+}
+
+async function copyTextToClipboard(txt, okText = '已複製'){
+  try {
+    await navigator.clipboard.writeText(txt);
+    alert(okText);
+  } catch (e) {
+    console.error(e);
+    alert('複製失敗，請手動選取文字複製。');
+  }
+}
+
+function buildConsignBankCopyText(rows){
+  return (rows || []).map(row => {
+    const bankInfo = row.bankInfo || {};
+
+    return [
+      `訂單編號：${row.orderId || ''}`,
+      `銀行代碼：${bankInfo.bankCode || ''}`,
+      `銀行名稱：${bankInfo.bankName || ''}`,
+      `匯款帳號：${bankInfo.accountNo || ''}`,
+      `匯款金額：NT$ ${Number(row.bankAmount || 0).toLocaleString('zh-TW')}`
+    ].join('\n');
+  }).join('\n\n--------------------\n\n');
+}
+
+async function batchCopyConsignBank(){
+  const rows = getSelectedConsignRows();
+
+  if (!rows.length) {
+    alert('請先勾選要複製的寄賣資料');
+    return;
+  }
+
+  const txt = buildConsignBankCopyText(rows);
+  await copyTextToClipboard(txt, `已複製 ${rows.length} 筆匯款資料`);
+}
+
+async function batchConsignAction(action){
+  const rows = getSelectedConsignRows();
+
+  if (!rows.length) {
+    alert('請先勾選資料');
+    return;
+  }
+
+  if (action === 'mark_bank_done') {
+    const okRows = rows.filter(row => {
+      const method = String(row.method || '').trim().toLowerCase();
+const status = String(row.status || '').trim().toLowerCase();
+return method === 'bank_transfer' && status === 'pending_bank';
+    });
+
+    if (!okRows.length) {
+      alert('勾選資料中沒有可標記已匯款的資料。\n請確認資料已是「匯款 / 待匯款」。');
+      return;
+    }
+
+    if (!confirm(`確定要把 ${okRows.length} 筆標記為「已匯款」嗎？\n\n這些資料會結案並進入一時貿易資料。`)) {
+      return;
+    }
+
+    await runBatchConsignActionRows(okRows, action);
+    return;
+  }
+
+  if (action === 'mark_credit_done') {
+    const okRows = rows.filter(row => {
+      const method = String(row.method || '').trim().toLowerCase();
+const status = String(row.status || '').trim().toLowerCase();
+return method === 'store_credit' && status === 'pending_credit';
+    });
+
+    if (!okRows.length) {
+      alert('勾選資料中沒有可轉購物金的資料。\n請確認資料已是「購物金 / 待轉購物金」。');
+      return;
+    }
+
+    if (!confirm(`確定要把 ${okRows.length} 筆確認轉購物金嗎？\n\n系統會真的新增購物金入帳紀錄，並發送入帳通知給客人。`)) {
+      return;
+    }
+
+    await runBatchConsignActionRows(okRows, action);
+  }
+}
+
+async function runBatchConsignActionRows(rows, action){
+  let ok = 0;
+  let skipped = 0;
+  let failed = 0;
+  const failedMsgs = [];
+
+  const btns = [
+    '#btnConsignBatchCopyBank',
+    '#btnConsignBatchBankDone',
+    '#btnConsignBatchCreditDone',
+    '#btnConsignSelectAll',
+    '#btnConsignClearSelected'
+  ].map(sel => $(sel)).filter(Boolean);
+
+  btns.forEach(btn => {
+    btn.disabled = true;
+    btn.style.opacity = '.55';
+    btn.style.cursor = 'not-allowed';
+  });
+
+  try {
+    for (const row of rows) {
+      const id = String(row.orderItemId || '').trim();
+      if (!id) continue;
+
+      try {
+        const result = await consignAction(id, action, {
+          silent: true,
+          noReload: true,
+          skipConfirm: true
+        });
+
+        if (result?.ok) {
+          if (result.skipped) skipped += 1;
+          else ok += 1;
+        } else {
+          failed += 1;
+          failedMsgs.push(`${row.orderId || id}：${result?.error || result?.reason || 'unknown'}`);
+        }
+      } catch (e) {
+        failed += 1;
+        failedMsgs.push(`${row.orderId || id}：${e.message || e}`);
+      }
+    }
+
+    alert(
+      `批次處理完成\n成功 ${ok} 筆 / 略過 ${skipped} 筆 / 失敗 ${failed} 筆` +
+      (failedMsgs.length ? `\n\n${failedMsgs.slice(0, 8).join('\n')}` : '')
+    );
+
+    CONSIGN_SELECTED.clear();
+    await loadConsignSettlementList();
+
+  } finally {
+    btns.forEach(btn => {
+      btn.disabled = false;
+      btn.style.opacity = '';
+      btn.style.cursor = '';
+    });
+  }
+}
+
+function bindConsignBatchButtons(){
+  $('#btnConsignSelectAll')?.addEventListener('click', () => {
+    const allSelected =
+      currentConsignRows.length > 0 &&
+      getSelectedConsignRows().length === currentConsignRows.length;
+
+    if (allSelected) {
+      CONSIGN_SELECTED.clear();
+    } else {
+      currentConsignRows.forEach(row => {
+        const id = String(row.orderItemId || '');
+        if (id) CONSIGN_SELECTED.add(id);
+      });
+    }
+
+    renderConsignList();
+  });
+
+  $('#btnConsignClearSelected')?.addEventListener('click', () => {
+    CONSIGN_SELECTED.clear();
+    renderConsignList();
+  });
+
+  $('#btnConsignBatchCopyBank')?.addEventListener('click', batchCopyConsignBank);
+  $('#btnConsignBatchBankDone')?.addEventListener('click', () => batchConsignAction('mark_bank_done'));
+  $('#btnConsignBatchCreditDone')?.addEventListener('click', () => batchConsignAction('mark_credit_done'));
+
+  updateConsignBatchButtons();
+}
 async function consignNotify(orderItemId, opts = {}){
   await ensureOpKey();
 
@@ -2750,12 +3020,16 @@ async function consignNotify(orderItemId, opts = {}){
 
 const CONSIGN_ACTION_BUSY = new Set();
 
-async function consignAction(orderItemId, action){
+async function consignAction(orderItemId, action, opts = {}){
   await ensureOpKey();
+
+  const silent = opts.silent === true;
+  const noReload = opts.noReload === true;
+  const skipConfirm = opts.skipConfirm === true;
 
   const key = `${orderItemId}:${action}`;
   if (CONSIGN_ACTION_BUSY.has(key)) {
-    return;
+    return { ok:false, error:'busy' };
   }
 
   const confirmTextMap = {
@@ -2765,8 +3039,8 @@ async function consignAction(orderItemId, action){
       '確定要轉入購物金嗎？\n\n系統會真的新增購物金入帳紀錄，並發送入帳通知給客人。'
   };
 
-  if (confirmTextMap[action] && !window.confirm(confirmTextMap[action])) {
-    return;
+  if (!skipConfirm && confirmTextMap[action] && !window.confirm(confirmTextMap[action])) {
+    return { ok:false, error:'cancelled_by_user' };
   }
 
   CONSIGN_ACTION_BUSY.add(key);
@@ -2774,8 +3048,11 @@ async function consignAction(orderItemId, action){
   const actionButtons = [
     '#btnConsignBank',
     '#btnConsignCredit',
-    '#btnConsignBankDone',
-    '#btnConsignCreditDone'
+    ...(silent ? [] : [
+      '#btnConsignBatchBankDone',
+      '#btnConsignBatchCreditDone',
+      '#btnConsignBatchCopyBank'
+    ])
   ].map(sel => $(sel)).filter(Boolean);
 
   actionButtons.forEach(btn => {
@@ -2794,8 +3071,8 @@ async function consignAction(orderItemId, action){
     const j = await r.json().catch(() => ({}));
 
     if (!r.ok || !j.ok) {
-      alert('操作失敗：' + (j.error || j.reason || 'unknown'));
-      return;
+      if (!silent) alert('操作失敗：' + (j.error || j.reason || 'unknown'));
+      return { ok:false, error:j.error || 'request_failed', reason:j.reason || '' };
     }
 
     if (
@@ -2805,13 +3082,22 @@ async function consignAction(orderItemId, action){
         j.reason === 'credit_ledger_already_exists'
       )
     ) {
-      alert('這筆已經加值過，不會重複入帳');
-await loadConsignSettlementList();
-return;
+      if (!silent) {
+        alert('這筆已經加值過，不會重複入帳');
+        if (!noReload) await loadConsignSettlementList();
+      }
+
+      return {
+        ok:true,
+        skipped:true,
+        reason:j.reason
+      };
     }
 
-    alert('已更新');
-await loadConsignSettlementList();
+    if (!silent) alert('已更新');
+    if (!noReload) await loadConsignSettlementList();
+
+    return { ok:true, skipped:false };
 
   } finally {
     CONSIGN_ACTION_BUSY.delete(key);
@@ -5341,6 +5627,7 @@ ${a.credit>0 ? `<tr><th>購物金折抵</th><td>-${creditUse}</td></tr>` : ``}
  
 async function loadAdminDefaultPage(){
   setupAdminPageChrome();
+ bindConsignBatchButtons();
   await ensureOpKey();
 
   setBatchActionMode('none');
