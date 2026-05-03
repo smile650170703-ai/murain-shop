@@ -420,17 +420,12 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 
 <div class="toolbar-side">
   <span id="opLabel" class="tag-small"></span>
-  <button id="btnCancelOrderTop" class="small-btn" type="button">
-    🚫 棄標(請勿亂按)
-<div class="toolbar-side">
-  <span id="opLabel" class="tag-small"></span>
 
   <div class="side-box">
     <label>LINE 名稱搜尋</label>
     <input id="line_search" type="text" placeholder="輸入 LINE 名稱" />
   </div>
 </div>
-  </div>
 
   <div class="layout">
     <div class="card" id="orderList">
@@ -774,32 +769,85 @@ function renderConsignAccountingDetail(bucket, rows){
   detailEl.innerHTML = `
     <div class="section-title">${bucket} 一時貿易資料</div>
     <div class="tag-small">共 ${rows.length} 筆；列印時會一筆一頁，並附身分證正反面。</div>
-    <button class="btn-primary" id="btnPrintConsignAccountingBucket" type="button">🖨️ 列印本區資料</button>
+
+    <div class="top-order-actions mt-3">
+  <button class="btn-secondary" id="btnDownloadConsignAccountingTxt" type="button">📝 產生記事本 TXT</button>
+  <button class="btn-primary" id="btnPrintConsignAccountingIds" type="button">🖨️ 列印身分證正反面</button>
+</div>
+
     <div style="margin-top:12px;max-height:70vh;overflow:auto;">${previewHtml}</div>
   `;
-
-  $('#btnPrintConsignAccountingBucket')?.addEventListener('click', () => {
-    const printPages = rows.map((item, idx) => {
+  function buildConsignAccountingTxt(){
+    return rows.map((item, idx) => {
       const acc = item.accounting || {};
       const methodText = displayConsignMethod(item.method);
       const actualAmount = String(item.method || '').trim() === 'bank_transfer'
         ? Number(item.bankAmount || 0)
         : Number(item.creditAmount || 0);
 
+      return [
+        `一時貿易資料｜${bucket}`,
+        `第 ${idx + 1} 筆`,
+        `姓名：${acc.name || ''}`,
+        `身分證字號：${acc.nationalId || ''}`,
+        `訂單編號：${item.orderId || ''}`,
+        `商品名稱：${item.name || ''}`,
+        `售出金額：NT$ ${Number(item.saleAmount || 0).toLocaleString('zh-TW')}`,
+        `結算方式：${methodText}`,
+        `實際給付金額：NT$ ${Number(actualAmount || 0).toLocaleString('zh-TW')}`,
+        `匯款金額：NT$ ${Number(item.bankAmount || 0).toLocaleString('zh-TW')}`,
+        `購物金金額：NT$ ${Number(item.creditAmount || 0).toLocaleString('zh-TW')}`
+      ].join('\n');
+    }).join('\n\n--------------------\n\n');
+  }
+
+  function downloadTextFile(filename, text){
+    const blob = new Blob(['\ufeff' + text], {
+      type: 'text/plain;charset=utf-8'
+    });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+
+    a.href = url;
+    a.download = filename;
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  $('#btnDownloadConsignAccountingTxt')?.addEventListener('click', () => {
+    const safeBucket = String(bucket || '一時貿易')
+      .replace(/[\\/:*?"<>|]/g, '_');
+
+    const txt = buildConsignAccountingTxt();
+
+    downloadTextFile(
+      `${safeBucket}_一時貿易資料_${rows.length}筆.txt`,
+      txt
+    );
+  });
+
+  $('#btnPrintConsignAccountingIds')?.addEventListener('click', () => {
+    const printPages = rows.map((item, idx) => {
+      const acc = item.accounting || {};
+
       const idFront = String(acc.idFrontUrl || '').trim();
       const idBack  = String(acc.idBackUrl || '').trim();
 
       return `
         <div class="trade-page">
-          <div class="trade-title">一時貿易資料</div>
-          <div class="trade-sub">第 ${idx + 1} 筆 / ${escapeHtml(bucket)}</div>
-
-          <table class="trade-table">
-            <tr><th>姓名</th><td>${escapeHtml(acc.name || '')}</td><th>身分證字號</th><td>${escapeHtml(acc.nationalId || '')}</td></tr>
-            <tr><th>訂單編號</th><td>${escapeHtml(item.orderId || '')}</td><th>商品名稱</th><td>${escapeHtml(item.name || '')}</td></tr>
-            <tr><th>售出金額</th><td>${money(item.saleAmount || 0)}</td><th>結算方式</th><td>${escapeHtml(methodText)}</td></tr>
-            <tr><th>實際給付金額</th><td>${money(actualAmount || 0)}</td><th>備註</th><td></td></tr>
-          </table>
+          <div class="trade-head">
+            <div class="trade-title">一時貿易身分證資料</div>
+            <div class="trade-sub">
+              第 ${idx + 1} 筆 / ${escapeHtml(bucket)}
+              ｜訂單編號：${escapeHtml(item.orderId || '')}
+              ｜姓名：${escapeHtml(acc.name || '')}
+            </div>
+          </div>
 
           <div class="id-wrap">
             <div class="id-box">
@@ -810,6 +858,7 @@ function renderConsignAccountingDetail(bucket, rows){
                   : `<div class="id-empty">未提供身分證正面</div>`
               }
             </div>
+
             <div class="id-box">
               <div class="id-title">身分證反面</div>
               ${
@@ -824,97 +873,140 @@ function renderConsignAccountingDetail(bucket, rows){
     }).join('');
 
     const win = window.open('', '_blank');
-    if (!win) return;
+
+    if (!win) {
+      alert('瀏覽器阻擋列印視窗，請允許彈出視窗後再試一次。');
+      return;
+    }
 
     win.document.write(`
       <html>
       <head>
         <meta charset="utf-8">
-        <title>${bucket} 一時貿易資料</title>
+        <title>${escapeHtml(bucket)} 一時貿易身分證列印</title>
+
         <style>
-          @page { size: A4 portrait; margin: 12mm; }
-          body { font-family: Arial, "Noto Sans TC", sans-serif; color:#111; }
+          @page {
+            size: A4 portrait;
+            margin: 10mm;
+          }
+
+          * {
+            box-sizing: border-box;
+          }
+
+          body {
+            margin: 0;
+            font-family: Arial, "Noto Sans TC", sans-serif;
+            color: #111;
+            background: #fff;
+          }
+
           .trade-page {
             page-break-after: always;
             break-after: page;
-            min-height: 260mm;
+            min-height: 270mm;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8mm;
           }
+
           .trade-page:last-child {
             page-break-after: auto;
             break-after: auto;
           }
-          .trade-title {
-            font-size: 20px;
-            font-weight: 800;
-            margin-bottom: 4px;
+
+          .trade-head {
+            border-bottom: 1px solid #111;
+            padding-bottom: 4mm;
           }
+
+          .trade-title {
+            font-size: 18px;
+            font-weight: 800;
+            margin-bottom: 3mm;
+          }
+
           .trade-sub {
             font-size: 12px;
-            color: #555;
-            margin-bottom: 12px;
+            line-height: 1.6;
           }
-          .trade-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 16px;
-          }
-          .trade-table th,
-          .trade-table td {
-            border: 1px solid #333;
-            padding: 8px;
-            font-size: 13px;
-            vertical-align: top;
-          }
-          .trade-table th {
-            width: 16%;
-            background: #f5f5f5;
-            text-align: left;
-          }
+
           .id-wrap {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
+            grid-template-columns: 1fr;
+            gap: 8mm;
+            flex: 1;
           }
+
           .id-box {
-            border: 1px solid #333;
-            padding: 8px;
-            min-height: 320px;
+            border: 1px solid #111;
+            padding: 4mm;
+            min-height: 115mm;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
           }
+
           .id-title {
-            font-weight: 700;
-            margin-bottom: 8px;
+            width: 100%;
+            font-size: 14px;
+            font-weight: 800;
+            margin-bottom: 4mm;
+            text-align: left;
           }
+
           .id-box img {
             width: 100%;
-            max-height: 280px;
+            max-height: 98mm;
             object-fit: contain;
           }
+
           .id-empty {
-            height: 280px;
+            width: 100%;
+            min-height: 88mm;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #777;
             border: 1px dashed #999;
+            color: #777;
+            font-size: 14px;
           }
-          .overdue-badge{
-  font-size:12px;
-  line-height:1.2;
-  padding:2px 7px;
-  white-space:nowrap;
-}
+
+          @media print {
+            .trade-page {
+              page-break-after: always;
+              break-after: page;
+            }
+
+            .trade-page:last-child {
+              page-break-after: auto;
+              break-after: auto;
+            }
+          }
         </style>
       </head>
-      <body>${printPages}</body>
+
+      <body>
+        ${printPages}
+
+        <script>
+          window.onload = function(){
+            window.focus();
+            setTimeout(function(){
+              window.print();
+            }, 500);
+          };
+        <\/script>
+      </body>
       </html>
     `);
 
     win.document.close();
-    win.focus();
-    win.print();
   });
 }
-
 function fmtDateInput(d){
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
