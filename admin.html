@@ -4378,17 +4378,20 @@ if (ciCompleted) {
   if (pm === 'cash_inst_2') return 2;
   return 0;
 }
-async function sendCashInstLineNotify(phase, paidParts, totalParts) {
-  if (!currentRecord) {
-    throw new Error('missing_current_record');
-  }
+async function sendCashInstLineNotify(phase, paidParts, totalParts, orderIdOverride = '') {
+  const f = currentRecord?.fields || currentRecord || {};
 
-  const f = currentRecord.fields || currentRecord || {};
-  const orderId = String(f.order_id || '').trim();
+  // ✅ 優先使用外面先保存好的 order_id，避免 reload 後 currentRecord 被清掉
+  const orderId = String(orderIdOverride || f.order_id || '').trim();
 
   if (!orderId) {
     throw new Error('missing_order_id');
   }
+
+  const finalTotalParts =
+    Number(totalParts || 0) ||
+    Number(getCurrentCashInstTotalParts() || 0) ||
+    0;
 
   const r = await fetch(`${API}/admin/order/cash-inst-notify`, {
     method: 'POST',
@@ -4398,7 +4401,7 @@ async function sendCashInstLineNotify(phase, paidParts, totalParts) {
       order_id: orderId,
       phase,
       paid_parts: paidParts || 0,
-      total_parts: totalParts || getCurrentCashInstTotalParts()
+      total_parts: finalTotalParts
     })
   });
 
@@ -4425,8 +4428,14 @@ async function markCashInstProgress(targetParts){
 
   const f = currentRecord.fields || currentRecord || {};
   const totalParts = getCurrentCashInstTotalParts();
+const notifyOrderId = String(f.order_id || '').trim();
 
-  if (!totalParts) {
+if (!notifyOrderId) {
+  alert('這筆訂單沒有 order_id，無法發送現金分期通知。');
+  return;
+}
+
+if (!totalParts) {
     alert('這筆不是現金分期訂單');
     return;
   }
@@ -5694,7 +5703,7 @@ if (btnConfirmPayOkTopBind) {
       if (!ok) return;
 
       try {
-        await sendCashInstLineNotify('deposit', 0, totalParts);
+        await sendCashInstLineNotify('deposit', 0, totalParts, notifyOrderId);
       } catch (e) {
         console.error(e);
         alert('定金狀態已更新，但現金分期 LINE 通知發送失敗：' + (e.message || e));
@@ -5719,10 +5728,11 @@ if (btnConfirmPayOkTopBind) {
 
     try {
       await sendCashInstLineNotify(
-        isAllDone ? 'all_done' : `part_${nextPart}`,
-        nextPart,
-        totalParts
-      );
+  isAllDone ? 'all_done' : `part_${nextPart}`,
+  nextPart,
+  totalParts,
+  notifyOrderId
+);
     } catch (e) {
       console.error(e);
       alert('分期狀態已更新，但現金分期 LINE 通知發送失敗：' + (e.message || e));
