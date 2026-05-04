@@ -147,6 +147,38 @@
       font-size:13px;
       line-height:1.6;
     }
+    
+    .hero-total{
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      margin:4px 0 18px;
+    }
+    .hero-total-card{
+      min-width:360px;
+      max-width:min(680px,96%);
+      background:#fff;
+      border:2px solid #cfe3ff;
+      border-radius:26px;
+      padding:18px 28px;
+      box-shadow:0 14px 34px rgba(15,23,42,.08);
+      text-align:center;
+    }
+    .hero-total-label{
+      color:#64748b;
+      font-size:14px;
+      font-weight:800;
+      margin-bottom:8px;
+      letter-spacing:.5px;
+    }
+    .hero-total-value{
+      color:#0b4a9e;
+      font-size:40px;
+      line-height:1.15;
+      font-weight:900;
+      letter-spacing:.3px;
+    }
+
     .table-wrap{
       overflow:auto;
       border:1px solid var(--line);
@@ -156,7 +188,7 @@
     }
     table{
       width:100%;
-      min-width:1900px;
+      min-width:1650px;
       border-collapse:separate;
       border-spacing:0;
     }
@@ -235,7 +267,7 @@
       display:flex;
       gap:7px;
       flex-wrap:wrap;
-      min-width:420px;
+      min-width:360px;
     }
     .empty{
       color:var(--muted);
@@ -337,6 +369,13 @@
   <div class="wrap">
     <h1>公司進利總結</h1>
 
+    <div class="hero-total">
+      <div class="hero-total-card">
+        <div class="hero-total-label">目前最新已確認月份總資產</div>
+        <div class="hero-total-value" id="heroTotalAsset">NT$ 0</div>
+      </div>
+    </div>
+
     <div class="card">
       <div class="head">
         <div>
@@ -367,18 +406,14 @@
               <th>現金公司妹妹</th>
               <th>現金運費妹妹</th>
               <th>支付妹妹公司費用</th>
-              <th>白河房貸</th>
-              <th>白河扣款</th>
               <th>妹妹費用轉還款</th>
-              <th>結餘轉還款</th>
               <th>轉房貸金額</th>
-              <th>還款紀錄</th>
               <th>備註</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody id="rows">
-            <tr><td colspan="22" class="empty">載入中...</td></tr>
+            <tr><td colspan="18" class="empty">載入中...</td></tr>
           </tbody>
         </table>
       </div>
@@ -487,9 +522,30 @@ function getRowByMonth(month) {
   return allRows.find(r => monthLabel(r) === month) || null;
 }
 
+function renderHeroTotal() {
+  if (!allRows.length) {
+    $("heroTotalAsset").textContent = "NT$ 0";
+    return;
+  }
+
+  // 顯示「最新已確認入公司帳」那一筆的總資產。
+  // 如果沒有已確認資料，才退回抓第一筆有總資產的資料。
+  const picked =
+    allRows.find(r => bool(r.confirmed ?? r.confirmedCompanyAccount ?? r["確認入公司帳"])) ||
+    allRows.find(r => {
+      const v = r.totalAsset ?? r["總資產"];
+      return Number(String(v ?? "").replace(/[^\d.-]/g, "")) !== 0;
+    }) ||
+    allRows[0];
+
+  const totalAsset = picked?.totalAsset ?? picked?.["總資產"] ?? 0;
+  const month = monthLabel(picked || {});
+  $("heroTotalAsset").textContent = `${money(totalAsset)}${month ? "｜" + month : ""}`;
+}
+
 function renderRows() {
   if (!allRows.length) {
-    $("rows").innerHTML = `<tr><td colspan="22" class="empty">目前沒有資料。</td></tr>`;
+    $("rows").innerHTML = `<tr><td colspan="18" class="empty">目前沒有資料。</td></tr>`;
     return;
   }
 
@@ -497,7 +553,6 @@ function renderRows() {
     const month = monthLabel(r);
     const id = r.id || r.recordId || "";
     const confirmed = bool(r.confirmed ?? r.confirmedCompanyAccount ?? r["確認入公司帳"]);
-    const baihePaid = bool(r.baiheMortgagePaid ?? r.whiteMortgagePaid ?? r["白河房貸已扣款"]);
     const sisterFeeAuto = bool(r.useSisterFeeForMortgage ?? r.sisterFeeRepayAuto ?? r["轉房貸_用妹妹公司費用"]);
     const balanceRepay = bool(r.useBalanceForMortgage ?? r.balanceRepay ?? r["轉房貸_用結餘"]);
     const repayCreated = bool(r.repaymentRecordCreated ?? r.refundCreated ?? r["已建立還款紀錄"]);
@@ -515,7 +570,6 @@ function renderRows() {
     const cashCompanySister = r.cashCompanySister ?? r["現金-公司支出 [妹妹]"] ?? r["現金-公司支出 [ 妹妹 ]"];
     const cashCompanyShippingSister = r.cashCompanyShippingSister ?? r["現金-公司運費 [妹妹]"] ?? r["現金-公司運費 [ 妹妹 ]"];
     const paySisterCompanyExpense = r.paySisterCompanyExpense ?? r["支付妹妹公司費用"];
-    const sisterMortgage = r.sisterMortgage ?? r["妹妹白河農會房貸"];
     const transferMortgageAmount = r.transferMortgageAmount ?? r.transferRepayAmount ?? r["轉房貸金額"];
 
     return `
@@ -534,19 +588,14 @@ function renderRows() {
         <td>${amountLink(r, "cashCompanySister", "現金-公司支出 [妹妹]", cashCompanySister)}</td>
         <td>${amountLink(r, "cashCompanyShippingSister", "現金-公司運費 [妹妹]", cashCompanyShippingSister)}</td>
         <td>${amountLink(r, "paySisterCompanyExpense", "支付妹妹公司費用", paySisterCompanyExpense)}</td>
-        <td>${amountLink(r, "sisterMortgage", "妹妹白河農會房貸", sisterMortgage)}</td>
-        <td>${baihePaid ? `<span class="tag ok">已扣款</span>` : `<span class="tag warn">未扣款</span>`}</td>
-        <td>${sisterFeeAuto ? `<span class="tag ok">自動成立</span>` : `<span class="tag gray">尚未成立</span>`}</td>
-        <td>${balanceRepay ? `<span class="tag ok">已勾選</span>` : `<span class="tag gray">未勾選</span>`}</td>
+        <td>${sisterFeeAuto ? `<span class="tag ok">已自動成立</span>` : ""}</td>
         <td>${amountLink(r, "transferMortgageAmount", "轉房貸金額", transferMortgageAmount)}</td>
-        <td>${repayCreated ? `<span class="tag ok">已建立</span>` : `<span class="tag warn">尚未建立</span>`}</td>
         <td>${escHtml(note)}</td>
         <td>
           <div class="ops">
             <button class="btn-mini btn green" data-action="confirm_company_account" data-id="${escHtml(id)}" ${confirmed ? "disabled" : ""}>確認入帳</button>
-            <button class="btn-mini btn blue" data-action="mark_baihe_mortgage_paid" data-id="${escHtml(id)}" ${baihePaid ? "disabled" : ""}>白河已扣款</button>
             <button class="btn-mini btn orange" data-action="use_balance_repay" data-id="${escHtml(id)}" ${balanceRepay ? "disabled" : ""}>結餘轉還款</button>
-            <button class="btn-mini btn gray" data-action="create_repayment_record" data-id="${escHtml(id)}" ${repayCreated ? "disabled" : ""}>建立還款</button>
+            <button class="btn-mini btn gray" data-loan-panel="1" data-id="${escHtml(id)}" data-month="${escHtml(month)}" data-created="${repayCreated ? "1" : "0"}">房貸／借款主檔紀錄</button>
           </div>
         </td>
       </tr>
@@ -562,6 +611,7 @@ async function loadRows({ keepScroll = false } = {}) {
   try {
     const data = await apiGet(API_LIST, { max: 300 });
     allRows = Array.isArray(data.rows) ? data.rows : [];
+    renderHeroTotal();
     renderRows();
     $("msg").textContent = `✅ 載入 ${allRows.length} 筆`;
     $("msg").className = "msg ok";
@@ -569,7 +619,7 @@ async function loadRows({ keepScroll = false } = {}) {
       setTimeout(() => { document.querySelector(".table-wrap").scrollTop = oldScroll; }, 0);
     }
   } catch (err) {
-    $("rows").innerHTML = `<tr><td colspan="22" class="empty">❌ ${escHtml(err.message || err)}</td></tr>`;
+    $("rows").innerHTML = `<tr><td colspan="18" class="empty">❌ ${escHtml(err.message || err)}</td></tr>`;
     $("msg").textContent = `❌ ${err.message || err}`;
     $("msg").className = "msg err";
   }
@@ -657,6 +707,34 @@ async function openDetail(month, key, label) {
   }
 }
 
+function openLoanPanel(id, month) {
+  const row = allRows.find(r => (r.id || r.recordId || "") === id) || getRowByMonth(month) || {};
+  const sisterFeeAuto = bool(row.useSisterFeeForMortgage ?? row.sisterFeeRepayAuto ?? row["轉房貸_用妹妹公司費用"]);
+  const balanceRepay = bool(row.useBalanceForMortgage ?? row.balanceRepay ?? row["轉房貸_用結餘"]);
+  const repayCreated = bool(row.repaymentRecordCreated ?? row.refundCreated ?? row["已建立還款紀錄"]);
+  const repayDate = text(row.mortgageRepayDate ?? row.repaymentDate ?? row["房貸還款日期"]);
+  const repayAmount = row.transferMortgageAmount ?? row.transferRepayAmount ?? row["轉房貸金額"];
+
+  const html = `
+    <div style="display:grid;gap:12px;line-height:1.8;">
+      <div><strong>月份：</strong>${escHtml(month)}</div>
+      <div><strong>轉房貸金額：</strong><span class="money-link">${money(repayAmount)}</span></div>
+      <div><strong>妹妹費用轉還款：</strong>${sisterFeeAuto ? `<span class="tag ok">已自動成立</span>` : `<span class="tag gray">尚未成立</span>`}</div>
+      <div><strong>結餘轉還款：</strong>${balanceRepay ? `<span class="tag ok">已勾選</span>` : `<span class="tag gray">未勾選</span>`}</div>
+      <div><strong>還款紀錄：</strong>${repayCreated ? `<span class="tag ok">已建立</span>` : `<span class="tag warn">尚未建立</span>`}</div>
+      <div><strong>房貸還款日期：</strong>${escHtml(repayDate || "-")}</div>
+      <div class="hint">這裡只看還款狀態。清單表不再顯示結餘轉還款、還款紀錄等欄位，保持乾淨。</div>
+      <div class="toolbar">
+        <button class="btn orange" data-action="use_balance_repay" data-id="${escHtml(id)}" ${balanceRepay ? "disabled" : ""}>結餘轉還款</button>
+        <button class="btn gray" data-action="create_repayment_record" data-id="${escHtml(id)}" ${repayCreated ? "disabled" : ""}>建立還款紀錄</button>
+      </div>
+    </div>
+  `;
+
+  openModal(`${month}｜房貸／借款主檔紀錄`, "結餘轉還款、妹妹費用轉還款、還款紀錄都集中在這裡看。", html);
+}
+
+
 async function runAction(action, id) {
   const tr = document.querySelector(`tr[data-row-id="${CSS.escape(id)}"]`);
   const month = tr?.dataset?.month || "";
@@ -706,6 +784,12 @@ document.addEventListener("click", (e) => {
   const detail = e.target.closest("[data-detail-key]");
   if (detail) {
     openDetail(detail.dataset.month, detail.dataset.detailKey, detail.dataset.detailLabel);
+    return;
+  }
+
+  const loanBtn = e.target.closest("[data-loan-panel]");
+  if (loanBtn) {
+    openLoanPanel(loanBtn.dataset.id, loanBtn.dataset.month);
     return;
   }
 
