@@ -280,9 +280,10 @@
   <div class="card hidden" id="card-mode-switch">
   <h2>功能切換</h2>
   <div class="row">
-    <button id="btn-mode-simple">開單</button>
-    <button id="btn-mode-manage" class="ghost">購物車管理</button>
-    <button id="btn-mode-benefit" class="ghost">購物金</button>
+<button id="btn-mode-simple">開單</button>
+<button id="btn-mode-manage" class="ghost">購物車管理</button>
+<button id="btn-mode-benefit" class="ghost">購物金</button>
+<button id="btn-mode-credit-list" class="ghost">購物金清單</button>
   </div>
 </div>
 
@@ -479,7 +480,25 @@
 
   <div class="muted" id="benefit_submit_msg" style="margin-top:10px;"></div>
 </div>
+<div class="card hidden" id="card-credit-list">
+  <h2>購物金清單</h2>
 
+  <div class="row">
+    <div style="flex:2">
+      <label class="muted">搜尋</label>
+      <input id="creditListKw" placeholder="可輸入 LINE 名稱 / 手機 / LineUserId" />
+    </div>
+    <div style="align-self:end; flex:1">
+      <button id="btn-load-credit-list">重新整理</button>
+    </div>
+  </div>
+
+  <div class="muted" id="creditListMsg" style="margin-top:10px;">
+    只顯示目前有可用購物金餘額的會員
+  </div>
+
+  <div id="creditListBox" style="margin-top:12px;"></div>
+</div>
   <!-- 3. 加商品 -->
   <div class="card hidden" id="card-add">
     <h2>3️⃣加入商品</h2>
@@ -544,24 +563,32 @@ function setMode(mode){
 
   const simpleBlock = document.getElementById('simple-list-block');
   const manageBlock = document.getElementById('manage-list-block');
-  const btnSimple   = document.getElementById('btn-mode-simple');
-  const btnManage   = document.getElementById('btn-mode-manage');
-  const btnBenefit  = document.getElementById('btn-mode-benefit');
+  const btnSimple     = document.getElementById('btn-mode-simple');
+const btnManage     = document.getElementById('btn-mode-manage');
+const btnBenefit    = document.getElementById('btn-mode-benefit');
+const btnCreditList = document.getElementById('btn-mode-credit-list');
 
-  const isSimple  = CURRENT_MODE === 'simple';
-  const isManage  = CURRENT_MODE === 'manage';
-  const isBenefit = CURRENT_MODE === 'benefit';
+const isSimple     = CURRENT_MODE === 'simple';
+const isManage     = CURRENT_MODE === 'manage';
+const isBenefit    = CURRENT_MODE === 'benefit';
+const isCreditList = CURRENT_MODE === 'creditList';
 
   if (simpleBlock) simpleBlock.classList.toggle('hidden', !(isSimple || isBenefit));
   if (manageBlock) manageBlock.classList.toggle('hidden', !isManage);
 
-  if ($('#card-app')) $('#card-app').classList.toggle('hidden', !isSimple);
-  if ($('#card-benefit')) $('#card-benefit').classList.toggle('hidden', !isBenefit);
-  if ($('#card-add')) $('#card-add').classList.toggle('hidden', !isSimple);
+ if ($('#card-app')) $('#card-app').classList.toggle('hidden', !isSimple);
+if ($('#card-benefit')) $('#card-benefit').classList.toggle('hidden', !isBenefit);
+if ($('#card-credit-list')) $('#card-credit-list').classList.toggle('hidden', !isCreditList);
+if ($('#card-add')) $('#card-add').classList.toggle('hidden', !isSimple);
 
-  if (btnSimple) btnSimple.classList.toggle('ghost', !isSimple);
-  if (btnManage) btnManage.classList.toggle('ghost', !isManage);
-  if (btnBenefit) btnBenefit.classList.toggle('ghost', !isBenefit);
+ if (btnSimple) btnSimple.classList.toggle('ghost', !isSimple);
+if (btnManage) btnManage.classList.toggle('ghost', !isManage);
+if (btnBenefit) btnBenefit.classList.toggle('ghost', !isBenefit);
+if (btnCreditList) btnCreditList.classList.toggle('ghost', !isCreditList);
+
+if (isCreditList) {
+  loadCreditList();
+}
 }
 
   // ---------- helpers ----------
@@ -732,7 +759,112 @@ async function syncBenefitPanel(){
     creditEl.value = '讀取失敗';
   }
 }
+function renderCreditList(rows){
+  const box = document.getElementById('creditListBox');
+  if (!box) return;
 
+  const list = Array.isArray(rows) ? rows : [];
+
+  if (!list.length) {
+    box.innerHTML = `<div class="muted">目前沒有可用購物金餘額的會員</div>`;
+    return;
+  }
+
+  box.innerHTML = list.map(r => {
+    const uid = escHtml(r.line_user_id || '');
+    const name = escHtml(r.display_name || '(未命名會員)');
+    const phone = escHtml(r.phone || '');
+    const available = Number(r.available || 0) || 0;
+    const balance = Number(r.balance || 0) || 0;
+    const hold = Number(r.hold || 0) || 0;
+
+    return `
+      <div style="padding:12px 14px; border:1px solid #e5e7eb; border-radius:14px; background:#fff; margin-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+          <div style="min-width:240px; flex:1;">
+            <div style="font-weight:800;">${name}</div>
+            <div class="muted" style="margin-top:4px;">
+              ${phone ? '手機：' + phone + ' ｜ ' : ''}可用購物金：<b>${money(available)}</b>
+            </div>
+            <div class="muted mono" style="margin-top:4px; word-break:break-all;">
+              LineUserId：${uid}
+            </div>
+            ${hold > 0 ? `
+              <div class="muted" style="margin-top:4px;">
+                帳面餘額：${money(balance)} ｜ 預扣：${money(hold)}
+              </div>
+            ` : ''}
+          </div>
+
+          <div style="width:120px;">
+            <button
+              class="ghost btn-pick-credit-member"
+              data-uid="${uid}"
+              data-name="${name}"
+              data-phone="${phone}"
+            >選此客人</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  box.querySelectorAll('.btn-pick-credit-member').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const uid = (btn.dataset.uid || '').trim();
+      const name = (btn.dataset.name || '').trim();
+      const phone = (btn.dataset.phone || '').trim();
+
+      switchCustomerSafely(uid, name);
+
+      if ($('#line_user_id')) $('#line_user_id').value = uid;
+      if ($('#line_search_name')) $('#line_search_name').value = name;
+
+      CURRENT_MEMBER_PHONE = phone || '';
+
+      updateCurrentCustomerInfo();
+      syncMainButtons();
+      syncBenefitPanel();
+
+      setMode('simple');
+    });
+  });
+}
+
+async function loadCreditList(){
+  if (!OP) return;
+
+  const msg = document.getElementById('creditListMsg');
+  const kw = (document.getElementById('creditListKw')?.value || '').trim();
+
+  if (msg) msg.textContent = '讀取購物金清單中...';
+
+  try {
+    const res = await jfetch(API + '/op/credit-list', {
+      method:'POST',
+      body: JSON.stringify({
+        op_key: OP,
+        keyword: kw,
+        limit: 200
+      })
+    });
+
+    if (!res || res.ok !== true) {
+      if (msg) msg.textContent = '讀取失敗：' + ((res && res.error) || 'unknown');
+      renderCreditList([]);
+      return;
+    }
+
+    renderCreditList(res.rows || []);
+
+    if (msg) {
+      msg.textContent = `共 ${res.total || 0} 位會員有可用購物金餘額`;
+    }
+  } catch (e) {
+    if (msg) msg.textContent = '讀取失敗：' + e.message;
+    renderCreditList([]);
+  }
+}
 async function submitBenefitRequest(){
   if (!OP) return alert('請先登入 OP Key');
   if (!getLineUserId()) return alert('請先查詢已綁定完成的會員');
@@ -1807,7 +1939,28 @@ if (cartManageKwInput) {
 if (btnModeBenefit) {
   btnModeBenefit.addEventListener('click', ()=> setMode('benefit'));
 }
+const btnModeCreditList = document.getElementById('btn-mode-credit-list');
+if (btnModeCreditList) {
+  btnModeCreditList.addEventListener('click', ()=> {
+    setMode('creditList');
+    loadCreditList();
+  });
+}
 
+const btnLoadCreditList = document.getElementById('btn-load-credit-list');
+if (btnLoadCreditList) {
+  btnLoadCreditList.addEventListener('click', loadCreditList);
+}
+
+const creditListKw = document.getElementById('creditListKw');
+if (creditListKw) {
+  creditListKw.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      loadCreditList();
+    }
+  });
+}
 const btnSubmitBenefitRequest = $('#btn-submit-benefit-request');
 if (btnSubmitBenefitRequest) {
   btnSubmitBenefitRequest.addEventListener('click', ()=> submitBenefitRequest());
