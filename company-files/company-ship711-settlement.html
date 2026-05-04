@@ -191,7 +191,7 @@
     </div>
 
     <div class="sub-tabs-bar">
-      <a class="sub-tab" href="/company-files/company-cash-expense-sign.html">簽收</a>
+      <a class="sub-tab" href="/company-files/company-cash-expense-sign.html">員工簽收</a>
       <a class="sub-tab" href="/company-files/company-invoice-check.html">發票核對</a>
       <a class="sub-tab" href="/company-files/company-card-bills.html">信用卡帳單</a>
       <a class="sub-tab" href="/company-files/company-cash-expense.html">現金支出</a>
@@ -227,12 +227,11 @@
           <label for="accountName">領款帳號名稱</label>
           <select id="accountName">
             <option value="">全部帳號</option>
-            <option>黃承偉 - 郵局</option>
-            <option>蘇瑞潔 - 元大</option>
-            <option>夏雪 - 台新</option>
-            <option>黃玠銘 - 郵局</option>
+            <option>夏寧媽咪-台新</option>
+            <option>黃弈鋒-郵局</option>
+            <option>蘇瑞慈-元大</option>
+            <option>黃琮豪-台新</option>
             <option>妹妹-京城</option>
-            <option>潘羿如 - 郵局</option>
           </select>
         </div>
         <div class="field">
@@ -390,17 +389,24 @@
     const FIELD_NAMES = {
       id: ["id", "record_id", "recId"],
       orderId: ["order_id", "OrderId", "訂單編號", "訂單ID"],
-      account: ["領款帳號名稱", "賣貨便帳號", "帳號名稱", "取款帳號", "取款帳號名稱"],
-      pickupStatus: ["取貨註記", "取貨登記", "取貨狀態", "取貨備註"],
-      pickupDate: ["取貨日期", "取貨完成日", "pickup_date"],
-      month: ["賣貨便月份", "結算月份", "月份", "settlement_month"],
-      amount: ["賣貨便結算金額", "結算金額", "應領金額", "賣貨便金額", "本筆應領", "amount"],
-      paid: ["累計已領金額", "已領金額", "已領取金額", "領取金額", "paid_amount"],
-      remain: ["剩餘未領", "剩餘未領金額", "未領金額", "remaining_amount"],
-      status: ["領取狀態", "賣貨便領取狀態", "status"],
-      store: ["超商門市", "門市名稱", "取貨門市", "超商", "711門市"],
+
+      // 後端 /op/company/ship711-settlement/list 回傳的是 accountName
+      account: ["accountName", "account_name", "領款帳號名稱", "賣貨便名稱", "賣貨便帳號名稱", "賣貨便帳號", "帳號名稱", "取款帳號", "取款帳號名稱"],
+
+      // 取貨狀態後端回傳 pickupNote；領款狀態後端回傳 pickupStatus，兩個不要混在一起
+      pickupStatus: ["pickupNote", "pickup_note", "取貨註記", "取貨登記", "取貨狀態", "取貨備註"],
+      pickupDate: ["pickupDate", "pickup_date", "取貨日期", "取貨完成日"],
+      month: ["month", "settlement_month", "賣貨便月份", "結算月份", "月份"],
+
+      // 後端回傳 camelCase：settlementAmount / pickedAmount / remainingAmount
+      amount: ["settlementAmount", "settlement_amount", "賣貨便結算金額", "結算金額", "應領金額", "賣貨便金額", "本筆應領", "amount"],
+      paid: ["pickedAmount", "picked_amount", "paid_amount", "累計已領金額", "已領金額", "已領取金額", "領取金額"],
+      remain: ["remainingAmount", "remaining_amount", "剩餘未領", "剩餘未領金額", "未領金額"],
+
+      status: ["pickupStatus", "pickup_status", "領取狀態", "賣貨便領取狀態", "status"],
+      store: ["storeName", "store_name", "超商門市", "門市名稱", "取貨門市", "超商", "711門市"],
       city: ["超商縣市", "門市縣市", "city"],
-      note: ["取款註記", "備註", "note", "internal_note"],
+      note: ["note", "取款註記", "備註", "internal_note"],
     };
 
     function pick(obj, names, fallback = "") {
@@ -732,6 +738,8 @@
         if (!row) continue;
         const receive = Math.min(num(receiveAmount), Math.max(0, row.remain));
         if (receive <= 0) continue;
+        const newPickedTotal = row.paid + receive;
+        const newRemain = Math.max(0, row.remain - receive);
         items.push({
           id: row.id,
           order_id: row.order_id,
@@ -741,6 +749,10 @@
           paid_amount: row.paid,
           remaining_amount: row.remain,
           receive_amount: receive,
+
+          // 給後端 save-pickup 用：這個是「累計已領金額」，不是本次金額
+          pickupAmount: newPickedTotal,
+          status: newRemain <= 0 ? "已領取" : "部分領取"
         });
       }
       return items;
