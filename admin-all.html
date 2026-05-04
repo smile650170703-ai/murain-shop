@@ -1,0 +1,5766 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>訂單後台</title>
+<style>
+  *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
+  body{margin:0;background:#020617;color:#e2e8f0}
+  .wrap{max-width:1200px;margin:0 auto;padding:16px}
+  h1{margin:0 0 6px;font-size:24px}
+
+  /* 新版上方工具列（含快速 filter + 日期/狀態 + 匯出） */
+  .toolbar-main{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+  .toolbar-left{flex:1;display:flex;flex-direction:column;gap:6px}
+  .filter-group{display:flex;flex-wrap:wrap;gap:6px}
+  .filter-btn{padding:7px 12px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:rgba(15,23,42,.9);color:#e5e7eb;font-size:13px;cursor:pointer}
+  .filter-btn.active{background:#22d3ee;color:#0f172a;border-color:#22d3ee;box-shadow:0 8px 20px rgba(34,211,238,.35)}
+  .small-btn{padding:6px 10px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:transparent;color:#e5e7eb;font-size:12px;cursor:pointer}
+
+  .filter-row{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;align-items:flex-end;margin-top:2px}
+  .filter-row .field{min-width:140px;flex:0 0 auto}
+  .filter-row label{display:block;font-size:11px;margin:0 0 2px;color:#94a3b8}
+  .filter-row input,
+  .filter-row select{width:100%;padding:5px 8px;border-radius:999px;border:1px solid rgba(148,163,184,.6);background:#020617;color:#e2e8f0;font-size:12px}
+
+  .summary-row{font-size:12px;color:#cbd5f5;display:flex;flex-wrap:wrap;gap:10px;margin-top:2px}
+  .summary-row span{white-space:nowrap}
+  #msg{font-size:12px;color:#94a3b8;margin-top:2px}
+
+  .layout{display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr);gap:12px}
+  @media (max-width:900px){.layout{grid-template-columns:1fr;}}
+
+  .card{background:rgba(15,23,42,.95);border-radius:16px;border:1px solid rgba(148,163,184,.3);padding:10px;min-height:120px}
+  #orderList{max-height:calc(100vh - 190px);overflow:auto}
+
+  .order-row{padding:8px 10px;border-radius:12px;cursor:pointer;border:1px solid transparent;margin-bottom:6px;background:rgba(15,23,42,.95)}
+  .order-row:hover{border-color:rgba(148,163,184,.8);background:rgba(15,23,42,1)}
+  .order-row.active{border-color:#22d3ee;background:rgba(15,23,42,1);box-shadow:0 8px 20px rgba(34,211,238,.25)}
+
+  .ord-top{display:flex;align-items:center;gap:6px;font-size:13px}
+.ord-right{margin-left:auto;text-align:right}
+.ord-check{display:flex;align-items:center;flex:0 0 auto}
+.ord-cb{width:18px;height:18px;cursor:pointer}
+  .ord-id{font-weight:600}
+  .ord-amount{font-weight:600}
+  .ord-sub{font-size:12px;color:#94a3b8;margin-top:3px}
+  .badges{display:flex;flex-wrap:wrap;gap:4px;font-size:11px;margin-top:4px}
+  .badge{padding:2px 7px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:rgba(15,23,42,1)}
+  .badge.green{border-color:#22c55e;color:#bbf7d0;background:rgba(22,163,74,.2)}
+  .badge.yellow{border-color:#eab308;color:#facc15;background:rgba(234,179,8,.15)}
+  .badge.red{border-color:#f97373;color:#fecaca;background:rgba(220,38,38,.2)}
+  .badge.blue{border-color:#38bdf8;color:#bae6fd;background:rgba(56,189,248,.2)}
+  .muted{font-size:13px;color:#94a3b8}
+ .credit-red { color:#ff4d4f; font-weight:800; }
+
+  .detail-grid{display:grid;grid-template-columns:1.1fr 0.9fr;gap:10px}
+  @media (max-width:900px){.detail-grid{grid-template-columns:1fr}}
+
+  label{display:block;font-size:12px;margin:6px 0 3px;color:#cbd5f5}
+  input,select,textarea{width:100%;padding:8px 9px;border-radius:10px;border:1px solid rgba(148,163,184,.6);background:#020617;color:#e2e8f0;font-size:13px}
+  textarea{min-height:70px;resize:vertical}
+  input:focus,select:focus,textarea:focus{outline:2px solid #38bdf8;outline-offset:1px;border-color:#38bdf8}
+  .row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .mt-2{margin-top:8px}
+  .mt-3{margin-top:12px}
+  .mt-4{margin-top:16px}
+  .btn-primary{margin-top:8px;padding:10px 14px;border-radius:999px;border:none;background:#22d3ee;color:#0f172a;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 10px 30px rgba(34,211,238,.35)}
+  .btn-secondary{margin-top:8px;padding:8px 12px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:transparent;color:#e5e7eb;font-size:13px;cursor:pointer}
+ .pickup-wrap{display:flex;gap:6px;align-items:center}
+.pickup-wrap input{flex:1}
+.btn-mini{
+  width:auto;
+  padding:6px 10px;
+  border-radius:10px;
+  border:1px solid rgba(148,163,184,.7);
+  background:rgba(15,23,42,.9);
+  color:#e2e8f0;
+  font-size:12px;
+  cursor:pointer;
+}
+.btn-mini:hover{border-color:#22d3ee}
+  .section-title{font-size:13px;font-weight:600;color:#e5e7eb;margin-top:4px;margin-bottom:2px}
+  .pill{display:inline-block;padding:3px 7px;border-radius:999px;background:rgba(15,23,42,1);border:1px solid rgba(148,163,184,.6);font-size:11px;color:#cbd5f5;margin-right:4px;margin-top:2px}
+  .pill.cod711 {
+  background: #7f1d1d;      /* 深紅底 */
+  border-color: #fecaca;    /* 淡紅邊框 */
+  color: #fee2e2;           /* 字體偏粉 */
+}
+.pill.cod711 span {
+  color: #fee2e2;
+}
+ .tag-small{font-size:11px;color:#94a3b8}
+ /* ★ 購物金折抵顯示紅色（列表 + 右側 pill 共用） */
+.credit-red { color:#f87171; font-weight:700; }
+
+.tag-small.credit-red { color:#f87171; font-weight:700; }
+ 
+ .pickup-reg-inline{
+  color:#f87171;
+  font-weight:700;
+}
+
+.hidden{display:none !important;}
+
+.btn-badge-wrap{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+}
+
+.count-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:18px;
+  height:18px;
+  padding:0 6px;
+  border-radius:999px;
+  background:#ef4444;
+  color:#fff;
+  font-size:11px;
+  line-height:1;
+  font-weight:700;
+}
+
+.side-box-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  margin-bottom:6px;
+}
+
+.side-box-head label{
+  margin:0;
+}
+
+.panel-close{
+  width:auto;
+  padding:2px 8px;
+  border-radius:999px;
+  border:1px solid rgba(148,163,184,.7);
+  background:transparent;
+  color:#e2e8f0;
+  font-size:12px;
+  cursor:pointer;
+}
+
+.benefit-alert-text{
+  color:#f87171;
+  font-weight:700;
+}
+
+ .toolbar-side{
+  min-width:260px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.side-box{
+  padding:10px;
+  border-radius:12px;
+  border:1px solid rgba(148,163,184,.3);
+  background:rgba(15,23,42,.95);
+}
+#vendor_month_summary{
+  margin-top:8px;
+  line-height:1.6;
+  white-space:pre-wrap;
+}
+
+.pill.credit-red{
+  border-color:#fca5a5;
+  background:rgba(239,68,68,.12);
+  color:#fecaca;
+}
+.pill.credit-red span{ color:#fecaca; }
+ /* ★ 只把賣貨便累積那一行改成紅色 */
+#d_vendor_stats {
+  color:#fecaca;   /* 你也可以換成 #f87171 或 red */
+}
+#btnQuickPaid,
+#btnRemindToday,
+#btnPickupNeed,
+#btnConsign,
+#btnConsignAccounting{
+  display:none !important;
+}
+
+/* ✅ 收款按鈕統一：隱藏「已收定金」與「現金分期第幾期」多餘按鈕 */
+#btnDepositPayAndNoticeTop,
+#btnCashInstPart1Top,
+#btnCashInstPart2Top,
+#btnCashInstPart3Top,
+#btnCashInstAllDoneTop,
+#orderDetail #btnDepositPayAndNotice,
+#orderDetail #btnCashInstPart1,
+#orderDetail #btnCashInstPart2,
+#orderDetail #btnCashInstPart3,
+#orderDetail #btnCashInstAllDone{
+  display:none !important;
+}
+  .label-inline{display:flex;align-items:center;gap:5px;font-size:12px;margin-top:4px}
+  .label-inline input[type="checkbox"]{width:auto}
+  .error{color:#fecaca;font-size:13px;margin-top:4px}
+ /* 上方「今日尾款提醒」旁的快捷操作列 */
+  .top-order-actions{
+    margin-top:6px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:6px;
+  }
+  .top-order-actions > button{
+    margin-top:0; /* 不要再往下推一格，看起來才會平整 */
+  }
+.ro-field.ro-sm{ height: 38px; }
+
+ .retry-mini label{
+  font-size:11px;
+  margin:4px 0 2px;
+}
+
+.retry-mini .ro-field{
+  height:34px;
+  font-size:12px;
+  padding:0 10px;
+}
+
+/* ===== 唯讀顯示欄位 ===== */
+.ro-field{
+  height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.10);
+  color: rgba(255,255,255,.92);
+  position: relative;
+  box-shadow: inset 3px 0 0 rgba(212,175,55,.45); /* 左側金色提示條 */
+}
+
+.ro-field::after{
+  content: none !important;
+  display: none !important;
+}
+
+.ro-field.ro-empty{
+  color: rgba(255,255,255,.55);
+  font-style: italic;
+}
+
+/* 如果你仍有用 readonly/disabled input，也讓它好看 */
+input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:disabled{
+  opacity: 1 !important;
+  color: rgba(255,255,255,.92) !important;
+  background: rgba(255,255,255,.04) !important;
+  border: 1px solid rgba(255,255,255,.10) !important;
+  cursor: not-allowed;
+}
+ #orderDetail #btnSaveAndShip,
+  #orderDetail #btnConfirmPayOk,
+  #orderDetail #btnMarkZcFail,
+  #orderDetail #btnPrintOrder,
+  #orderDetail #btnSendTailLink,
+  #orderDetail #btnCancelOrder,
+  #orderDetail #btnMeetupNotify,
+  #orderDetail #btnDepositPayAndNotice,
+  #orderDetail #btnSaveDetailOnly {
+    display: none;
+  }
+
+ /* ★ 隱藏：0 元包裹匯出按鈕（不動其他邏輯） */
+  #btnExportZero{display:none !important;}
+ button.filter-btn[data-filter="unshipped"]{display:none !important;}
+ /* ===== 共用六頁頁籤 ===== */
+.page-tabs{
+  margin:0 0 18px;
+}
+
+.page-tabs-bar{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  padding:12px 14px;
+  border-radius:18px;
+  background:#020617;
+  border:1px solid rgba(148,163,184,.28);
+  box-shadow:0 10px 30px rgba(15,23,42,.12);
+}
+
+.page-tab{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:44px;
+  padding:0 18px;
+  border-radius:999px;
+  text-decoration:none;
+  font-size:14px;
+  font-weight:800;
+  letter-spacing:.01em;
+  background:rgba(15,23,42,.92);
+  color:#e2e8f0;
+  border:1px solid rgba(148,163,184,.55);
+  transition:.18s ease;
+}
+
+.page-tab:hover{
+  transform:translateY(-1px);
+  border-color:#22d3ee;
+  box-shadow:0 8px 20px rgba(34,211,238,.18);
+}
+
+.page-tab.is-active{
+  background:#22d3ee;
+  color:#0f172a;
+  border-color:#22d3ee;
+  box-shadow:0 8px 20px rgba(34,211,238,.32);
+}
+
+@media (max-width:900px){
+  .page-tabs-bar{
+    gap:8px;
+    padding:10px;
+  }
+  .page-tab{
+    min-height:40px;
+    padding:0 14px;
+    font-size:13px;
+  }
+}
+ #d_cash_inst_progress_ro,
+#d_cash_inst_completed_ro{
+  font-size:12px;
+  font-weight:600;
+}
+
+
+/* ===== 訂單後台內頁按鈕列：放在第二排，不放到最上方主頁籤 ===== */
+.admin-sub-tabs a.filter-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  text-decoration:none;
+}
+.admin-sub-tabs a.filter-btn.active{
+  background:#22d3ee;
+  color:#0f172a;
+  border-color:#22d3ee;
+  box-shadow:0 8px 20px rgba(34,211,238,.35);
+}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>訂單後台</h1>
+
+<div class="page-tabs">
+  <div class="page-tabs-bar">
+    <a class="page-tab" href="op.html">直播主開單</a>
+    <a class="page-tab is-active" href="admin.html">訂單後台</a>
+    <a class="page-tab" href="stock-in.html">入庫／自有+寄賣</a>
+    <a class="page-tab" href="op/preorder-order.html">預購入庫＋發送</a>
+    <a class="page-tab" href="/shop-product-admin">上架官網</a>
+    <a class="page-tab" href="stock.html">庫存查詢</a>
+    <a class="page-tab" href="/procurement-center/procurement-index.html">採購／到貨入庫</a>
+    <a class="page-tab" href="/company-files/company-index.html">公司檔案管理</a>
+  </div>
+</div>
+
+  <div class="toolbar-main">
+    <div class="toolbar-left">
+<div class="filter-group admin-sub-tabs">
+  <a class="filter-btn" data-admin-file="admin.html" href="admin.html">全部訂單</a>
+
+  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-cart-open.html" id="btnCartOpenTop" href="admin-cart-open.html">
+    <span>🛒 未結單購物車</span>
+    <span id="cartOpenBadge" class="count-badge" style="display:none;">0</span>
+  </a>
+
+  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-ship.html" id="btnQuickPaidTop" href="admin-ship.html">
+    <span>⭐待出貨訂單</span>
+    <span id="quickPaidBadge" class="count-badge" style="display:none;">0</span>
+  </a>
+
+  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-bank.html" id="btnRemindTodayTop" href="admin-bank.html">
+    <span>匯款待確認</span>
+    <span id="remindTodayBadge" class="count-badge" style="display:none;">0</span>
+  </a>
+
+  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-pickup.html" id="btnPickupNeedTop" href="admin-pickup.html">
+    <span>賣貨便登記</span>
+    <span id="pickupNeedBadge" class="count-badge" style="display:none;">0</span>
+  </a>
+
+  <a class="filter-btn" data-admin-file="admin-deposit.html" href="admin-deposit.html">已收定金未出貨</a>
+  <a class="filter-btn" data-admin-file="admin-cashinst.html" href="admin-cashinst.html">現金分期未收齊</a>
+  <a class="filter-btn" data-admin-file="admin-cancelled.html" href="admin-cancelled.html">已取消／棄標</a>
+
+  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-consign.html" id="btnConsignTop" href="admin-consign.html">
+    <span>寄賣</span>
+    <span id="consignBadge" class="count-badge" style="display:none;">0</span>
+  </a>
+
+  <a class="filter-btn" data-admin-file="admin-trade.html" id="btnConsignAccountingTop" href="admin-trade.html">一時貿易</a>
+  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-benefit-review.html" id="btnBenefitReviewLink" href="admin-benefit-review.html">
+  <span>💰 審核購物金</span>
+  <span id="benefitBadge" class="count-badge" style="display:none;">0</span>
+</a>
+</div>
+<div class="filter-row">
+    <div class="field">
+    <label>開始日期</label>
+    <input id="date_from" type="date">
+  </div>
+
+  <div class="field">
+    <label>結束日期</label>
+    <input id="date_to" type="date">
+  </div>
+
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="small-btn" id="btnApplyDate" type="button">套用日期</button>
+  </div>
+
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="small-btn" id="btnClearDate" type="button">清除日期</button>
+  </div>
+
+  <div class="field">
+    <label>狀態（status）</label>
+    <select id="status">
+      <option value="">全部</option>
+      <option value="unshipped_custom">📦未出貨訂單</option>
+      <option value="deposit_unshipped_custom">💰已收定金未出貨</option>
+    </select>
+  </div>
+
+  <!-- 隱藏用：給上排三顆按鈕代理觸發 -->
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="small-btn" id="btnQuickPaid" type="button">⭐待出貨訂單</button>
+  </div>
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="small-btn" id="btnRemindToday" type="button">匯款待確認</button>
+  </div>
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="small-btn" id="btnPickupNeed" type="button">賣貨便登記</button>
+  </div>
+ <div class="field">
+  <label>&nbsp;</label>
+  <button class="small-btn" id="btnConsign" type="button">寄賣</button>
+</div>
+
+<div class="field">
+  <label>&nbsp;</label>
+  <button class="small-btn" id="btnConsignAccounting" type="button">一時貿易</button>
+</div>
+
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="small-btn" id="btnPrintSlipsRange" type="button">⭐列印出貨單</button>
+  </div>
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="small-btn" id="btnExportShip" type="button" disabled>
+      ⭐下載「賣貨便」檔
+    </button>
+  </div>
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="small-btn" id="btnExportZero" type="button" disabled>
+      ⭐下載「0 元包裹」檔
+    </button>
+  </div>
+</div>
+
+
+
+      <div id="summary" class="summary-row"></div>
+      <!-- ★ 上方：目前選中訂單的快捷操作按鈕 -->
+      <div class="top-order-actions">
+        <button class="btn-primary" id="btnSaveAndShipTop" type="button">
+          📦 儲存+已出貨+發LINE
+        </button>
+        <button class="btn-secondary" id="btnConfirmPayOkTop" type="button">
+          ✅ 收款/審核通過+發LINE
+        </button>
+        <button class="btn-secondary" id="btnMarkZcFailTop" type="button">
+          ❌ 未通過+發LINE+重新結帳
+        </button>
+       <button class="btn-secondary" id="btnDepositPayAndNoticeTop" type="button">
+  ✅ 已收定金+發保留通知
+</button>
+       <button class="btn-secondary cash-inst-top-btn" id="btnCashInstPart1Top" type="button" style="display:none;">
+  💵 現金分期｜第 1 期已收
+</button>
+
+<button class="btn-secondary cash-inst-top-btn" id="btnCashInstPart2Top" type="button" style="display:none;">
+  💵 現金分期｜第 2 期已收
+</button>
+
+<button class="btn-secondary cash-inst-top-btn" id="btnCashInstPart3Top" type="button" style="display:none;">
+  💵 現金分期｜第 3 期已收
+</button>
+
+<button class="btn-secondary cash-inst-top-btn" id="btnCashInstAllDoneTop" type="button" style="display:none;">
+  ✅ 現金分期｜全部收齊
+</button>
+       <button class="btn-secondary" id="btnMeetupCashDoneTop" type="button">
+  🤝 完成面交收款（已收款＋出貨完成）
+        </button>
+        <button class="btn-secondary" id="btnSendTailLinkTop" type="button">
+          💰發尾款結帳連結+發LINE
+        </button>
+        <button class="btn-secondary" id="btnSaveDetailOnlyTop" type="button">
+          💾 儲存資料
+        </button>
+       <button class="btn-secondary" id="btnCartRemindTop" type="button" style="display:none;">
+  🛒 提醒目前購物車清單
+</button>
+      </div>
+
+      <div id="msg"></div>
+    </div>
+
+<div class="toolbar-side">
+  <span id="opLabel" class="tag-small"></span>
+  <button id="btnCancelOrderTop" class="small-btn" type="button">
+    🚫 棄標(請勿亂按)
+  </button>
+
+  <div class="side-box" id="vendorMonthBox">
+  <label>賣貨便月份</label>
+  <input id="vendor_month" type="month" />
+  <div id="vendor_month_summary" class="tag-small"></div>
+</div>
+
+    <div class="side-box">
+    <label>LINE 名稱搜尋</label>
+    <input id="line_search" type="text" placeholder="輸入 LINE 名稱" />
+  </div>
+
+<div class="side-box hidden" id="benefitReviewPanel">
+  <div class="side-box-head">
+    <label>待審核購物金</label>
+    <button type="button" class="panel-close" id="btnBenefitReviewClose">✕</button>
+  </div>
+  <div id="benefitReviewList" class="tag-small">尚未載入</div>
+</div>
+</div>
+  </div>
+
+  <div class="layout">
+    <div class="card" id="orderList">
+      <div class="muted">載入中…</div>
+    </div>
+
+    <div class="card" id="orderDetail">
+      <div class="muted">請從左邊點選一筆訂單</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
+const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
+
+function normalizeAdminPageFile(){
+  const raw = String(location.pathname.split('/').pop() || 'admin').trim();
+
+  if (!raw || raw === '/') return 'admin.html';
+
+  // ✅ Cloudflare / murain.tw 可能會把 admin-ship.html 顯示成 /admin-ship
+  // 所以這裡自動補回 .html，讓 ADMIN_PAGE_MAP 找得到
+  return raw.endsWith('.html') ? raw : `${raw}.html`;
+}
+
+const ADMIN_PAGE_FILE = normalizeAdminPageFile();
+
+const ADMIN_PAGE_MAP = {
+  'admin.html': {
+    title: '全部訂單',
+    mode: 'orders',
+    viewKey: '',
+    viewName: '',
+    useDate: true
+  },
+  'admin-ship.html': {
+    title: '待出貨訂單',
+    mode: 'orders',
+    viewKey: 'ship',
+    viewName: '待出貨訂單',
+    useDate: false
+  },
+  'admin-bank.html': {
+    title: '匯款待確認',
+    mode: 'orders',
+    viewKey: 'bank',
+    viewName: '匯款待確認',
+    useDate: false
+  },
+  'admin-pickup.html': {
+    title: '賣貨便登記',
+    mode: 'orders',
+    viewKey: 'pickup',
+    viewName: '賣貨便登記',
+    useDate: false
+  },
+  'admin-deposit.html': {
+    title: '已收定金未出貨',
+    mode: 'orders',
+    viewKey: 'deposit_unshipped',
+    viewName: '已收定金未出貨',
+    useDate: false
+  },
+  'admin-cashinst.html': {
+    title: '現金分期未收齊',
+    mode: 'orders',
+    viewKey: 'cashinst_unpaid',
+    viewName: '現金分期未收齊',
+    useDate: false
+  },
+  'admin-cancelled.html': {
+    title: '已取消 / 棄標',
+    mode: 'orders',
+    viewKey: 'cancelled',
+    viewName: '已取消 / 棄標',
+    useDate: false
+  },
+  'admin-cart-open.html': {
+    title: '未結單購物車',
+    mode: 'cart_open',
+    viewKey: '',
+    useDate: false
+  },
+  'admin-consign.html': {
+    title: '寄賣',
+    mode: 'consign_settlement',
+    viewKey: '',
+    useDate: false
+  },
+  'admin-trade.html': {
+    title: '一時貿易',
+    mode: 'consign_accounting',
+    viewKey: '',
+    useDate: false
+  },
+  'admin-benefit-review.html': {
+    title: '審核購物金',
+    mode: 'benefit_review',
+    viewKey: '',
+    useDate: false
+  }
+};
+
+const ADMIN_PAGE = ADMIN_PAGE_MAP[ADMIN_PAGE_FILE] || ADMIN_PAGE_MAP['admin.html'];
+
+function setupAdminPageChrome(){
+  document.title = `${ADMIN_PAGE.title}｜訂單後台`;
+
+  // 大標題固定維持「訂單後台」，子頁名稱用第二排 active 按鈕表示
+  const h1 = document.querySelector('h1');
+  if (h1) h1.textContent = '訂單後台';
+
+  // 只讓訂單後台裡面的第二排按鈕 active；最上方主頁籤不要塞小功能頁
+  document.querySelectorAll('.admin-sub-tabs [data-admin-file]').forEach(a => {
+    a.classList.toggle('active', a.dataset.adminFile === ADMIN_PAGE_FILE);
+  });
+
+  const isFixedPage = ADMIN_PAGE_FILE !== 'admin.html';
+
+  if (isFixedPage) {
+    // 子頁直接吃 Airtable View / 專用 API，不再顯示日期與狀態篩選
+    [
+      'date_from',
+      'date_to',
+      'btnApplyDate',
+      'btnClearDate',
+      'status',
+      'btnQuickPaid',
+      'btnRemindToday',
+      'btnPickupNeed',
+      'btnConsign',
+      'btnConsignAccounting'
+    ].forEach(id => {
+      const el = document.getElementById(id);
+      const field = el?.closest?.('.field');
+      if (field) field.classList.add('hidden');
+      else if (el) el.classList.add('hidden');
+    });
+  }
+ const vendorMonthBox = document.getElementById('vendorMonthBox');
+if (vendorMonthBox && ADMIN_PAGE_FILE !== 'admin-pickup.html') {
+  vendorMonthBox.classList.add('hidden');
+}
+}
+
+
+
+function shouldUseAdminLinkNav(el){
+  const href = el?.getAttribute?.('href') || '';
+  return !!href && /admin.*\.html$/.test(href);
+}
+
+let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
+let currentFilter = 'all';
+let currentOrders = [];
+let currentRecord = null;
+let ORDERS_CACHE = []; // ← 匯出用，存純欄位物件
+let ALL_ORDERS_CACHE = [];
+let VENDOR_SUMMARY_CACHE = [];
+let LINE_SEARCH_TERM = '';
+ let currentConsignAccountingRows = [];
+let currentConsignAccountingBucket = '';
+
+let currentPanelMode = 'orders';      // orders / consign
+let currentConsignRows = [];
+let currentConsignRecord = null;
+ let currentCartRows = [];
+let currentCartRecord = null;
+
+ function getBiMonthLabel(dateLike){
+  const s = String(dateLike || '').trim();
+  if (!s) return '';
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return '';
+  const m = d.getMonth() + 1;
+
+  if (m <= 2) return '1-2月';
+  if (m <= 4) return '3-4月';
+  if (m <= 6) return '5-6月';
+  if (m <= 8) return '7-8月';
+  if (m <= 10) return '9-10月';
+  return '11-12月';
+}
+
+async function loadConsignAccountingList(){
+  currentPanelMode = 'consign_accounting';
+  currentConsignRecord = null;
+  currentConsignAccountingBucket = '';
+
+  const listEl = $('#orderList');
+  const detailEl = $('#orderDetail');
+  const msgEl = $('#msg');
+
+  listEl.innerHTML = '<div class="muted">一時貿易資料載入中…</div>';
+  detailEl.innerHTML = '<div class="muted">請先選擇一個月份區間</div>';
+  if (msgEl) msgEl.textContent = '';
+
+  try{
+    await ensureOpKey();
+
+    const r = await fetch(`${API}/op/consign/settlement/list`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        status: 'all'
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok || !j.ok){
+      throw new Error(j.error || 'consign_accounting_list_failed');
+    }
+
+    currentConsignAccountingRows = (j.items || []).filter(row => {
+      const st = String(row.status || '').trim().toLowerCase();
+      const method = String(row.method || '').trim().toLowerCase();
+      return st === 'settled' && (method === 'bank_transfer' || method === 'store_credit');
+    });
+
+    renderConsignAccountingBuckets();
+updateCurrentSubTabCount(currentConsignAccountingRows.length);
+setTopFilterActive('consign_accounting');
+
+    if (msgEl) {
+      msgEl.textContent = currentConsignAccountingRows.length
+        ? `僅顯示已完成匯款／購物金的一時貿易資料，共 ${currentConsignAccountingRows.length} 筆。`
+        : '目前沒有可列印的一時貿易資料。';
+    }
+  }catch(e){
+    console.error(e);
+    listEl.innerHTML = '<div class="error">一時貿易資料載入失敗：' + (e.message || e) + '</div>';
+    currentConsignAccountingRows = [];
+  }
+}
+
+function renderConsignAccountingBuckets(){
+  const listEl = $('#orderList');
+
+  const buckets = ['1-2月','3-4月','5-6月','7-8月','9-10月','11-12月'];
+
+  const grouped = {};
+  buckets.forEach(k => grouped[k] = []);
+
+  (currentConsignAccountingRows || []).forEach(row => {
+    const doneAt =
+      row.creditDoneAt ||
+      row.bankDoneAt ||
+      row.doneAt ||
+      row.updatedAt ||
+      '';
+    const label = getBiMonthLabel(doneAt);
+    if (label && grouped[label]) grouped[label].push(row);
+  });
+
+  listEl.innerHTML = buckets.map(label => {
+    const count = grouped[label].length;
+    return `
+      <div class="order-row" data-bucket="${label}">
+        <div class="ord-top">
+          <div class="ord-id">${label}</div>
+          <div class="ord-right">
+            <div class="ord-amount">${count} 筆</div>
+          </div>
+        </div>
+        <div class="ord-sub">已完成匯款／購物金的一時貿易資料</div>
+      </div>
+    `;
+  }).join('');
+
+  $$('#orderList .order-row').forEach(rowEl => {
+    rowEl.addEventListener('click', () => {
+      $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
+      rowEl.classList.add('active');
+
+      const bucket = rowEl.getAttribute('data-bucket') || '';
+      currentConsignAccountingBucket = bucket;
+      renderConsignAccountingDetail(bucket, grouped[bucket] || []);
+    });
+  });
+}
+
+function renderConsignAccountingDetail(bucket, rows){
+  const detailEl = $('#orderDetail');
+
+  if (!rows.length){
+    detailEl.innerHTML = `<div class="muted">${bucket} 沒有可列印資料</div>`;
+    return;
+  }
+
+  const previewHtml = rows.map((item, idx) => {
+    const acc = item.accounting || {};
+    const methodText = displayConsignMethod(item.method);
+    const actualAmount = String(item.method || '').trim() === 'bank_transfer'
+      ? Number(item.bankAmount || 0)
+      : Number(item.creditAmount || 0);
+
+    const idFront = String(acc.idFrontUrl || '').trim();
+    const idBack  = String(acc.idBackUrl || '').trim();
+
+    return `
+      <div style="border:1px solid rgba(148,163,184,.25);border-radius:12px;padding:12px;margin-bottom:12px;background:rgba(2,6,23,.55);">
+        <div style="font-weight:800;font-size:15px;margin-bottom:8px;">第 ${idx + 1} 筆｜${escapeHtml(bucket)} 一時貿易資料</div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div><b>姓名：</b>${escapeHtml(acc.name || '')}</div>
+          <div><b>身分證字號：</b>${escapeHtml(acc.nationalId || '')}</div>
+          <div><b>訂單編號：</b>${escapeHtml(item.orderId || '')}</div>
+          <div><b>商品名稱：</b>${escapeHtml(item.name || '')}</div>
+          <div><b>售出金額：</b>${money(item.saleAmount || 0)}</div>
+          <div><b>結算方式：</b>${escapeHtml(methodText)}</div>
+          <div><b>實際給付金額：</b>${money(actualAmount || 0)}</div>
+          <div><b>匯款金額：</b>${money(item.bankAmount || 0)} ／ <b>購物金：</b>${money(item.creditAmount || 0)}</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+          <div>
+            <div style="font-weight:700;margin-bottom:6px;">身分證正面</div>
+            ${
+              idFront
+                ? `<img src="${idFront}" style="width:100%;max-height:240px;object-fit:contain;background:#fff;border-radius:8px;padding:6px;" />`
+                : `<div style="height:240px;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(148,163,184,.5);border-radius:8px;color:#94a3b8;">未提供身分證正面</div>`
+            }
+          </div>
+
+          <div>
+            <div style="font-weight:700;margin-bottom:6px;">身分證反面</div>
+            ${
+              idBack
+                ? `<img src="${idBack}" style="width:100%;max-height:240px;object-fit:contain;background:#fff;border-radius:8px;padding:6px;" />`
+                : `<div style="height:240px;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(148,163,184,.5);border-radius:8px;color:#94a3b8;">未提供身分證反面</div>`
+            }
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  detailEl.innerHTML = `
+    <div class="section-title">${bucket} 一時貿易資料</div>
+    <div class="tag-small">共 ${rows.length} 筆；列印時會一筆一頁，並附身分證正反面。</div>
+    <button class="btn-primary" id="btnPrintConsignAccountingBucket" type="button">🖨️ 列印本區資料</button>
+    <div style="margin-top:12px;max-height:70vh;overflow:auto;">${previewHtml}</div>
+  `;
+
+  $('#btnPrintConsignAccountingBucket')?.addEventListener('click', () => {
+    const printPages = rows.map((item, idx) => {
+      const acc = item.accounting || {};
+      const methodText = displayConsignMethod(item.method);
+      const actualAmount = String(item.method || '').trim() === 'bank_transfer'
+        ? Number(item.bankAmount || 0)
+        : Number(item.creditAmount || 0);
+
+      const idFront = String(acc.idFrontUrl || '').trim();
+      const idBack  = String(acc.idBackUrl || '').trim();
+
+      return `
+        <div class="trade-page">
+          <div class="trade-title">一時貿易資料</div>
+          <div class="trade-sub">第 ${idx + 1} 筆 / ${escapeHtml(bucket)}</div>
+
+          <table class="trade-table">
+            <tr><th>姓名</th><td>${escapeHtml(acc.name || '')}</td><th>身分證字號</th><td>${escapeHtml(acc.nationalId || '')}</td></tr>
+            <tr><th>訂單編號</th><td>${escapeHtml(item.orderId || '')}</td><th>商品名稱</th><td>${escapeHtml(item.name || '')}</td></tr>
+            <tr><th>售出金額</th><td>${money(item.saleAmount || 0)}</td><th>結算方式</th><td>${escapeHtml(methodText)}</td></tr>
+            <tr><th>實際給付金額</th><td>${money(actualAmount || 0)}</td><th>備註</th><td></td></tr>
+          </table>
+
+          <div class="id-wrap">
+            <div class="id-box">
+              <div class="id-title">身分證正面</div>
+              ${
+                idFront
+                  ? `<img src="${idFront}" />`
+                  : `<div class="id-empty">未提供身分證正面</div>`
+              }
+            </div>
+            <div class="id-box">
+              <div class="id-title">身分證反面</div>
+              ${
+                idBack
+                  ? `<img src="${idBack}" />`
+                  : `<div class="id-empty">未提供身分證反面</div>`
+              }
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const win = window.open('', '_blank');
+    if (!win) return;
+
+    win.document.write(`
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${bucket} 一時貿易資料</title>
+        <style>
+          @page { size: A4 portrait; margin: 12mm; }
+          body { font-family: Arial, "Noto Sans TC", sans-serif; color:#111; }
+          .trade-page {
+            page-break-after: always;
+            break-after: page;
+            min-height: 260mm;
+          }
+          .trade-page:last-child {
+            page-break-after: auto;
+            break-after: auto;
+          }
+          .trade-title {
+            font-size: 20px;
+            font-weight: 800;
+            margin-bottom: 4px;
+          }
+          .trade-sub {
+            font-size: 12px;
+            color: #555;
+            margin-bottom: 12px;
+          }
+          .trade-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+          }
+          .trade-table th,
+          .trade-table td {
+            border: 1px solid #333;
+            padding: 8px;
+            font-size: 13px;
+            vertical-align: top;
+          }
+          .trade-table th {
+            width: 16%;
+            background: #f5f5f5;
+            text-align: left;
+          }
+          .id-wrap {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+          }
+          .id-box {
+            border: 1px solid #333;
+            padding: 8px;
+            min-height: 320px;
+          }
+          .id-title {
+            font-weight: 700;
+            margin-bottom: 8px;
+          }
+          .id-box img {
+            width: 100%;
+            max-height: 280px;
+            object-fit: contain;
+          }
+          .id-empty {
+            height: 280px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #777;
+            border: 1px dashed #999;
+          }
+          .overdue-badge{
+  font-size:12px;
+  line-height:1.2;
+  padding:2px 7px;
+  white-space:nowrap;
+}
+        </style>
+      </head>
+      <body>${printPages}</body>
+      </html>
+    `);
+
+    win.document.close();
+    win.focus();
+    win.print();
+  });
+}
+
+function fmtDateInput(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function getLast30DaysRange(){
+  const toDate = new Date();
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - 30);
+
+  return {
+    date_from: fmtDateInput(fromDate),
+    date_to: fmtDateInput(toDate)
+  };
+}
+
+function getCurrentDateRange(){
+  return {
+    date_from: $('#date_from') ? ($('#date_from').value || '') : '',
+    date_to: $('#date_to') ? ($('#date_to').value || '') : ''
+  };
+}
+
+function monthKeyOfRecord(f){
+  let month = String(f['賣貨便月份'] || '').trim();
+  if (!month) {
+    const shipAt = String(f.shipped_at || f.ship_at || '').trim();
+    if (shipAt) month = shipAt.slice(0, 7);
+  }
+  return month;
+}
+
+function applyLineNameSearch(rows){
+  const q = String(LINE_SEARCH_TERM || '').trim().toLowerCase();
+  if (!q) return rows || [];
+
+  return (rows || []).filter(rec => {
+    const f = rec.fields || rec || {};
+    const lineName = String(getLineName(f, parseShippingInfo(f)) || '').trim().toLowerCase();
+    return lineName.includes(q);
+  });
+}
+
+function finalizeOrderRows(rows, emptyText = '查無符合條件的訂單。', okText = ''){
+  currentOrders = applyLineNameSearch(rows || []);
+ updateCurrentSubTabCount(currentOrders.length);
+  ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+  renderOrderList();
+
+  const msgEl = $('#msg');
+  if (msgEl) {
+    msgEl.textContent = currentOrders.length ? okText : emptyText;
+  }
+
+  // ✅ 賣貨便月份統計只在「賣貨便登記」頁渲染
+  if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+    renderVendorMonthSummary();
+  }
+}
+
+function renderVendorMonthSummary(){
+  const panel = $('#vendor_month_summary');
+  const monthEl = $('#vendor_month');
+  if (!panel || !monthEl) return;
+
+  const month = String(monthEl.value || '').trim();
+  const source = VENDOR_SUMMARY_CACHE || [];
+  const map = new Map();
+
+  source.forEach(rec => {
+    const f = rec.fields || rec || {};
+    const name = String(f['賣貨便名稱'] || '').trim();
+    if (!name) return;
+
+    // 只算已收款
+    const ps = String(f.pay_status || '').trim().toLowerCase();
+    if (ps !== 'paid_ok') return;
+
+    const m = monthKeyOfRecord(f);
+    if (month && m !== month) return;
+
+    // 改成加總「應付金額」
+    const a = calcAmounts(f);
+    const amount = Number(a.net || 0);
+
+    map.set(name, (map.get(name) || 0) + amount);
+  });
+
+  const rows = Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+
+  if (!rows.length) {
+    panel.textContent = month ? `${month} 尚無已收款資料` : '尚無已收款資料';
+    return;
+  }
+
+  panel.innerHTML = rows
+    .map(([name, sum]) => `${name}：${money(sum)}`)
+    .join('<br>');
+}
+
+async function applyFullView(mode = 'all', save = true){
+  currentPanelMode = 'orders';
+  await ensureOpKey();
+
+  // ✅ 賣貨便月份統計只在「賣貨便登記」頁載入
+  if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+    await loadVendorSummaryCache();
+  }
+
+  const dateRange = getCurrentDateRange();
+  const statusVal = $('#status') ? ($('#status').value || '') : '';
+
+  if (save) {
+    saveViewState(mode || 'all', {
+      filter: 'all',
+      date_from: dateRange.date_from,
+      date_to: dateRange.date_to,
+      status: statusVal
+    });
+  }
+
+  await loadOrders('all', dateRange);
+ ALL_ORDERS_CACHE = [...(currentOrders || [])];
+if (ADMIN_PAGE_FILE === 'admin.html') {
+  refreshTopShortcutBadges();
+}
+
+  const hasFee = (f) => {
+    if (!f) return false;
+    const fee1 = f.shipping_fee;
+    const fee2 = f.ship_fee;
+    const filled1 = fee1 !== undefined && fee1 !== null && String(fee1) !== '';
+    const filled2 = fee2 !== undefined && fee2 !== null && String(fee2) !== '';
+    return filled1 || filled2;
+  };
+
+  let rows = ALL_ORDERS_CACHE;
+  let emptyText = '查無符合條件的訂單。';
+  let okText = '';
+
+  if (mode === 'quick_paid'){
+    rows = rows.filter(rec => {
+      const f = rec.fields || rec || {};
+      return String(f.pay_status || '').toLowerCase() === 'paid_ok' && !hasFee(f);
+    });
+    emptyText = '目前沒有「已收款且運費未填寫」的訂單。';
+    okText = '僅顯示「已收款(pay_status = paid_ok) 且 運費 TWD 未填寫」的訂單。';
+  }
+
+else if (mode === 'remind_today'){
+  rows = rows.filter(rec => {
+    const f = rec.fields || rec || {};
+    return String(f.pay_status || '').toLowerCase() === 'pending';
+  });
+  emptyText = '目前沒有「付款狀態＝待確認」的訂單。';
+  okText = '僅顯示「付款狀態＝待確認(pay_status = pending)」的訂單。';
+}
+
+  else if (mode === 'pickup_need'){
+    rows = rows.filter(rec => {
+      const f  = rec.fields || rec || {};
+      const ps = String(f.pay_status || '').toLowerCase();
+      if (ps === 'failed' || ps === 'cancelled') return false;
+
+      const st = String(f.status || '').toLowerCase();
+      const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
+      const shipped = (st === 'shipped') || (ss === 'shipped') || (ss === 'arrived') || (ss === 'picked_up');
+
+      const shipInfo = parseShippingInfo(f) || {};
+      const ship = shipInfo.ship || {};
+      const is711 = String(ship.type || '').toLowerCase() === '711';
+
+      const pickReg = String(f['取貨登記'] || '').trim();
+      const notPicked = (pickReg !== '已取貨');
+
+      return shipped && is711 && notPicked;
+    });
+    emptyText = '目前沒有「已出貨且尚未登記已取貨」的訂單。';
+    okText = `僅顯示「已出貨 + 7-11 取貨 + 取貨登記≠已取貨」的訂單。共 ${rows.length} 筆。`;
+  }
+
+  else if (mode === 'status_unshipped_custom'){
+    rows = rows.filter(isUnshippedOrder);
+    emptyText = '目前沒有「未出貨」訂單。';
+    okText = `僅顯示「未出貨」訂單。共 ${rows.length} 筆。`;
+  }
+
+  else if (mode === 'status_deposit_unshipped_custom'){
+    rows = rows.filter(rec => {
+      const f = rec.fields || rec || {};
+      return String(f.pay_status || '').toLowerCase() === 'deposit_ok' && isUnshippedOrder(rec);
+    });
+    emptyText = '目前沒有「訂金已收 ＋ 尚未出貨」的訂單。';
+    okText = '僅顯示「訂金已收(pay_status = deposit_ok) ＋ 尚未出貨」的訂單。';
+  }
+
+  else {
+    emptyText = '目前沒有訂單。';
+    okText = '';
+  }
+
+    currentFilter = 'all';
+  setTopFilterActive(mode);
+  finalizeOrderRows(rows, emptyText, okText);
+}
+ function isBankRemindPayment(pm){
+  const s = String(pm || '').trim().toLowerCase();
+  return [
+    'atm_full',
+    'atm_deposit',
+    'atm_full_tail',
+    'bank_transfer',
+    'deposit_new',
+    'deposit_old',
+    'deposit_new_partial',
+    'deposit_old_partial',
+    'deposit_new_full',
+    'deposit_old_full',
+    'deposit_new_full_711',
+    'deposit_new_full_post'
+  ].includes(s);
+}
+
+function fmtAdminDateTime(v){
+  if (!v) return '';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('zh-TW', {
+    year:'numeric',
+    month:'2-digit',
+    day:'2-digit',
+    hour:'2-digit',
+    minute:'2-digit',
+    hour12:false
+  });
+}
+
+function setBatchActionMode(mode = 'none'){
+  const btnCart = $('#btnCartRemindTop');
+  if (btnCart) btnCart.style.display = (mode === 'cart') ? '' : 'none';
+}
+
+async function loadOpenCartList(){
+  currentPanelMode = 'cart_open';
+  currentRecord = null;
+  currentCartRecord = null;
+
+  saveViewState('cart_open', {
+    filter: 'all',
+    date_from: $('#date_from') ? ($('#date_from').value || '') : '',
+    date_to: $('#date_to') ? ($('#date_to').value || '') : '',
+    status: $('#status') ? ($('#status').value || '') : ''
+  });
+
+  const listEl = $('#orderList');
+  const detailEl = $('#orderDetail');
+  const msgEl = $('#msg');
+  const sumEl = $('#summary');
+
+  listEl.innerHTML = '<div class="muted">未結單購物車載入中…</div>';
+  detailEl.innerHTML = '<div class="muted">請從左邊點選一台購物車</div>';
+  if (msgEl) msgEl.textContent = '';
+  if (sumEl) sumEl.textContent = '';
+  setBatchActionMode('cart');
+
+  try{
+    await ensureOpKey();
+
+    const params = new URLSearchParams();
+params.set('op_key', OP_KEY);
+params.set('limit', '80');
+
+const r = await fetch(`${API}/admin/cart/pending-list?` + params.toString());
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      throw new Error(j.error || 'cart_pending_list_failed');
+    }
+
+    currentCartRows = Array.isArray(j.carts) ? j.carts : [];
+updateCurrentSubTabCount(currentCartRows.length);
+renderCartList();
+setTopFilterActive('cart_open');
+
+    const totalItems = currentCartRows.reduce((sum, row) => {
+      return sum + (Number(row.item_count || 0) || 0);
+    }, 0);
+
+    if (sumEl) {
+      sumEl.innerHTML =
+        `<span>購物車數：${currentCartRows.length}</span>` +
+        `<span>商品總數量：${totalItems}</span>`;
+    }
+
+    if (msgEl) {
+      msgEl.textContent = currentCartRows.length
+        ? `僅顯示未完成結單購物車，共 ${currentCartRows.length} 筆。`
+        : '目前沒有未完成結單購物車。';
+    }
+  }catch(e){
+    console.error(e);
+    currentCartRows = [];
+    listEl.innerHTML = '<div class="error">未結單購物車載入失敗：' + (e.message || e) + '</div>';
+    detailEl.innerHTML = '<div class="muted">請稍後再試</div>';
+  }
+}
+
+function renderCartList(){
+  const listEl = $('#orderList');
+  const detailEl = $('#orderDetail');
+
+  if (!listEl) return;
+
+  if (!currentCartRows.length) {
+    listEl.innerHTML = '<div class="muted">目前沒有未完成結單購物車。</div>';
+    if (detailEl) detailEl.innerHTML = '<div class="muted">目前沒有資料</div>';
+    return;
+  }
+
+  listEl.innerHTML = currentCartRows.map(row => {
+    const title = row.customer_name || '未命名購物車';
+
+    return `
+      <div class="order-row" data-id="${escapeHtml(row.cart_token || '')}">
+        <div class="ord-top">
+          <div class="ord-id">🛒 ${escapeHtml(title)}</div>
+          <div class="ord-right">
+            <div class="ord-amount">${Number(row.item_count || 0)} 件</div>
+          </div>
+        </div>
+
+        ${row.items_text ? `<div class="ord-sub">${escapeHtml(row.items_text)}</div>` : ''}
+
+        <div class="badges">
+          <span class="badge">${escapeHtml(displayCartStatus(row.status || 'open'))}</span>
+          ${row.link_sent_at ? '<span class="badge green">已發購物車卡</span>' : ''}
+          ${row.link_copied_at ? '<span class="badge blue">已複製連結</span>' : ''}
+        </div>
+
+        <div class="ord-sub">
+          建立：${escapeHtml(fmtAdminDateTime(row.created_at) || '-')}
+          ／ 更新：${escapeHtml(fmtAdminDateTime(row.updated_at) || '-')}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  $$('#orderList .order-row').forEach(rowEl => {
+    rowEl.addEventListener('click', () => {
+      $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
+      rowEl.classList.add('active');
+
+      const token = rowEl.getAttribute('data-id') || '';
+      const row = currentCartRows.find(x => String(x.cart_token || '') === String(token));
+      if (row) renderCartDetail(row);
+    });
+  });
+
+  if (detailEl) {
+    detailEl.innerHTML = '<div class="muted">請從左邊點選一台購物車</div>';
+  }
+}
+
+async function renderCartDetail(row){
+  currentCartRecord = row;
+  const dEl = $('#orderDetail');
+  if (!dEl) return;
+
+  let itemText = row.items_text || '';
+
+  try {
+    const r = await fetch(`${API}/cart/${encodeURIComponent(row.cart_token || '')}`);
+    const j = await r.json().catch(() => ({}));
+
+    if (r.ok && j.ok && Array.isArray(j.items)) {
+      itemText = j.items.map(it => {
+        const name = String(it.name || it.Name || it.title || '').trim();
+        const qty = Number(it.qty || 0) || 0;
+        return `${name}${qty > 0 ? ` × ${qty}` : ''}`;
+      }).filter(Boolean).join('\n');
+    }
+  } catch (e) {
+    console.warn('load cart items failed', e);
+  }
+
+  dEl.innerHTML = `
+    <div class="section-title">未結單購物車</div>
+
+    <div class="row mt-2">
+      <div>
+        <label>LINE名稱</label>
+        <div class="ro-field">${escapeHtml(row.customer_name || '-')}</div>
+      </div>
+      <div>
+        <label>狀態</label>
+        <div class="ro-field">${escapeHtml(displayCartStatus(row.status || 'open'))}</div>
+      </div>
+    </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>商品總數量</label>
+        <div class="ro-field">${escapeHtml(String(row.item_count || 0))}</div>
+      </div>
+      <div>
+        <label>已發購物車卡時間</label>
+        <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.link_sent_at) || '-')}</div>
+      </div>
+    </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>建立時間</label>
+        <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.created_at) || '-')}</div>
+      </div>
+      <div>
+        <label>最後更新</label>
+        <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.updated_at) || '-')}</div>
+      </div>
+    </div>
+
+    <label class="mt-2">商品明細</label>
+    <div class="ro-field" style="height:auto;min-height:88px;align-items:flex-start;padding-top:10px;white-space:pre-wrap;">
+      ${escapeHtml(itemText || '-')}
+    </div>
+
+    <div class="mt-3" style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn-secondary" id="btnCartRemindSingle" type="button">🛒 發送購物車卡</button>
+      <button class="btn-secondary" id="btnCartClearSingle" type="button">🧹 清空此購物車</button>
+    </div>
+
+    <div class="muted mt-3" id="detailMsg"></div>
+  `;
+
+  $('#btnCartRemindSingle')?.addEventListener('click', async () => {
+    await remindCartRows([row]);
+  });
+
+  $('#btnCartClearSingle')?.addEventListener('click', async () => {
+    await clearCartRow(row);
+  });
+}
+
+async function remindCartRows(rows){
+  const targets = (rows || []).filter(x => x && x.cart_token);
+  if (!targets.length) {
+    alert('目前沒有可提醒的購物車');
+    return;
+  }
+
+  let ok = 0;
+  let skipped = 0;
+  let failed = 0;
+  const failedMsgs = [];
+
+  for (const row of targets) {
+    const token = String(row.cart_token || '').trim();
+    const lineId = String(row.line_user_id || '').trim();
+
+    if (!token) continue;
+
+    if (!lineId) {
+      skipped++;
+      failedMsgs.push(`${row.customer_name || token}：沒有 LINE 綁定`);
+      continue;
+    }
+
+    try {
+      const r = await fetch(`${API}/op/cart/send-link`, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          op_key: OP_KEY,
+          cart_token: token,
+          line_user_id: lineId,
+          customer_name: row.customer_name || ''
+        })
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) {
+        failed++;
+        failedMsgs.push(`${row.customer_name || token}：${j.error || ('HTTP ' + r.status)}`);
+        continue;
+      }
+
+      ok++;
+    } catch (e) {
+      failed++;
+      failedMsgs.push(`${row.customer_name || token}：${e.message || e}`);
+    }
+  }
+
+  alert(
+    `購物車提醒完成\n成功 ${ok} 筆 / 略過 ${skipped} 筆 / 失敗 ${failed} 筆` +
+    (failedMsgs.length ? `\n\n${failedMsgs.slice(0, 8).join('\n')}` : '')
+  );
+
+  if (VIEW_STATE.mode === 'cart_open' || currentPanelMode === 'cart_open') {
+    await loadOpenCartList();
+  }
+}
+
+async function clearCartRow(row){
+  if (!row || !row.cart_token) return;
+
+  const token = String(row.cart_token || '').trim();
+  const title = row.customer_name || token;
+
+  if (!confirm(`確定要清空購物車「${title}」嗎？`)) return;
+
+  try {
+    const r = await fetch(`${API}/cart/clear`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        cart_token: token
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      throw new Error(j.error || ('HTTP ' + r.status));
+    }
+
+    alert('已清空購物車');
+await loadOpenCartList();
+
+if (ADMIN_PAGE_FILE === 'admin.html') {
+  await refreshTopShortcutBadges();
+}
+  } catch (e) {
+    console.error(e);
+    alert('清空購物車失敗：' + (e.message || e));
+  }
+}
+
+ // ★ 列印出貨單：左邊勾選用
+let PRINT_SLIP_SELECTED = new Set();
+
+let VIEW_STATE = {
+  mode: 'all',
+  filter: 'all',
+  date_from: '',
+  date_to: '',
+  status: ''
+};
+
+function saveViewState(mode, extra = {}){
+  VIEW_STATE = {
+    mode: mode || VIEW_STATE.mode || 'all',
+    filter: extra.filter ?? VIEW_STATE.filter ?? 'all',
+    date_from: extra.date_from ?? ($('#date_from') ? ($('#date_from').value || '') : ''),
+    date_to: extra.date_to ?? ($('#date_to') ? ($('#date_to').value || '') : ''),
+    status: extra.status ?? ($('#status') ? ($('#status').value || '') : '')
+  };
+}
+
+function restoreViewInputs(){
+  if ($('#date_from')) $('#date_from').value = VIEW_STATE.date_from || '';
+  if ($('#date_to'))   $('#date_to').value   = VIEW_STATE.date_to || '';
+  if ($('#status'))    $('#status').value    = VIEW_STATE.status || '';
+}
+
+function setTopFilterActive(mode){
+  document.querySelectorAll('.admin-sub-tabs [data-admin-file]').forEach(a => {
+    a.classList.toggle('active', a.dataset.adminFile === ADMIN_PAGE_FILE);
+  });
+}
+
+function restoreSelectedOrder(keepKey){
+  if (!keepKey) return;
+
+  const found = (currentOrders || []).find(x => {
+    if (x.id && String(x.id) === String(keepKey)) return true;
+    const fx = x.fields || x || {};
+    return fx.order_id && String(fx.order_id) === String(keepKey);
+  });
+  if (!found) return;
+
+  renderDetail(found);
+  $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
+  const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
+  if (row) row.classList.add('active');
+}
+
+function getOrderKey(rec){
+  const f = rec?.fields || rec || {};
+  return String(f.order_id || rec?.id || '').trim();
+}
+
+function updatePrintSlipsBtn(){
+  const btn = $('#btnPrintSlipsRange');
+  if(!btn) return;
+  btn.textContent = PRINT_SLIP_SELECTED.size
+    ? `⭐列印出貨單（勾選${PRINT_SLIP_SELECTED.size}）`
+    : '⭐列印出貨單';
+}
+
+const $  = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+function updateCurrentSubTabCount(count){
+  const btn = document.querySelector(`.admin-sub-tabs [data-admin-file="${ADMIN_PAGE_FILE}"]`);
+  if (!btn) return;
+
+  let badge = btn.querySelector('.count-badge');
+
+  // ✅ 如果這個頁籤原本沒有小圓圈，就自動補一個
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'count-badge';
+    badge.style.display = 'none';
+    btn.appendChild(badge);
+  }
+
+  const n = Number(count || 0);
+  badge.textContent = String(n);
+
+  // 0 筆就隱藏；如果你想 0 也顯示，把這行改成 inline-flex
+  badge.style.display = n > 0 ? 'inline-flex' : 'none';
+}
+ function setButtonBusy(btn, busy, busyText = '處理中…'){
+  if (!btn) return;
+
+  if (busy) {
+    btn.dataset.originalText = btn.textContent || '';
+    btn.disabled = true;
+    btn.textContent = busyText;
+    btn.style.opacity = '.65';
+    btn.style.pointerEvents = 'none';
+  } else {
+    btn.disabled = false;
+    btn.textContent = btn.dataset.originalText || btn.textContent || '';
+    btn.style.opacity = '';
+    btn.style.pointerEvents = '';
+  }
+}
+
+async function runButtonJob(btn, job, busyText = '處理中…'){
+  if (!btn || btn.disabled) return;
+
+  setButtonBusy(btn, true, busyText);
+  try {
+    await job();
+  } finally {
+    setButtonBusy(btn, false);
+  }
+}
+
+function money(n){ return 'NT$ ' + Number(n||0).toLocaleString(); }
+function calcAmounts(f){
+  const base   = Number(f?.total_amount ?? f?.total ?? 0) || 0;
+  const credit = Number(f?.credit_used ?? f?.CreditUsed ?? f?.credit ?? 0) || 0;
+  const netRaw = (f?.net_amount ?? f?.net ?? (base - credit));
+  const net    = Number(netRaw ?? base) || 0;
+  return { base, credit, net: Math.max(net, 0) };
+}
+// 訂單狀態英文代碼 → 中文
+function displayOrderStatus(st){
+  if (!st) return '';
+  if (st === 'submitted') return '已送出（未付款）';
+  if (st === 'paid')      return '已付款（待出貨）';
+  if (st === 'shipped')   return '已出貨';
+  if (st === 'cancelled') return '已取消';
+  return st; // 其他未知狀態就直接顯示原碼
+}
+
+function displayPayStatus(ps){
+  switch (ps) {
+    case 'unpaid':  return '未收款';
+    case 'pending': return '待確認';
+    case 'paid_ok': return '已收款';
+    // ★ 新增：訂金已收
+    case 'deposit_ok': return '訂金已收';
+    // ★ 新增：取消
+    case 'cancelled': return '已取消';
+    case 'failed':  return '失敗 / 作廢';
+    default:        return ps || '';
+  }
+}
+ function isDepositForfeitOrder(f = {}) {
+  const st = String(f.status || '').trim().toLowerCase();
+  const ps = String(f.pay_status || '').trim().toLowerCase();
+  const cancelReason = String(f['取消原因'] || f.cancel_reason || '').trim();
+  const note = String(f.internal_note || '').trim();
+  const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+
+  return (
+    st === 'cancelled' &&
+    ps === 'deposit_ok' &&
+    (
+      cancelReason.includes('訂金沒收') ||
+      note.includes('[TAIL_OVERDUE_DEPOSIT_FORFEIT]') ||
+      note.includes('[CASH_INST_OVERDUE_CANCEL]') ||
+      cashStatus === 'cancelled_forfeit'
+    )
+  );
+}
+
+function isRestockNeedsAttention(f = {}) {
+  const note = String(f.internal_note || '').trim();
+
+  const didDeductStock =
+    f.stock_deduct_done === true ||
+    String(f.stock_deduct_done || '').trim().toLowerCase() === 'true';
+
+  const hasRestockOk =
+    note.includes('[AUTO_RESTOCK_TAIL_OVERDUE_CANCEL]') ||
+    note.includes('[AUTO_RESTOCK_CASH_INST_OVERDUE]') ||
+    note.includes('[MANUAL_RESTOCK_TAIL_FORFEIT]') ||
+    note.includes('[MANUAL_RESTOCK_CASH_INST_FORFEIT]');
+
+  const hasRestockFail =
+    note.includes('[RESTOCK_FAILED_TAIL_OVERDUE]') ||
+    note.includes('[RESTOCK_FAILED_CASH_INST_OVERDUE]');
+
+  if (hasRestockFail) return true;
+
+  return isDepositForfeitOrder(f) && didDeductStock && !hasRestockOk;
+}
+ function hasTailChildInRows(parentOrderId, rows = ALL_ORDERS_CACHE){
+  const pid = String(parentOrderId || '').trim();
+  if (!pid) return false;
+
+  return (rows || []).some(rec => {
+    const f = rec?.fields || rec || {};
+    const oid = String(f.order_id || '').trim();
+    const parentId = String(f.parent_order_id || '').trim();
+
+    const isTail =
+      !!f.is_tail ||
+      String(f.order_type || '').toLowerCase() === 'tail' ||
+      oid.toUpperCase().startsWith('TL') ||
+      !!parentId;
+
+    return isTail && parentId === pid;
+  });
+}
+function isUnshippedOrder(rec){
+  const f  = rec?.fields || rec || {};
+  const oid = String(f.order_id || "").trim();
+  const st = String(f.status || "").toLowerCase();
+  const ps = String(f.pay_status || "").toLowerCase();
+  const ss = String(f.ship_status || f.shipping_status || "").toLowerCase();
+  const parentId = String(f.parent_order_id || "").trim();
+
+  const isTail =
+    !!f.is_tail ||
+    String(f.order_type || "").toLowerCase() === "tail" ||
+    oid.toUpperCase().startsWith("TL") ||
+    !!parentId;
+
+ // 原訂單如果已被後端標記有尾款單，就不要再顯示在待出貨
+const hasTailMarked =
+  f.has_tail_order === true ||
+  String(f.has_tail_order || "").toLowerCase() === "true" ||
+  !!String(f.tail_pending_order_id || "").trim();
+
+// 相容舊資料：若主單還沒被標記，才退回用前端 cache 掃 TL
+if (!isTail && (hasTailMarked || hasTailChildInRows(oid, ALL_ORDERS_CACHE))) return false;
+
+  // 先排除「作廢/取消」和「付款失敗」
+  if (st === "cancelled") return false;
+  if (ps === "failed" || ps === "cancelled") return false;
+
+  // 排除已出貨類
+  if (st === "shipped") return false;
+  if (ss === "shipped" || ss === "arrived" || ss === "picked_up" || ss === "returned") return false;
+
+  // 其他一律視為未出貨
+  return true;
+}
+ function displayShipStatusText(st){
+  if(!st) return '';
+  if(st === 'none')         return '未設定';
+  if(st === 'ready_to_ship')return '待出貨';
+  if(st === 'shipped')      return '已出貨';
+  if(st === 'returned')     return '退貨';
+  if(st === 'cancelled')    return '取消';
+  return st;
+}
+function parseShippingInfo(fields){
+  try{
+    return JSON.parse(fields.shipping_info || '{}') || {};
+  }catch(e){
+    return {};
+  }
+}
+// 付款方式代碼 → 中文名稱（列表＋右側 pill 共用）
+function displayPaymentMethod(code){
+  const c = String(code || '').trim().toLowerCase();
+
+  switch (c) {
+    case 'cod_711':
+      return '7-11 貨到付款';
+    case 'cod_post':
+      return '郵局貨到付款';
+
+    case 'paid_card_once':
+      return '線上付款－信用卡一次付清';
+    case 'paid_card_inst_3':
+      return '線上付款－信用卡 3 期';
+    case 'paid_card_inst_6':
+      return '線上付款－信用卡 6 期';
+    case 'paid_card_inst_9':
+      return '線上付款－信用卡 9 期';
+
+    case 'meetup_cash':
+      return '面交付現';
+    case 'deposit_new_full_meetup':
+      return '匯款全額 - 面交';
+
+    case 'paid_af':
+      return 'AF先享後付';
+    case 'paid_linepay':
+      return 'LINE PAY';
+    case 'paid_aftee_direct':
+      return 'AF 先享後付';
+
+    case 'zero_card_3':
+      return '中租分期 3 期';
+    case 'zero_card_6':
+      return '中租分期 6 期';
+    case 'zero_card_9':
+      return '中租分期 9 期';
+    case 'zero_card_12':
+      return '中租分期 12 期';
+    case 'zero_card_18':
+      return '中租分期 18 期';
+    case 'zero_card_24':
+      return '中租分期 24 期';
+
+    case 'yufu_inst_3':
+      return '裕富 3 期';
+    case 'yufu_inst_6':
+      return '裕富 6 期';
+    case 'yufu_inst_9':
+      return '裕富 9 期';
+    case 'yufu_inst_12':
+      return '裕富 12 期';
+    case 'yufu_inst_24':
+      return '裕富 24 期';
+    case 'yufu_inst_36':
+      return '裕富 36 期';
+
+    case 'cash_inst_2':
+      return '現金分期 2 期';
+    case 'cash_inst_3':
+      return '現金分期 3 期';
+
+    case 'atm_full_tail':
+      return '尾款：匯款 / 購物金';
+
+    case 'deposit_new_partial':
+    case 'deposit_old_partial':
+    case 'deposit_new':
+    case 'deposit_old':
+    case 'atm_deposit':
+      return '訂金匯款';
+
+    case 'deposit_new_full':
+    case 'deposit_old_full':
+    case 'deposit_new_full_711':
+    case 'deposit_new_full_post':
+    case 'atm_full':
+      return '全額匯款';
+
+    default:
+      return String(code || '').trim();
+  }
+}
+
+
+function toDatetimeLocal(v){
+  if(!v) return '';
+  const d = new Date(v);
+  if(isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2,'0');
+  return d.getFullYear() + '-' +
+    pad(d.getMonth()+1) + '-' +
+    pad(d.getDate()) + 'T' +
+    pad(d.getHours()) + ':' +
+    pad(d.getMinutes());
+}
+
+ function safeJsonParse(s, fallback = null){
+  try{
+    if (!s) return fallback;
+    if (typeof s === "object") return s;
+    return JSON.parse(String(s));
+  }catch(e){
+    return fallback;
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+ function firstNonEmpty(...vals){
+  for (const v of vals) {
+    const s = String(v ?? '').trim();
+    if (s) return s;
+  }
+  return '';
+}
+
+function getLineName(f, shipInfo){
+  const lp = (shipInfo?.line_profile || shipInfo?.line || shipInfo?.lineProfile || {}) || {};
+  return firstNonEmpty(
+    f?.['LINE名稱'],
+    f?.['LINE 名稱'],
+    f?.line_name,
+    f?.['line_name'],
+    lp.displayName,
+    lp.display_name,
+    lp.name
+  );
+}
+
+// 從 OD（主單）的 fields 裡抓尾款資訊（優先 tail_* 欄位，其次 tail_paid_snapshot）
+function getTailInfoFromParentFields(f){
+  const snap = safeJsonParse(f?.tail_paid_snapshot, null) || {};
+  const pick = (a,b,def="") => (String(a||"").trim() ? a : (String(b||"").trim() ? b : def));
+
+  return {
+    order_id: pick(f?.tail_order_id, snap?.tail_order_id, ""),
+    payment_method: pick(f?.tail_payment_method, snap?.tail_payment_method, ""),
+    total_amount: Number(f?.tail_total_amount ?? snap?.tail_total_amount ?? 0) || 0,
+    credit_used: Number(f?.tail_credit_used ?? snap?.tail_credit_used ?? 0) || 0,
+    net_amount: Number(f?.tail_net_amount ?? snap?.tail_net_amount ?? 0) || 0,
+    pay_channel: pick(f?.tail_pay_channel, snap?.tail_pay_channel, ""),
+    paid_at: pick(f?.tail_paid_at, snap?.tail_paid_at, ""),
+
+    invoice_no: pick(f?.tail_invoice_no, snap?.invoice?.invoice_no ?? snap?.tail_invoice_no, ""),
+    invoice_date: (f?.tail_invoice_date ?? snap?.invoice?.invoice_date ?? snap?.tail_invoice_date ?? ""),
+    invoice_random: pick(f?.tail_invoice_random, snap?.invoice?.invoice_random ?? snap?.tail_invoice_random, ""),
+    invoice_rtn_code: pick(f?.tail_invoice_rtn_code, snap?.invoice?.invoice_rtn_code ?? snap?.tail_invoice_rtn_code, ""),
+    invoice_rtn_msg: pick(f?.tail_invoice_rtn_msg, snap?.invoice?.invoice_rtn_msg ?? snap?.tail_invoice_rtn_msg, ""),
+    invoice_issued: (f?.tail_invoice_issued ?? snap?.invoice?.invoice_issued ?? snap?.tail_invoice_issued ?? null),
+  };
+}
+
+// 產生後台顯示用區塊（沒有尾款資料就回傳空字串，不影響任何既有畫面）
+function renderTailInfoBlock(f){
+  const t = getTailInfoFromParentFields(f || {});
+  const hasAny = !!(t.order_id || t.payment_method || t.total_amount || t.net_amount || t.invoice_no || t.paid_at);
+  if (!hasAny) return "";
+
+  const pmLabel = (typeof displayPaymentMethod === "function")
+    ? (displayPaymentMethod(t.payment_method) || t.payment_method || "—")
+    : (t.payment_method || "—");
+
+  const invLabel = t.invoice_no
+    ? `已開立（${t.invoice_no}）`
+    : (t.invoice_issued ? "已開立" : "未開立/尚未回寫");
+
+  const invRtn = (t.invoice_rtn_code || t.invoice_rtn_msg)
+    ? `${t.invoice_rtn_code || ""} ${t.invoice_rtn_msg || ""}`.trim()
+    : "—";
+
+  const paidAtTxt = t.paid_at ? (toDatetimeLocal(t.paid_at).replace("T"," ")) : "—";
+
+  return `
+    <div class="card mt-3">
+      <div style="font-weight:800;margin-bottom:8px;">尾款資訊（併入主單）</div>
+
+      <div class="row">
+        <div>
+          <div class="muted">尾款單號</div>
+          <div style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">
+            ${escapeHtml(t.order_id || "—")}
+          </div>
+        </div>
+        <div>
+          <div class="muted">尾款付款方式</div>
+          <div>${escapeHtml(pmLabel)}</div>
+        </div>
+      </div>
+
+      <div class="row mt-2">
+        <div>
+          <div class="muted">尾款金額</div>
+          <div>${t.total_amount ? escapeHtml(money(t.total_amount)) : "—"}</div>
+        </div>
+        <div>
+          <div class="muted">尾款實收</div>
+          <div>${t.net_amount ? escapeHtml(money(t.net_amount)) : "—"}</div>
+        </div>
+      </div>
+
+      <div class="row mt-2">
+        <div>
+          <div class="muted">尾款購物金折抵</div>
+          <div>${t.credit_used ? escapeHtml(money(t.credit_used)) : "—"}</div>
+        </div>
+        <div>
+          <div class="muted">尾款已付時間</div>
+          <div>${escapeHtml(paidAtTxt)}</div>
+        </div>
+      </div>
+
+      <div class="row mt-2">
+        <div>
+          <div class="muted">尾款發票</div>
+          <div>${escapeHtml(invLabel)}</div>
+        </div>
+        <div>
+          <div class="muted">發票回傳</div>
+          <div>${escapeHtml(invRtn)}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// CSV 欄位 escape（沿用原 admin_orders）
+function escapeCSV(v){
+  if (v == null) return '';
+  const s = String(v);
+  if (/[",\n]/.test(s)){
+    return '"' + s.replace(/"/g,'""') + '"';
+  }
+  return s;
+}
+/* ===== OP_KEY 驗證 ===== */
+async function ensureOpKey(){
+  $('#opLabel').textContent = OP_KEY ? '已登入後台' : '尚未登入';
+  while(!OP_KEY){
+    const k = prompt('請輸入管理密碼 (OP_KEY)');
+    if(!k){ alert('沒有密碼就無法進入後台喔'); continue; }
+    try{
+      const r = await fetch(`${API}/op/auth`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ op_key:k })
+      });
+      const j = await r.json();
+      if(!r.ok || !j.ok){
+        alert('密碼錯誤，請再試一次');
+        continue;
+      }
+      OP_KEY = k;
+      localStorage.setItem(STORAGE_KEY, OP_KEY);
+      $('#opLabel').textContent = '已登入後台';
+      break;
+    }catch(e){
+      console.error(e);
+      alert('驗證失敗，請稍後再試');
+    }
+  }
+}
+
+ async function refreshBenefitBadge(){
+  try{
+    await ensureOpKey();
+    const r = await fetch(`${API}/admin/benefit-requests?op_key=${encodeURIComponent(OP_KEY)}&status=pending`);
+    const j = await r.json();
+    const n = (j?.requests || []).length || 0;
+    const badge = $('#benefitBadge');
+    if (!badge) return;
+    badge.textContent = String(n);
+    badge.style.display = n > 0 ? 'inline-block' : 'none';
+  }catch(e){}
+}
+
+function setCountBadge(el, n){
+  if (!el) return;
+  const count = Number(n || 0);
+  el.textContent = String(count);
+  el.style.display = count > 0 ? 'inline-flex' : 'none';
+}
+
+// ✅ 給「原本沒有小圓圈 span」的頁籤自動補一顆
+function setAdminTabBadge(adminFile, n){
+  const tab = document.querySelector(`.admin-sub-tabs [data-admin-file="${adminFile}"]`);
+  if (!tab) return;
+
+  let badge = tab.querySelector('.count-badge');
+
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'count-badge';
+    badge.style.display = 'none';
+    tab.appendChild(badge);
+  }
+
+  setCountBadge(badge, n);
+}
+
+async function refreshTopShortcutBadges(){
+  const rows = ALL_ORDERS_CACHE || [];
+
+  const getF = (rec) => rec.fields || rec || {};
+
+  const hasFee = (f) => {
+    if (!f) return false;
+    const fee1 = f.shipping_fee;
+    const fee2 = f.ship_fee;
+    const filled1 = fee1 !== undefined && fee1 !== null && String(fee1) !== '';
+    const filled2 = fee2 !== undefined && fee2 !== null && String(fee2) !== '';
+    return filled1 || filled2;
+  };
+
+  const isCancelledLike = (f) => {
+    const st = String(f.status || '').trim().toLowerCase();
+    const ps = String(f.pay_status || '').trim().toLowerCase();
+    return (
+      st === 'cancelled' ||
+      ps === 'cancelled' ||
+      ps === 'failed'
+    );
+  };
+
+  const isCashInstOrder = (f) => {
+    const pm = String(f.payment_method || f.pay_method || '').trim().toLowerCase();
+    const plan = String(f.cash_inst_plan || '').trim();
+    const cs = String(f.cash_inst_status || '').trim();
+    return (
+      pm.startsWith('cash_inst') ||
+      !!plan ||
+      !!cs
+    );
+  };
+
+  const isCashInstUnpaid = (f) => {
+    if (!isCashInstOrder(f)) return false;
+
+    const ps = String(f.pay_status || '').trim().toLowerCase();
+    const st = String(f.status || '').trim().toLowerCase();
+    const cs = String(f.cash_inst_status || '').trim().toLowerCase();
+
+    if (ps === 'paid_ok') return false;
+    if (ps === 'cancelled' || ps === 'failed') return false;
+    if (st === 'cancelled') return false;
+    if (cs === 'all_done' || cs === 'completed' || cs === 'paid_ok') return false;
+
+    return true;
+  };
+
+  const isDepositUnshipped = (rec) => {
+    const f = getF(rec);
+    const ps = String(f.pay_status || '').trim().toLowerCase();
+
+    // 現金分期不要混到「已收定金未出貨」
+    if (isCashInstOrder(f)) return false;
+
+    return ps === 'deposit_ok' && isUnshippedOrder(rec);
+  };
+
+  // 🛒 未結單購物車：用專用 API，不吃 Orders
+  let cartOpenCount = 0;
+  try {
+    if (OP_KEY) {
+      const cartParams = new URLSearchParams();
+      cartParams.set('op_key', OP_KEY);
+      cartParams.set('limit', '80');
+
+      const rCart = await fetch(`${API}/admin/cart/pending-list?` + cartParams.toString());
+      const jCart = await rCart.json().catch(() => ({}));
+
+      if (rCart.ok && jCart.ok) {
+        cartOpenCount = Array.isArray(jCart.carts) ? jCart.carts.length : 0;
+      }
+    }
+  } catch (e) {
+    console.warn('cart badge load failed', e);
+  }
+
+  // ⭐ 待出貨訂單：沿用你原本邏輯
+  const quickCount = rows.filter(rec => {
+    const f = getF(rec);
+    return String(f.pay_status || '').toLowerCase() === 'paid_ok' && !hasFee(f);
+  }).length;
+
+  // 匯款待確認：沿用你原本邏輯
+  const remindCount = rows.filter(rec => {
+    const f = getF(rec);
+    return String(f.pay_status || '').toLowerCase() === 'pending';
+  }).length;
+
+  // 賣貨便登記：沿用你原本邏輯
+  const pickupCount = rows.filter(rec => {
+    const f  = getF(rec);
+    const ps = String(f.pay_status || '').toLowerCase();
+    if (ps === 'failed' || ps === 'cancelled') return false;
+
+    const st = String(f.status || '').toLowerCase();
+    const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
+    const shipped = (st === 'shipped') || (ss === 'shipped') || (ss === 'arrived') || (ss === 'picked_up');
+
+    const shipInfo = parseShippingInfo(f) || {};
+    const ship = shipInfo.ship || {};
+    const is711 = String(ship.type || '').toLowerCase() === '711';
+
+    const pickReg = String(f['取貨登記'] || '').trim();
+
+    return shipped && is711 && pickReg !== '已取貨';
+  }).length;
+
+  // ✅ 已收定金未出貨
+  const depositCount = rows.filter(rec => {
+    return isDepositUnshipped(rec);
+  }).length;
+
+  // ✅ 現金分期未收齊
+  const cashInstCount = rows.filter(rec => {
+    const f = getF(rec);
+    return isCashInstUnpaid(f);
+  }).length;
+
+  // ✅ 已取消／棄標
+  const cancelledCount = rows.filter(rec => {
+    const f = getF(rec);
+    return isCancelledLike(f);
+  }).length;
+
+  // 寄賣 + 一時貿易：用寄賣專用 API
+  let consignCount = 0;
+  let tradeCount = 0;
+
+  try {
+    if (OP_KEY) {
+      const r = await fetch(`${API}/op/consign/settlement/list`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          op_key: OP_KEY,
+          status: 'all'
+        })
+      });
+
+      const j = await r.json().catch(() => ({}));
+
+      if (r.ok && j.ok) {
+        const items = j.items || [];
+
+        // 寄賣：未完成結算
+        consignCount = items.filter(x => {
+          return String(x.status || '').trim().toLowerCase() !== 'settled';
+        }).length;
+
+        // 一時貿易：已完成匯款／購物金
+        tradeCount = items.filter(x => {
+          const st = String(x.status || '').trim().toLowerCase();
+          const method = String(x.method || '').trim().toLowerCase();
+          return st === 'settled' && (method === 'bank_transfer' || method === 'store_credit');
+        }).length;
+      }
+    }
+  } catch (e) {
+    console.warn('consign/trade badge load failed', e);
+  }
+
+  // ✅ 原本就有 id 的小圓圈
+  setCountBadge($('#cartOpenBadge'), cartOpenCount);
+  setCountBadge($('#quickPaidBadge'), quickCount);
+  setCountBadge($('#remindTodayBadge'), remindCount);
+  setCountBadge($('#pickupNeedBadge'), pickupCount);
+  setCountBadge($('#consignBadge'), consignCount);
+
+  // ✅ 原本沒有小圓圈的頁籤，這裡自動補
+  setAdminTabBadge('admin-deposit.html', depositCount);
+  setAdminTabBadge('admin-cashinst.html', cashInstCount);
+  setAdminTabBadge('admin-cancelled.html', cancelledCount);
+  setAdminTabBadge('admin-trade.html', tradeCount);
+
+  // ✅ 審核購物金沿用你的專用函式
+  if (typeof refreshBenefitBadge === 'function') {
+    refreshBenefitBadge();
+  }
+}
+
+ async function loadBenefitRequests(){
+  await ensureOpKey();
+
+  const panel = $('#benefitReviewPanel');
+  const listEl = $('#benefitReviewList');
+  if (!panel || !listEl) return;
+
+  panel.classList.remove('hidden');
+  listEl.innerHTML = '載入中...';
+
+  try {
+    const r = await fetch(`${API}/admin/benefit-requests?op_key=${encodeURIComponent(OP_KEY)}&status=pending`);
+    const j = await r.json();
+
+    if (!r.ok || !j.ok) {
+      listEl.innerHTML = `讀取失敗：${j?.error || 'unknown'}`;
+      return;
+    }
+
+const rows = j.requests || [];
+refreshBenefitBadge();
+
+if (!rows.length) {
+  listEl.innerHTML = '目前沒有待審核申請';
+  return;
+}
+
+const highlightBenefitMeta = (v) => {
+  const text = String(v || '-').trim() || '-';
+  if (text.includes('公司補貼') || text.includes('客戶資金')) {
+    return `<span class="benefit-alert-text">${escapeHtml(text)}</span>`;
+  }
+  return escapeHtml(text);
+};
+
+listEl.innerHTML = rows.map(x => `
+  <div style="padding:8px 0;border-bottom:1px solid rgba(148,163,184,.2);">
+    <div><b>${escapeHtml(x.customer_name || '(未填姓名)')}</b> / ${x.request_type === 'credit' ? '購物金' : '折扣金'}</div>
+    <div>${Number(x.amount || 0).toLocaleString()} / ${escapeHtml(x.reason || '-')}</div>
+    <div class="tag-small">${highlightBenefitMeta(x.fund_kind)} / ${highlightBenefitMeta(x.applicant)}</div>
+    <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
+      <button class="small-btn btnBenefitApprove" data-id="${x.record_id}" data-amount="${x.amount}">核准</button>
+      <button class="small-btn btnBenefitReject" data-id="${x.record_id}">拒絕</button>
+      <button class="small-btn btnBenefitVoid" data-id="${x.record_id}">作廢</button>
+    </div>
+  </div>
+`).join('');
+
+    listEl.querySelectorAll('.btnBenefitApprove').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id || '';
+        const amt = btn.dataset.amount || '';
+        const approved = prompt('核准金額', amt);
+        if (approved == null) return;
+        const note = prompt('審核備註（可空白）', '') || '';
+        await reviewBenefitRequest(id, 'approve', approved, note);
+      });
+    });
+
+    listEl.querySelectorAll('.btnBenefitReject').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id || '';
+        const note = prompt('拒絕原因 / 備註', '') || '';
+        await reviewBenefitRequest(id, 'reject', 0, note);
+      });
+    });
+
+   listEl.querySelectorAll('.btnBenefitVoid').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const id = btn.dataset.id || '';
+    const note = prompt('作廢原因 / 備註', '') || '';
+    await reviewBenefitRequest(id, 'void', 0, note);
+  });
+});
+
+  } catch (e) {
+    listEl.innerHTML = `讀取失敗：${e.message || e}`;
+  }
+}
+
+async function reviewBenefitRequest(recordId, action, approvedAmount, reviewNote){
+  await ensureOpKey();
+
+  const r = await fetch(`${API}/admin/benefit-request/review`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({
+      op_key: OP_KEY,
+      record_id: recordId,
+      action,
+      approved_amount: approvedAmount,
+      review_note: reviewNote || ''
+    })
+  });
+
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) {
+    alert('審核失敗：' + (j?.detail || j?.error || 'unknown'));
+    return;
+  }
+
+if (action === 'approve') {
+  alert('已核准並入帳');
+} else if (action === 'reject') {
+  alert('已拒絕申請');
+} else if (action === 'void') {
+  alert('已作廢申請');
+} else {
+  alert('已更新狀態');
+}
+await loadBenefitRequests();
+refreshBenefitBadge();
+}
+
+function toggleBenefitReviewPanel(forceOpen = null){
+  const panel = $('#benefitReviewPanel');
+  if (!panel) return;
+
+  const shouldOpen = (forceOpen === null)
+    ? panel.classList.contains('hidden')
+    : !!forceOpen;
+
+  if (shouldOpen) {
+    panel.classList.remove('hidden');
+    loadBenefitRequests();
+  } else {
+    panel.classList.add('hidden');
+  }
+}
+ function displayCartStatus(st){
+  const s = String(st || '').trim().toLowerCase();
+  if (s === 'open') return '未結單';
+  if (s === 'checking_out') return '結帳中';
+  if (s === 'submitted') return '已送出';
+  return st || '';
+}
+
+async function loadOrders(filter='all', extra = {}){
+  currentFilter = filter;
+  const listEl = $('#orderList');
+  listEl.innerHTML = '<div class="muted">載入中…</div>';
+  $('#msg').textContent = '';
+
+  const view_key = String(extra.view_key || extra.viewKey || '').trim();
+  const allowDate = !view_key && ADMIN_PAGE.useDate !== false;
+
+  const date_from = allowDate
+    ? (extra.date_from ?? ($('#date_from') ? ($('#date_from').value || '') : ''))
+    : '';
+
+  const date_to = allowDate
+    ? (extra.date_to ?? ($('#date_to') ? ($('#date_to').value || '') : ''))
+    : '';
+
+  try{
+    const params = new URLSearchParams();
+    params.set('filter', filter);
+    params.set('op_key', OP_KEY);
+
+    // 新拆頁使用：讓後端直接讀 Airtable View，不要先撈全部再前端篩
+    if (view_key) params.set('view_key', view_key);
+
+    if (date_from) params.set('date_from', date_from);
+    if (date_to)   params.set('date_to', date_to);
+
+    const r = await fetch(`${API}/admin/orders?` + params.toString());
+    const j = await r.json();
+
+    if(!r.ok || !j.ok){
+      throw new Error(j.error || 'load_failed');
+    }
+
+    currentOrders = j.orders || j.records || [];
+    ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+    renderOrderList();
+    updateSummary();
+  }catch(e){
+    console.error(e);
+    listEl.innerHTML = '<div class="error">載入失敗：' + (e.message || e) + '</div>';
+    currentOrders = [];
+    updateSummary();
+  }
+}
+
+ async function loadVendorSummaryCache(){
+  try{
+    const params = new URLSearchParams();
+    params.set('filter', 'all');
+    params.set('op_key', OP_KEY);
+
+    const r = await fetch(`${API}/admin/orders?` + params.toString());
+    const j = await r.json();
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.error || 'vendor_summary_load_failed');
+    }
+
+    VENDOR_SUMMARY_CACHE = j.orders || j.records || [];
+  }catch(e){
+    console.error('loadVendorSummaryCache failed', e);
+    VENDOR_SUMMARY_CACHE = [];
+  }
+}
+
+ async function loadConsignSettlementList(){
+  currentPanelMode = 'consign';
+  currentConsignRecord = null;
+
+    saveViewState('consign_settlement', {
+    filter: 'all',
+    date_from: $('#date_from') ? ($('#date_from').value || '') : '',
+    date_to: $('#date_to') ? ($('#date_to').value || '') : '',
+    status: $('#status') ? ($('#status').value || '') : ''
+  });
+
+  const listEl = $('#orderList');
+  const detailEl = $('#orderDetail');
+  const msgEl = $('#msg');
+
+  listEl.innerHTML = '<div class="muted">寄賣資料載入中…</div>';
+  detailEl.innerHTML = '<div class="muted">請從左邊點選一筆寄賣售出資料</div>';
+  if (msgEl) msgEl.textContent = '';
+
+  try{
+    await ensureOpKey();
+
+    const r = await fetch(`${API}/op/consign/settlement/list`, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        status: 'all'
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if(!r.ok || !j.ok){
+      throw new Error(j.error || 'consign_list_failed');
+    }
+
+    currentConsignRows = (j.items || []).filter(row => {
+  const st = String(row.status || '').trim().toLowerCase();
+  return st !== 'settled';
+});
+    renderConsignList();
+updateCurrentSubTabCount(currentConsignRows.length);
+setTopFilterActive('consign_settlement');
+
+    if (msgEl) {
+      msgEl.textContent = currentConsignRows.length
+        ? `僅顯示寄賣待處理資料，共 ${currentConsignRows.length} 筆。`
+        : '目前沒有待處理的寄賣售出資料。';
+    }
+  }catch(e){
+    console.error(e);
+    listEl.innerHTML = '<div class="error">寄賣資料載入失敗：' + (e.message || e) + '</div>';
+    currentConsignRows = [];
+  }
+}
+
+ function displayConsignStatus(v){
+  switch(String(v || '').trim()){
+    case 'waiting_choice': return '待選擇';
+    case 'pending': return '待處理';
+    case 'pending_bank': return '待匯款';
+    case 'pending_credit': return '待轉購物金';
+    case 'settled': return '已完成';
+    default: return v || '';
+  }
+}
+
+function displayConsignNotifyStatus(v){
+  switch(String(v || '').trim()){
+    case 'pending': return '待通知';
+    case 'sent': return '已通知';
+    default: return v || '';
+  }
+}
+
+function displayConsignMethod(v){
+  switch(String(v || '').trim()){
+    case 'bank_transfer': return '匯款';
+    case 'store_credit': return '購物金';
+    default: return v ? v : '未選擇';
+  }
+}
+function renderConsignList(){
+  const listEl = $('#orderList');
+  if (!currentConsignRows.length){
+    listEl.innerHTML = '<div class="muted">目前沒有待處理的寄賣售出資料。</div>';
+    return;
+  }
+
+  listEl.innerHTML = currentConsignRows.map(row => {
+    return `
+      <div class="order-row" data-id="${row.orderItemId}">
+        <div class="ord-top">
+          <div>
+            <div class="ord-id">${escapeHtml(row.orderId || '')}｜${escapeHtml(row.sku || '')}</div>
+            <div class="tag-small">${escapeHtml(row.name || '')}</div>
+          </div>
+
+          <div class="ord-right">
+            <div class="ord-amount">${money(row.saleAmount || 0)}</div>
+<div class="tag-small">${escapeHtml(displayConsignMethod(row.method))}</div>
+          </div>
+        </div>
+
+        <div class="ord-sub">
+          ${escapeHtml(row.consignorName || '')}
+          ｜匯款 ${money(row.bankAmount || 0)}
+          ｜購物金 ${money(row.creditAmount || 0)}
+        </div>
+
+        <div class="badges">
+<span class="badge yellow">${escapeHtml(displayConsignStatus(row.status))}</span>
+<span class="badge blue">${escapeHtml(displayConsignNotifyStatus(row.notifyStatus || 'pending'))}</span>
+</div>
+      </div>
+    `;
+  }).join('');
+
+  $$('#orderList .order-row').forEach(rowEl => {
+    rowEl.addEventListener('click', () => {
+      $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
+      rowEl.classList.add('active');
+      const id = rowEl.getAttribute('data-id');
+      const rec = currentConsignRows.find(x => String(x.orderItemId) === String(id));
+      if (rec) renderConsignDetail(rec);
+    });
+  });
+}
+
+function renderConsignDetail(item){
+  currentConsignRecord = item;
+  const dEl = $('#orderDetail');
+
+  const bankInfo = item.bankInfo || {};
+  const accounting = item.accounting || {};
+
+  dEl.innerHTML = `
+    <div class="section-title">寄賣結算資料</div>
+
+    <div class="pill">訂單編號：<span>${escapeHtml(item.orderId || '')}</span></div>
+    <div class="pill">SKU：<span>${escapeHtml(item.sku || '')}</span></div>
+    <div class="pill">寄賣人：<span>${escapeHtml(item.consignorName || '')}</span></div>
+
+    <div class="mt-3">
+      <label>品名</label>
+      <div class="ro-field">${escapeHtml(item.name || '')}</div>
+    </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>售出金額</label>
+        <div class="ro-field">${money(item.saleAmount || 0)}</div>
+      </div>
+      <div>
+        <label>匯款金額（80%）</label>
+        <div class="ro-field">${money(item.bankAmount || 0)}</div>
+      </div>
+    </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>購物金金額（85%）</label>
+        <div class="ro-field">${money(item.creditAmount || 0)}</div>
+      </div>
+      <div>
+        <label>目前方式</label>
+<div class="ro-field">${escapeHtml(displayConsignMethod(item.method))}</div>
+      </div>
+    </div>
+
+    <div class="mt-3 section-title">匯款資料</div>
+    <div class="ro-field">${escapeHtml(bankInfo.accountName || '')}</div>
+    <div class="ro-field mt-2">${escapeHtml(bankInfo.bankCode || '')} ${escapeHtml(bankInfo.bankName || '')}</div>
+    <div class="ro-field mt-2">${escapeHtml(bankInfo.accountNo || '')}</div>
+
+    <div class="mt-3 section-title">一時貿易資料</div>
+    <div class="ro-field">${escapeHtml(accounting.name || '')}</div>
+    <div class="ro-field mt-2">${escapeHtml(accounting.nationalId || '')}</div>
+
+    <div class="top-order-actions mt-3">
+      <button class="btn-primary" id="btnConsignNotify" type="button">📣 一鍵通知客人</button>
+      <button class="btn-secondary" id="btnConsignBank" type="button">🏦 設為匯款</button>
+      <button class="btn-secondary" id="btnConsignCredit" type="button">💳 設為購物金</button>
+      <button class="btn-secondary" id="btnConsignBankDone" type="button">✅ 標記已匯款</button>
+      <button class="btn-secondary" id="btnConsignCreditDone" type="button">✅ 確認轉購物金</button>
+      <button class="btn-secondary" id="btnCopyConsignBank" type="button">📋 複製匯款資料</button>
+      <button class="btn-secondary" id="btnCopyConsignAccounting" type="button">📋 複製一時貿易資料</button>
+    </div>
+  `;
+
+  $('#btnConsignNotify')?.addEventListener('click', () => consignNotify(item.orderItemId));
+  $('#btnConsignBank')?.addEventListener('click', () => consignAction(item.orderItemId, 'set_bank_transfer'));
+  $('#btnConsignCredit')?.addEventListener('click', () => consignAction(item.orderItemId, 'set_store_credit'));
+  $('#btnConsignBankDone')?.addEventListener('click', () => consignAction(item.orderItemId, 'mark_bank_done'));
+  $('#btnConsignCreditDone')?.addEventListener('click', () => consignAction(item.orderItemId, 'mark_credit_done'));
+
+  $('#btnCopyConsignBank')?.addEventListener('click', async () => {
+    const txt = [
+  `戶名：${bankInfo.accountName || ''}`,
+  `銀行代碼：${bankInfo.bankCode || ''}`,
+  `銀行名稱：${bankInfo.bankName || ''}`,
+  `匯款帳號：${bankInfo.accountNo || ''}`,
+  `實際匯款金額：NT$ ${Number(item.bankAmount || 0).toLocaleString('zh-TW')}`
+].join('\n');
+    await navigator.clipboard.writeText(txt);
+    alert('已複製匯款資料');
+  });
+
+  $('#btnCopyConsignAccounting')?.addEventListener('click', async () => {
+    const txt = [
+      `姓名：${accounting.name || ''}`,
+      `身分證字號：${accounting.nationalId || ''}`,
+      `售出金額：${item.saleAmount || 0}`,
+      `匯款金額：${item.bankAmount || 0}`,
+      `購物金金額：${item.creditAmount || 0}`
+    ].join('\n');
+    await navigator.clipboard.writeText(txt);
+    alert('已複製一時貿易資料');
+  });
+}
+
+async function consignNotify(orderItemId){
+  await ensureOpKey();
+  const r = await fetch(`${API}/op/consign/notify-choice`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ op_key: OP_KEY, orderItemId })
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) {
+    alert('通知失敗：' + (j.error || 'unknown'));
+    return;
+  }
+  alert('已通知客人');
+  await loadConsignSettlementList();
+  await refreshTopShortcutBadges();
+}
+
+async function consignAction(orderItemId, action){
+  await ensureOpKey();
+  const r = await fetch(`${API}/op/consign/settlement/action`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({ op_key: OP_KEY, orderItemId, action })
+  });
+  const j = await r.json().catch(() => ({}));
+
+  if (!r.ok || !j.ok) {
+    alert('操作失敗：' + (j.error || 'unknown'));
+    return;
+  }
+
+  if (j.skipped && j.reason === 'credit_already_granted') {
+    alert('這筆已經加值過');
+    await loadConsignSettlementList();
+    await refreshTopShortcutBadges();
+    return;
+  }
+
+  alert('已更新');
+  await loadConsignSettlementList();
+  await refreshTopShortcutBadges();
+}
+
+async function reloadCurrentView(){
+  const mode = VIEW_STATE.mode || 'all';
+  const st = $('#status') ? ($('#status').value || '') : '';
+
+  // ✅ 固定子頁：操作後留在目前子頁，不要退回「全部訂單」
+  // 例如：待出貨、匯款待確認、賣貨便登記、已收定金、現金分期、已取消
+  if (ADMIN_PAGE.mode === 'orders' && ADMIN_PAGE.viewKey) {
+    setBatchActionMode('none');
+
+    saveViewState(`page_${ADMIN_PAGE.viewKey}`, {
+      filter: 'all',
+      date_from: '',
+      date_to: '',
+      status: st
+    });
+
+    await loadOrders('all', { view_key: ADMIN_PAGE.viewKey });
+    ALL_ORDERS_CACHE = [...(currentOrders || [])];
+
+    updateCurrentSubTabCount(currentOrders.length);
+
+    const msgEl = $('#msg');
+    if (msgEl) {
+      msgEl.textContent = `目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`;
+    }
+
+    return;
+  }
+
+  if (mode === 'cart_open' || currentPanelMode === 'cart_open') {
+    return loadOpenCartList();
+  }
+
+  if (mode === 'consign_settlement' || currentPanelMode === 'consign') {
+    saveViewState('consign_settlement', {
+      filter: 'all',
+      date_from: $('#date_from') ? ($('#date_from').value || '') : '',
+      date_to: $('#date_to') ? ($('#date_to').value || '') : '',
+      status: st
+    });
+    return loadConsignSettlementList();
+  }
+
+  if (mode === 'consign_accounting' || currentPanelMode === 'consign_accounting') {
+    saveViewState('consign_accounting', {
+      filter: 'all',
+      date_from: $('#date_from') ? ($('#date_from').value || '') : '',
+      date_to: $('#date_to') ? ($('#date_to').value || '') : '',
+      status: st
+    });
+    return loadConsignAccountingList();
+  }
+
+  if (st === 'unshipped_custom') {
+    setBatchActionMode('none');
+    return applyFullView('status_unshipped_custom');
+  }
+
+  if (st === 'deposit_unshipped_custom') {
+    setBatchActionMode('none');
+    return applyFullView('status_deposit_unshipped_custom');
+  }
+
+  setBatchActionMode('none');
+  return applyFullView(mode || 'all');
+}
+
+
+// 更新下方 summary + 匯出按鈕狀態
+function updateSummary(){
+  const sumEl         = $('#summary');
+  const btnExport     = $('#exportBtn');
+  const btnExportShip = $('#btnExportShip');
+  const btnExportZero = $('#btnExportZero');
+  if (!sumEl) return;
+
+  // ✅ 只有全部訂單頁顯示總筆數＋合計金額
+  if (ADMIN_PAGE_FILE !== 'admin.html') {
+    sumEl.textContent = '';
+    if (btnExport) btnExport.disabled = true;
+    if (btnExportShip) btnExportShip.disabled = true;
+    if (btnExportZero) btnExportZero.disabled = true;
+    return;
+  }
+
+  // 沒有任何訂單時：清空 summary，三顆匯出按鈕都變灰色
+  if (!currentOrders.length){
+    sumEl.textContent = '';
+    if (btnExport) btnExport.disabled = true;
+    if (btnExportShip) btnExportShip.disabled = true;
+    if (btnExportZero) btnExportZero.disabled = true;
+    return;
+  }
+
+  // 計算合計金額 & 各狀態筆數
+  let sum = 0;
+  let countSubmitted = 0, countPaid = 0, countShipped = 0, countCancelled = 0;
+
+  for (const rec of currentOrders){
+    const f = rec.fields || rec || {};
+    const a = calcAmounts(f);
+    sum += a.net;
+    const st = f.status || '';
+    if (st === 'submitted') countSubmitted++;
+    else if (st === 'paid') countPaid++;
+    else if (st === 'shipped') countShipped++;
+    else if (st === 'cancelled') countCancelled++;
+  }
+
+  const sumText = 'NT$ ' + (Number(sum)||0).toLocaleString('zh-TW',{minimumFractionDigits:0});
+  sumEl.innerHTML =
+    '<span>筆數：' + currentOrders.length +
+    '（已送出: ' + countSubmitted +
+    ' / 已付款: ' + countPaid +
+    ' / 已出貨: ' + countShipped +
+    ' / 已取消: ' + countCancelled + '）</span>' +
+    '<span>合計金額：' + sumText + '</span>';
+
+  // 有訂單時：三顆匯出按鈕都可以用
+  if (btnExport) btnExport.disabled = false;
+  if (btnExportShip) btnExportShip.disabled = false;
+  if (btnExportZero) btnExportZero.disabled = false;
+}
+
+ // 上方匯出按鈕：不再使用日期欄位
+function exportCSV(){
+  if (!OP_KEY){
+    alert('尚未登入後台，請重新整理頁面再試一次。');
+    return;
+  }
+
+  const params = new URLSearchParams();
+  params.set('key', OP_KEY);
+  params.set('kind', 'orders');
+  params.set('format', 'csv');
+
+  const stEl = $('#status');
+  const st = stEl ? stEl.value : '';
+
+  if (st === 'unshipped_custom') {
+    params.set('status_mode', 'unshipped_custom');
+  } else if (st === 'deposit_unshipped_custom') {
+    params.set('status_mode', 'deposit_unshipped_custom');
+  }
+
+  const url = `${API}/admin/export-view?` + params.toString();
+  window.open(url, '_blank');
+}
+
+function exportShipReport(){
+  if (!OP_KEY){
+    alert('尚未登入後台，請重新整理頁面再試一次。');
+    return;
+  }
+
+  const params = new URLSearchParams();
+  params.set('key', OP_KEY);
+  params.set('kind', 'ship');
+
+  const url = `${API}/admin/export-view?` + params.toString();
+  window.open(url, '_blank');
+}
+
+function exportZeroReport(){
+  if (!OP_KEY){
+    alert('尚未登入後台，請重新整理頁面再試一次。');
+    return;
+  }
+
+  const params = new URLSearchParams();
+  params.set('key', OP_KEY);
+  params.set('kind', 'zero');
+
+  const url = `${API}/admin/export-view?` + params.toString();
+  window.open(url, '_blank');
+}
+
+ function statusBadgePay(pay){
+  if (!pay) return '';
+  let cls  = 'badge';
+  let text = pay;
+
+  if (pay === 'paid_ok') {
+    cls  += ' green';
+    text  = '已收款';
+  } else if (pay === 'deposit_ok') {
+    // 訂金已收
+    cls  += ' green';
+    text  = '訂金已收';
+  } else if (pay === 'pending') {
+    cls  += ' yellow';
+    text  = '待確認';
+  } else if (pay === 'unpaid') {
+    text  = '未收款';
+  } else if (pay === 'cancelled') {
+    // 付款狀態 = cancelled
+    cls  += ' red';
+    text  = '取消訂單（補回庫存）';
+  } else if (pay === 'failed') {
+    cls  += ' red';
+    text  = '失敗 / 作廢';
+  }
+
+  return `<span class="${cls}">${text}</span>`;
+}
+
+function statusBadgeShip(st){
+  if(!st) return '';
+  let cls = 'badge blue';
+  let text = st;
+  if(st === 'none'){ text = '未設定'; cls='badge'; }
+  else if(st === 'ready_to_ship'){ text = '待出貨'; }
+  else if(st === 'shipped'){ text = '已出貨'; }
+  else if(st === 'returned'){ text = '退貨'; cls='badge red'; }
+  else if(st === 'cancelled'){ text = '取消'; cls='badge red'; }
+  return `<span class="${cls}">${text}</span>`;
+}
+
+/* ===== 左側列表渲染 ===== */
+function renderOrderList(){
+  const listEl = $('#orderList');
+
+  // 清掉不在目前清單內的勾選（避免切篩選/日期後勾到舊的）
+  const keySet = new Set((currentOrders || []).map(getOrderKey).filter(Boolean));
+  for(const k of Array.from(PRINT_SLIP_SELECTED)){
+    if(!keySet.has(k)) PRINT_SLIP_SELECTED.delete(k);
+  }
+  updatePrintSlipsBtn();
+
+  const html = currentOrders.map(rec=>{
+    const f = rec.fields || rec || {};
+
+const shipInfo = parseShippingInfo(f);
+const lineName = getLineName(f, shipInfo);
+const pickReg  = String(f['取貨登記'] || '').trim();
+const ship = shipInfo.ship || {};
+const store = ship.store || {};
+const post = ship.post || {};
+const note = shipInfo.note || '';
+
+const dep = shipInfo.deposit || {};
+const depAmount = (f.deposit_amount ?? dep.amount ?? dep.deposit_amount ?? '');
+const depLast5 = (f.deposit_last5 ?? dep.last5 ?? dep.deposit_last5 ?? '');
+const atmLast5 = String(shipInfo.atm_last5 || "").trim();
+const last5Show = String(depLast5 || atmLast5 || "").trim(); // 訂金匯款/尾款匯款共用顯示
+
+const createdMs =
+  Date.parse(String(f.created_at || '')) ||
+  Date.parse(String(f.updated_at || '')) ||
+  0;
+
+const overdueMs = createdMs ? (Date.now() - createdMs) : 0;
+const overdue24 = overdueMs >= 24 * 60 * 60 * 1000;
+const overdue48 = overdueMs >= 48 * 60 * 60 * 1000;
+
+const pmLower = String(f.payment_method || '').trim().toLowerCase();
+const psLower = String(f.pay_status || '').trim().toLowerCase();
+
+const forfeitTag = isDepositForfeitOrder(f)
+  ? '<span class="badge red">已棄標｜訂金沒收</span>'
+  : '';
+
+const restockAlertTag = isRestockNeedsAttention(f)
+  ? '<span class="badge red">⚠ 庫存未補</span>'
+  : '';
+
+const isBankPending =
+  psLower === 'pending' &&
+  [
+    'atm_full',
+    'atm_deposit',
+    'atm_full_tail',
+    'bank_transfer',
+    'deposit_new',
+    'deposit_old',
+    'deposit_new_partial',
+    'deposit_old_partial',
+    'deposit_new_full',
+    'deposit_old_full',
+    'deposit_new_full_711',
+    'deposit_new_full_post',
+
+    // ✅ 現金分期訂金也屬於待匯款
+    'cash_inst_2',
+    'cash_inst_3',
+    'cash_install_2',
+    'cash_install_3'
+  ].includes(pmLower);
+
+const overdueTag = isBankPending
+  ? (
+      overdue48
+        ? '<span class="badge overdue-badge red">逾48h 未匯款</span>'
+        : (overdue24 ? '<span class="badge overdue-badge yellow">逾24h 未匯款</span>' : '')
+    )
+  : '';
+
+    // ✅ 出貨時間顯示用（唯讀）
+    const shipAtRaw  = (f.shipped_at || f.ship_at || '');
+    const shipAtText = shipAtRaw
+      ? new Date(shipAtRaw).toLocaleString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:true })
+      : '';
+
+    let addr = '';
+    if (ship.type === '711') {
+      addr = `7-11 ${store.name || ''} (${store.id || ''}) ${store.addr || ''}`;
+    } else if (ship.type === 'post') {
+      addr = `郵寄 ${post.zip || ''} ${post.addr || ''}`;
+    } else if (ship.type === 'meetup') {
+      const place = ship.meetup_place || ship.meet_place || '';
+      const time  = ship.meetup_time  || ship.meet_time  || '';
+      let s = ['面交', time].filter(Boolean).join(' ');
+      if (place) s += ` @ ${place}`;
+      addr = s;
+    }
+
+    const line2   = [ship.name, ship.phone, addr].filter(Boolean).join(' / ');
+    const pay_b   = statusBadgePay(f.pay_status);
+    const ship_b  = statusBadgeShip(f.ship_status);
+    const method  = displayPaymentMethod(f.payment_method || '');
+    const created = f.CreatedAt || (f.created_at || '');
+    const a = calcAmounts(f);
+    const total   = money(a.net);
+
+    const creditTag = a.credit > 0
+      ? `<div class="tag-small credit-red">購物金折抵 ${money(a.credit)}</div>`
+      : ``;
+
+    const last5Tag = last5Show
+      ? `<div class="tag-small">後五碼：${escapeHtml(last5Show)}</div>`
+      : ``;
+
+    const rowKey = f.order_id || rec.id || '';
+    const checked = PRINT_SLIP_SELECTED.has(String(rowKey)) ? 'checked' : '';
+
+    return `
+      <div class="order-row" data-id="${rowKey}">
+        <div class="ord-top">
+          <label class="ord-check" title="勾選列印">
+            <input class="ord-cb" type="checkbox" data-id="${rowKey}" ${checked}>
+          </label>
+
+          <div>
+<div class="ord-id">
+  ${escapeHtml(f.order_id || '(無編號)')}
+  ${lineName ? ' <span class="ln">｜' + escapeHtml(lineName) + '</span>' : ''}
+  ${pickReg ? ' <span class="pickup-reg-inline">｜' + escapeHtml(pickReg) + '</span>' : ''}
+</div>
+            <div class="tag-small">${created}</div>
+          </div>
+
+          <div class="ord-right">
+            <div class="ord-amount">${total}</div>
+            <div class="tag-small">${method}</div>
+  ${last5Tag}
+  ${creditTag}
+</div>
+        </div>
+
+        <div class="ord-sub">${line2 || '&nbsp;'}</div>
+        <div class="badges">
+  ${forfeitTag}
+  ${restockAlertTag}
+  ${pay_b}
+  ${ship_b}
+  ${overdueTag}
+</div>
+      </div>
+    `;
+  }).join('');
+
+  listEl.innerHTML = html;
+
+  // ✅ checkbox：點勾選不要觸發 row click（避免一直跳到右邊）
+  $$('#orderList .ord-cb').forEach(cb=>{
+    cb.addEventListener('click', (e)=> e.stopPropagation());
+    cb.addEventListener('change', ()=>{
+      const id = String(cb.dataset.id || '').trim();
+      if(!id) return;
+      if(cb.checked) PRINT_SLIP_SELECTED.add(id);
+      else PRINT_SLIP_SELECTED.delete(id);
+      updatePrintSlipsBtn();
+    });
+  });
+
+  // 原本 row click：維持
+  $$('#orderList .order-row').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      $$('#orderList .order-row').forEach(x=>x.classList.remove('active'));
+      row.classList.add('active');
+      const key = row.getAttribute('data-id');
+      selectOrder(key);
+    });
+  });
+
+  if(currentRecord){
+  const f = currentRecord.fields || currentRecord || {};
+  const key = f.order_id || currentRecord.id || '';
+  const row = $(`#orderList .order-row[data-id="${key}"]`);
+  if(row){
+    row.classList.add('active');
+  }else{
+    currentRecord = null;
+    $('#orderDetail').innerHTML = '<div class="muted">請從左邊點選一筆訂單</div>';
+  }
+}
+
+  updateSummary();
+}
+
+/* 根據 key 找出訂單（id 或 order_id） */
+function selectOrder(key){
+  if(!key) return;
+  const rec = currentOrders.find(x=>{
+    if (x.id && String(x.id) === String(key)) return true;
+    const f = x.fields || x || {};
+    return f.order_id && String(f.order_id) === String(key);
+  });
+  if(!rec) return;
+  renderDetail(rec);
+}
+
+/* ===== 右側詳細資料 ===== */
+async function renderDetail(rec){
+  currentRecord = rec;
+  const f   = rec.fields || rec || {};
+  const dEl = $('#orderDetail');
+
+  const noteText = String(f.internal_note || '').trim();
+  const mRetry = /\[RETRY_CART=([^\]]+)\]/.exec(noteText);
+  const retryCart = mRetry ? String(mRetry[1] || '').trim() : '';
+
+  const shipInfo = parseShippingInfo(f);
+const lineName = getLineName(f, shipInfo);
+const ship  = shipInfo.ship  || {};
+const store = ship.store     || {};
+const post  = ship.post      || {};
+const note  = shipInfo.note  || '';
+
+const yufuPhoneOwner = String(
+  f.yufu_phone_owner ||
+  shipInfo?.installment_apply?.applicant?.phone_owner ||
+  shipInfo?.installmentApply?.applicant?.phone_owner ||
+  shipInfo?.yufu_apply?.phone_owner ||
+  shipInfo?.yufuApply?.phone_owner ||
+  ""
+).trim();
+
+// ✅ 訂金資訊：一般訂金 + 現金分期訂金都支援
+const date10 = (v)=> (v ? String(v).slice(0,10) : '');
+
+const pmCode = String(f.payment_method || '').trim().toLowerCase();
+const isCashInst2 = pmCode === 'cash_inst_2' || pmCode === 'cash_install_2';
+const isCashInst3 = pmCode === 'cash_inst_3' || pmCode === 'cash_install_3';
+const isCashInstOrder =
+  pmCode.startsWith('cash_inst_') ||
+  pmCode.startsWith('cash_install_');
+
+const dep = shipInfo.deposit || {};
+const cashInst = shipInfo.cash_inst || shipInfo.cashInstallment || shipInfo.installment || {};
+const cashInstMeta = safeJsonParse(f.cash_inst_due_dates_json, {}) || {};
+const cashInstSchedule = Array.isArray(cashInstMeta.schedule) ? cashInstMeta.schedule : [];
+
+const pickDepositValue = (...vals) => {
+  for (const v of vals) {
+    if (v === 0 || v === '0') return v;
+    const s = String(v ?? '').trim();
+    if (s) return v;
+  }
+  return '';
+};
+
+const pickDepositText = (...vals) => {
+  for (const v of vals) {
+    const s = String(v ?? '').trim();
+    if (s) return s;
+  }
+  return '';
+};
+
+const depAmount = isCashInstOrder
+  ? pickDepositValue(
+      f.cash_inst_deposit_amount,
+      cashInst.deposit_amount,
+      cashInstMeta.deposit_amount,
+      f.deposit_amount,
+      dep.amount,
+      dep.deposit_amount
+    )
+  : pickDepositValue(
+      f.deposit_amount,
+      dep.amount,
+      dep.deposit_amount
+    );
+
+const depLast5 = isCashInstOrder
+  ? pickDepositText(
+      f.cash_inst_deposit_last5,
+      cashInst.deposit_last5,
+      cashInstMeta.deposit_last5,
+      f.deposit_last5,
+      f.atm_last5,
+      dep.last5,
+      dep.deposit_last5,
+      dep.atm_last5,
+      shipInfo.atm_last5
+    )
+  : pickDepositText(
+      f.deposit_last5,
+      f.atm_last5,
+      dep.last5,
+      dep.deposit_last5,
+      dep.atm_last5,
+      shipInfo.atm_last5
+    );
+
+const holdUntilRaw = pickDepositValue(
+  f.hold_until,
+  dep.hold_until,
+  dep.holdUntil
+);
+
+const depExpireRaw = isCashInstOrder
+  ? pickDepositValue(
+      f.cash_inst_deposit_due_date,
+      cashInst.deposit_due_date,
+      cashInstMeta.deposit_due_date,
+      f.deposit_expire_at,
+      dep.deposit_expire_at,
+      dep.expire_at,
+      holdUntilRaw
+    )
+  : pickDepositValue(
+      f.deposit_expire_at,
+      dep.deposit_expire_at,
+      dep.expire_at,
+      holdUntilRaw
+    );
+
+const holdUntil10 = date10(holdUntilRaw);
+const depExpire10 = date10(depExpireRaw);
+
+const cashInstDates = Array.isArray(cashInstMeta.payment_dates)
+  ? cashInstMeta.payment_dates
+  : (
+      Array.isArray(cashInst.payment_dates)
+        ? cashInst.payment_dates
+        : []
+    );
+
+const cashInstDate1 = date10(
+  f.cash_inst_date_1 ||
+  cashInst.date_1 ||
+  cashInst.date1 ||
+  cashInst.inst1 ||
+  cashInst.first_date ||
+  cashInstMeta.first_date ||
+  cashInstDates[0] ||
+  cashInstSchedule?.[0]?.due_date ||
+  ''
+);
+
+const cashInstDate2 = date10(
+  f.cash_inst_date_2 ||
+  cashInst.date_2 ||
+  cashInst.date2 ||
+  cashInst.inst2 ||
+  cashInst.second_date ||
+  cashInstMeta.second_date ||
+  cashInstDates[1] ||
+  cashInstSchedule?.[1]?.due_date ||
+  ''
+);
+
+const cashInstDate3 = date10(
+  f.cash_inst_date_3 ||
+  cashInst.date_3 ||
+  cashInst.date3 ||
+  cashInst.inst3 ||
+  cashInst.third_date ||
+  cashInstMeta.third_date ||
+  cashInstDates[2] ||
+  cashInstSchedule?.[2]?.due_date ||
+  ''
+);
+
+const cashInstPaidParts = Number(
+  f.cash_inst_paid_parts ??
+  f.cash_inst_paid_count ??
+  cashInst.paid_count ??
+  0
+) || 0;
+
+const cashInstPart1PaidAt = String(f.cash_inst_part1_paid_at || '').trim();
+const cashInstPart2PaidAt = String(f.cash_inst_part2_paid_at || '').trim();
+const cashInstPart3PaidAt = String(f.cash_inst_part3_paid_at || '').trim();
+
+const cashInstCompleted =
+  f.cash_inst_completed === true ||
+  String(f.cash_inst_completed || '').trim().toLowerCase() === 'true' ||
+  String(f.cash_inst_completed || '').trim() === '1' ||
+  String(f.cash_inst_status || '').trim().toLowerCase() === 'completed';
+
+const cashInstTotalParts = isCashInst3 ? 3 : (isCashInst2 ? 2 : 0);
+
+const cashInstAmounts = Array.isArray(cashInst.installment_amounts)
+  ? cashInst.installment_amounts
+  : (
+      Array.isArray(cashInstMeta.installment_amounts)
+        ? cashInstMeta.installment_amounts
+        : (
+            cashInstSchedule.length
+              ? cashInstSchedule.map(x => Number(x?.amount || 0) || 0)
+              : safeJsonParse(f.cash_inst_amounts_json, [])
+          )
+    );
+
+const cashInstPart1Amount = Number(
+  f.cash_inst_part1_amount ||
+  cashInst.part1_amount ||
+  cashInstMeta.part1_amount ||
+  cashInst.amount_1 ||
+  cashInstAmounts?.[0] ||
+  0
+) || 0;
+
+const cashInstPart2Amount = Number(
+  f.cash_inst_part2_amount ||
+  cashInst.part2_amount ||
+  cashInstMeta.part2_amount ||
+  cashInst.amount_2 ||
+  cashInstAmounts?.[1] ||
+  0
+) || 0;
+
+const cashInstPart3Amount = Number(
+  f.cash_inst_part3_amount ||
+  cashInst.part3_amount ||
+  cashInstMeta.part3_amount ||
+  cashInst.amount_3 ||
+  cashInstAmounts?.[2] ||
+  0
+) || 0;
+
+const shipAtLocal = toDatetimeLocal(f.shipped_at || f.ship_at);
+ const shipAtRaw  = (f.shipped_at || f.ship_at || '');
+const shipAtText = shipAtRaw
+  ? new Date(shipAtRaw).toLocaleString('zh-TW', { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:true })
+  : '';
+
+const addrText = (()=>{
+  if (ship.type === '711') {
+    return `7-11 ${store.name || ''}（${store.id || ''}）\n${store.addr || ''}`;
+  }
+  if (ship.type === 'post') {
+    return `${post.zip || ''} ${post.addr || ''}`;
+  }
+  if (ship.type === 'meetup') {
+    const place = ship.meetup_place || ship.meet_place || '';
+    const time  = ship.meetup_time  || ship.meet_time  || '';
+    let s = ['面交', time].filter(Boolean).join(' ');
+    if (place) s += ` @ ${place}`;
+    return s;
+  }
+  return '';
+})();
+
+    const itemsText = f.items_text || '';
+const rawInstApplyText = String(f.installment_apply_text || "")
+  .split(/\r?\n/)
+  .filter(line => !/^Email\s*[:：]/i.test(String(line).trim()))
+  .join('\n')
+  .trim();
+const a = calcAmounts(f);
+const totalBase = money(a.base);
+const creditUse = money(a.credit);
+const totalNet  = money(a.net);
+
+const isYufuOrder = /^yufu_inst_/i.test(String(f.payment_method || '').trim());
+
+const instApplyText = isYufuOrder
+  ? [
+      rawInstApplyText,
+      yufuPhoneOwner ? `電話是否本人名下：${yufuPhoneOwner}` : '',
+      `付款方式：${displayPaymentMethod(f.payment_method || '')}`,
+      `應付金額：${totalNet}`
+    ].filter(Boolean).join('\n')
+  : rawInstApplyText;
+
+const yufuCopyText = instApplyText;
+
+  dEl.innerHTML = `
+    <div class="detail-grid">
+      <div>
+        <div class="section-title">訂單 / 客戶資訊</div>
+<div class="pill">訂單編號：<span>${escapeHtml(f.order_id || '')}</span>${
+  lineName ? ' <span class="ln">｜' + escapeHtml(lineName) + '</span>' : ''
+}</div>
+<div class="pill ${f.payment_method === 'cod_711' ? 'cod711' : ''}">
+  付款方式：<span>${displayPaymentMethod(f.payment_method || '')}</span>
+</div>
+<div class="pill">訂單金額：<span>${totalBase}</span></div>
+${a.credit>0 ? `<div class="pill credit-red">購物金折抵：<span>-${creditUse}</span></div>` : ``}
+<div class="pill">應付金額：<span>${totalNet}</span></div>
+<div class="pill">建立時間：<span>${f.CreatedAt || f.created_at || ''}</span></div>
+
+${renderTailInfoBlock(f)}
+
+        <div class="mt-3">
+          <div class="section-title">收件人 / 取貨資訊</div>
+          <label>收件人</label>
+          <input id="d_ship_name" readonly value="${ship.name || ''}">
+
+          <label>電話</label>
+          <input id="d_ship_phone" readonly value="${ship.phone || ''}">
+
+          <label>取貨方式 / 地址</label>
+          <textarea id="d_ship_addr" readonly>${addrText}</textarea>
+
+          <label class="mt-2">客戶備註</label>
+          <textarea id="d_note" readonly>${note || ''}</textarea>
+
+          <label class="mt-2">商品明細</label>
+          <textarea id="d_items_text" readonly>${itemsText}</textarea>
+
+          ${instApplyText ? `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;">
+            <label style="margin:0;">裕富分期申請資料</label>
+            <button class="small-btn" id="btnCopyYufuText" type="button">📋 一鍵複製裕富內容</button>
+          </div>
+          <textarea id="d_installment_apply_text" readonly>${instApplyText}</textarea>
+` : ''}
+        </div>
+      </div>
+
+      <div>
+        <div class="section-title">付款 / 出貨狀態</div>
+<div class="row">
+  <div>
+    <label>付款狀態</label>
+    <div class="ro-field ro-sm" id="d_pay_status_ro">${displayPayStatus(f.pay_status)}</div>
+  </div>
+  <div>
+    <label>出貨狀態 (ship_status)</label>
+    <div class="ro-field ro-sm" id="d_ship_status_ro">${displayShipStatusText(f.ship_status)}</div>
+  </div>
+</div>
+
+
+<!-- ★ 新增：賣貨便名稱 + 取貨登記（同一排兩欄） -->
+<div class="row mt-1">
+  <div>
+    <label>賣貨便名稱</label>
+    <select id="d_vendor_name">
+      <option value=""></option>
+      <option value="黃承偉">黃承偉</option>
+      <option value="蘇瑞潔">蘇瑞潔</option>
+      <option value="黃爸爸(黃玠銘)">黃爸爸(黃玠銘)</option>
+      <option value="夏雪媽咪">夏雪媽咪</option>
+      <option value="妹妹-京城">妹妹-京城</option>
+    </select>
+    <div class="tag-small" id="d_vendor_stats"></div>
+  </div>
+
+ <div>
+  <label>取貨登記</label>
+  <div class="pickup-wrap">
+    <input
+      id="d_pickup_reg"
+      value="${String(f['取貨登記'] ?? '').trim()}"
+      placeholder=""
+    />
+    <button type="button" class="btn-mini" id="btnSavePickupReg">存</button>
+  </div>
+</div>
+</div>
+<!-- ★ 新增結束 -->
+
+<div class="row mt-2">
+  <div>
+    <label>物流單號</label>
+    <input id="d_ship_tracking" value="${f.ship_tracking || f.tracking_no || ''}">
+  </div>
+
+  <div>
+    <label>運費 TWD</label>
+    <input id="d_ship_fee" type="number" step="1" value="${(f.ship_fee ?? f.shipping_fee ?? '')}">
+  </div>
+</div>
+
+<div class="retry-mini">
+  <div class="row mt-2">
+    <div>
+      <label>重新結帳車號</label>
+      <div class="ro-field ro-sm" id="d_retry_cart_ro">${retryCart || '—'}</div>
+    </div>
+    <div>
+      <label>重結狀態</label>
+      <div class="ro-field ro-sm" id="d_retry_tip_ro">
+        ${retryCart ? '已建立重新結帳車' : '尚未建立'}
+      </div>
+    </div>
+  </div>
+
+  <div class="row mt-2">
+    <div>
+      <label>重新結帳後新單號</label>
+      <div class="ro-field ro-sm" id="d_retry_new_order_ro">尚未重新結單</div>
+    </div>
+    <div>
+      <label>重結結果</label>
+      <div class="ro-field ro-sm" id="d_retry_result_ro">
+        ${retryCart ? '查詢中…' : '尚未建立 retry 車'}
+      </div>
+    </div>
+  </div>
+</div>
+
+<label class="mt-2">出貨時間</label>
+<div class="ro-field ${shipAtText ? '' : 'ro-empty'}" id="d_ship_at_ro">${shipAtText || '—'}</div>
+<input id="d_ship_at" type="hidden" value="${toDatetimeLocal(f.shipped_at || f.ship_at)}">
+${isCashInstOrder ? `
+  <label class="mt-3">現金分期日期 / 金額</label>
+
+  <div class="row">
+    <div>
+      <label>第 1 期日期</label>
+      <div class="ro-field ${cashInstDate1 ? '' : 'ro-empty'}" id="d_cash_inst_date_1_ro">
+        ${cashInstDate1 || '—'}
+      </div>
+    </div>
+
+    <div>
+      <label>第 1 期金額</label>
+      <div class="ro-field ${cashInstPart1Amount ? '' : 'ro-empty'}" id="d_cash_inst_part1_amount_ro">
+        ${cashInstPart1Amount ? money(cashInstPart1Amount) : '—'}
+      </div>
+    </div>
+  </div>
+
+  <div class="row mt-2">
+    <div>
+      <label>第 2 期日期</label>
+      <div class="ro-field ${cashInstDate2 ? '' : 'ro-empty'}" id="d_cash_inst_date_2_ro">
+        ${cashInstDate2 || '—'}
+      </div>
+    </div>
+
+    <div>
+      <label>第 2 期金額</label>
+      <div class="ro-field ${cashInstPart2Amount ? '' : 'ro-empty'}" id="d_cash_inst_part2_amount_ro">
+        ${cashInstPart2Amount ? money(cashInstPart2Amount) : '—'}
+      </div>
+    </div>
+  </div>
+
+  ${isCashInst3 ? `
+    <div class="row mt-2">
+      <div>
+        <label>第 3 期日期</label>
+        <div class="ro-field ${cashInstDate3 ? '' : 'ro-empty'}" id="d_cash_inst_date_3_ro">
+          ${cashInstDate3 || '—'}
+        </div>
+      </div>
+
+      <div>
+        <label>第 3 期金額</label>
+        <div class="ro-field ${cashInstPart3Amount ? '' : 'ro-empty'}" id="d_cash_inst_part3_amount_ro">
+          ${cashInstPart3Amount ? money(cashInstPart3Amount) : '—'}
+        </div>
+      </div>
+    </div>
+  ` : ''}
+
+  <div class="row mt-2">
+    <div>
+      <label>已收進度</label>
+      <div class="ro-field" id="d_cash_inst_progress_ro">
+        ${cashInstPaidParts} / ${cashInstTotalParts}
+      </div>
+    </div>
+
+    <div>
+      <label>全部收齊</label>
+      <div class="ro-field ${cashInstCompleted ? '' : 'ro-empty'}" id="d_cash_inst_completed_ro">
+        ${cashInstCompleted ? '是' : '—'}
+      </div>
+    </div>
+  </div>
+
+  <input id="d_cash_inst_paid_parts" type="hidden" value="${cashInstPaidParts}">
+  <input id="d_cash_inst_part1_paid_at" type="hidden" value="${cashInstPart1PaidAt}">
+  <input id="d_cash_inst_part2_paid_at" type="hidden" value="${cashInstPart2PaidAt}">
+  <input id="d_cash_inst_part3_paid_at" type="hidden" value="${cashInstPart3PaidAt}">
+  <input id="d_cash_inst_completed" type="hidden" value="${cashInstCompleted ? '1' : ''}">
+` : ''}
+        <label class="mt-3">訂金 / 匯款資訊</label>
+
+<div class="row">
+  <div>
+    <label>訂金金額</label>
+    <div class="ro-field ${depAmount ? '' : 'ro-empty'}" id="d_deposit_amount_ro">
+      ${depAmount ? `NT$ ${depAmount}` : '—'}
+    </div>
+    <input id="d_deposit_amount" type="hidden" value="${depAmount}">
+  </div>
+
+  <div>
+    <label>匯款後五碼</label>
+    <div class="ro-field ${depLast5 ? '' : 'ro-empty'}" id="d_deposit_last5_ro">
+      ${depLast5 || '—'}
+    </div>
+    <input id="d_deposit_last5" type="hidden" value="${depLast5}">
+  </div>
+</div>
+
+<div class="row">
+  <div>
+    <label>訂金到期日</label>
+    <div class="ro-field ${depExpire10 ? '' : 'ro-empty'}" id="d_deposit_expire_at_ro">
+      ${depExpire10 || '—'}
+    </div>
+    <input id="d_deposit_expire_at" type="hidden" value="${depExpire10}">
+  </div>
+
+  <div>
+    <label>保留到</label>
+    <div class="ro-field ${holdUntil10 ? '' : 'ro-empty'}" id="d_hold_until_ro">
+      ${holdUntil10 || '—'}
+    </div>
+    <input id="d_hold_until" type="hidden" value="${holdUntil10}">
+  </div>
+</div>
+
+        <div class="label-inline mt-2">
+          <input id="d_deposit_received" type="checkbox" ${f.deposit_received ? 'checked':''}>
+          <span>已收到訂金 (deposit_received)</span>
+        </div>
+        <div class="label-inline">
+          <input id="d_pay_notice_sent" type="checkbox" ${f.pay_notice_sent ? 'checked':''}>
+          <span>已發出款/保留通知 (pay_notice_sent)</span>
+        </div>
+
+        <label class="mt-3">內部備註 (internal_note)</label>
+        <textarea id="d_internal_note">${f.internal_note || ''}</textarea>
+
+        <div class="detail-actions">
+  <button class="btn-primary" id="btnSaveAndShip">儲存資料+標記已出貨+發 LINE 通知</button>
+  <button class="btn-secondary" id="btnDepositPayAndNotice">✅ 已收到訂金+發保留通知（自動勾勾）</button>
+  <button class="btn-secondary" id="btnConfirmPayOk">✅ 確認已收款／審核通過 並 發 LINE</button>
+  <button class="btn-secondary" id="btnMarkZcFail">❌ 中租審核未通過 ＋ 發 LINE</button>
+  <button class="btn-secondary" id="btnSaveDetailOnly">📑 僅儲存資料（寫入 LINE，不改狀態）</button>
+  <button class="btn small" id="btnSendTailLink">發尾款結帳鏈結 ＋ 發 LINE</button>
+  <div id="detailMsg" class="tag-small mt-2"></div>
+
+  <div class="mt-2">
+    <button class="btn-secondary" id="btnMeetupNotify">❗ 預約面交通知（發 LINE）</button>
+  </div>
+</div>
+    </div>
+  `;
+
+   const btnCopyYufuText = $('#btnCopyYufuText');
+  if (btnCopyYufuText) {
+    btnCopyYufuText.addEventListener('click', async () => {
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(yufuCopyText || '');
+        } else {
+          const ta = $('#d_installment_apply_text');
+          if (ta) {
+            ta.select();
+            document.execCommand('copy');
+            window.getSelection().removeAllRanges();
+          }
+        }
+        alert('已複製裕富內容');
+      } catch (e) {
+        console.error(e);
+        alert('複製失敗，請手動選取文字複製。');
+      }
+    });
+  }
+// ✅ 收款已統一：右側現金分期第 1 / 2 / 3 期按鈕不再綁定
+// 實際收款請一律按上方「✅ 收款/審核通過+發LINE」
+// 後端會依 cash_inst_status / paid_count 自動推進下一期
+// ✅ 收款按鈕統一：不再顯示現金分期第 1 / 2 / 3 期獨立按鈕
+const btnCashInstPart1Top = $('#btnCashInstPart1Top');
+const btnCashInstPart2Top = $('#btnCashInstPart2Top');
+const btnCashInstPart3Top = $('#btnCashInstPart3Top');
+const btnCashInstAllDoneTop = $('#btnCashInstAllDoneTop');
+
+[btnCashInstPart1Top, btnCashInstPart2Top, btnCashInstPart3Top, btnCashInstAllDoneTop].forEach(btn => {
+  if (btn) btn.style.display = 'none';
+});
+
+// ✅ 只改上方唯一確認收款按鈕的文字，實際判斷交給後端 /admin/order/confirm-pay
+const btnConfirmPayOkTop = $('#btnConfirmPayOkTop');
+if (btnConfirmPayOkTop) {
+  const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+  const payStatus  = String(f.pay_status || '').trim().toLowerCase();
+
+  if (isCashInstOrder) {
+    if (cashStatus === 'pending_deposit') {
+  btnConfirmPayOkTop.textContent = '✅ 已收定金／啟動現金分期+發LINE';
+  btnConfirmPayOkTop.disabled = false;
+  btnConfirmPayOkTop.style.opacity = '';
+  btnConfirmPayOkTop.style.cursor = '';
+} else if (cashStatus === 'completed' || payStatus === 'paid_ok') {
+  btnConfirmPayOkTop.textContent = '✅ 現金分期已收齊';
+  btnConfirmPayOkTop.disabled = true;
+  btnConfirmPayOkTop.style.opacity = '.55';
+  btnConfirmPayOkTop.style.cursor = 'not-allowed';
+} else {
+  btnConfirmPayOkTop.disabled = false;
+  btnConfirmPayOkTop.style.opacity = '';
+  btnConfirmPayOkTop.style.cursor = '';
+      const nextPart = Math.min((Number(cashInstPaidParts || 0) || 0) + 1, Number(cashInstTotalParts || 0) || 1);
+      btnConfirmPayOkTop.textContent = `💵 現金分期｜第 ${nextPart} 期已收+發LINE`;
+    }
+  } else {
+  btnConfirmPayOkTop.textContent = '✅ 收款/審核通過+發LINE';
+  btnConfirmPayOkTop.disabled = false;
+  btnConfirmPayOkTop.style.opacity = '';
+  btnConfirmPayOkTop.style.cursor = '';
+}
+}
+
+ // ★ 賣貨便名稱選單：帶入目前欄位值，並更新當月累積金額
+  const vendorSel = $('#d_vendor_name');
+  if (vendorSel) {
+    vendorSel.value = f['賣貨便名稱'] || '';
+    vendorSel.onchange = updateVendorStats;
+  }
+  updateVendorStats();
+ // 取貨登記旁「存」按鈕
+const btnPick = $('#btnSavePickupReg');
+if (btnPick) {
+  btnPick.addEventListener('click', savePickupRegOnly);
+}
+ 
+   if (retryCart) {
+  try {
+    const params = new URLSearchParams();
+    params.set('op_key', OP_KEY);
+    params.set('cart_token', retryCart);
+
+    const r = await fetch(`${API}/admin/cart/brief?` + params.toString());
+    const j = await r.json().catch(() => ({}));
+
+    const retryNewOrderId =
+      (r.ok && j.ok && j.cart)
+        ? String(j.cart.checked_out_order_id || '').trim()
+        : '';
+
+    const retryStatus =
+      (r.ok && j.ok && j.cart)
+        ? String(j.cart.status || '').trim()
+        : '';
+
+    const elNew = $('#d_retry_new_order_ro');
+    const elResult = $('#d_retry_result_ro');
+    const elTip = $('#d_retry_tip_ro');
+
+    if (elNew) {
+      elNew.textContent = retryNewOrderId || '尚未重新結單';
+    }
+
+    if (elResult) {
+      elResult.textContent = retryNewOrderId
+        ? '已重結成功'
+        : (retryStatus ? `狀態：${retryStatus}` : '尚未重新結單');
+    }
+
+    if (elTip) {
+      elTip.textContent = retryNewOrderId
+        ? '已建立重新結帳車，且已產生新單'
+        : '已建立重新結帳車';
+    }
+  } catch (e) {
+    console.error('load retry cart brief failed', e);
+    const elResult = $('#d_retry_result_ro');
+    if (elResult) elResult.textContent = '查詢失敗';
+  }
+}
+
+const btnSaveAndShip = $('#btnSaveAndShip');
+if (btnSaveAndShip) {
+  btnSaveAndShip.addEventListener('click', saveAndShipAndLine);
+}
+
+ const btnTail = $('#btnSendTailLink');
+if (btnTail) {
+  btnTail.addEventListener('click', async () => {
+    if (!currentRecord) {
+      alert('尚未選擇訂單');
+      return;
+    }
+    const f = currentRecord.fields || currentRecord || {};
+    const oid = f.order_id;
+    if (!oid) {
+      alert('這筆資料沒有 order_id，無法發尾款連結');
+      return;
+    }
+
+    if (!confirm(`要發送「尾款結帳連結 + LINE 通知」給訂單 ${oid} 嗎？`)) {
+      return;
+    }
+
+    try {
+      const r = await fetch(`${API}/admin/deposit/send-tail-link`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          op_key: OP_KEY,
+          order_id: oid
+        })
+      });
+      const j = await r.json().catch(()=> ({}));
+      if (!r.ok || !j.ok) {
+        alert('發送失敗：' + (j.message || j.error || ('HTTP ' + r.status)));
+        return;
+      }
+      alert('已發送尾款結帳連結並透過 LINE 通知客人。');
+    } catch (e) {
+      console.error(e);
+      alert('系統錯誤，發送失敗。');
+    }
+  });
+}
+
+
+  const btnPayOk = $('#btnConfirmPayOk');
+  if (btnPayOk) btnPayOk.addEventListener('click', ()=>confirmPay('ok'));
+
+ // ★ 新增：已收訂金＋發保留通知（自動勾勾）
+  const btnDepNotice = $('#btnDepositPayAndNotice');
+  if (btnDepNotice) btnDepNotice.addEventListener('click', depositReceivedAndNotify);
+
+  const btnZcFail = $('#btnMarkZcFail');
+  if (btnZcFail) btnZcFail.addEventListener('click', ()=>confirmPay('zc_fail'));
+ // ✅ 已棄標／訂金沒收：上方危險按鈕全部隱藏，只保留「儲存資料」
+const isForfeitOrder = isDepositForfeitOrder(f);
+
+const btnSaveAndShipTop = $('#btnSaveAndShipTop');
+const btnConfirmPayTop = $('#btnConfirmPayOkTop');
+const btnFailTop = $('#btnMarkZcFailTop');
+const btnSendTailTop = $('#btnSendTailLinkTop');
+const btnMeetupDoneTop = $('#btnMeetupCashDoneTop');
+const btnMeetupNotifyTop = $('#btnMeetupNotifyTop');
+const btnCancelTopForfeit = $('#btnCancelOrderTop');
+const btnSaveOnlyTop = $('#btnSaveDetailOnlyTop');
+
+if (isForfeitOrder) {
+  if (btnSaveAndShipTop) btnSaveAndShipTop.style.display = 'none';
+  if (btnConfirmPayTop) btnConfirmPayTop.style.display = 'none';
+  if (btnFailTop) btnFailTop.style.display = 'none';
+  if (btnSendTailTop) btnSendTailTop.style.display = 'none';
+  if (btnMeetupDoneTop) btnMeetupDoneTop.style.display = 'none';
+  if (btnMeetupNotifyTop) btnMeetupNotifyTop.style.display = 'none';
+  if (btnCancelTopForfeit) btnCancelTopForfeit.style.display = 'none';
+
+  // 只保留儲存資料，方便改內部備註
+  if (btnSaveOnlyTop) btnSaveOnlyTop.style.display = '';
+} else {
+  if (btnSaveAndShipTop) btnSaveAndShipTop.style.display = '';
+  if (btnConfirmPayTop) btnConfirmPayTop.style.display = '';
+  if (btnFailTop) btnFailTop.style.display = '';
+  if (btnSendTailTop) btnSendTailTop.style.display = '';
+  if (btnCancelTopForfeit) btnCancelTopForfeit.style.display = '';
+  if (btnSaveOnlyTop) btnSaveOnlyTop.style.display = '';
+
+  // ✅ 顯示/隱藏「完成面交收款」按鈕（只給 meetup_cash）
+  const pm = String(f.payment_method || '').trim().toLowerCase();
+  if (btnMeetupDoneTop) {
+    btnMeetupDoneTop.style.display = (pm === 'meetup_cash') ? '' : 'none';
+  }
+}
+
+ // ✅ 顯示/綁定「同步尾款→主單」（只在 TL 才顯示）
+const syncTop = $('#btnSyncTailToParentTop');
+if (syncTop) {
+  const oid = String(f.order_id || '').trim();
+  const parentId = String(f.parent_order_id || '').trim();
+
+  // 判斷是否為 TL（保守一點：is_tail / order_type / TL 開頭 / 有 parent_order_id）
+  const isTail =
+    !!f.is_tail ||
+    String(f.order_type || '').toLowerCase() === 'tail' ||
+    oid.toUpperCase().startsWith('TL') ||
+    !!parentId;
+
+  // 只在「尾款單且有 parent」才顯示
+  syncTop.style.display = (isTail && parentId) ? '' : 'none';
+
+  // 每次 renderDetail 都覆寫 onclick，避免重複綁定造成多次觸發
+  syncTop.onclick = async () => {
+    if (!currentRecord) {
+      alert('尚未選擇訂單');
+      return;
+    }
+    const tf = currentRecord.fields || currentRecord || {};
+    const tailId = String(tf.order_id || '').trim();
+    const pid = String(tf.parent_order_id || '').trim();
+
+    if (!tailId) {
+      alert('這筆沒有 order_id，無法同步');
+      return;
+    }
+    if (!pid) {
+      alert('這筆尾款單沒有 parent_order_id，無法同步到主單');
+      return;
+    }
+
+    if (!confirm(`要把尾款單 ${tailId} 的付款資訊同步回主單 ${pid} 嗎？`)) return;
+
+    try {
+      const r = await fetch(`${API}/admin/tail/sync-to-parent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          op_key: OP_KEY,
+          tail_order_id: tailId
+        })
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) {
+        alert('同步失敗：' + (j.error || j.message || ('HTTP ' + r.status)));
+        return;
+      }
+
+      alert(`同步完成：${j.tail_order_id} → ${j.parent_order_id}`);
+      await reloadCurrentView(); // 重新載入列表/畫面
+    } catch (e) {
+      console.error(e);
+      alert('系統錯誤，同步失敗');
+    }
+  };
+}
+
+ const btnPrint = $('#btnPrintOrder');
+  if (btnPrint) btnPrint.addEventListener('click', printCurrentOrder);
+
+ // ★ 新增：僅儲存資料（不發 LINE、不改狀態）
+const btnSaveOnly = $('#btnSaveDetailOnly');
+if (btnSaveOnly) {
+  btnSaveOnly.addEventListener('click', async () => {
+    if (!currentRecord) {
+      alert('請先在左邊選一筆訂單');
+      return;
+    }
+    const msgEl = $('#detailMsg');
+    if (msgEl) msgEl.textContent = '儲存中…';
+
+    try {
+      await saveDetail();  // ← 只用你原本的儲存函式
+
+      if (msgEl) {
+        msgEl.textContent = '✅ 已儲存資料（未變更出貨／付款狀態，也未發 LINE）';
+      }
+    } catch (e) {
+      console.error(e);
+      if (msgEl) {
+        msgEl.textContent = '❌ 儲存失敗：' + (e.message || e);
+      } else {
+        alert('儲存失敗：' + (e.message || e));
+      }
+    }
+  });
+}
+function updateVendorStats() {
+  const sel    = $('#d_vendor_name');
+  const infoEl = $('#d_vendor_stats');
+  if (!sel || !infoEl) return;
+
+  const name = String(sel.value || '').trim();
+  if (!name) {
+    infoEl.textContent = '';
+    return;
+  }
+
+  // 目前這筆訂單的欄位
+  const f = (currentRecord && (currentRecord.fields || currentRecord)) || {};
+
+  // 先用 Airtable 的「賣貨便月份」，沒有的話就用 shipped_at / ship_at 算 YYYY-MM
+  let month = String(f['賣貨便月份'] || '').trim();
+  if (!month) {
+    const shipAt = String(f.shipped_at || f.ship_at || '').trim();
+    if (shipAt) month = shipAt.slice(0, 7);
+  }
+
+  if (!month) {
+    infoEl.textContent = '尚未抓到賣貨便月份';
+    return;
+  }
+
+  const source = ORDERS_CACHE || [];
+  let count = 0;
+  let sum = 0;
+
+  source.forEach(rec => {
+    const x = rec.fields || rec || {};
+
+    if (String(x['賣貨便名稱'] || '').trim() !== name) return;
+    if (monthKeyOfRecord(x) !== month) return;
+
+    // 只算已收款
+    const ps = String(x.pay_status || '').trim().toLowerCase();
+    if (ps !== 'paid_ok') return;
+
+    const a = calcAmounts(x);
+    sum += Number(a.net || 0);
+    count += 1;
+  });
+
+  infoEl.textContent = `${month}，${name} 已收款 ${count} 筆，應付金額合計 ${money(sum)}`;
+}
+
+
+ // ★★★ 新增「面交按鈕事件綁定」只加這兩行 ***
+const btnMeetup = $('#btnMeetupNotify');
+if (btnMeetup) btnMeetup.addEventListener('click', sendMeetupNotify);
+
+}
+function renderDepositRemind(payload){
+  const dEl = $('#orderDetail');
+  if (!dEl) return;
+
+  const list = payload.records || [];
+  const date = payload.date || '';
+
+  if (!list.length) {
+    dEl.innerHTML = `
+      <div class="section-title">今日尾款提醒（保留到期）</div>
+      <p class="muted">今天（${date}）沒有需要提醒尾款的訂單。</p>
+    `;
+    return;
+  }
+
+  const rows = list.map(r => `
+    <tr data-oid="${r.order_id || ''}">
+      <td style="text-decoration:underline;">${r.order_id || ''}</td>
+      <td>${r.name || ''}</td>
+      <td>${r.phone || ''}</td>
+      <td style="text-align:right;">${r.amount || 0}</td>
+      <td>${r.hold_until || ''}</td>
+    </tr>
+  `).join('');
+
+  dEl.innerHTML = `
+    <div class="section-title">今日尾款提醒（保留到期：${date}）</div>
+    <p class="muted">
+      共 ${list.length} 筆。<br>
+      👉 直接「點表格裡的訂單編號那一行」，左邊會自動跳到那一筆訂單詳細資料。
+    </p>
+    <div style="overflow:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr>
+            <th style="border-bottom:1px solid #334155;text-align:left;padding:4px 6px;">訂單編號</th>
+            <th style="border-bottom:1px solid #334155;text-align:left;padding:4px 6px;">客戶姓名</th>
+            <th style="border-bottom:1px solid #334155;text-align:left;padding:4px 6px;">電話</th>
+            <th style="border-bottom:1px solid #334155;text-align:right;padding:4px 6px;">尾款金額</th>
+            <th style="border-bottom:1px solid #334155;text-align:left;padding:4px 6px;">保留到</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  // 綁定點擊事件：點一行就切到那筆訂單
+  $$('#orderDetail table tbody tr[data-oid]').forEach(tr => {
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', () => {
+      const oid = tr.getAttribute('data-oid') || '';
+      if (!oid) return;
+
+      // 用現成的 selectOrder 把右邊換成那筆訂單的詳細資料
+      selectOrder(oid);
+
+      // 順便讓左邊那一筆高亮
+      $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
+      const row = document.querySelector(`#orderList .order-row[data-id="${oid}"]`);
+      if (row) row.classList.add('active');
+    });
+  });
+}
+
+
+/* ===== 取消訂單（補回庫存） ===== */
+async function cancelCurrentOrder() {
+  if (!currentRecord) {
+    alert('請先在左邊選一張訂單');
+    return;
+  }
+
+  const oid = currentRecord.fields.order_id;
+  if (!oid) {
+    alert('這筆資料沒有 order_id，無法取消');
+    return;
+  }
+
+  if (!confirm(`確定要取消訂單 ${oid} 並補回庫存嗎？`)) {
+    return;
+  }
+
+  try {
+    const r = await fetch(API + "/admin/order/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        order_id: oid
+      })
+    });
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      alert("取消失敗：" + (j.message || j.error || ('HTTP ' + r.status)));
+      return;
+    }
+
+    alert("已取消訂單並補回庫存。");
+    // 最簡單：整頁重載，列表 / 明細一起更新
+    await reloadCurrentView();
+  } catch (e) {
+    console.error(e);
+    alert("取消訂單時發生錯誤，請稍後再試。");
+  }
+}
+// ===== 只儲存：取貨登記（不重載、不跳單）=====
+async function savePickupRegOnly(){
+  if(!currentRecord) { alert('請先選一筆訂單'); return; }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = f.order_id;
+  if(!orderId) { alert('這筆訂單沒有 order_id'); return; }
+
+  const v = $('#d_pickup_reg') ? ($('#d_pickup_reg').value || '').trim() : '';
+
+  const payload = {
+    record_id: currentRecord.id || null,  // 有就帶，沒有也沒差
+    order_id : orderId,
+    fields: { '取貨登記': v }
+  };
+
+  const msgEl = $('#detailMsg');
+  if (msgEl) msgEl.textContent = '儲存取貨登記中…';
+
+  try{
+    const r = await fetch(`${API}/admin/order/update?op_key=${encodeURIComponent(OP_KEY)}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || !j.ok) throw new Error(j.message || j.error || ('HTTP ' + r.status));
+
+    // ✅ 只更新前端快取（不重載、不跳單）
+const setField = (rec, k, val) => {
+  if (!rec) return;
+  if (rec.fields && typeof rec.fields === 'object') rec.fields[k] = val;
+  else rec[k] = val;
+};
+
+setField(currentRecord, '取貨登記', v);
+
+const idx = currentOrders.findIndex(x=>{
+  const fx = x.fields || x || {};
+  return String(fx.order_id||'') === String(orderId);
+});
+if (idx >= 0) setField(currentOrders[idx], '取貨登記', v);
+
+if (msgEl) msgEl.textContent = '取貨登記已儲存 ✅';
+
+// ✅ 只重畫左側列表（不打 API、不跳回首訂單）
+renderOrderList();
+  }catch(e){
+    console.error(e);
+    if (msgEl) msgEl.textContent = '取貨登記儲存失敗：' + (e.message || e);
+  }
+}
+ 
+/* ===== 儲存右側欄位 ===== */
+async function saveDetail(opts = {}){
+  if(!currentRecord) return false;
+
+  const skipReload = !!opts.skipReload;
+const forcePayStatus = opts.forcePayStatus || '';
+  const msgEl = $('#detailMsg');
+  msgEl.textContent = '儲存中…';
+
+  const fields = {};
+
+  fields['賣貨便名稱'] = $('#d_vendor_name') ? $('#d_vendor_name').value || '' : '';
+fields['取貨登記'] = $('#d_pickup_reg') ? ($('#d_pickup_reg').value || '').trim() : '';
+
+const tracking = $('#d_ship_tracking').value.trim();
+fields.tracking_no = tracking || '';
+
+  const fee = $('#d_ship_fee').value.trim();
+  fields.shipping_fee = fee ? Number(fee) : null;
+
+  fields.deposit_received = $('#d_deposit_received').checked;
+  fields.pay_notice_sent  = $('#d_pay_notice_sent').checked;
+  fields.internal_note    = $('#d_internal_note').value || '';
+ if (forcePayStatus) {
+  fields.pay_status = forcePayStatus;
+}
+ const ciPaidParts = $('#d_cash_inst_paid_parts');
+const ciPart1 = $('#d_cash_inst_part1_paid_at');
+const ciPart2 = $('#d_cash_inst_part2_paid_at');
+const ciPart3 = $('#d_cash_inst_part3_paid_at');
+const ciCompleted = $('#d_cash_inst_completed');
+
+if (ciPaidParts) {
+  fields.cash_inst_paid_parts = Number(ciPaidParts.value || 0) || 0;
+}
+if (ciPart1) {
+  fields.cash_inst_part1_paid_at = (ciPart1.value || '').trim() || null;
+}
+if (ciPart2) {
+  fields.cash_inst_part2_paid_at = (ciPart2.value || '').trim() || null;
+}
+if (ciPart3) {
+  fields.cash_inst_part3_paid_at = (ciPart3.value || '').trim() || null;
+}
+if (ciCompleted) {
+  fields.cash_inst_completed = !!String(ciCompleted.value || '').trim();
+}
+
+  const y_name   = $('#d_yufu_name');
+  const y_idno   = $('#d_yufu_idno');
+  const y_phone  = $('#d_yufu_phone');
+  const y_email  = $('#d_yufu_email');
+  const y_period = $('#d_yufu_period');
+  const y_status = $('#d_yufu_status');
+  const y_case   = $('#d_yufu_case_no');
+  const y_note   = $('#d_yufu_note');
+
+  if (y_name)   fields.yufu_name    = (y_name.value || '').trim();
+  if (y_idno)   fields.yufu_idno    = (y_idno.value || '').trim();
+  if (y_phone)  fields.yufu_phone   = (y_phone.value || '').trim();
+  if (y_email)  fields.yufu_email   = (y_email.value || '').trim();
+  if (y_period) fields.yufu_period  = (y_period.value || '').trim();
+  if (y_status) fields.yufu_status  = (y_status.value || '').trim();
+  if (y_case)   fields.yufu_case_no = (y_case.value || '').trim();
+  if (y_note)   fields.yufu_note    = (y_note.value || '').trim();
+
+  const f = currentRecord.fields || currentRecord || {};
+  const payload = {
+    record_id: currentRecord.id || null,
+    order_id : f.order_id || null,
+    fields
+  };
+
+  try{
+    const r = await fetch(`${API}/admin/order/update?op_key=${encodeURIComponent(OP_KEY)}`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    const j = await r.json();
+    if(!r.ok || !j.ok){
+      throw new Error(j.error || 'update_error');
+    }
+
+    msgEl.textContent = '已儲存 ✅';
+
+    if (skipReload) return true;
+
+    const keepF = currentRecord.fields || currentRecord || {};
+    const keepKey = keepF.order_id || currentRecord.id || '';
+
+    await reloadCurrentView();
+    restoreSelectedOrder(keepKey);
+    return true;
+  }catch(e){
+    console.error(e);
+    msgEl.textContent = '儲存失敗：' + (e.message || e);
+    return false;
+  }
+}
+ function getCurrentCashInstTotalParts(){
+  const f = currentRecord?.fields || currentRecord || {};
+  const pm = String(f.payment_method || '').trim().toLowerCase();
+  if (pm === 'cash_inst_3') return 3;
+  if (pm === 'cash_inst_2') return 2;
+  return 0;
+}
+async function sendCashInstLineNotify(phase, paidParts, totalParts, orderIdOverride = '') {
+  const f = currentRecord?.fields || currentRecord || {};
+
+  // ✅ 優先使用外面先保存好的 order_id，避免 reload 後 currentRecord 被清掉
+  const orderId = String(orderIdOverride || f.order_id || '').trim();
+
+  if (!orderId) {
+    throw new Error('missing_order_id');
+  }
+
+  const finalTotalParts =
+    Number(totalParts || 0) ||
+    Number(getCurrentCashInstTotalParts() || 0) ||
+    0;
+
+  const r = await fetch(`${API}/admin/order/cash-inst-notify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      op_key: OP_KEY,
+      order_id: orderId,
+      phase,
+      paid_parts: paidParts || 0,
+      total_parts: finalTotalParts
+    })
+  });
+
+  const j = await r.json().catch(() => ({}));
+
+  if (!r.ok || !j.ok || j.line_sent !== true) {
+    const reason =
+      j.message ||
+      j.reason ||
+      j.error ||
+      j.body ||
+      ('HTTP ' + r.status);
+
+    throw new Error(reason);
+  }
+
+  return j;
+}
+async function markCashInstProgress(targetParts){
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const totalParts = getCurrentCashInstTotalParts();
+const notifyOrderId = String(f.order_id || '').trim();
+
+if (!notifyOrderId) {
+  alert('這筆訂單沒有 order_id，無法發送現金分期通知。');
+  return;
+}
+
+if (!totalParts) {
+    alert('這筆不是現金分期訂單');
+    return;
+  }
+
+  const payStatus = String(f.pay_status || '').trim().toLowerCase();
+const depReceivedChecked = !!$('#d_deposit_received')?.checked;
+const payNoticeChecked = !!$('#d_pay_notice_sent')?.checked;
+const depositReady = (payStatus === 'deposit_ok') || (depReceivedChecked && payNoticeChecked);
+
+if (!depositReady && targetParts < totalParts) {
+  alert('請先按「✅ 已收到訂金+發保留通知」後，再記錄現金分期進度');
+  return;
+}
+
+  const paidPartsEl = $('#d_cash_inst_paid_parts');
+  const completedEl = $('#d_cash_inst_completed');
+  const p1El = $('#d_cash_inst_part1_paid_at');
+  const p2El = $('#d_cash_inst_part2_paid_at');
+  const p3El = $('#d_cash_inst_part3_paid_at');
+
+  const currentPaid = Number(paidPartsEl?.value || 0) || 0;
+  const finalParts = Math.max(currentPaid, Math.min(targetParts, totalParts));
+  const nowIso = new Date().toISOString();
+
+  if (finalParts >= 1 && p1El && !p1El.value) p1El.value = nowIso;
+  if (finalParts >= 2 && p2El && !p2El.value) p2El.value = nowIso;
+  if (finalParts >= 3 && p3El && !p3El.value) p3El.value = nowIso;
+
+  if (paidPartsEl) paidPartsEl.value = String(finalParts);
+  if (completedEl) completedEl.value = (finalParts >= totalParts) ? '1' : '';
+
+    const depReceived = $('#d_deposit_received');
+  const payNotice = $('#d_pay_notice_sent');
+
+  if (finalParts >= 1) {
+    if (depReceived) depReceived.checked = true;
+    if (payNotice) payNotice.checked = true;
+  }
+
+  const saveOpts = { skipReload: true };
+
+  // 現金分期尚未全部收齊時，付款狀態維持「訂金已收」
+  if (finalParts < totalParts) {
+    saveOpts.forcePayStatus = 'deposit_ok';
+  }
+
+ const saved = await saveDetail(saveOpts);
+if (!saved) return;
+
+if (finalParts >= totalParts) {
+  const orderId = String(f.order_id || '').trim();
+
+  try {
+    const r = await fetch(`${API}/admin/order/update?op_key=${encodeURIComponent(OP_KEY)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        record_id: currentRecord.id || null,
+        order_id: orderId || null,
+        fields: {
+  pay_status: 'paid_ok',
+  cash_inst_status: 'completed',
+  cash_inst_paid_parts: finalParts,
+  cash_inst_paid_count: finalParts,
+  cash_inst_completed: true,
+  cash_inst_remaining_amount: 0,
+  cash_inst_next_due_date: null
+}
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      throw new Error(j.error || ('HTTP ' + r.status));
+    }
+  } catch (e) {
+    console.error(e);
+    alert('現金分期最後一期狀態更新失敗：' + (e.message || e));
+    return;
+  }
+
+  try {
+    await sendCashInstLineNotify('all_done', finalParts, totalParts);
+  } catch (e) {
+    console.error(e);
+    alert('現金分期已收齊，但 LINE 通知發送失敗：' + (e.message || e));
+  }
+
+  const keepKey = orderId || currentRecord.id || '';
+  await reloadCurrentView();
+  restoreSelectedOrder(keepKey);
+  return;
+}
+
+try {
+  await sendCashInstLineNotify(`part_${finalParts}`, finalParts, totalParts);
+} catch (e) {
+  console.error(e);
+  alert('分期狀態已儲存，但 LINE 通知發送失敗：' + (e.message || e));
+}
+
+  const keepKey = f.order_id || currentRecord.id || '';
+  await reloadCurrentView();
+  restoreSelectedOrder(keepKey);
+}
+/* ===== 一鍵：先儲存，再出貨＋發 LINE（上面那顆大按鈕用） ===== */
+async function saveDetailAndShip(){
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const msgEl = $('#detailMsg');
+  if (msgEl) msgEl.textContent = '儲存出貨 / 付款資料中…';
+
+  const ok = await saveDetail({ skipReload: true });
+  if (!ok) return;
+
+  await shipAndLine();
+}
+
+
+/* ===== 一鍵：標記出貨 ＋ LINE 通知（整合 admin_ship_orderid 版） ===== */
+async function shipAndLine(){
+  if(!currentRecord) return;
+  const msgEl = $('#detailMsg');
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = f.order_id;
+  if (!orderId){
+    alert('這筆訂單沒有 order_id，無法出貨。');
+    return;
+  }
+
+  const tracking = $('#d_ship_tracking').value.trim();
+  const feeTxt   = $('#d_ship_fee').value.trim();
+  let shipping_fee = null;
+  if (feeTxt !== ''){
+    const n = Number(feeTxt);
+    if (isNaN(n) || n < 0){
+      alert('運費請輸入數字或留空');
+      $('#d_ship_fee').focus();
+      return;
+    }
+    shipping_fee = n;
+  }
+
+  const payload = { op_key: OP_KEY, order_id: orderId, tracking_no: tracking };
+  if (shipping_fee !== null) payload.shipping_fee = shipping_fee;
+
+  msgEl.textContent = '出貨處理中（會同時發送 LINE 通知）…';
+
+  try{
+    const res = await fetch(API + '/admin/order/ship', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    const j = await res.json().catch(()=> ({}));
+    if (!res.ok || !j.ok){
+      throw new Error(j.error || ('HTTP ' + res.status));
+    }
+    msgEl.textContent = '✅ 已標記出貨並嘗試發送 LINE 通知';
+
+    // 出貨後重新載入目前 filter
+    const keepKey = orderId;
+    await reloadCurrentView();
+    const found = currentOrders.find(x=>{
+      const fx = x.fields || x || {};
+      return fx.order_id && String(fx.order_id) === String(keepKey);
+    });
+    if(found){
+      renderDetail(found);
+      const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
+      if(row) row.classList.add('active');
+    }
+  }catch(e){
+    console.error(e);
+    msgEl.textContent = '❌ 出貨失敗：' + (e.message || e);
+  }
+}
+// 一鍵：先儲存出貨 / 付款欄位，再標記出貨＋發 LINE
+async function saveAndShipAndLine() {
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const msgEl = $('#detailMsg');
+  if (msgEl) msgEl.textContent = '儲存出貨 / 付款資料中…';
+
+  const ok = await saveDetail({ skipReload: true });
+  if (!ok) return;
+
+  await shipAndLine();
+}
+
+ /* ===== 確認收款 / 中租審核 ＋ 發 LINE ===== */
+async function confirmPay(mode){
+  if (!currentRecord) return;
+  const msgEl = $('#detailMsg');
+
+  const ok = await saveDetail({ skipReload: true });
+  if (!ok) return;
+
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = f.order_id;
+  if (!orderId){
+    alert('這筆訂單沒有 order_id，無法更新付款狀態。');
+    return;
+  }
+
+  const depAmtTxt  = $('#d_deposit_amount').value.trim();
+  const depLast5   = $('#d_deposit_last5').value.trim();
+  const depAmt     = depAmtTxt ? Number(depAmtTxt) : null;
+
+  const payload = {
+    op_key: OP_KEY,
+    order_id: orderId,
+    mode: mode || 'ok',          // ok / zc_fail
+    deposit_amount: depAmt,
+    deposit_last5 : depLast5
+  };
+
+  msgEl.textContent = '更新付款狀態中…';
+
+  try{
+    const res = await fetch(API + '/admin/order/confirm-pay', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const j = await res.json().catch(()=> ({}));
+    if (!res.ok || !j.ok){
+      throw new Error(j.error || ('HTTP ' + res.status));
+    }
+
+    msgEl.textContent = '✅ 已更新付款狀態並嘗試發送 LINE 通知';
+
+    const keepKey = orderId;
+    await reloadCurrentView();
+    const found = currentOrders.find(x=>{
+      const fx = x.fields || x || {};
+      return fx.order_id && String(fx.order_id) === String(keepKey);
+    });
+       if (found){
+      renderDetail(found);
+      const row = $(`#orderList .order-row[data-id="${keepKey}"]`);
+      if (row) row.classList.add('active');
+    }
+
+    return true;
+  }catch(e){
+    console.error(e);
+    msgEl.textContent = '❌ 付款狀態更新失敗：' + (e.message || e);
+    return false;
+  }
+}
+ // ★ 新增：已收訂金＋發保留通知（自動勾勾）
+// ★ 已收訂金＋發保留通知：同時寫入 pay_status = deposit_ok
+async function depositReceivedAndNotify() {
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const depChk    = $('#d_deposit_received');
+  const noticeChk = $('#d_pay_notice_sent');
+  const msgEl     = $('#detailMsg');
+
+  if (depChk) depChk.checked = true;
+  if (noticeChk) noticeChk.checked = true;
+  if (msgEl) msgEl.textContent = '儲存訂金狀態中…';
+
+ const ok = await saveDetail({
+  skipReload: true,
+  forcePayStatus: 'deposit_ok'
+});
+
+if (!ok) return;
+
+let lineText = '';
+try {
+  const totalParts = getCurrentCashInstTotalParts();
+  const lineRes = await sendCashInstLineNotify('deposit', 0, totalParts);
+  lineText = lineRes.line_sent ? '，LINE 保留通知已發送' : '，但找不到 LINE 綁定';
+} catch (e) {
+  console.error(e);
+  lineText = '，但 LINE 發送失敗：' + (e.message || e);
+}
+
+  const keepF = currentRecord.fields || currentRecord || {};
+  const keepKey = keepF.order_id || currentRecord.id || '';
+
+  await reloadCurrentView();
+  restoreSelectedOrder(keepKey);
+
+  const newMsgEl = $('#detailMsg');
+  if (newMsgEl) {
+    newMsgEl.textContent = '✅ 已收到訂金，已寫入 pay_status = deposit_ok，並已儲存保留通知' + lineText;
+  }
+}
+ 
+async function markMeetupCashDone(){
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const pm = String(f.payment_method || '');
+
+  if (pm !== 'meetup_cash') {
+    alert('這顆按鈕只給「面交付現」訂單使用。');
+    return;
+  }
+
+  const orderId = f.order_id;
+  if (!orderId && !currentRecord.id) {
+    alert('這筆訂單缺少 order_id / record_id，無法更新狀態。');
+    return;
+  }
+
+  if (!confirm('確定要將此「面交付現」訂單標記為：已收款 + 出貨完成（已出貨）＋發送完成面交 LINE 通知？')) {
+    return;
+  }
+
+  const msgEl = $('#detailMsg');
+
+  // 面交固定運費 0
+  const feeEl = $('#d_ship_fee');
+  if (feeEl) feeEl.value = '0';
+
+  // 先把右側資料存起來（包含 shipping_fee = 0）
+  if (msgEl) msgEl.textContent = '儲存面交資料中…';
+  const ok = await saveDetail({ skipReload: true });
+  if (!ok) return;
+
+  if (msgEl) msgEl.textContent = '更新面交狀態中…';
+
+  const updatePayload = {
+    op_key: OP_KEY,
+    record_id: currentRecord.id || null,
+    order_id: orderId || null,
+    fields: {
+      shipping_fee: 0,
+      pay_status: 'paid_ok',
+      ship_status: 'shipped',
+      status: 'shipped',
+      shipped_at: new Date().toISOString()
+    }
+  };
+
+  try {
+    // 1) 先標記已收款 + 已出貨
+    const res = await fetch(API + '/admin/order/update', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(updatePayload)
+    });
+    const j = await res.json().catch(()=> ({}));
+    if (!res.ok || !j.ok) {
+      throw new Error(j.error || ('HTTP ' + res.status));
+    }
+
+    // 2) 再發「完成面交」專用 LINE
+    if (msgEl) msgEl.textContent = '發送完成面交 LINE 通知中…';
+
+    const note = ($('#d_internal_note')?.value || '').trim();
+    const notifyPayload = {
+      op_key: OP_KEY,
+      order_id: orderId,
+      note
+    };
+
+    const notifyRes = await fetch(API + '/admin/order/meetup-complete-notify', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(notifyPayload)
+    });
+    const notifyJson = await notifyRes.json().catch(()=> ({}));
+
+    if (!notifyRes.ok || !notifyJson.ok) {
+      throw new Error(notifyJson.error || ('HTTP ' + notifyRes.status));
+    }
+
+    if (msgEl) {
+      if (notifyJson.line_sent) {
+        msgEl.textContent = '✅ 已完成面交收款：已收款＋出貨完成＋完成面交 LINE 已發送';
+      } else {
+        msgEl.textContent = '✅ 已完成面交收款，但找不到此訂單的 LINE 綁定';
+      }
+    }
+
+    const keepKey = orderId || currentRecord.id || '';
+    await reloadCurrentView();
+    restoreSelectedOrder(keepKey);
+
+  } catch(e) {
+    console.error(e);
+    if (msgEl) msgEl.textContent = '❌ 面交完成處理失敗：' + (e.message || e);
+    alert('面交完成處理失敗，請稍後再試');
+  }
+}
+/* ===== 預約面交通知：發 LINE ===== */
+async function sendMeetupNotify(){
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = f.order_id;
+  if (!orderId) {
+    alert('這筆訂單沒有 order_id，無法發送面交通知。');
+    return;
+  }
+
+  const msgEl = $('#detailMsg');
+  if (msgEl) msgEl.textContent = '發送面交通知中…';
+
+  // 把「內部備註」當成面交補充說明一起傳給後端（選填）
+  const note = ($('#d_internal_note')?.value || '').trim();
+
+  const payload = {
+    op_key: OP_KEY,
+    order_id: orderId,
+    note: note
+  };
+
+  try {
+    const res = await fetch(API + '/admin/order/meetup-notify', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const j = await res.json().catch(()=> ({}));
+    if (!res.ok || !j.ok) {
+      throw new Error(j.error || ('HTTP ' + res.status));
+    }
+
+    if (msgEl) {
+      if (j.line_sent) {
+        msgEl.textContent = '✅ 已發送面交 LINE 通知';
+      } else {
+        msgEl.textContent = '✅ 已處理，但找不到此訂單的 LINE 綁定';
+      }
+    }
+  } catch(e) {
+    console.error(e);
+    if (msgEl) msgEl.textContent = '❌ 面交通知失敗：' + (e.message || e);
+    alert('面交通知失敗，請稍後再試');
+  }
+}
+/* ===== 複製出貨通知 ===== */
+async function copyNotice(){
+  const ta = $('#d_notice_text');
+  if(!ta) return;
+  const text = ta.value || '';
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(text);
+    }else{
+      ta.select();
+      document.execCommand('copy');
+      window.getSelection().removeAllRanges();
+    }
+    alert('已複製出貨通知文字，可以貼到 LINE / Messenger。');
+  }catch(e){
+    console.error(e);
+    alert('複製失敗，請手動選取文字複製。');
+  }
+}
+// 列印「出貨明細」：抓 JSON → 開新視窗 → 80mm 熱感版面（和匯出中心一樣）
+async function printShipSlipsRange(){
+  if (!OP_KEY){
+    alert('尚未登入後台，請重新整理頁面再試一次。');
+    return;
+  }
+
+  const url = `${API}/admin/export-view?key=${
+  encodeURIComponent(OP_KEY)
+}&kind=orders&format=json`;
+
+  try {
+    // ✅ 有勾選 → 只印勾選；沒勾選 → 維持「日期區間全印」
+    const picked = Array.from(PRINT_SLIP_SELECTED || []);
+    let records = [];
+
+    if (picked.length) {
+      const set = new Set(picked.map(String));
+      records = (currentOrders || []).filter(rec => set.has(getOrderKey(rec)));
+    } else {
+      const res = await fetch(url);
+      if (!res.ok) {
+        const txt = await res.text();
+        alert(`讀取出貨明細失敗（${res.status}）：${txt}`);
+        return;
+      }
+
+      const data = await res.json();
+      records = data.records || [];
+    }
+
+    if (!records.length) {
+      alert(
+        picked.length
+          ? '你有勾選訂單，但目前清單找不到可列印的訂單（可能剛切換篩選/日期），請重新勾選。'
+          : '目前日期區間沒有訂單可以列印'
+      );
+      return;
+    }
+
+    const win = window.open('', '_blank');
+    const doc = win.document;
+
+   const firstNonEmpty = (...vals) => {
+  for (const v of vals) {
+    const s = String(v ?? '').trim();
+    if (s) return s;
+  }
+  return '';
+};
+
+   function getItemTotalQty(itemsText){
+  const s = String(itemsText || '');
+  let total = 0;
+
+  // 抓 x 1 / x1 / X 2 / × 3
+  const matches = s.matchAll(/[xX×]\s*(\d+)/g);
+  for (const m of matches) {
+    total += Number(m[1] || 0);
+  }
+
+  return total;
+}
+
+    // ↓ 這裡完全照匯出中心的 printOrders 抄來 ↓
+   const slipsHtml = records.map((rec) => {
+  const f = rec.fields || {};
+
+  // ✅ 先宣告
+  const shipInfoObj  = (typeof parseShippingInfo === 'function') ? (parseShippingInfo(f) || {}) : {};
+  const lp = shipInfoObj.line_profile || shipInfoObj.line || shipInfoObj.lineProfile || {};
+
+  // ✅ 再計算
+  const lineName = firstNonEmpty(
+    f['LINE名稱'],
+    f['LINE 名稱'],
+    f['line_name'],
+    lp.displayName,
+    lp.display_name,
+    lp.name
+  );
+
+  const sku = firstNonEmpty(
+    f['商品編號'],
+    f['SKU'],
+    f['sku'],
+    f['商品SKU']
+  );
+
+  // ✅ debug 一定要放在宣告之後
+  if (!window.__slip_debug_once) {
+    window.__slip_debug_once = true;
+    console.log("[slip] keys:", Object.keys(f));
+    console.log("[slip] sample fields:", f);
+  }
+
+      const orderId      = f['訂單編號']       || '';
+const product      = f['商品明細']       || '';
+const itemQty      = getItemTotalQty(product);
+const customerNote = f['客戶備註']       || '';
+      const shipType     = f['出貨方式']       || '';
+      const note         = f['備註']           || '';
+      const zip          = f['郵遞區號']       || '';
+      const addr         = f['收件地址']       || '';
+      const name         = f['收件人姓名']     || '';
+      const phone        = f['收件人電話']     || '';
+      const storeName    = f['超商店名']       || '';
+
+      return `
+        <div class="slip">
+          <!-- 上半部：內部用資訊 -->
+          <div class="line small">訂單編號：${orderId}</div>
+<div class="line small">商品總數量：${itemQty}</div>
+          ${lineName ? `
+  <div class="badge">
+    <div class="t">LINE 名稱</div>
+    <div class="v">${lineName}</div>
+  </div>
+` : ``}
+          <div class="line">出貨方式：${shipType}</div>
+          <!-- ★ 商品編號、商品明細：標題一行，內容一行 ★ -->
+   <div class="section-title">商品</div>
+      <div class="block items">
+  ${sku ? `<div class="sku">SKU：${sku}</div>` : ``}
+  <div class="desc">${product || '-'}</div>
+</div>
+
+      ${(customerNote || note) ? `
+        <div class="remark">
+          <div class="title">備註</div>
+          ${customerNote ? `<div class="text">客戶：${customerNote}</div>` : ''}
+          ${note ? `<div class="sub">內部：${note}</div>` : ''}
+        </div>
+      ` : ``}
+          <!-- 分隔線：下面這塊可以剪下來貼在包裹上 -->
+          <div class="line">--------------------------------</div>
+
+          <!-- 下半部：收件資料（剪下用） -->
+          <div class="shipbox">
+  ${storeName ? `
+    <div class="row"><div class="k">門市</div><div class="v">${storeName}</div></div>
+  ` : ``}
+
+  ${(zip || addr) ? `
+    <div class="row"><div class="k">地址</div><div class="v">${[zip, addr].filter(Boolean).join(' ')}</div></div>
+  ` : ``}
+
+  <div class="row">
+  <div class="k">收件人</div>
+  <div class="v name">${name || ''}</div>
+</div>
+
+${phone ? `
+  <div class="row">
+    <div class="k">電話</div>
+    <div class="v phone">${phone}</div>
+  </div>
+` : ``}
+</div>
+       `;
+    }).join('<div class="page-break"></div>');
+
+    doc.write(`<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<title>出貨明細列印</title>
+<style>
+  @page {
+    size: 80mm auto;      /* 保持原本設定，讓瀏覽器知道是熱感紙寬度 */
+    margin: 3mm;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 15px;      /* ★ 整體字體放大：原本 12 → 14 */
+    line-height: 1.5;     /* ★ 行距稍微拉開，字大一點也不擠 */
+  }
+
+  .slip {
+    width: 72mm;          /* 保持不動，避免重調寬度 */
+    padding: 2mm 2mm 4mm;
+    box-sizing: border-box;
+  }
+
+  .line {
+    margin-bottom: 3px;   /* 原本 2px，稍微拉開一點比較好讀 */
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  /* 收件人姓名那行，用更大的字＋粗體 */
+  .line.big {
+    font-size: 17px;      /* 原本 14 → 16，更醒目 */
+    font-weight: 700;
+  }
+
+  /* ===== 商品區塊 + 備註醒目框 ===== */
+.section-title{
+  margin-top:6px;
+  font-size:16px;
+  font-weight:900;
+  letter-spacing:0.5px;
+}
+
+.block{
+  border:1px solid #000;
+  padding:6px 6px;
+  margin-top:4px;
+}
+
+.items .sku{
+  font-weight:900;
+  font-size:16px;
+  line-height:1.25;
+  word-break:break-word;
+}
+
+.items .desc{
+  margin-top:3px;
+  font-size:15px;
+  line-height:1.4;
+  white-space:pre-wrap;     /* 明細有換行就保留 */
+  word-break:break-word;
+}
+
+/* 備註：粗框+粗體更醒目 */
+.remark{
+  border:2px solid #000;
+  padding:6px;
+  margin-top:6px;
+}
+.remark .title{
+  font-size:15px;
+  font-weight:900;
+  margin-bottom:2px;
+}
+.remark .text{
+  font-size:16px;
+  font-weight:900;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+.remark .sub{
+  font-size:14px;
+  font-weight:700;
+  white-space:pre-wrap;
+  word-break:break-word;
+  margin-top:4px;
+}
+/* LINE 名稱框 */
+.badge{
+  border:1px solid #000;
+  padding:6px;
+  margin-top:6px;
+}
+.badge .t{
+  font-size:13px;
+  font-weight:900;
+  margin-bottom:2px;
+}
+.badge .v{
+  font-size:16px;
+  font-weight:900;
+  word-break:break-word;
+}
+
+/* 收件資訊框（剪下用） */
+.shipbox{
+  border: none;          /* ✅ 不要框框 */
+  padding: 0;            /* ✅ 取消內距 */
+  margin-top: 6px;
+}
+.shipbox .row{
+  display:flex;
+  gap:8px;
+  margin-bottom:4px;
+}
+.shipbox .k{
+  width:44px;
+  font-weight:900;
+  white-space:nowrap;
+}
+.shipbox .v{
+  flex:1;
+  word-break:break-word;
+}
+.shipbox .name{
+  font-size:18px;
+  font-weight:900;
+}
+.shipbox .phone{
+  font-size:16px;
+  font-weight:900;
+}
+  /* 比較不重要的小字（例如時間、訂單編號）可以套 small */
+  .line.small {
+    font-size: 12px;      /* 跟 body 差一級，還是看得清楚 */
+    color: #555;
+  }
+
+  .page-break {
+    page-break-after: always;
+  }
+</style>
+<meta name="robots" content="noindex, nofollow">
+</head>
+<body>
+${slipsHtml}
+</body>
+</html>`);
+    doc.close();
+    win.focus();
+    win.print();
+  } catch (e) {
+    console.error(e);
+    alert('列印出貨明細時發生錯誤：' + (e.message || e));
+  }
+}
+/* ===== 列印目前這筆訂單 ===== */
+function printCurrentOrder() {
+  if (!currentRecord) {
+    alert('請先選一筆訂單');
+    return;
+  }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const shipInfo = parseShippingInfo(f) || {};
+  const ship  = shipInfo.ship  || {};
+  const store = ship.store     || {};
+  const post  = ship.post      || {};
+
+  let shipType = '';
+  let shipAddr = '';
+  if (ship.type === '711') {
+    shipType = '7-11 超商取貨';
+    shipAddr = `7-11 ${store.name || ''}（${store.id || ''}）\n${store.addr || ''}`;
+  } else if (ship.type === 'post') {
+    shipType = '郵寄';
+    shipAddr = `${post.zip || ''} ${post.addr || ''}`;
+  } else if (ship.type === 'meetup') {
+    shipType = '面交';
+    const place = ship.meetup_place || ship.meet_place || '';
+    const time  = ship.meetup_time  || ship.meet_time  || '';
+    shipAddr = ['面交', time].filter(Boolean).join(' ');
+    if (place) shipAddr += ` @ ${place}`;
+  }
+  const itemsText = f.items_text || '';
+  const a = calcAmounts(f);
+  const totalBase = money(a.base);
+  const creditUse = money(a.credit);
+  const totalNet  = money(a.net);
+  const orderId   = f.order_id || '';
+
+  const html = `
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<title>訂單 ${orderId}</title>
+<style>
+  body{font-family:-apple-system,"Noto Sans TC";margin:20px;font-size:12px}
+  h1{font-size:18px;margin-bottom:10px}
+  table{border-collapse:collapse;width:100%;margin-top:10px}
+  td,th{border:1px solid #000;padding:4px 6px;vertical-align:top}
+  pre{white-space:pre-wrap;margin:0}
+</style>
+<meta name="robots" content="noindex, nofollow">
+</head>
+<body>
+  <h1>MURAIN 訂單明細</h1>
+  <table>
+    <tr><th>訂單編號</th><td>${orderId}</td></tr>
+    <tr><th>建立時間</th><td>${f.CreatedAt || f.created_at || ''}</td></tr>
+    <tr><th>付款方式</th><td>${f.payment_method || ''}</td></tr>
+    <tr><th>訂單金額</th><td>${totalBase}</td></tr>
+${a.credit>0 ? `<tr><th>購物金折抵</th><td>-${creditUse}</td></tr>` : ``}
+<tr><th>應付金額</th><td>${totalNet}</td></tr>
+    <tr><th>收件人</th><td>${ship.name || ''}</td></tr>
+    <tr><th>電話</th><td>${ship.phone || ''}</td></tr>
+    <tr><th>出貨方式</th><td>${shipType}</td></tr>
+    <tr><th>取貨門市 / 地址</th><td><pre>${shipAddr}</pre></td></tr>
+    <tr><th>物流單號</th><td>${f.ship_tracking || f.tracking_no || ''}</td></tr>
+    <tr><th>運費</th><td>${f.ship_fee ?? f.shipping_fee ?? ''}</td></tr>
+    <tr><th>客戶備註</th><td><pre>${(shipInfo.note || '').trim()}</pre></td></tr>
+    <tr><th>商品明細</th><td><pre>${itemsText}</pre></td></tr>
+  </table>
+</body>
+</html>
+  `;
+
+  const w = window.open('', '_blank');
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  w.print();
+}
+ 
+async function loadAdminDefaultPage(){
+  setupAdminPageChrome();
+  await ensureOpKey();
+
+  setBatchActionMode('none');
+
+  if (ADMIN_PAGE.mode === 'cart_open') {
+    await loadOpenCartList();
+    return;
+  }
+
+  if (ADMIN_PAGE.mode === 'consign_settlement') {
+    await loadConsignSettlementList();
+    return;
+  }
+
+  if (ADMIN_PAGE.mode === 'consign_accounting') {
+    await loadConsignAccountingList();
+    return;
+  }
+
+  if (ADMIN_PAGE.mode === 'benefit_review') {
+    const listEl = $('#orderList');
+    const detailEl = $('#orderDetail');
+    const panel = $('#benefitReviewPanel');
+
+    if (listEl && panel) {
+      listEl.innerHTML = '';
+      listEl.appendChild(panel);
+      panel.classList.remove('hidden');
+    }
+
+    if (detailEl) {
+      detailEl.innerHTML = '<div class="muted">請在左側審核購物金申請。</div>';
+    }
+
+    await loadBenefitRequests();
+
+    const msgEl = $('#msg');
+    if (msgEl) msgEl.textContent = '目前顯示「購物金待審核」清單。';
+    return;
+  }
+
+  if (ADMIN_PAGE.viewKey) {
+  await loadOrders('all', { view_key: ADMIN_PAGE.viewKey });
+  ALL_ORDERS_CACHE = [...(currentOrders || [])];
+
+  // ✅ 補：固定子頁載入後，更新當頁小圓圈
+  updateCurrentSubTabCount(currentOrders.length);
+
+  const msgEl = $('#msg');
+  if (msgEl) {
+    msgEl.textContent = `目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`;
+  }
+
+  const sumEl = $('#summary');
+  if (sumEl) {
+    sumEl.innerHTML = `<span>${ADMIN_PAGE.title}：${currentOrders.length} 筆</span>`;
+  }
+
+  return;
+}
+
+  // 全部訂單頁維持原本最近 30 天，避免一開頁就撈全部歷史訂單
+  const last30 = getLast30DaysRange();
+  if ($('#date_from')) $('#date_from').value = last30.date_from;
+  if ($('#date_to'))   $('#date_to').value   = last30.date_to;
+
+  saveViewState('all', {
+    filter: 'all',
+    date_from: last30.date_from,
+    date_to: last30.date_to,
+    status: $('#status') ? ($('#status').value || '') : ''
+  });
+
+  restoreViewInputs();
+  await applyFullView('all', false);
+}
+
+
+document.addEventListener('DOMContentLoaded', async () => {
+
+  // OP_KEY 重設（如果你已經拿掉更改密碼那顆，可以保留這段但加保護）
+  const btnChangeKey = $('#btnChangeKey');
+  if (btnChangeKey){
+    btnChangeKey.addEventListener('click', ()=>{
+      localStorage.removeItem(STORAGE_KEY);
+      OP_KEY = '';
+      ensureOpKey().then(()=>reloadCurrentView());
+    });
+  }
+const btnBenefitReviewTop = $('#btnBenefitReviewTop');
+if (btnBenefitReviewTop) {
+  btnBenefitReviewTop.addEventListener('click', ()=> toggleBenefitReviewPanel());
+}
+
+const btnBenefitReviewClose = $('#btnBenefitReviewClose');
+if (btnBenefitReviewClose) {
+  btnBenefitReviewClose.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    toggleBenefitReviewPanel(false);
+  });
+}
+
+  // ===== 日期＋快捷篩選（保留目前日期，不再跳回全部） =====
+
+// 只讓真正有 data-filter 的按鈕跑原本 filter 邏輯
+$$('.filter-btn[data-filter]').forEach(btn=>{
+  btn.addEventListener('click', async ()=>{
+    const filter = btn.dataset.filter || 'all';
+    if (filter === 'all') {
+      if ($('#status')) $('#status').value = '';
+      await applyFullView('all');
+    }
+  });
+});
+
+// 狀態下拉：只留兩個自訂值
+const statusEl = $('#status');
+if (statusEl){
+  statusEl.addEventListener('change', async ()=>{
+    const st = statusEl.value || '';
+
+    if (st === 'unshipped_custom') {
+      await applyFullView('status_unshipped_custom');
+      return;
+    }
+
+    if (st === 'deposit_unshipped_custom') {
+      await applyFullView('status_deposit_unshipped_custom');
+      return;
+    }
+
+    await applyFullView('all');
+  });
+}
+
+const btnApplyDate = $('#btnApplyDate');
+if (btnApplyDate){
+  btnApplyDate.addEventListener('click', async ()=>{
+    await reloadCurrentView();
+  });
+}
+
+const btnClearDate = $('#btnClearDate');
+if (btnClearDate){
+  btnClearDate.addEventListener('click', async ()=>{
+    if ($('#date_from')) $('#date_from').value = '';
+    if ($('#date_to')) $('#date_to').value = '';
+    await reloadCurrentView();
+  });
+}
+
+// 隱藏按鈕：由上排三顆代理去點
+const btnQuickPaid = $('#btnQuickPaid');
+if (btnQuickPaid){
+  btnQuickPaid.addEventListener('click', async ()=>{
+    await applyFullView('quick_paid');
+  });
+}
+
+const btnRemindToday = $('#btnRemindToday');
+if (btnRemindToday){
+  btnRemindToday.addEventListener('click', async ()=>{
+    await applyFullView('remind_today');
+  });
+}
+
+const btnPickupNeed = $('#btnPickupNeed');
+if (btnPickupNeed){
+  btnPickupNeed.addEventListener('click', async ()=>{
+    await applyFullView('pickup_need');
+  });
+}
+
+  const btnConsign = $('#btnConsign');
+if (btnConsign){
+  btnConsign.addEventListener('click', async ()=>{
+    await loadConsignSettlementList();
+  });
+}
+
+  const btnConsignAccounting = $('#btnConsignAccounting');
+if (btnConsignAccounting){
+  btnConsignAccounting.addEventListener('click', async ()=>{
+    await loadConsignAccountingList();
+  });
+}
+
+const btnConsignTop = $('#btnConsignTop');
+if (btnConsignTop){
+  btnConsignTop.addEventListener('click', ()=>{
+    if (shouldUseAdminLinkNav(btnConsignTop)) return;
+    $('#btnConsign')?.click();
+  });
+}
+
+  const btnConsignAccountingTop = $('#btnConsignAccountingTop');
+if (btnConsignAccountingTop){
+  btnConsignAccountingTop.addEventListener('click', ()=>{
+    if (shouldUseAdminLinkNav(btnConsignAccountingTop)) return;
+    $('#btnConsignAccounting')?.click();
+  });
+}
+
+// 上排三顆按鈕代理
+const btnQuickPaidTop = $('#btnQuickPaidTop');
+if (btnQuickPaidTop){
+  btnQuickPaidTop.addEventListener('click', ()=>{
+    if (shouldUseAdminLinkNav(btnQuickPaidTop)) return;
+    const btn = $('#btnQuickPaid');
+    if (btn) btn.click();
+  });
+}
+
+const btnRemindTodayTop = $('#btnRemindTodayTop');
+if (btnRemindTodayTop){
+  btnRemindTodayTop.addEventListener('click', ()=>{
+    if (shouldUseAdminLinkNav(btnRemindTodayTop)) return;
+    const btn = $('#btnRemindToday');
+    if (btn) btn.click();
+  });
+}
+
+const btnPickupNeedTop = $('#btnPickupNeedTop');
+if (btnPickupNeedTop){
+  btnPickupNeedTop.addEventListener('click', ()=>{
+    if (shouldUseAdminLinkNav(btnPickupNeedTop)) return;
+    const btn = $('#btnPickupNeed');
+    if (btn) btn.click();
+  });
+}
+
+const btnCartOpenTop = $('#btnCartOpenTop');
+if (btnCartOpenTop){
+  btnCartOpenTop.addEventListener('click', async () => {
+    if (shouldUseAdminLinkNav(btnCartOpenTop)) return;
+    await loadOpenCartList();
+  });
+}
+
+const btnCartRemindTop = $('#btnCartRemindTop');
+if (btnCartRemindTop){
+  btnCartRemindTop.addEventListener('click', async () => {
+    if (!currentCartRows.length) {
+      alert('目前沒有可提醒的購物車');
+      return;
+    }
+    if (!confirm(`要提醒目前清單中的 ${currentCartRows.length} 台購物車嗎？`)) return;
+    await remindCartRows(currentCartRows);
+  });
+}
+
+// LINE 名稱搜尋
+const lineSearchEl = $('#line_search');
+if (lineSearchEl){
+  lineSearchEl.addEventListener('input', async ()=>{
+    LINE_SEARCH_TERM = lineSearchEl.value || '';
+    await reloadCurrentView();
+  });
+}
+
+// 賣貨便月份預設本月
+const vendorMonthEl = $('#vendor_month');
+if (vendorMonthEl){
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  vendorMonthEl.value = `${yyyy}-${mm}`;
+  vendorMonthEl.addEventListener('change', ()=>{
+    if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+  renderVendorMonthSummary();
+}
+  });
+}
+
+// 匯出 / 列印維持原本
+const btnExport = $('#exportBtn');
+if (btnExport) btnExport.addEventListener('click', exportCSV);
+
+const btnExportShip = $('#btnExportShip');
+if (btnExportShip) btnExportShip.addEventListener('click', exportShipReport);
+
+const btnExportZero = $('#btnExportZero');
+if (btnExportZero) btnExportZero.addEventListener('click', exportZeroReport);
+
+const btnPrintSlips = $('#btnPrintSlipsRange');
+if (btnPrintSlips) btnPrintSlips.addEventListener('click', printShipSlipsRange);
+  // ★ 上方「取消訂單（補回庫存）」按鈕：直接走 cancelCurrentOrder()
+  const btnCancelTop = $('#btnCancelOrderTop');
+if (btnCancelTop) {
+  btnCancelTop.addEventListener('click', () => {
+    if (!currentRecord) {
+      alert('請先在左邊選一筆訂單');
+      return;
+    }
+
+    const f = currentRecord.fields || currentRecord || {};
+    if (isDepositForfeitOrder(f)) {
+      alert('這筆訂單已經是棄標／訂金沒收狀態，不需要再按棄標。');
+      return;
+    }
+
+    cancelCurrentOrder();
+  });
+}
+
+function proxyButton(topId, originalId){
+  const top = $('#' + topId);
+  if (!top) return;
+
+  top.addEventListener('click', async () => {
+    const f = currentRecord?.fields || currentRecord || {};
+
+    const dangerousForfeitButtons = [
+      'btnSaveAndShipTop',
+      'btnConfirmPayOkTop',
+      'btnMarkZcFailTop',
+      'btnSendTailLinkTop',
+      'btnMeetupCashDoneTop',
+      'btnMeetupNotifyTop',
+      'btnCancelOrderTop'
+    ];
+
+    if (dangerousForfeitButtons.includes(topId) && isDepositForfeitOrder(f)) {
+      alert('這筆訂單已棄標，訂金已沒收，不能再收款、出貨、發尾款單或重新結帳。');
+      return;
+    }
+
+    await runButtonJob(top, async () => {
+      const orig = $('#' + originalId);
+      if (orig) {
+        orig.click();
+        await new Promise(resolve => setTimeout(resolve, 900));
+      } else {
+        alert('請先在右側選一筆訂單');
+      }
+    }, '執行中…');
+  });
+}
+
+  proxyButton('btnSaveAndShipTop',   'btnSaveAndShip');
+
+// ✅ 上方唯一「收款/審核通過+發LINE」：現金分期也統一走後端完整推進
+const btnConfirmPayOkTopBind = $('#btnConfirmPayOkTop');
+if (btnConfirmPayOkTopBind) {
+  btnConfirmPayOkTopBind.addEventListener('click', async () => {
+    if (!currentRecord) {
+      alert('請先在左邊選一筆訂單');
+      return;
+    }
+
+    const f = currentRecord.fields || currentRecord || {};
+
+    if (isDepositForfeitOrder(f)) {
+      alert('這筆訂單已棄標，訂金已沒收，不能再收款、出貨、發尾款單或重新結帳。');
+      return;
+    }
+
+    const pm = String(f.payment_method || '').trim().toLowerCase();
+    const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+    const payStatus = String(f.pay_status || '').trim().toLowerCase();
+
+    const isCashInstOrder =
+      pm === 'cash_inst_2' ||
+      pm === 'cash_inst_3' ||
+      pm.startsWith('cash_install_');
+
+    // 非現金分期：維持原本一般收款/審核通過流程
+    if (!isCashInstOrder) {
+      const orig = $('#btnConfirmPayOk');
+      if (orig) orig.click();
+      else await confirmPay('ok');
+      return;
+    }
+
+    const totalParts = getCurrentCashInstTotalParts();
+
+    if (!totalParts) {
+      alert('這筆現金分期訂單缺少分期期數，請檢查 payment_method。');
+      return;
+    }
+
+    if (cashStatus === 'completed' || payStatus === 'paid_ok') {
+      alert('這筆現金分期已收齊。');
+      return;
+    }
+
+    // 第一次：收定金、啟動現金分期，然後發「定金已收」專用卡
+    if (cashStatus === 'pending_deposit') {
+      const ok = await confirmPay('ok');
+      if (!ok) return;
+
+      try {
+        await sendCashInstLineNotify('deposit', 0, totalParts, notifyOrderId);
+      } catch (e) {
+        console.error(e);
+        alert('定金狀態已更新，但現金分期 LINE 通知發送失敗：' + (e.message || e));
+      }
+      return;
+    }
+
+    // ✅ 已進入分期：不要再走 markCashInstProgress 前端自記錄
+    // 改走 /admin/order/confirm-pay，讓後端 advanceCashInstAfterPaid 完整推進：
+    // cash_inst_paid_count / remaining / next_due_date / due_dates_json
+    const currentPaid =
+      Math.max(
+        Number(f.cash_inst_paid_count || 0) || 0,
+        Number(f.cash_inst_paid_parts || 0) || 0
+      );
+
+    const nextPart = Math.min(currentPaid + 1, totalParts);
+    const isAllDone = nextPart >= totalParts;
+
+    const ok = await confirmPay('ok');
+    if (!ok) return;
+
+    try {
+      await sendCashInstLineNotify(
+  isAllDone ? 'all_done' : `part_${nextPart}`,
+  nextPart,
+  totalParts,
+  notifyOrderId
+);
+    } catch (e) {
+      console.error(e);
+      alert('分期狀態已更新，但現金分期 LINE 通知發送失敗：' + (e.message || e));
+    }
+  });
+}
+
+proxyButton('btnMarkZcFailTop',    'btnMarkZcFail');
+  proxyButton('btnConsignTop', 'btnConsign');
+
+// ✅ 面交付現：完成收款（標記已收款 + 出貨完成）
+const meetupDoneTop = $('#btnMeetupCashDoneTop');
+if (meetupDoneTop) {
+  meetupDoneTop.style.display = 'none'; // 預設先隱藏，選到面交單才顯示
+  meetupDoneTop.addEventListener('click', ()=> markMeetupCashDone());
+}
+  proxyButton('btnPrintOrderTop',    'btnPrintOrder');
+  proxyButton('btnSendTailLinkTop',  'btnSendTailLink');
+  // ★ 這行拿掉，因為取消已經上面直接綁 cancelCurrentOrder 了
+  // proxyButton('btnCancelOrderTop',   'btnCancelOrder');
+  proxyButton('btnMeetupNotifyTop',  'btnMeetupNotify');
+  // ✅ 收款已統一到 btnConfirmPayOkTop，不再使用「已收定金+發保留通知」獨立按鈕
+// proxyButton('btnDepositPayAndNoticeTop', 'btnDepositPayAndNotice');
+proxyButton('btnSaveDetailOnlyTop',      'btnSaveDetailOnly');
+
+await loadAdminDefaultPage();
+refreshBenefitBadge();
+});
+</script>
+</body>
+</html>
