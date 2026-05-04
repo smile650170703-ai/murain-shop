@@ -371,7 +371,7 @@
 
     <div class="hero-total">
       <div class="hero-total-card">
-        <div class="hero-total-label">目前最新已確認月份總資產</div>
+        <div class="hero-total-label">目前公司總資產</div>
         <div class="hero-total-value" id="heroTotalAsset">NT$ 0</div>
       </div>
     </div>
@@ -528,19 +528,38 @@ function renderHeroTotal() {
     return;
   }
 
-  // 顯示「最新已確認入公司帳」那一筆的總資產。
-  // 如果沒有已確認資料，才退回抓第一筆有總資產的資料。
-  const picked =
-    allRows.find(r => bool(r.confirmed ?? r.confirmedCompanyAccount ?? r["確認入公司帳"])) ||
-    allRows.find(r => {
-      const v = r.totalAsset ?? r["總資產"];
-      return Number(String(v ?? "").replace(/[^\d.-]/g, "")) !== 0;
-    }) ||
-    allRows[0];
+  // 規則：
+  // 1. 「最新版」那筆總資產 = 從舊公司檔案沿用過來的起始基準金額。
+  // 2. 之後只加上「確認入公司帳 = ✓」的月份結餘。
+  // 3. 未確認月份、額外結帳列、最新版基準列，都不加進去。
+  const isBaseRow = (r) => {
+    const m = monthLabel(r);
+    return m.includes("最新版") || m.includes("基準") || m.includes("結轉");
+  };
 
-  const totalAsset = picked?.totalAsset ?? picked?.["總資產"] ?? 0;
-  const month = monthLabel(picked || {});
-  $("heroTotalAsset").textContent = `${money(totalAsset)}${month ? "｜" + month : ""}`;
+  const isMonthRow = (r) => /^\\d{4}-\\d{2}月?$/.test(monthLabel(r));
+
+  const baseRow =
+    allRows.find(isBaseRow) ||
+    allRows.find(r => Number(String((r.totalAsset ?? r["總資產"]) ?? "").replace(/[^\\d.-]/g, "")) !== 0) ||
+    null;
+
+  const baseAsset = baseRow
+    ? Number(String((baseRow.totalAsset ?? baseRow["總資產"]) ?? "").replace(/[^\\d.-]/g, "")) || 0
+    : 0;
+
+  const confirmedBalanceTotal = allRows
+    .filter(r => !isBaseRow(r))
+    .filter(r => isMonthRow(r))
+    .filter(r => bool(r.confirmed ?? r.confirmedCompanyAccount ?? r["確認入公司帳"]))
+    .reduce((sum, r) => {
+      const n = Number(String((r.balance ?? r["結餘"]) ?? "").replace(/[^\\d.-]/g, ""));
+      return sum + (Number.isFinite(n) ? n : 0);
+    }, 0);
+
+  const currentTotalAsset = baseAsset + confirmedBalanceTotal;
+
+  $("heroTotalAsset").textContent = money(currentTotalAsset);
 }
 
 function renderRows() {
