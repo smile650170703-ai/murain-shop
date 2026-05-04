@@ -667,20 +667,52 @@ setTopFilterActive('consign_accounting');
 function renderConsignAccountingBuckets(){
   const listEl = $('#orderList');
 
-  const buckets = ['1-2月','3-4月','5-6月','7-8月','9-10月','11-12月'];
+  const buckets = ['1-2月','3-4月','5-6月','7-8月','9-10月','11-12月','未分月份'];
 
   const grouped = {};
   buckets.forEach(k => grouped[k] = []);
 
-  (currentConsignAccountingRows || []).forEach(row => {
-    const doneAt =
+  const pickTradeDoneAt = (row = {}) => {
+    const f = row.fields || {};
+
+    return (
       row.creditDoneAt ||
       row.bankDoneAt ||
       row.doneAt ||
+      row.settledAt ||
+      row.completedAt ||
       row.updatedAt ||
-      '';
-    const label = getBiMonthLabel(doneAt);
-    if (label && grouped[label]) grouped[label].push(row);
+      row.updated_at ||
+      row.createdAt ||
+      row.created_at ||
+
+      f.creditDoneAt ||
+      f.bankDoneAt ||
+      f.doneAt ||
+      f.settledAt ||
+      f.completedAt ||
+      f.updatedAt ||
+      f.updated_at ||
+      f.createdAt ||
+      f.created_at ||
+
+      f['轉購物金完成時間'] ||
+      f['購物金完成時間'] ||
+      f['匯款完成時間'] ||
+      f['結算完成時間'] ||
+      f['完成時間'] ||
+      f['更新時間'] ||
+      f['建立時間'] ||
+      ''
+    );
+  };
+
+  (currentConsignAccountingRows || []).forEach(row => {
+    const doneAt = pickTradeDoneAt(row);
+    const label = getBiMonthLabel(doneAt) || '未分月份';
+
+    if (!grouped[label]) grouped[label] = [];
+    grouped[label].push(row);
   });
 
   listEl.innerHTML = buckets.map(label => {
@@ -688,12 +720,18 @@ function renderConsignAccountingBuckets(){
     return `
       <div class="order-row" data-bucket="${label}">
         <div class="ord-top">
-          <div class="ord-id">${label}</div>
+          <div class="ord-id">${escapeHtml(label)}</div>
           <div class="ord-right">
             <div class="ord-amount">${count} 筆</div>
           </div>
         </div>
-        <div class="ord-sub">已完成匯款／購物金的一時貿易資料</div>
+        <div class="ord-sub">
+          ${
+            label === '未分月份'
+              ? '已完成但沒有完成日期的一時貿易資料'
+              : '已完成匯款／購物金的一時貿易資料'
+          }
+        </div>
       </div>
     `;
   }).join('');
