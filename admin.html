@@ -2258,31 +2258,48 @@ function dashDateText(d) {
 }
 
 function getPickupEarliestText(rows = []) {
-  let minDate = null;
+  let best = null;
+
+  const normalizePickupText = (v) => {
+    const s = String(v || '').trim();
+    if (!s || s === '已取貨') return '';
+
+    // 支援 5/9、5-9、05/09、05-09
+    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+    if (m) {
+      const month = Number(m[1]);
+      const day = Number(m[2]);
+
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        return {
+          text: `${month}/${day}`,
+          sort: month * 100 + day
+        };
+      }
+    }
+
+    // 如果你之後手動填其他文字，就直接顯示原文字
+    return {
+      text: s,
+      sort: 9999
+    };
+  };
 
   for (const rec of rows || []) {
     const f = rec.fields || rec || {};
 
-    const raw =
-      f['取貨登記日期'] ||
-      f['取貨登記日'] ||
-      f['取貨日期'] ||
-      f.pickup_registered_at ||
-      f.pickup_date ||
-      f.shipped_at ||
-      f.ship_at ||
-      f.created_at ||
-      '';
+    // ✅ 改成直接抓 Airtable 的「取貨登記」
+    const picked = normalizePickupText(f['取貨登記']);
 
-    const d = dashDateObj(raw);
-    if (!d) continue;
+    if (!picked) continue;
 
-    if (!minDate || d < minDate) {
-      minDate = d;
+    if (!best || picked.sort < best.sort) {
+      best = picked;
     }
   }
 
-  return minDate ? `最早 ${dashDateText(minDate)}` : '';
+  // ✅ 直接顯示 4/30，不加「最早」
+  return best ? best.text : '';
 }
 
 async function fetchAdminRowsByView(viewKey) {
