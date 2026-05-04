@@ -227,11 +227,6 @@
           <label for="accountName">領款帳號名稱</label>
           <select id="accountName">
             <option value="">全部帳號</option>
-            <option>夏寧媽咪-台新</option>
-            <option>黃弈鋒-郵局</option>
-            <option>蘇瑞慈-元大</option>
-            <option>黃琮豪-台新</option>
-            <option>妹妹-京城</option>
           </select>
         </div>
         <div class="field">
@@ -249,7 +244,7 @@
           </select>
         </div>
         <div class="field">
-          <label for="pickupDate">本次領款日期</label>
+          <label for="pickupDate">員工領款日期</label>
           <input id="pickupDate" type="date" />
         </div>
         <div class="field">
@@ -334,7 +329,6 @@
               <th class="center">勾選</th>
               <th>order_id</th>
               <th>領款帳號</th>
-              <th>取貨日期</th>
               <th>月份</th>
               <th class="right">結算金額</th>
               <th class="right">已領</th>
@@ -346,13 +340,13 @@
             </tr>
           </thead>
           <tbody id="tbody">
-            <tr><td colspan="12" class="empty-state">請先按「載入賣貨便結算」。</td></tr>
+            <tr><td colspan="11" class="empty-state">請先按「載入賣貨便結算」。</td></tr>
           </tbody>
         </table>
       </div>
 
       <div class="footer-note">
-        儲存時會送出每筆訂單的 record id、order_id、本次領取金額、領款日期、領款人與備註。後端應更新「累計已領金額 / 剩餘未領 / 最後領款日期 / 最後領款人」，並新增一筆領款批次紀錄。
+        儲存時會送出每筆訂單的 record id、order_id、本次領取金額、員工領款日期、領款人與備註。這裡不需要取貨日期；清單來源只看「取貨登記＝已取貨」。後端應更新「累計已領金額 / 剩餘未領 / 最後領款日期 / 最後領款人」，並新增一筆領款批次紀錄。
       </div>
     </section>
   </div>
@@ -395,7 +389,6 @@
 
       // 取貨狀態後端回傳 pickupNote；領款狀態後端回傳 pickupStatus，兩個不要混在一起
       pickupStatus: ["pickupNote", "pickup_note", "取貨註記", "取貨登記", "取貨狀態", "取貨備註"],
-      pickupDate: ["pickupDate", "pickup_date", "取貨日期", "取貨完成日"],
       month: ["month", "settlement_month", "賣貨便月份", "結算月份", "月份"],
 
       // 後端回傳 camelCase：settlementAmount / pickedAmount / remainingAmount
@@ -491,6 +484,25 @@
       if (savedPicker) $("pickerName").value = savedPicker;
     }
 
+    function renderAccountOptions(accounts = []) {
+      const select = $("accountName");
+      const current = String(select.value || "");
+      const list = [...new Set((accounts || [])
+        .map(x => String(x || "").trim())
+        .filter(Boolean)
+      )].sort((a, b) => a.localeCompare(b, "zh-Hant"));
+
+      select.innerHTML =
+        `<option value="">全部帳號</option>` +
+        list.map(name =>
+          `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`
+        ).join("");
+
+      if (current && list.includes(current)) {
+        select.value = current;
+      }
+    }
+
     function normalizeRecord(rec) {
       const f = rec && rec.fields ? rec.fields : (rec || {});
       const id = pick(rec, FIELD_NAMES.id) || pick(f, FIELD_NAMES.id);
@@ -498,7 +510,6 @@
       const paid = num(pick(f, FIELD_NAMES.paid, 0));
       const remainRaw = pick(f, FIELD_NAMES.remain, "");
       const remain = remainRaw === "" ? Math.max(0, amount - paid) : num(remainRaw);
-      const pickupDate = pick(f, FIELD_NAMES.pickupDate, "");
       const statusRaw = String(pick(f, FIELD_NAMES.status, "")).trim();
       const status = statusRaw || (remain <= 0 ? "已領取" : (paid > 0 ? "部分領取" : "未領取"));
       const city = String(pick(f, FIELD_NAMES.city, "")).trim();
@@ -508,8 +519,7 @@
         order_id: String(pick(f, FIELD_NAMES.orderId, "")).trim(),
         account: String(pick(f, FIELD_NAMES.account, "")).trim(),
         pickup_status: String(pick(f, FIELD_NAMES.pickupStatus, "")).trim(),
-        pickup_date: dateText(pickupDate),
-        month: monthText(pick(f, FIELD_NAMES.month, ""), pickupDate),
+        month: monthText(pick(f, FIELD_NAMES.month, ""), ""),
         amount,
         paid,
         remain,
@@ -546,7 +556,7 @@
           if (ps && !ps.includes("已取")) return false;
         }
         if (!kw) return true;
-        const blob = [r.order_id, r.account, r.pickup_date, r.month, r.status, r.store, r.note].join(" ").toLowerCase();
+        const blob = [r.order_id, r.account, r.month, r.status, r.store, r.note].join(" ").toLowerCase();
         return blob.includes(kw);
       });
     }
@@ -555,7 +565,7 @@
       const rows = filteredRows();
       const tb = $("tbody");
       if (!rows.length) {
-        tb.innerHTML = `<tr><td colspan="12" class="empty-state">目前沒有符合條件的賣貨便結算資料。</td></tr>`;
+        tb.innerHTML = `<tr><td colspan="11" class="empty-state">目前沒有符合條件的賣貨便結算資料。</td></tr>`;
         updateSummary();
         return;
       }
@@ -572,7 +582,6 @@
             </td>
             <td class="nowrap"><b>${escapeHtml(r.order_id || "—")}</b></td>
             <td>${escapeHtml(r.account || "—")}</td>
-            <td class="nowrap">${escapeHtml(r.pickup_date || "—")}</td>
             <td class="nowrap">${escapeHtml(r.month || "—")}</td>
             <td class="right money">${money(r.amount)}</td>
             <td class="right money muted">${money(r.paid)}</td>
@@ -701,6 +710,7 @@
         const list = data.records || data.items || data.list || data.rows || [];
         state.raw = Array.isArray(list) ? list : [];
         state.rows = state.raw.map(normalizeRecord);
+        renderAccountOptions(data.accounts || state.rows.map(r => r.account));
         state.batches = data.batches || data.pickup_batches || [];
         state.selected.clear();
         renderTable();
