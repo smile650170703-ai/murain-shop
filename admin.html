@@ -375,7 +375,9 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   <div class="toolbar-main">
     <div class="toolbar-left">
 <div class="filter-group admin-sub-tabs">
-  <a class="filter-btn" data-admin-file="admin.html" href="admin.html">全部訂單</a>
+  <a class="filter-btn" data-admin-file="admin-all.html" href="admin-all.html">
+    全部訂單
+  </a>
 
   <a class="filter-btn btn-badge-wrap" data-admin-file="admin-cart-open.html" id="btnCartOpenTop" href="admin-cart-open.html">
     <span>🛒 未結單購物車</span>
@@ -397,20 +399,34 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     <span id="pickupNeedBadge" class="count-badge" style="display:none;">0</span>
   </a>
 
-  <a class="filter-btn" data-admin-file="admin-deposit.html" href="admin-deposit.html">已收定金未出貨</a>
-  <a class="filter-btn" data-admin-file="admin-cashinst.html" href="admin-cashinst.html">現金分期未收齊</a>
-  <a class="filter-btn" data-admin-file="admin-cancelled.html" href="admin-cancelled.html">已取消／棄標</a>
+  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-deposit.html" href="admin-deposit.html">
+    <span>已收定金未出貨</span>
+    <span id="depositBadge" class="count-badge" style="display:none;">0</span>
+  </a>
+
+  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-cashinst.html" href="admin-cashinst.html">
+    <span>現金分期未收齊</span>
+    <span id="cashInstBadge" class="count-badge" style="display:none;">0</span>
+  </a>
+
+  <a class="filter-btn" data-admin-file="admin-cancelled.html" href="admin-cancelled.html">
+    已取消／棄標
+  </a>
 
   <a class="filter-btn btn-badge-wrap" data-admin-file="admin-consign.html" id="btnConsignTop" href="admin-consign.html">
     <span>寄賣</span>
     <span id="consignBadge" class="count-badge" style="display:none;">0</span>
   </a>
 
-  <a class="filter-btn" data-admin-file="admin-trade.html" id="btnConsignAccountingTop" href="admin-trade.html">一時貿易</a>
+  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-trade.html" id="btnConsignAccountingTop" href="admin-trade.html">
+    <span>一時貿易</span>
+    <span id="tradeBadge" class="count-badge" style="display:none;">0</span>
+  </a>
+
   <a class="filter-btn btn-badge-wrap" data-admin-file="admin-benefit-review.html" id="btnBenefitReviewLink" href="admin-benefit-review.html">
-  <span>💰 審核購物金</span>
-  <span id="benefitBadge" class="count-badge" style="display:none;">0</span>
-</a>
+    <span>💰 審核購物金</span>
+    <span id="benefitBadge" class="count-badge" style="display:none;">0</span>
+  </a>
 </div>
 <div class="filter-row">
     <div class="field">
@@ -588,12 +604,21 @@ const ADMIN_PAGE_FILE = normalizeAdminPageFile();
 
 const ADMIN_PAGE_MAP = {
   'admin.html': {
+    title: '訂單後台總覽',
+    mode: 'dashboard',
+    viewKey: '',
+    viewName: '',
+    useDate: false
+  },
+
+  'admin-all.html': {
     title: '全部訂單',
     mode: 'orders',
     viewKey: '',
     viewName: '',
     useDate: true
   },
+
   'admin-ship.html': {
     title: '待出貨訂單',
     mode: 'orders',
@@ -601,6 +626,7 @@ const ADMIN_PAGE_MAP = {
     viewName: '待出貨訂單',
     useDate: false
   },
+
   'admin-bank.html': {
     title: '匯款待確認',
     mode: 'orders',
@@ -608,6 +634,7 @@ const ADMIN_PAGE_MAP = {
     viewName: '匯款待確認',
     useDate: false
   },
+
   'admin-pickup.html': {
     title: '賣貨便登記',
     mode: 'orders',
@@ -615,6 +642,7 @@ const ADMIN_PAGE_MAP = {
     viewName: '賣貨便登記',
     useDate: false
   },
+
   'admin-deposit.html': {
     title: '已收定金未出貨',
     mode: 'orders',
@@ -622,6 +650,7 @@ const ADMIN_PAGE_MAP = {
     viewName: '已收定金未出貨',
     useDate: false
   },
+
   'admin-cashinst.html': {
     title: '現金分期未收齊',
     mode: 'orders',
@@ -629,6 +658,7 @@ const ADMIN_PAGE_MAP = {
     viewName: '現金分期未收齊',
     useDate: false
   },
+
   'admin-cancelled.html': {
     title: '已取消 / 棄標',
     mode: 'orders',
@@ -636,24 +666,28 @@ const ADMIN_PAGE_MAP = {
     viewName: '已取消 / 棄標',
     useDate: false
   },
+
   'admin-cart-open.html': {
     title: '未結單購物車',
     mode: 'cart_open',
     viewKey: '',
     useDate: false
   },
+
   'admin-consign.html': {
     title: '寄賣',
     mode: 'consign_settlement',
     viewKey: '',
     useDate: false
   },
+
   'admin-trade.html': {
     title: '一時貿易',
     mode: 'consign_accounting',
     viewKey: '',
     useDate: false
   },
+
   'admin-benefit-review.html': {
     title: '審核購物金',
     mode: 'benefit_review',
@@ -676,7 +710,33 @@ function setupAdminPageChrome(){
     a.classList.toggle('active', a.dataset.adminFile === ADMIN_PAGE_FILE);
   });
 
-  const isFixedPage = ADMIN_PAGE_FILE !== 'admin.html';
+const isDashboard = ADMIN_PAGE.mode === 'dashboard';
+const isFixedPage = ADMIN_PAGE_FILE !== 'admin-all.html';
+ if (isDashboard) {
+  [
+    'date_from',
+    'date_to',
+    'btnApplyDate',
+    'btnClearDate',
+    'status',
+    'btnQuickPaid',
+    'btnRemindToday',
+    'btnPickupNeed',
+    'btnConsign',
+    'btnConsignAccounting',
+    'btnPrintSlipsRange',
+    'btnExportShip',
+    'btnExportZero'
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    const field = el?.closest?.('.field');
+    if (field) field.classList.add('hidden');
+    else if (el) el.classList.add('hidden');
+  });
+
+  document.querySelector('.top-order-actions')?.classList.add('hidden');
+  document.querySelector('.toolbar-side')?.classList.add('hidden');
+}
 
   if (isFixedPage) {
     // 子頁直接吃 Airtable View / 專用 API，不再顯示日期與狀態篩選
@@ -1166,8 +1226,8 @@ async function applyFullView(mode = 'all', save = true){
 
   await loadOrders('all', dateRange);
  ALL_ORDERS_CACHE = [...(currentOrders || [])];
-if (ADMIN_PAGE_FILE === 'admin.html') {
-  refreshTopShortcutBadges();
+if (ADMIN_PAGE_FILE === 'admin.html' || ADMIN_PAGE_FILE === 'admin-all.html') {
+  await refreshDashboardBadges();
 }
 
   const hasFee = (f) => {
@@ -1645,12 +1705,20 @@ function updatePrintSlipsBtn(){
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
 function updateCurrentSubTabCount(count){
+  // ✅ 這三個頁籤不要自動長小圓圈
+  if (
+    ADMIN_PAGE_FILE === 'admin.html' ||
+    ADMIN_PAGE_FILE === 'admin-all.html' ||
+    ADMIN_PAGE_FILE === 'admin-cancelled.html'
+  ) {
+    return;
+  }
+
   const btn = document.querySelector(`.admin-sub-tabs [data-admin-file="${ADMIN_PAGE_FILE}"]`);
   if (!btn) return;
 
   let badge = btn.querySelector('.count-badge');
 
-  // ✅ 如果這個頁籤原本沒有小圓圈，就自動補一個
   if (!badge) {
     badge = document.createElement('span');
     badge.className = 'count-badge';
@@ -1660,8 +1728,6 @@ function updateCurrentSubTabCount(count){
 
   const n = Number(count || 0);
   badge.textContent = String(n);
-
-  // 0 筆就隱藏；如果你想 0 也顯示，把這行改成 inline-flex
   badge.style.display = n > 0 ? 'inline-flex' : 'none';
 }
  function setButtonBusy(btn, busy, busyText = '處理中…'){
@@ -2134,187 +2200,219 @@ function setAdminTabBadge(adminFile, n){
   setCountBadge(badge, n);
 }
 
-async function refreshTopShortcutBadges(){
-  const rows = ALL_ORDERS_CACHE || [];
+function dashSetBadge(el, value, options = {}) {
+  if (!el) return;
 
-  const getF = (rec) => rec.fields || rec || {};
+  const text = String(value ?? '').trim();
+  const n = Number(value || 0);
 
-  const hasFee = (f) => {
-    if (!f) return false;
-    const fee1 = f.shipping_fee;
-    const fee2 = f.ship_fee;
-    const filled1 = fee1 !== undefined && fee1 !== null && String(fee1) !== '';
-    const filled2 = fee2 !== undefined && fee2 !== null && String(fee2) !== '';
-    return filled1 || filled2;
-  };
-
-  const isCancelledLike = (f) => {
-    const st = String(f.status || '').trim().toLowerCase();
-    const ps = String(f.pay_status || '').trim().toLowerCase();
-    return (
-      st === 'cancelled' ||
-      ps === 'cancelled' ||
-      ps === 'failed'
-    );
-  };
-
-  const isCashInstOrder = (f) => {
-    const pm = String(f.payment_method || f.pay_method || '').trim().toLowerCase();
-    const plan = String(f.cash_inst_plan || '').trim();
-    const cs = String(f.cash_inst_status || '').trim();
-    return (
-      pm.startsWith('cash_inst') ||
-      !!plan ||
-      !!cs
-    );
-  };
-
-  const isCashInstUnpaid = (f) => {
-    if (!isCashInstOrder(f)) return false;
-
-    const ps = String(f.pay_status || '').trim().toLowerCase();
-    const st = String(f.status || '').trim().toLowerCase();
-    const cs = String(f.cash_inst_status || '').trim().toLowerCase();
-
-    if (ps === 'paid_ok') return false;
-    if (ps === 'cancelled' || ps === 'failed') return false;
-    if (st === 'cancelled') return false;
-    if (cs === 'all_done' || cs === 'completed' || cs === 'paid_ok') return false;
-
-    return true;
-  };
-
-  const isDepositUnshipped = (rec) => {
-    const f = getF(rec);
-    const ps = String(f.pay_status || '').trim().toLowerCase();
-
-    // 現金分期不要混到「已收定金未出貨」
-    if (isCashInstOrder(f)) return false;
-
-    return ps === 'deposit_ok' && isUnshippedOrder(rec);
-  };
-
-  // 🛒 未結單購物車：用專用 API，不吃 Orders
-  let cartOpenCount = 0;
-  try {
-    if (OP_KEY) {
-      const cartParams = new URLSearchParams();
-      cartParams.set('op_key', OP_KEY);
-      cartParams.set('limit', '80');
-
-      const rCart = await fetch(`${API}/admin/cart/pending-list?` + cartParams.toString());
-      const jCart = await rCart.json().catch(() => ({}));
-
-      if (rCart.ok && jCart.ok) {
-        cartOpenCount = Array.isArray(jCart.carts) ? jCart.carts.length : 0;
-      }
-    }
-  } catch (e) {
-    console.warn('cart badge load failed', e);
+  if (options.forceText) {
+    el.textContent = text;
+    el.style.display = text ? 'inline-flex' : 'none';
+    return;
   }
 
-  // ⭐ 待出貨訂單：沿用你原本邏輯
-  const quickCount = rows.filter(rec => {
-    const f = getF(rec);
-    return String(f.pay_status || '').toLowerCase() === 'paid_ok' && !hasFee(f);
-  }).length;
+  el.textContent = String(n);
+  el.style.display = n > 0 ? 'inline-flex' : 'none';
+}
 
-  // 匯款待確認：沿用你原本邏輯
-  const remindCount = rows.filter(rec => {
-    const f = getF(rec);
-    return String(f.pay_status || '').toLowerCase() === 'pending';
-  }).length;
+function dashSetAdminTabBadge(pageFile, value) {
+  // ✅ 全部訂單、總覽、已取消/棄標 不顯示小圓圈
+  if (
+    pageFile === 'admin.html' ||
+    pageFile === 'admin-all.html' ||
+    pageFile === 'admin-cancelled.html'
+  ) {
+    return;
+  }
 
-  // 賣貨便登記：沿用你原本邏輯
-  const pickupCount = rows.filter(rec => {
-    const f  = getF(rec);
-    const ps = String(f.pay_status || '').toLowerCase();
-    if (ps === 'failed' || ps === 'cancelled') return false;
+  const btn = document.querySelector(`.admin-sub-tabs [data-admin-file="${pageFile}"]`);
+  if (!btn) return;
 
-    const st = String(f.status || '').toLowerCase();
-    const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
-    const shipped = (st === 'shipped') || (ss === 'shipped') || (ss === 'arrived') || (ss === 'picked_up');
+  let badge = btn.querySelector('.count-badge');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'count-badge';
+    badge.style.display = 'none';
+    btn.appendChild(badge);
+  }
 
-    const shipInfo = parseShippingInfo(f) || {};
-    const ship = shipInfo.ship || {};
-    const is711 = String(ship.type || '').toLowerCase() === '711';
+  dashSetBadge(badge, value);
+}
 
-    const pickReg = String(f['取貨登記'] || '').trim();
+function dashDateObj(v) {
+  const s = String(v || '').trim();
+  if (!s) return null;
 
-    return shipped && is711 && pickReg !== '已取貨';
-  }).length;
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
 
-  // ✅ 已收定金未出貨
-  const depositCount = rows.filter(rec => {
-    return isDepositUnshipped(rec);
-  }).length;
+  return d;
+}
 
-  // ✅ 現金分期未收齊
-  const cashInstCount = rows.filter(rec => {
-    const f = getF(rec);
-    return isCashInstUnpaid(f);
-  }).length;
+function dashDateText(d) {
+  if (!d || Number.isNaN(d.getTime())) return '';
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${m}/${day}`;
+}
 
-  // ✅ 已取消／棄標
-  const cancelledCount = rows.filter(rec => {
-    const f = getF(rec);
-    return isCancelledLike(f);
-  }).length;
+function getPickupEarliestText(rows = []) {
+  let minDate = null;
 
-  // 寄賣 + 一時貿易：用寄賣專用 API
+  for (const rec of rows || []) {
+    const f = rec.fields || rec || {};
+
+    const raw =
+      f['取貨登記日期'] ||
+      f['取貨登記日'] ||
+      f['取貨日期'] ||
+      f.pickup_registered_at ||
+      f.pickup_date ||
+      f.shipped_at ||
+      f.ship_at ||
+      f.created_at ||
+      '';
+
+    const d = dashDateObj(raw);
+    if (!d) continue;
+
+    if (!minDate || d < minDate) {
+      minDate = d;
+    }
+  }
+
+  return minDate ? `最早 ${dashDateText(minDate)}` : '';
+}
+
+async function fetchAdminRowsByView(viewKey) {
+  const params = new URLSearchParams();
+  params.set('filter', 'all');
+  params.set('op_key', OP_KEY);
+  params.set('view_key', viewKey);
+
+  const r = await fetch(`${API}/admin/orders?` + params.toString());
+  const j = await r.json().catch(() => ({}));
+
+  if (!r.ok || !j.ok) {
+    throw new Error(j.error || `load_${viewKey}_failed`);
+  }
+
+  return j.orders || j.records || [];
+}
+
+async function fetchOpenCartCount() {
+  const params = new URLSearchParams();
+  params.set('op_key', OP_KEY);
+  params.set('limit', '80');
+
+  const r = await fetch(`${API}/admin/cart/pending-list?` + params.toString());
+  const j = await r.json().catch(() => ({}));
+
+  if (!r.ok || !j.ok) return 0;
+
+  if (Number.isFinite(Number(j.count))) return Number(j.count);
+  if (Number.isFinite(Number(j.total))) return Number(j.total);
+
+  return Array.isArray(j.carts) ? j.carts.length : 0;
+}
+
+async function fetchConsignTradeCounts() {
   let consignCount = 0;
   let tradeCount = 0;
 
   try {
-    if (OP_KEY) {
-      const r = await fetch(`${API}/op/consign/settlement/list`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          op_key: OP_KEY,
-          status: 'all'
-        })
-      });
+    const r = await fetch(`${API}/op/consign/settlement/list`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        status: 'all'
+      })
+    });
 
-      const j = await r.json().catch(() => ({}));
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) return { consignCount, tradeCount };
 
-      if (r.ok && j.ok) {
-        const items = j.items || [];
+    const items = Array.isArray(j.items) ? j.items : [];
 
-        // 寄賣：未完成結算
-        consignCount = items.filter(x => {
-          return String(x.status || '').trim().toLowerCase() !== 'settled';
-        }).length;
+    consignCount = items.filter(x => {
+      return String(x.status || '').trim().toLowerCase() !== 'settled';
+    }).length;
 
-        // 一時貿易：已完成匯款／購物金
-        tradeCount = items.filter(x => {
-          const st = String(x.status || '').trim().toLowerCase();
-          const method = String(x.method || '').trim().toLowerCase();
-          return st === 'settled' && (method === 'bank_transfer' || method === 'store_credit');
-        }).length;
-      }
-    }
+    tradeCount = items.filter(x => {
+      const st = String(x.status || '').trim().toLowerCase();
+      const method = String(x.method || '').trim().toLowerCase();
+      return st === 'settled' && (method === 'bank_transfer' || method === 'store_credit');
+    }).length;
   } catch (e) {
-    console.warn('consign/trade badge load failed', e);
+    console.warn('fetchConsignTradeCounts failed', e);
   }
 
-  // ✅ 原本就有 id 的小圓圈
-  setCountBadge($('#cartOpenBadge'), cartOpenCount);
-  setCountBadge($('#quickPaidBadge'), quickCount);
-  setCountBadge($('#remindTodayBadge'), remindCount);
-  setCountBadge($('#pickupNeedBadge'), pickupCount);
-  setCountBadge($('#consignBadge'), consignCount);
+  return { consignCount, tradeCount };
+}
 
-  // ✅ 原本沒有小圓圈的頁籤，這裡自動補
-  setAdminTabBadge('admin-deposit.html', depositCount);
-  setAdminTabBadge('admin-cashinst.html', cashInstCount);
-  setAdminTabBadge('admin-cancelled.html', cancelledCount);
-  setAdminTabBadge('admin-trade.html', tradeCount);
+async function fetchBenefitPendingCount() {
+  try {
+    const r = await fetch(`${API}/admin/benefit-requests?op_key=${encodeURIComponent(OP_KEY)}&status=pending`);
+    const j = await r.json().catch(() => ({}));
 
-  // ✅ 審核購物金沿用你的專用函式
-  if (typeof refreshBenefitBadge === 'function') {
-    refreshBenefitBadge();
+    if (!r.ok || !j.ok) return 0;
+    return Array.isArray(j.requests) ? j.requests.length : 0;
+  } catch (e) {
+    console.warn('fetchBenefitPendingCount failed', e);
+    return 0;
   }
+}
+
+async function refreshDashboardBadges() {
+  if (!OP_KEY) return;
+
+  try {
+    const [
+      cartOpenCount,
+      shipRows,
+      bankRows,
+      pickupRows,
+      depositRows,
+      cashInstRows,
+      consignTrade,
+      benefitCount
+    ] = await Promise.all([
+      fetchOpenCartCount(),
+      fetchAdminRowsByView('ship'),
+      fetchAdminRowsByView('bank'),
+      fetchAdminRowsByView('pickup'),
+      fetchAdminRowsByView('deposit_unshipped'),
+      fetchAdminRowsByView('cashinst_unpaid'),
+      fetchConsignTradeCounts(),
+      fetchBenefitPendingCount()
+    ]);
+
+    dashSetBadge($('#cartOpenBadge'), cartOpenCount);
+    dashSetBadge($('#quickPaidBadge'), shipRows.length);
+    dashSetBadge($('#remindTodayBadge'), bankRows.length);
+
+    const pickupText = getPickupEarliestText(pickupRows);
+    if (pickupText) {
+      dashSetBadge($('#pickupNeedBadge'), pickupText, { forceText: true });
+    } else {
+      dashSetBadge($('#pickupNeedBadge'), pickupRows.length);
+    }
+
+    dashSetBadge($('#depositBadge'), depositRows.length);
+    dashSetBadge($('#cashInstBadge'), cashInstRows.length);
+    dashSetBadge($('#consignBadge'), consignTrade.consignCount);
+    dashSetBadge($('#tradeBadge'), consignTrade.tradeCount);
+    dashSetBadge($('#benefitBadge'), benefitCount);
+  } catch (e) {
+    console.warn('refreshDashboardBadges failed', e);
+  }
+}
+
+// ✅ 保留舊名稱，避免其他地方還在呼叫 refreshTopShortcutBadges()
+async function refreshTopShortcutBadges() {
+  return refreshDashboardBadges();
 }
 
  async function loadBenefitRequests(){
@@ -5308,12 +5406,58 @@ ${a.credit>0 ? `<tr><th>購物金折抵</th><td>-${creditUse}</td></tr>` : ``}
   w.focus();
   w.print();
 }
- 
+ async function loadAdminDashboard() {
+  currentPanelMode = 'dashboard';
+  currentRecord = null;
+  currentOrders = [];
+  ORDERS_CACHE = [];
+  ALL_ORDERS_CACHE = [];
+
+  setBatchActionMode('none');
+
+  const listEl = $('#orderList');
+  const detailEl = $('#orderDetail');
+  const msgEl = $('#msg');
+  const sumEl = $('#summary');
+
+  if (sumEl) sumEl.textContent = '';
+
+  if (listEl) {
+    listEl.innerHTML = `
+      <div class="muted">
+        請點選上方分類進入對應清單。<br><br>
+        這一頁只顯示各分類狀態，不會自動載入全部訂單，所以開啟速度會比較快。
+      </div>
+    `;
+  }
+
+  if (detailEl) {
+    detailEl.innerHTML = `
+      <div class="muted">
+        訂單後台總覽<br><br>
+        ・全部訂單請點「全部訂單」<br>
+        ・收款請點「匯款待確認」<br>
+        ・出貨請點「待出貨訂單」<br>
+        ・賣貨便請點「賣貨便登記」
+      </div>
+    `;
+  }
+
+  if (msgEl) {
+    msgEl.textContent = '目前為訂單後台總覽，不會自動載入全部訂單。';
+  }
+
+  await refreshDashboardBadges();
+}
 async function loadAdminDefaultPage(){
   setupAdminPageChrome();
   await ensureOpKey();
 
   setBatchActionMode('none');
+   if (ADMIN_PAGE.mode === 'dashboard') {
+    await loadAdminDashboard();
+    return;
+  }
 
   if (ADMIN_PAGE.mode === 'cart_open') {
     await loadOpenCartList();
