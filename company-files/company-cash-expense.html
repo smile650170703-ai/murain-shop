@@ -592,11 +592,10 @@ async function renderReviewRowsFromApi() {
     $("reviewCountTag").textContent = `${list.length} 筆`;
 
     tbody.innerHTML = list.length ? list.map(r => {
-      const isPicked = !!String(r.category || "").trim();
       return `
-        <tr class="${isPicked ? "review-row-selected" : ""}" data-row-id="${r.id}">
+        <tr class="reviewDataRow" data-row-id="${r.id}" style="cursor:pointer;">
           <td>
-            <input type="checkbox" class="reviewPick" data-id="${r.id}" ${isPicked ? "checked" : ""} style="width:18px;height:18px;" />
+            <input type="checkbox" class="reviewPick" data-id="${r.id}" style="width:18px;height:18px;" />
           </td>
           <td>${r.detail || ""}</td>
           <td class="thumb-cell">
@@ -619,23 +618,27 @@ async function renderReviewRowsFromApi() {
       `;
     }).join("") : `<tr><td colspan="7" class="empty">目前沒有待核對資料。</td></tr>`;
 
-    document.querySelectorAll(".reviewCategory").forEach(sel => {
-      sel.addEventListener("change", () => {
-        const id = sel.dataset.id;
-        const pick = document.querySelector(`.reviewPick[data-id="${id}"]`);
-        const tr = document.querySelector(`tr[data-row-id="${id}"]`);
-        const hasValue = !!String(sel.value || "").trim();
-
-        if (pick) pick.checked = hasValue;
-        if (tr) tr.classList.toggle("review-row-selected", hasValue);
+    document.querySelectorAll(".reviewPick").forEach(ck => {
+      ck.addEventListener("change", () => {
+        const tr = ck.closest("tr");
+        if (tr) tr.classList.toggle("review-row-selected", ck.checked);
       });
     });
 
-    document.querySelectorAll(".reviewPick").forEach(ck => {
-      ck.addEventListener("change", () => {
-        const id = ck.dataset.id;
-        const tr = document.querySelector(`tr[data-row-id="${id}"]`);
-        if (tr) tr.classList.toggle("review-row-selected", ck.checked);
+    document.querySelectorAll(".reviewDataRow").forEach(tr => {
+      tr.addEventListener("click", (e) => {
+        if (
+          e.target.closest("a") ||
+          e.target.closest("input") ||
+          e.target.closest("select") ||
+          e.target.closest("button")
+        ) return;
+
+        const ck = tr.querySelector(".reviewPick");
+        if (!ck) return;
+
+        ck.checked = !ck.checked;
+        tr.classList.toggle("review-row-selected", ck.checked);
       });
     });
 
@@ -645,7 +648,7 @@ async function renderReviewRowsFromApi() {
         const picked = [...document.querySelectorAll(".reviewPick:checked")];
 
         if (!picked.length) {
-          alert("請先勾選要處理的列。");
+          alert("請先點選要處理的列。");
           return;
         }
 
