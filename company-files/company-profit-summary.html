@@ -116,6 +116,77 @@
       background:#fff;
       box-shadow:0 8px 20px rgba(15,23,42,.04);
     }
+    .month-pills{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-top:12px;
+}
+
+.month-pill{
+  width:auto;
+  min-width:92px;
+  border:1px solid #cfe0ff;
+  background:#fff;
+  color:#0f172a;
+  border-radius:999px;
+  padding:10px 16px;
+  font-weight:800;
+  cursor:pointer;
+}
+
+.month-pill.is-active{
+  background:linear-gradient(90deg,#1e90ff,#22d3ee);
+  color:#fff;
+  border-color:transparent;
+}
+
+.expense-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:14px;
+  margin-top:16px;
+}
+
+.expense-card{
+  width:100%;
+  text-align:left;
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:16px;
+  background:#fff;
+  cursor:pointer;
+}
+
+.expense-card:hover{
+  border-color:#93c5fd;
+  box-shadow:0 8px 20px rgba(30,144,255,.12);
+}
+
+.expense-card .title{
+  font-size:14px;
+  font-weight:900;
+  color:#0f172a;
+  margin-bottom:8px;
+}
+
+.expense-card .amount{
+  font-size:18px;
+  font-weight:900;
+  color:#0f3f8c;
+}
+
+.detail-table{
+  width:100%;
+  min-width:900px;
+  border-collapse:collapse;
+}
+
+@media (max-width: 900px){
+  .expense-grid{
+    grid-template-columns:1fr;
+  }
+}
     .summary-card h3{
       margin:0 0 10px;
       font-size:16px;
@@ -313,39 +384,19 @@
         <span class="tag">先查月份</span>
       </div>
 
-      <div class="grid">
-        <div>
-          <label>月份</label>
-          <select id="filterMonth"></select>
-        </div>
-        <div>
-          <label>確認入公司帳</label>
-          <select id="filterConfirmed">
-            <option value="">全部</option>
-            <option value="yes">已確認</option>
-            <option value="no">未確認</option>
-          </select>
-        </div>
-        <div>
-          <label>轉房貸_用結餘</label>
-          <select id="filterMortgage">
-            <option value="">全部</option>
-            <option value="yes">有勾選</option>
-            <option value="no">未勾選</option>
-          </select>
-        </div>
-        <div>
-          <label>關鍵字</label>
-          <input id="filterKeyword" placeholder="搜尋備註 / 月份" />
-        </div>
-      </div>
+     <input type="hidden" id="filterMonth" value="">
+<input type="hidden" id="filterConfirmed" value="">
+<input type="hidden" id="filterMortgage" value="">
+<input type="hidden" id="filterKeyword" value="">
 
-      <div class="toolbar">
-        <button class="btn" type="button" id="btnFilter">查詢</button>
-        <button class="btn secondary" type="button" id="btnResetFilter">清除條件</button>
-      </div>
+<div id="monthPills" class="month-pills"></div>
 
-      <div class="msg" id="filterMsg"></div>
+<div class="toolbar">
+  <button class="btn" type="button" id="btnFilter">重新整理</button>
+  <button class="btn secondary" type="button" id="btnResetFilter">回到最新月份</button>
+</div>
+
+<div class="msg" id="filterMsg"></div>
     </div>
 
     <div class="card">
@@ -354,6 +405,7 @@
         <span class="tag" id="currentMonthTag">-</span>
       </div>
       <div class="summary-grid" id="summaryGrid"></div>
+<div id="expenseCards" class="expense-grid"></div>
     </div>
 
     <div class="card">
@@ -367,7 +419,6 @@
           <thead>
             <tr>
               <th>月份</th>
-              <th>總資產_自動</th>
               <th>確認入公司帳</th>
               <th>結餘</th>
               <th>轉房貸_用結餘</th>
@@ -391,24 +442,32 @@
       </div>
     </div>
 
-    <div class="card">
-      <div class="split-head">
-        <h2 style="margin:0;">4. 來源明細區</h2>
-        <span class="tag">先看來源筆數</span>
-      </div>
+  <div class="card">
+  <div class="split-head">
+    <h2 style="margin:0;">4. 支出來源明細</h2>
+    <span class="tag" id="expenseDetailTag">請先點選上方現金支出項目</span>
+  </div>
 
-      <div class="grid-2">
-        <div class="source-box">
-          <h3>連結來源</h3>
-          <div class="source-list" id="sourceList"></div>
-        </div>
-
-        <div class="source-box">
-          <h3>補充狀態</h3>
-          <div class="source-list" id="statusList"></div>
-        </div>
-      </div>
-    </div>
+  <div class="table-wrap">
+    <table class="detail-table">
+      <thead>
+        <tr>
+          <th>日期</th>
+          <th>分類</th>
+          <th>項目 / 備註</th>
+          <th>金額</th>
+          <th>核對</th>
+          <th>簽收</th>
+        </tr>
+      </thead>
+      <tbody id="expenseDetailRows">
+        <tr>
+          <td colspan="6" class="empty">請先點選上方的現金支出項目。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
 
     <div class="card">
       <div class="split-head">
@@ -426,7 +485,8 @@
     location.href = "/company-files/company-index.html";
   }
 
-  const API_LIST = "https://api.murain.tw/op/company/profit-summary/list";
+ const API_LIST = "https://api.murain.tw/op/company/profit-summary/list";
+const API_CASH_LIST = "https://api.murain.tw/op/company/cash-expense/list";
 
   const $ = (id) => document.getElementById(id);
   let allRows = [];
@@ -453,14 +513,26 @@
     return data;
   }
 
-  function renderMonthOptions(rows, keepValue = "") {
-    const sel = $("filterMonth");
-    const months = [...new Set((rows || []).map(r => String(r.month || "").trim()).filter(Boolean))];
+  function renderMonthButtons(rows, keepValue = "") {
+  const months = [...new Set((rows || [])
+    .map(r => String(r.month || "").trim())
+    .filter(Boolean)
+  )].sort((a, b) => String(b).localeCompare(String(a)));
 
-    sel.innerHTML = `<option value="">全部</option>` + months.map(m =>
-      `<option value="${m}" ${m === keepValue ? "selected" : ""}>${m}</option>`
-    ).join("");
+  if (!keepValue && months.length) {
+    keepValue = months[0];
   }
+
+  $("filterMonth").value = keepValue || "";
+
+  $("monthPills").innerHTML = months.length ? months.map(m => `
+    <button
+      type="button"
+      class="month-pill ${m === keepValue ? "is-active" : ""}"
+      data-month="${m}"
+    >${m}</button>
+  `).join("") : `<div class="empty">目前沒有月份資料。</div>`;
+}
 
   function getFilteredRows() {
     const month = $("filterMonth").value.trim();
@@ -530,12 +602,127 @@
       </div>
     `;
   }
+    const EXPENSE_ITEMS = [
+  { key:"monthlyExpense", title:"每月開銷支出費用", clickable:false },
+  { key:"cardCompanyExpense", title:"信用卡公司支出", clickable:false },
+  { key:"cardSisterExpense", title:"信用卡-妹妹個人支出", clickable:false },
+
+  {
+    key:"cashCompanyLumi",
+    title:"現金-公司支出 [ LUMI ]",
+    clickable:true,
+    categories:["現金-公司支出 [ LUMI ]", "現金-公司支出[LUMI]", "公司支出 [ LUMI ]", "公司支出[LUMI]"]
+  },
+  {
+    key:"cashBorrowSister",
+    title:"現金-借支 [ 妹妹 ]",
+    clickable:true,
+    categories:["現金-借支 [ 妹妹 ]", "現金-借支[妹妹]", "借支 [ 妹妹 ]", "借支[妹妹]"]
+  },
+  {
+    key:"cashCompanySister",
+    title:"現金-公司支出 [ 妹妹 ]",
+    clickable:true,
+    categories:["現金-公司支出 [ 妹妹 ]", "現金-公司支出[妹妹]", "公司支出 [ 妹妹 ]", "公司支出[妹妹]"]
+  },
+  {
+    key:"cashCompanyShippingSister",
+    title:"現金-公司運費 [ 妹妹 ]",
+    clickable:true,
+    categories:["現金-公司運費 [ 妹妹 ]", "現金-公司運費[妹妹]", "公司運費 [ 妹妹 ]", "公司運費[妹妹]"]
+  },
+
+  { key:"paySisterCompanyExpense", title:"支付妹妹公司費用", clickable:false },
+  { key:"sisterMortgage", title:"妹妹白河農會房貸", clickable:false }
+];
+
+function renderExpenseCards(row) {
+  if (!row) {
+    $("expenseCards").innerHTML = "";
+    return;
+  }
+
+  $("expenseCards").innerHTML = EXPENSE_ITEMS.map((it, idx) => `
+    <button
+      type="button"
+      class="expense-card"
+      data-expense-idx="${idx}"
+    >
+      <div class="title">${it.title}${it.clickable ? "｜點我看明細" : ""}</div>
+      <div class="amount">${money(row[it.key])}</div>
+    </button>
+  `).join("");
+}
+
+function sameCategory(a, b) {
+  const clean = (s) => String(s || "").replace(/\s/g, "").trim();
+  return clean(a) === clean(b);
+}
+
+function renderExpenseDetailRows(items = []) {
+  $("expenseDetailRows").innerHTML = items.length ? items.map(it => `
+    <tr>
+      <td>${it.date || ""}</td>
+      <td>${it.category || ""}</td>
+      <td>${it.detail || it.note || ""}</td>
+      <td>${money(it.amount)}</td>
+      <td>${it.checked ? "已核對" : "未核對"}</td>
+      <td>${it.signed ? "已簽收" : "未簽收"}</td>
+    </tr>
+  `).join("") : `
+    <tr>
+      <td colspan="6" class="empty">這個月份沒有明細。</td>
+    </tr>
+  `;
+}
+
+async function openExpenseDetail(idx) {
+  const it = EXPENSE_ITEMS[Number(idx)];
+  const month = $("filterMonth").value.trim();
+
+  if (!it || !month) {
+    $("expenseDetailRows").innerHTML = `
+      <tr><td colspan="6" class="empty">請先選月份。</td></tr>
+    `;
+    return;
+  }
+
+  if (!it.clickable) {
+    $("expenseDetailTag").textContent = `${it.title}：目前只顯示總額`;
+    $("expenseDetailRows").innerHTML = `
+      <tr><td colspan="6" class="empty">這個項目目前只顯示總額，沒有展開明細。</td></tr>
+    `;
+    return;
+  }
+
+  $("expenseDetailTag").textContent = `${month}｜${it.title}`;
+  $("expenseDetailRows").innerHTML = `
+    <tr><td colspan="6" class="empty">載入明細中...</td></tr>
+  `;
+
+  try {
+    const data = await apiGetWithQuery(API_CASH_LIST, {
+      month,
+      max: 500
+    });
+
+    const all = Array.isArray(data.rows) ? data.rows : [];
+    const cats = Array.isArray(it.categories) ? it.categories : [];
+
+    const rows = all.filter(r => cats.some(c => sameCategory(r.category, c)));
+
+    renderExpenseDetailRows(rows);
+  } catch (err) {
+    $("expenseDetailRows").innerHTML = `
+      <tr><td colspan="6" class="empty">❌ ${err.message || err}</td></tr>
+    `;
+  }
+}
 
   function renderDetailRows(list) {
     $("detailRows").innerHTML = list.length ? list.map(r => `
       <tr>
         <td>${r.month || ""}</td>
-        <td>${money(r.totalAsset)}</td>
         <td>${r.confirmed ? "✓" : ""}</td>
         <td>${money(r.balance)}</td>
         <td>${r.useBalanceForMortgage ? "✓" : ""}</td>
@@ -553,7 +740,7 @@
         <td>${money(r.paySisterCompanyExpense)}</td>
         <td>${money(r.sisterMortgage)}</td>
       </tr>
-    `).join("") : `<tr><td colspan="18" class="empty">目前沒有資料。</td></tr>`;
+    `).join("") : `<tr><td colspan="17" class="empty">目前沒有資料。</td></tr>`;
   }
 
   function renderSources(row) {
@@ -599,9 +786,14 @@
     const filtered = getFilteredRows();
     const current = filtered[0] || null;
 
-    renderSummary(current);
-    renderDetailRows(filtered);
-    renderSources(current);
+   renderSummary(current);
+renderExpenseCards(current);
+renderDetailRows(filtered);
+
+$("expenseDetailTag").textContent = "請先點選上方現金支出項目";
+$("expenseDetailRows").innerHTML = `
+  <tr><td colspan="6" class="empty">請先點選上方的現金支出項目。</td></tr>
+`;
 
     $("filterMsg").textContent = filtered.length ? `✅ 查到 ${filtered.length} 筆` : "查無資料。";
     $("filterMsg").className = filtered.length ? "msg ok" : "msg err";
@@ -614,30 +806,48 @@
     try {
       const data = await apiGetWithQuery(API_LIST, { max: 200 });
       allRows = Array.isArray(data.rows) ? data.rows : [];
-      renderMonthOptions(allRows, $("filterMonth").value);
-      renderAll();
+      renderMonthButtons(allRows, $("filterMonth").value);
+renderAll();
     } catch (err) {
       $("filterMsg").textContent = `❌ ${err.message || err}`;
       $("filterMsg").className = "msg err";
       $("summaryGrid").innerHTML = `<div class="empty">❌ ${err.message || err}</div>`;
-      $("detailRows").innerHTML = `<tr><td colspan="18" class="empty">❌ ${err.message || err}</td></tr>`;
-      $("sourceList").innerHTML = `<div class="empty">❌ ${err.message || err}</div>`;
-      $("statusList").innerHTML = `<div class="empty">❌ ${err.message || err}</div>`;
-      $("noteBox").textContent = "";
+      $("detailRows").innerHTML = `<tr><td colspan="17" class="empty">❌ ${err.message || err}</td></tr>`;
+$("expenseCards").innerHTML = "";
+$("expenseDetailRows").innerHTML = `<tr><td colspan="6" class="empty">❌ ${err.message || err}</td></tr>`;
+$("expenseDetailTag").textContent = "讀取失敗";
+$("noteBox").textContent = "";
     }
   }
 
-  $("btnFilter").addEventListener("click", renderAll);
+ $("btnFilter").addEventListener("click", loadAllRows);
 
-  $("btnResetFilter").addEventListener("click", () => {
-    $("filterMonth").value = "";
-    $("filterConfirmed").value = "";
-    $("filterMortgage").value = "";
-    $("filterKeyword").value = "";
+$("btnResetFilter").addEventListener("click", () => {
+  $("filterMonth").value = "";
+  $("filterConfirmed").value = "";
+  $("filterMortgage").value = "";
+  $("filterKeyword").value = "";
+
+  renderMonthButtons(allRows, "");
+  renderAll();
+});
+
+document.addEventListener("click", (e) => {
+  const monthBtn = e.target.closest("[data-month]");
+  if (monthBtn) {
+    $("filterMonth").value = monthBtn.dataset.month || "";
+    renderMonthButtons(allRows, $("filterMonth").value);
     renderAll();
-  });
+    return;
+  }
 
-  loadAllRows();
+  const expenseBtn = e.target.closest("[data-expense-idx]");
+  if (expenseBtn) {
+    openExpenseDetail(expenseBtn.dataset.expenseIdx);
+  }
+});
+
+loadAllRows();
 </script>
 </body>
 </html>
