@@ -90,6 +90,21 @@
     .stat.gold .num{color:#9b6b36}
     .stat.blue .num{color:var(--blue)}
 
+
+
+    .overview-grid{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:12px}
+    .overview-card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,#fff,#fff8ef);padding:14px;box-shadow:0 10px 24px rgba(80,55,35,.06)}
+    .overview-card .top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:10px}
+    .overview-card h3{margin:0;font-size:16px;letter-spacing:.03em;color:#3f342c}
+    .overview-card .badge{display:inline-flex;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:900;background:#efe7dc;color:#7a6045;white-space:nowrap}
+    .overview-card .badge.ok{background:#e9f8ef;color:#287c5b}
+    .overview-card .badge.warn{background:#fff2d8;color:#9b6b15}
+    .overview-card .big{font-size:24px;font-weight:950;color:#9b6b36;margin:8px 0 10px}
+    .overview-card .kv{display:grid;gap:6px;font-size:13px;color:#6c5b4e}
+    .overview-card .kv div{display:flex;justify-content:space-between;gap:12px;border-top:1px dashed #eadfd1;padding-top:6px}
+    .overview-card .kv strong{color:#3f342c;white-space:nowrap}
+    .overview-card button{margin-top:12px;width:100%;box-shadow:none}
+
     .formula-box{
       border:1px solid #eadfd1;background:#fffaf4;border-radius:16px;padding:12px 14px;
       font-size:13px;color:#6c5b4e;line-height:1.7;margin-top:12px;
@@ -123,9 +138,9 @@
     .footer-note{font-size:12px;color:var(--muted);line-height:1.8;margin-top:12px}
     .mini{font-size:12px;color:var(--muted);line-height:1.55;margin-top:6px;}
 
-    @media (max-width:1160px){.summary{grid-template-columns:repeat(3,minmax(0,1fr));}.filters{grid-template-columns:repeat(3,minmax(0,1fr));}.filters.four{grid-template-columns:repeat(2,minmax(0,1fr));}}
+    @media (max-width:1160px){.summary{grid-template-columns:repeat(3,minmax(0,1fr));}.overview-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.filters{grid-template-columns:repeat(3,minmax(0,1fr));}.filters.four{grid-template-columns:repeat(2,minmax(0,1fr));}}
     @media (max-width:860px){.hero{display:block}.hintbox{margin-top:12px}.search{min-width:100%}.tools{width:100%}.page{padding:14px 10px 40px}.topbar{padding:14px 12px 10px}.page-tab,.sub-tab{font-size:13px;min-height:36px;padding:0 12px;}}
-    @media (max-width:620px){.filters,.filters.four,.summary{grid-template-columns:1fr}.actions button{width:100%}.stat .num{font-size:21px}}
+    @media (max-width:620px){.filters,.filters.four,.summary,.overview-grid{grid-template-columns:1fr}.actions button{width:100%}.stat .num{font-size:21px}}
   </style>
 </head>
 <body>
@@ -164,6 +179,22 @@
         本次應核銷＝實際領回金額＋手續費／扣款。<br>
         領後帳上餘額＝留在賣貨便帳號裡、下次還要繼續核對的金額。<br>
         核對差額 = 待核銷總額 - 實際領回 - 手續費 - 領後帳上餘額。
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="list-head">
+        <h2>賣貨便帳號總覽</h2>
+        <div class="tools">
+          <button class="secondary" id="btnRefreshOverview" type="button">重新整理總覽</button>
+        </div>
+      </div>
+      <div id="accountOverview" class="overview-grid">
+        <div class="empty-state">請先輸入 OP_KEY 並按「載入賣貨便資料」。</div>
+      </div>
+      <div class="footer-note">
+        「系統待核銷」＝已取貨且尚未核銷完的金額，這是用來判斷哪個賣貨便帳號可能有錢可領的預估值。
+        「上次登記帳上餘額」＝你上一次儲存核銷時輸入的領後餘額；若要多人、多電腦都準確保留，後端需要另外把每次領款批次寫進 Airtable。
       </div>
     </section>
 
@@ -341,6 +372,30 @@
       loading: false
     };
 
+    const ACCOUNT_LEDGER_KEY = "MURAIN_SHIP711_ACCOUNT_LEDGER_V1";
+
+    function readAccountLedger() {
+      try {
+        const raw = localStorage.getItem(ACCOUNT_LEDGER_KEY);
+        const data = raw ? JSON.parse(raw) : {};
+        return data && typeof data === "object" ? data : {};
+      } catch {
+        return {};
+      }
+    }
+
+    function writeAccountLedger(account, info = {}) {
+      const name = String(account || "").trim();
+      if (!name) return;
+      const data = readAccountLedger();
+      data[name] = {
+        ...(data[name] || {}),
+        ...info,
+        updatedAt: new Date().toISOString()
+      };
+      localStorage.setItem(ACCOUNT_LEDGER_KEY, JSON.stringify(data));
+    }
+
     const FIELD_NAMES = {
       id: ["id", "record_id", "recId"],
       orderId: ["order_id", "OrderId", "訂單編號", "訂單ID"],
@@ -484,6 +539,92 @@
       if (current && list.includes(current)) select.value = current;
     }
 
+    function rowsForAccountOverview() {
+      const from = String($("monthFrom").value || "").trim();
+      const to = String($("monthTo").value || "").trim();
+      return state.rows.filter(r => {
+        if (!r.account) return false;
+        if (from && (!r.month || r.month < from)) return false;
+        if (to && (!r.month || r.month > to)) return false;
+        return logicalStatus(r) !== "已核銷" && r.remain > 0;
+      });
+    }
+
+    function accountOverviewRows() {
+      const ledger = readAccountLedger();
+      const map = new Map();
+
+      rowsForAccountOverview().forEach(r => {
+        const name = r.account || "未填帳號";
+        if (!map.has(name)) {
+          map.set(name, { account:name, count:0, systemRemain:0, firstMonth:"", lastMonth:"" });
+        }
+        const item = map.get(name);
+        item.count += 1;
+        item.systemRemain += num(r.remain);
+        if (r.month) {
+          if (!item.firstMonth || r.month < item.firstMonth) item.firstMonth = r.month;
+          if (!item.lastMonth || r.month > item.lastMonth) item.lastMonth = r.month;
+        }
+      });
+
+      Object.entries(ledger).forEach(([name, info]) => {
+        if (!map.has(name)) {
+          map.set(name, { account:name, count:0, systemRemain:0, firstMonth:"", lastMonth:"" });
+        }
+        map.get(name).ledger = info || {};
+      });
+
+      return [...map.values()].sort((a, b) => num(b.systemRemain) - num(a.systemRemain));
+    }
+
+    function renderAccountOverview() {
+      const box = $("accountOverview");
+      if (!box) return;
+      const rows = accountOverviewRows();
+      if (!rows.length) {
+        box.innerHTML = `<div class="empty-state">目前沒有待核銷的賣貨便帳號資料。</div>`;
+        return;
+      }
+
+      box.innerHTML = rows.map(r => {
+        const ledger = r.ledger || {};
+        const lastBalance = num(ledger.balanceAfter);
+        const hasLast = ledger.balanceAfter !== undefined && ledger.balanceAfter !== null && String(ledger.balanceAfter) !== "";
+        const estimatedNew = Math.max(0, num(r.systemRemain) - lastBalance);
+        const monthRange = [r.firstMonth, r.lastMonth].filter(Boolean).join(" ～ ") || "—";
+        const badgeClass = r.systemRemain > 0 ? "ok" : "";
+        const badgeText = r.systemRemain > 0 ? "可核對" : "無待核銷";
+        return `
+          <div class="overview-card">
+            <div class="top">
+              <h3>${escapeHtml(r.account)}</h3>
+              <span class="badge ${badgeClass}">${badgeText}</span>
+            </div>
+            <div class="big">${money(r.systemRemain)}</div>
+            <div class="kv">
+              <div><span>待核銷筆數</span><strong>${r.count} 筆</strong></div>
+              <div><span>月份範圍</span><strong>${escapeHtml(monthRange)}</strong></div>
+              <div><span>上次登記帳上餘額</span><strong>${hasLast ? money(lastBalance) : "未登記"}</strong></div>
+              <div><span>預估新增待核銷</span><strong>${hasLast ? money(estimatedNew) : "—"}</strong></div>
+              <div><span>上次領款日</span><strong>${escapeHtml(ledger.pickupDate || "—")}</strong></div>
+            </div>
+            <button class="secondary account-apply" type="button" data-account="${escapeHtml(r.account)}">套用這個帳號</button>
+          </div>`;
+      }).join("");
+
+      document.querySelectorAll(".account-apply").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const acc = btn.dataset.account || "";
+          $("accountName").value = acc;
+          state.selected.clear();
+          renderTable();
+          showNotice(`已套用賣貨便帳號：${escapeHtml(acc)}。再輸入實際領回、手續費與領後帳上餘額即可核對。`, "ok");
+          window.scrollTo({ top: document.querySelector("#accountName").getBoundingClientRect().top + window.scrollY - 110, behavior:"smooth" });
+        });
+      });
+    }
+
     function filteredRows() {
       const account = String($("accountName").value || "").trim();
       const from = String($("monthFrom").value || "").trim();
@@ -529,6 +670,7 @@
       if (!rows.length) {
         tb.innerHTML = `<tr><td colspan="10" class="empty-state">目前沒有符合條件的待核銷資料。</td></tr>`;
         updateSummary();
+        renderAccountOverview();
         return;
       }
 
@@ -553,6 +695,7 @@
       }).join("");
       bindRowEvents();
       updateSummary();
+      renderAccountOverview();
     }
 
     function bindRowEvents() {
@@ -794,7 +937,18 @@
           items
         });
         localStorage.setItem("MURAIN_PICKER_NAME", pickerName);
-        showNotice(`儲存完成：${escapeHtml(data.message || "本次核銷已寫入")}`, "ok");
+        writeAccountLedger(account, {
+          balanceAfter: t.balanceAfter,
+          pickupDate,
+          pickerName,
+          actualAmount: t.actual,
+          feeAmount: t.fee,
+          allocatedAmount: t.selected,
+          monthFrom: $("monthFrom").value,
+          monthTo: $("monthTo").value,
+          note: String($("note").value || "").trim()
+        });
+        showNotice(`儲存完成：${escapeHtml(data.message || "本次核銷已寫入")}；已更新本機帳號總覽的領後帳上餘額。`, "ok");
         await loadList();
       } catch (err) {
         showNotice(`儲存失敗：${escapeHtml(err.message)}<br>若出現 UNKNOWN_FIELD_NAME，代表後端寫入的 Airtable 欄位名稱要再對齊。`, "err");
@@ -836,6 +990,7 @@
       $("btnClear").addEventListener("click", clearSelected);
       $("btnSave").addEventListener("click", savePickup);
       $("btnCopy").addEventListener("click", copySelected);
+      $("btnRefreshOverview").addEventListener("click", renderAccountOverview);
       $("btnResetKey").addEventListener("click", () => {
         localStorage.removeItem("MURAIN_OP_KEY");
         $("opKey").value = "";
