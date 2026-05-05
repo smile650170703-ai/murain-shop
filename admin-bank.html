@@ -164,10 +164,6 @@
   border:1px solid rgba(148,163,184,.3);
   background:rgba(15,23,42,.95);
 }
-#vendorMonthBox{
-  display:none !important;
-}
-
 #vendor_month_summary{
   margin-top:8px;
   line-height:1.6;
@@ -2563,15 +2559,18 @@ async function loadOrders(filter='all', extra = {}){
       throw new Error(j.error || 'consign_list_failed');
     }
 
-    currentConsignRows = Array.isArray(j.items) ? j.items : [];
+    currentConsignRows = (j.items || []).filter(row => {
+  const st = String(row.status || '').trim().toLowerCase();
+  return st !== 'settled';
+});
     renderConsignList();
 updateCurrentSubTabCount(currentConsignRows.length);
 setTopFilterActive('consign_settlement');
 
     if (msgEl) {
       msgEl.textContent = currentConsignRows.length
-  ? `顯示全部寄賣資料，共 ${currentConsignRows.length} 筆。`
-  : '目前沒有寄賣售出資料。';
+        ? `僅顯示寄賣待處理資料，共 ${currentConsignRows.length} 筆。`
+        : '目前沒有待處理的寄賣售出資料。';
     }
   }catch(e){
     console.error(e);
@@ -2608,92 +2607,36 @@ function displayConsignMethod(v){
 }
 function renderConsignList(){
   const listEl = $('#orderList');
-
   if (!currentConsignRows.length){
-    listEl.innerHTML = '<div class="muted">目前沒有寄賣售出資料。</div>';
+    listEl.innerHTML = '<div class="muted">目前沒有待處理的寄賣售出資料。</div>';
     return;
   }
 
-  const statusBadgeClass = (status) => {
-    const st = String(status || '').trim().toLowerCase();
-    if (st === 'settled') return 'green';
-    if (st === 'pending_credit') return 'blue';
-    if (st === 'pending_bank') return 'green';
-    if (st === 'waiting_choice') return 'yellow';
-    return 'yellow';
-  };
-
-  const methodBadgeClass = (method) => {
-    const m = String(method || '').trim().toLowerCase();
-    if (m === 'store_credit') return 'blue';
-    if (m === 'bank_transfer') return 'green';
-    return 'yellow';
-  };
-
   listEl.innerHTML = currentConsignRows.map(row => {
-    const method = String(row.method || '').trim();
-    const status = String(row.status || '').trim();
-    const doneAt =
-      row.doneAt ||
-      row.bankDoneAt ||
-      row.creditDoneAt ||
-      row.creditGrantedAt ||
-      '';
-
-    const doneText = doneAt ? fmtAdminDateTime(doneAt) : '';
-    const actualAmount =
-      method === 'bank_transfer'
-        ? Number(row.bankAmount || 0)
-        : method === 'store_credit'
-          ? Number(row.creditAmount || 0)
-          : 0;
-
     return `
-      <div class="order-row" data-id="${escapeHtml(row.orderItemId || '')}">
+      <div class="order-row" data-id="${row.orderItemId}">
         <div class="ord-top">
           <div>
-            <div class="ord-id">
-              ${escapeHtml(row.orderId || '')}
-              ${row.sku ? '｜' + escapeHtml(row.sku) : ''}
-            </div>
-            <div class="tag-small">
-              ${escapeHtml(row.name || '')}
-            </div>
+            <div class="ord-id">${escapeHtml(row.orderId || '')}｜${escapeHtml(row.sku || '')}</div>
+            <div class="tag-small">${escapeHtml(row.name || '')}</div>
           </div>
 
           <div class="ord-right">
             <div class="ord-amount">${money(row.saleAmount || 0)}</div>
-            <div class="tag-small">售出金額</div>
+<div class="tag-small">${escapeHtml(displayConsignMethod(row.method))}</div>
           </div>
         </div>
 
         <div class="ord-sub">
-          寄賣人：${escapeHtml(row.consignorName || '-')}
-        </div>
-
-        <div class="ord-sub">
-          匯款：${money(row.bankAmount || 0)}
-          ｜購物金：${money(row.creditAmount || 0)}
-          ${actualAmount ? `｜本次給付：${money(actualAmount)}` : ''}
-        </div>
-
-        <div class="ord-sub">
-          ${doneText ? `完成時間：${escapeHtml(doneText)}` : '完成時間：尚未完成'}
+          ${escapeHtml(row.consignorName || '')}
+          ｜匯款 ${money(row.bankAmount || 0)}
+          ｜購物金 ${money(row.creditAmount || 0)}
         </div>
 
         <div class="badges">
-          <span class="badge ${statusBadgeClass(status)}">
-            ${escapeHtml(displayConsignStatus(status))}
-          </span>
-
-          <span class="badge ${methodBadgeClass(method)}">
-            ${escapeHtml(displayConsignMethod(method))}
-          </span>
-
-          <span class="badge blue">
-            ${escapeHtml(displayConsignNotifyStatus(row.notifyStatus || 'pending'))}
-          </span>
-        </div>
+<span class="badge yellow">${escapeHtml(displayConsignStatus(row.status))}</span>
+<span class="badge blue">${escapeHtml(displayConsignNotifyStatus(row.notifyStatus || 'pending'))}</span>
+</div>
       </div>
     `;
   }).join('');
@@ -2702,14 +2645,9 @@ function renderConsignList(){
     rowEl.addEventListener('click', () => {
       $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
       rowEl.classList.add('active');
-
-      const id = rowEl.getAttribute('data-id') || '';
-      const rec = currentConsignRows.find(x => String(x.orderItemId || '') === String(id));
-
-      if (rec) {
-        currentConsignRecord = rec;
-        renderConsignDetail(rec);
-      }
+      const id = rowEl.getAttribute('data-id');
+      const rec = currentConsignRows.find(x => String(x.orderItemId) === String(id));
+      if (rec) renderConsignDetail(rec);
     });
   });
 }
