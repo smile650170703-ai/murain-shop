@@ -45,19 +45,6 @@
   .ord-id{font-weight:600}
   .ord-amount{font-weight:600}
   .ord-sub{font-size:12px;color:#94a3b8;margin-top:3px}
- .order-items-preview,
-.order-note-preview{
-  white-space:pre-wrap;
-  line-height:1.45;
-}
-
-.order-items-preview{
-  color:#cbd5e1;
-}
-
-.order-note-preview{
-  color:#facc15;
-}
   .badges{display:flex;flex-wrap:wrap;gap:4px;font-size:11px;margin-top:4px}
   .badge{padding:2px 7px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:rgba(15,23,42,1)}
   .badge.green{border-color:#22c55e;color:#bbf7d0;background:rgba(22,163,74,.2)}
@@ -182,10 +169,7 @@
   line-height:1.6;
   white-space:pre-wrap;
 }
-/* ✅ 隱藏右上角：賣貨便月份 2026年05月 區塊 */
-#vendorMonthBox{
-  display:none !important;
-}
+
 .pill.credit-red{
   border-color:#fca5a5;
   background:rgba(239,68,68,.12);
@@ -368,12 +352,20 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   border-color:#22d3ee;
   box-shadow:0 8px 20px rgba(34,211,238,.35);
 }
-/* ===== 賣貨便登記頁：保留右側完整訂單明細，只隱藏上方多餘按鈕 ===== */
+/* ===== 賣貨便登記頁：精簡畫面 ===== */
 body.pickup-clean-page .top-order-actions,
 body.pickup-clean-page .admin-sub-tabs .count-badge,
 body.pickup-clean-page #btnPrintSlipsRange,
 body.pickup-clean-page #btnExportShip,
-body.pickup-clean-page #btnExportZero{
+body.pickup-clean-page #btnExportZero,
+body.pickup-clean-page .retry-mini,
+body.pickup-clean-page #d_deposit_amount_ro,
+body.pickup-clean-page #d_deposit_last5_ro,
+body.pickup-clean-page #d_deposit_expire_at_ro,
+body.pickup-clean-page #d_hold_until_ro,
+body.pickup-clean-page #d_deposit_received,
+body.pickup-clean-page #d_pay_notice_sent,
+body.pickup-clean-page #d_internal_note{
   display:none !important;
 }
 
@@ -2675,7 +2667,7 @@ function renderConsignList(){
           ${escapeHtml(row.consignorName || '')}
           ｜匯款 ${money(row.bankAmount || 0)}
           ｜購物金 ${money(row.creditAmount || 0)}
-       </div>
+        </div>
 
         <div class="badges">
 <span class="badge yellow">${escapeHtml(displayConsignStatus(row.status))}</span>
@@ -3156,39 +3148,14 @@ const overdueTag = isBankPending
     const total   = money(a.net);
 
     const creditTag = a.credit > 0
-  ? `<div class="tag-small credit-red">購物金折抵 ${money(a.credit)}</div>`
-  : ``;
+      ? `<div class="tag-small credit-red">購物金折抵 ${money(a.credit)}</div>`
+      : ``;
 
-const last5Tag = last5Show
-  ? `<div class="tag-small">後五碼：${escapeHtml(last5Show)}</div>`
-  : ``;
+    const last5Tag = last5Show
+      ? `<div class="tag-small">後五碼：${escapeHtml(last5Show)}</div>`
+      : ``;
 
-/* ✅ 清單頁顯示商品詳細明細 */
-const itemsText = String(
-  f.items_text ||
-  f['商品明細'] ||
-  f.items ||
-  f.item_text ||
-  ''
-).trim();
-
-const itemsTag = itemsText
-  ? `<div class="ord-sub order-items-preview">商品明細：${escapeHtml(itemsText)}</div>`
-  : ``;
-
-/* ✅ 清單頁顯示客戶備註 */
-const noteText = String(
-  note ||
-  f.customer_note ||
-  f['客戶備註'] ||
-  ''
-).trim();
-
-const noteTag = noteText
-  ? `<div class="ord-sub order-note-preview">備註：${escapeHtml(noteText)}</div>`
-  : ``;
-
-const rowKey = f.order_id || rec.id || '';
+    const rowKey = f.order_id || rec.id || '';
     const checked = PRINT_SLIP_SELECTED.has(String(rowKey)) ? 'checked' : '';
 
     return `
@@ -3215,8 +3182,14 @@ const rowKey = f.order_id || rec.id || '';
 </div>
         </div>
 
-            <div class="ord-sub">${line2 || '&nbsp;'}</div>
-<div class="badges">
+        <div class="ord-sub">${line2 || '&nbsp;'}</div>
+        <div class="badges">
+  ${forfeitTag}
+  ${restockAlertTag}
+  ${pay_b}
+  ${ship_b}
+  ${overdueTag}
+</div>
       </div>
     `;
   }).join('');
@@ -3288,6 +3261,54 @@ const ship  = shipInfo.ship  || {};
 const store = ship.store     || {};
 const post  = ship.post      || {};
 const note  = shipInfo.note  || '';
+// ✅ 賣貨便登記頁：只顯示賣貨便需要的欄位
+// ✅ 只有「取貨登記」可以改；賣貨便名稱 / 物流單號 / 運費 TWD 都唯讀
+if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+  const vendorName = String(f['賣貨便名稱'] || '').trim();
+  const pickupReg  = String(f['取貨登記'] || '').trim();
+  const trackingNo = String(f.tracking_no || f.ship_tracking || '').trim();
+  const shipFee    = String(f.shipping_fee ?? f.ship_fee ?? '').trim();
+
+  dEl.innerHTML = `
+    <div class="section-title">賣貨便登記</div>
+
+    <div class="row mt-2">
+      <div>
+        <label>賣貨便名稱</label>
+        <input id="d_vendor_name" readonly value="${escapeHtml(vendorName)}">
+      </div>
+
+      <div>
+        <label>取貨登記</label>
+        <div class="pickup-wrap">
+          <input
+            id="d_pickup_reg"
+            value="${escapeHtml(pickupReg)}"
+            placeholder=""
+          />
+          <button type="button" class="btn-mini" id="btnSavePickupReg">存</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="detailMsg" class="tag-small mt-2"></div>
+
+    <div class="row mt-2">
+      <div>
+        <label>物流單號</label>
+        <input id="d_ship_tracking" readonly value="${escapeHtml(trackingNo)}">
+      </div>
+
+      <div>
+        <label>運費 TWD</label>
+        <input id="d_ship_fee" readonly value="${escapeHtml(shipFee)}">
+      </div>
+    </div>
+  `;
+
+  $('#btnSavePickupReg')?.addEventListener('click', savePickupRegOnly);
+  return;
+}
 
 const yufuPhoneOwner = String(
   f.yufu_phone_owner ||
