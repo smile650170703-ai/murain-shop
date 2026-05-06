@@ -500,7 +500,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
           ✅ 收款/審核通過+發LINE
         </button>
         <button class="btn-secondary" id="btnMarkZcFailTop" type="button">
-          ❌ 未通過+發LINE+重新結帳
+          🔁 取消原單＋發重新結帳
         </button>
        <button class="btn-secondary" id="btnDepositPayAndNoticeTop" type="button">
   ✅ 已收定金+發保留通知
@@ -3949,7 +3949,32 @@ if (btnTail) {
   if (btnDepNotice) btnDepNotice.addEventListener('click', depositReceivedAndNotify);
 
   const btnZcFail = $('#btnMarkZcFail');
-  if (btnZcFail) btnZcFail.addEventListener('click', ()=>confirmPay('zc_fail'));
+if (btnZcFail) {
+  btnZcFail.addEventListener('click', () => {
+    if (!currentRecord) {
+      alert('請先在左邊選一筆訂單');
+      return;
+    }
+
+    const f = currentRecord.fields || currentRecord || {};
+    const oid = String(f.order_id || '').trim();
+
+    if (isDepositForfeitOrder(f)) {
+      alert('這筆訂單已棄標／訂金已沒收，不能再發重新結帳。');
+      return;
+    }
+
+    if (!confirm(
+      `確定要取消原訂單 ${oid}，並發送重新結帳連結給客人嗎？\n\n` +
+      `此操作會補回庫存、釋放/退回購物金，並讓客人重新選付款方式。\n` +
+      `這不是棄標，不會列入黑名單。`
+    )) {
+      return;
+    }
+
+    confirmPay('retry_checkout');
+  });
+}
  // ✅ 已棄標／訂金沒收：上方危險按鈕全部隱藏，只保留「儲存資料」
 const isForfeitOrder = isDepositForfeitOrder(f);
 
@@ -3974,15 +3999,55 @@ if (isForfeitOrder) {
   // 只保留儲存資料，方便改內部備註
   if (btnSaveOnlyTop) btnSaveOnlyTop.style.display = '';
 } else {
+  const pm = String(f.payment_method || '').trim().toLowerCase();
+
+  const st = String(f.status || '').trim().toLowerCase();
+const shipStatus = String(f.ship_status || '').trim().toLowerCase();
+
+const ps = String(f.pay_status || '').trim().toLowerCase();
+
+const isRealPaidMethod =
+  pm.startsWith('paid_') ||
+  pm.startsWith('zero_card_') ||
+  pm.startsWith('yufu_inst_') ||
+  pm === 'aftee_direct' ||
+  pm === 'paid_aftee_direct' ||
+  pm === 'paid_af' ||
+  pm === 'bank_transfer' ||
+  pm === 'atm_full' ||
+  pm.startsWith('deposit_new_full') ||
+  pm.startsWith('deposit_old_full');
+
+const isRealPaid =
+  ps === 'paid_ok' ||
+  st === 'paid';
+
+const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+const cashPaidCount = Number(f.cash_inst_paid_count || f.cash_inst_paid_parts || 0) || 0;
+
+const hasReceivedDepositOrInstallment =
+  ps === 'deposit_ok' ||
+  cashStatus === 'active' ||
+  cashStatus === 'completed' ||
+  cashPaidCount > 0;
+
+const isFinalOrder =
+  st === 'shipped' ||
+  st === 'completed' ||
+  shipStatus === 'shipped' ||
+  (isRealPaid && isRealPaidMethod) ||
+  hasReceivedDepositOrInstallment;
+
+if (btnFailTop) {
+  btnFailTop.style.display = isFinalOrder ? 'none' : '';
+}
   if (btnSaveAndShipTop) btnSaveAndShipTop.style.display = '';
   if (btnConfirmPayTop) btnConfirmPayTop.style.display = '';
-  if (btnFailTop) btnFailTop.style.display = '';
   if (btnSendTailTop) btnSendTailTop.style.display = '';
   if (btnCancelTopForfeit) btnCancelTopForfeit.style.display = '';
   if (btnSaveOnlyTop) btnSaveOnlyTop.style.display = '';
 
   // ✅ 顯示/隱藏「完成面交收款」按鈕（只給 meetup_cash）
-  const pm = String(f.payment_method || '').trim().toLowerCase();
   if (btnMeetupDoneTop) {
     btnMeetupDoneTop.style.display = (pm === 'meetup_cash') ? '' : 'none';
   }
