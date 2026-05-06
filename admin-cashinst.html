@@ -495,7 +495,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
           ✅ 收款/審核通過+發LINE
         </button>
         <button class="btn-secondary" id="btnMarkZcFailTop" type="button">
-          ❌ 未通過+發LINE+重新結帳
+          🔁 取消原單＋發重新結帳
         </button>
        <button class="btn-secondary" id="btnDepositPayAndNoticeTop" type="button">
   ✅ 已收定金+發保留通知
@@ -3736,7 +3736,7 @@ ${isCashInstOrder ? `
   <button class="btn-primary" id="btnSaveAndShip">儲存資料+標記已出貨+發 LINE 通知</button>
   <button class="btn-secondary" id="btnDepositPayAndNotice">✅ 已收到訂金+發保留通知（自動勾勾）</button>
   <button class="btn-secondary" id="btnConfirmPayOk">✅ 確認已收款／審核通過 並 發 LINE</button>
-  <button class="btn-secondary" id="btnMarkZcFail">❌ 中租審核未通過 ＋ 發 LINE</button>
+  <button class="btn-secondary" id="btnMarkZcFail">🔁 取消原單＋發重新結帳</button>
   <button class="btn-secondary" id="btnSaveDetailOnly">📑 僅儲存資料（寫入 LINE，不改狀態）</button>
   <button class="btn small" id="btnSendTailLink">發尾款結帳鏈結 ＋ 發 LINE</button>
   <div id="detailMsg" class="tag-small mt-2"></div>
@@ -3951,15 +3951,56 @@ if (isForfeitOrder) {
   // 只保留儲存資料，方便改內部備註
   if (btnSaveOnlyTop) btnSaveOnlyTop.style.display = '';
 } else {
+  const pm = String(f.payment_method || '').trim().toLowerCase();
+
+  const st = String(f.status || '').trim().toLowerCase();
+  const shipStatus = String(f.ship_status || f.shipping_status || '').trim().toLowerCase();
+  const ps = String(f.pay_status || '').trim().toLowerCase();
+
+  const isRealPaidMethod =
+    pm.startsWith('paid_') ||
+    pm.startsWith('zero_card_') ||
+    pm.startsWith('yufu_inst_') ||
+    pm === 'aftee_direct' ||
+    pm === 'paid_aftee_direct' ||
+    pm === 'paid_af' ||
+    pm === 'bank_transfer' ||
+    pm === 'atm_full' ||
+    pm === 'meetup_cash' ||
+    pm.startsWith('deposit_new_full') ||
+    pm.startsWith('deposit_old_full');
+
+  const isRealPaid =
+    ps === 'paid_ok' ||
+    st === 'paid';
+
+  const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+  const cashPaidCount = Number(f.cash_inst_paid_count || f.cash_inst_paid_parts || 0) || 0;
+
+  const hasReceivedDepositOrInstallment =
+    ps === 'deposit_ok' ||
+    cashStatus === 'active' ||
+    cashStatus === 'completed' ||
+    cashPaidCount > 0;
+
+  const isFinalOrder =
+    st === 'shipped' ||
+    st === 'completed' ||
+    shipStatus === 'shipped' ||
+    (isRealPaid && isRealPaidMethod) ||
+    hasReceivedDepositOrInstallment;
+
+  if (btnFailTop) {
+    btnFailTop.style.display = isFinalOrder ? 'none' : '';
+  }
+
   if (btnSaveAndShipTop) btnSaveAndShipTop.style.display = '';
   if (btnConfirmPayTop) btnConfirmPayTop.style.display = '';
-  if (btnFailTop) btnFailTop.style.display = '';
   if (btnSendTailTop) btnSendTailTop.style.display = '';
   if (btnCancelTopForfeit) btnCancelTopForfeit.style.display = '';
   if (btnSaveOnlyTop) btnSaveOnlyTop.style.display = '';
 
   // ✅ 顯示/隱藏「完成面交收款」按鈕（只給 meetup_cash）
-  const pm = String(f.payment_method || '').trim().toLowerCase();
   if (btnMeetupDoneTop) {
     btnMeetupDoneTop.style.display = (pm === 'meetup_cash') ? '' : 'none';
   }
