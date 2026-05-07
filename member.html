@@ -1967,7 +1967,33 @@ const CREDITS_API = API_BASE + "/member/credits";
 const CONSIGN_API = API_BASE + "/member/consign";
 const MEMBER_INFO_API = API_BASE + "/line/member-info";
 const LIFF_ID     = "2008430261-EGZPg3Qp";
+// ✅ 官網會員中心 / 官網購物車共用的 LINE userId
+const SHARED_LINE_USER_ID_KEY = "murain_line_user_id";
 
+function getSharedLineUserId() {
+  try {
+    return String(localStorage.getItem(SHARED_LINE_USER_ID_KEY) || "").trim();
+  } catch (e) {
+    return "";
+  }
+}
+
+function setSharedLineUserId(uid) {
+  uid = String(uid || "").trim();
+  if (!uid) return;
+  try {
+    localStorage.setItem(SHARED_LINE_USER_ID_KEY, uid);
+  } catch (e) {}
+}
+
+function clearSharedLineUserId() {
+  try {
+    localStorage.removeItem(SHARED_LINE_USER_ID_KEY);
+    localStorage.removeItem("line_user_id");
+    localStorage.removeItem("LINE_USER_ID");
+    sessionStorage.removeItem(SHARED_LINE_USER_ID_KEY);
+  } catch (e) {}
+}
 function getBindReturnUrl() {
   try {
     return window.location.href;
@@ -2111,13 +2137,8 @@ if (logoutBtn) {
       console.error("[logout]", e);
     }
 
-    // ✅ 清掉前端記住的會員身分
-    try {
-      localStorage.removeItem("murain_line_user_id");
-      localStorage.removeItem("line_user_id");
-      localStorage.removeItem("LINE_USER_ID");
-      sessionStorage.removeItem("murain_line_user_id");
-    } catch (e) {}
+// ✅ 清掉前端記住的會員身分
+clearSharedLineUserId();
 
     // ✅ 清掉會員中心目前畫面資料
     try {
@@ -2140,7 +2161,7 @@ if (logoutBtn) {
       }
 
       if (orderList) orderList.innerHTML = "";
-      if (creditList) creditList.innerHTML = "";
+      if (creditsList) creditsList.innerHTML = "";
       if (consignList) consignList.innerHTML = "";
 
       showBindGate("login");
@@ -3657,44 +3678,107 @@ orders = normalizeOrdersWithTail(raw); // ✅ 列表只剩主單，每張主單�
 }
 
 async function initLiff() {
+  let profile = null;
+  let uid = "";
+
   if (!window.liff) {
-    infoMsg.textContent = "請從 LINE 官方帳號開啟";
-    infoMsg.style.display = "block";
-    return;
+    // ✅ 沒有 LIFF SDK 時，改用購物車存過的 userId
+    uid = getSharedLineUserId();
+
+    if (!uid) {
+      infoMsg.textContent = "請從 LINE 官方帳號開啟";
+      infoMsg.style.display = "block";
+      showBindGate("login");
+      return;
+    }
   }
 
   try {
-    await liff.init({ liffId: LIFF_ID });
+    if (window.liff) {
+      await liff.init({ liffId: LIFF_ID });
 
-    if (!liff.isLoggedIn()) {
+      if (liff.isLoggedIn()) {
+        profile = await liff.getProfile();
+        uid = String(profile.userId || "").trim();
+
+        if (uid) {
+          setSharedLineUserId(uid);
+        }
+      }
+    }
+
+    // ✅ 如果會員中心自己的 LIFF 沒登入，就吃購物車已存的 murain_line_user_id
+    if (!uid) {
+      uid = getSharedLineUserId();
+    }
+
+    // ✅ 真的完全沒有 userId，才顯示登入畫面
+    if (!uid) {
       showBindGate("login");
       return;
     }
 
-    const profile = await liff.getProfile();
-    currentUserId = profile.userId;
-    userName.textContent = profile.displayName || "貴賓";
+    currentUserId = uid;
 
-    if (profile.pictureUrl) {
-      defaultAvatar.style.display = "none";
-      userAvatarImg.style.display = "block";
-      userAvatarImg.src = profile.pictureUrl;
+    if (profile) {
+      userName.textContent = profile.displayName || "貴賓";
+
+      if (profile.pictureUrl) {
+        defaultAvatar.style.display = "none";
+        userAvatarImg.style.display = "block";
+        userAvatarImg.src = profile.pictureUrl;
+      } else {
+        defaultAvatar.style.display = "";
+        userAvatarImg.style.display = "none";
+      }
     } else {
+      // ✅ 從購物車共用 userId 進來時，先顯示讀取中，等等用 member-info 覆蓋
+      userName.textContent = "貴賓";
       defaultAvatar.style.display = "";
       userAvatarImg.style.display = "none";
     }
 
     statusText.textContent = "歡迎回來";
+    showMemberMainSections();
 
     const ok = await loadMemberInfo();
-    if (!ok) return;
 
-    loadOrders();
-    loadCredits();
+    if (!ok) {
+      // 如果這個 userId 已失效或沒有綁定，就不要一直當已登入
+      clearSharedLineUserId();
+      showBindGate("bind");
+      return;
+    }
+
+    await loadOrders();
+    await loadCredits();
+
   } catch (e) {
     console.error(e);
+
+    // ✅ LIFF 發生錯誤時，也嘗試用購物車共用 userId 進會員中心
+    uid = getSharedLineUserId();
+
+    if (uid) {
+      currentUserId = uid;
+      statusText.textContent = "歡迎回來";
+      showMemberMainSections();
+
+      const ok = await loadMemberInfo();
+      if (!ok) {
+        clearSharedLineUserId();
+        showBindGate("bind");
+        return;
+      }
+
+      await loadOrders();
+      await loadCredits();
+      return;
+    }
+
     infoMsg.textContent = "請從 LINE 官方帳號開啟";
     infoMsg.style.display = "block";
+    showBindGate("login");
   }
 }
 
