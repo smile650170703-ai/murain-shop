@@ -577,6 +577,66 @@ body{
   .wishlist-grid,
   .recent-grid{ gap:12px; row-gap:20px; }
 }
+  
+
+/* ===== 2026/05/07 修正版：更貼近參考圖 ===== */
+/* 1. 去除上方「我的最愛｜XUYUAN」橫條 */
+/* 2. 去除跑馬燈 */
+.wishlist-top-strip,
+.lux-marquee{
+  display:none !important;
+}
+
+/* 3. 有收藏商品時，不顯示「我的最愛商品 / 共幾件」那一排 */
+#wishlistSavedSection .wishlist-section-head{
+  display:none !important;
+}
+
+/* 讓收藏商品直接接在麵包屑下方，不要留太大空白 */
+.wishlist-section{
+  padding:16px 0 44px !important;
+}
+
+/* 商品卡資訊改成置中，並縮小上下空格 */
+.wish-info{
+  padding:10px 10px 6px !important;
+  text-align:center !important;
+}
+
+.wish-title{
+  min-height:0 !important;
+  margin:0 0 4px !important;
+  color:#4c3934 !important;
+  font-size:13px !important;
+  font-weight:400 !important;
+  line-height:1.35 !important;
+  letter-spacing:.02em !important;
+  text-align:center !important;
+}
+
+.wish-price{
+  margin:0 !important;
+  color:#765c54 !important;
+  font-size:14px !important;
+  line-height:1.25 !important;
+  text-align:center !important;
+}
+
+.wish-card-actions{
+  padding:8px 12px 12px !important;
+  gap:7px !important;
+}
+
+.wish-card-btn{
+  height:34px !important;
+}
+
+/* 品牌文字：只顯示真的品牌；若 JS 判斷不到品牌就不輸出 */
+.wish-brand{
+  color:rgba(75,55,50,.54) !important;
+  letter-spacing:.20em !important;
+}
+
   </style>
 </head>
 
@@ -699,10 +759,6 @@ body{
       </a>
     </div>
   </aside>
-
-  <!-- 參考圖上方小標條 -->
-  <div class="wishlist-top-strip">我的最愛｜XUYUAN</div>
-
   <!-- ===== 固定：最上方 navbar ===== -->
   <nav class="navbar">
     <div class="container nav-inner">
@@ -732,22 +788,6 @@ body{
       </div>
     </div>
   </nav>
-
-  <!-- ===== 固定：跑馬燈 ===== -->
-  <div class="lux-marquee" aria-hidden="true">
-    <div class="lux-marquee-track">
-      <span>MY WISHLIST</span>
-      <span>XUYUAN 官方商城｜將心動商品加入我的最愛</span>
-      <span>精品包袋、專業髮品、官網選品全新上架</span>
-      <span>直播活動預告：關注官方帳號獲取最新限時折扣</span>
-
-      <span>MY WISHLIST</span>
-      <span>XUYUAN 官方商城｜將心動商品加入我的最愛</span>
-      <span>精品包袋、專業髮品、官網選品全新上架</span>
-      <span>直播活動預告：關注官方帳號獲取最新限時折扣</span>
-    </div>
-  </div>
-
   <nav class="page-breadcrumb" aria-label="Breadcrumb">
     <a href="/">首頁</a>
     <span>/</span>
@@ -782,15 +822,7 @@ body{
 
       <!-- 有收藏時顯示 -->
       <section class="wishlist-section" id="wishlistSavedSection" style="display:none;">
-        <div class="wishlist-section-head">
-          <div>
-            <h1 class="wishlist-section-title">我的最愛商品</h1>
-            <p class="wishlist-section-sub" id="wishlistCountText">共 0 件收藏</p>
-          </div>
-          <span class="wishlist-sparkle" aria-hidden="true">✦</span>
-        </div>
-
-        <div class="wishlist-grid" id="wishlistGrid"></div>
+<div class="wishlist-grid" id="wishlistGrid"></div>
       </section>
 
       <!-- 最近瀏覽 / 無資料時抓新品推薦 -->
@@ -966,6 +998,54 @@ body{
       return 0;
     }
 
+    function cleanBrandName(v){
+      let s = String(v ?? '').trim();
+      if (!s) return '';
+
+      // Airtable 關聯欄位如果只帶出 recxxxx，這不是品牌名稱，要隱藏
+      s = s.replace(/^\[/, '').replace(/\]$/, '').replace(/^"/, '').replace(/"$/, '').trim();
+
+      if (/^rec[a-z0-9]{8,}$/i.test(s)) return '';
+      if (/^rec/i.test(s) && s.length >= 10) return '';
+
+      // 太像系統代碼、沒有空格又很長，也不要當品牌顯示
+      if (/^[A-Z0-9_-]{14,}$/.test(s) && !/\s/.test(s)) return '';
+
+      return s;
+    }
+
+    function pickBrandName(p){
+      const candidates = [
+        p?.brand_name,
+        p?.BrandName,
+        p?.brandLabel,
+        p?.brand_label,
+        p?.subcategory_name,
+        p?.sub_category_name,
+        p?.sub_category,
+        p?.subcategory,
+        p?.Brand,
+        p?.brand,
+        p?.fields?.brand_name,
+        p?.fields?.BrandName,
+        p?.fields?.brandLabel,
+        p?.fields?.brand_label,
+        p?.fields?.subcategory_name,
+        p?.fields?.sub_category_name,
+        p?.fields?.sub_category,
+        p?.fields?.subcategory,
+        p?.fields?.Brand,
+        p?.fields?.brand
+      ];
+
+      for (const c of candidates){
+        const b = cleanBrandName(c);
+        if (b) return b;
+      }
+
+      return '';
+    }
+
     function normalizeWishProduct(p){
       const sku = getProductKeyForWish(p);
 
@@ -1001,20 +1081,7 @@ body{
         ''
       ).trim();
 
-      const brand = String(
-        p?.brand ||
-        p?.Brand ||
-        p?.brand_name ||
-        p?.BrandName ||
-        p?.sub_category ||
-        p?.subcategory ||
-        p?.subcategory_name ||
-        p?.fields?.brand ||
-        p?.fields?.Brand ||
-        p?.fields?.sub_category ||
-        p?.fields?.subcategory ||
-        ''
-      ).trim();
+      const brand = pickBrandName(p);
 
       return { sku, title, price, image, brand };
     }
