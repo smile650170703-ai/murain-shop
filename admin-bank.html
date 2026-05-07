@@ -3927,7 +3927,7 @@ if (btnTail) {
   const btnDepNotice = $('#btnDepositPayAndNotice');
   if (btnDepNotice) btnDepNotice.addEventListener('click', depositReceivedAndNotify);
 
-  const btnZcFail = $('#btnMarkZcFail');
+ const btnZcFail = $('#btnMarkZcFail');
 if (btnZcFail) {
   btnZcFail.addEventListener('click', () => {
     if (!currentRecord) {
@@ -3936,18 +3936,13 @@ if (btnZcFail) {
     }
 
     const f = currentRecord.fields || currentRecord || {};
-    const oid = String(f.order_id || '').trim();
 
     if (isDepositForfeitOrder(f)) {
-      alert('這筆訂單已棄標／訂金已沒收，不能再發重新結帳。');
+      alert('這筆訂單已棄標，訂金已沒收，不能再取消原單或重新結帳。');
       return;
     }
 
-    if (!confirm(
-      `確定要取消原訂單 ${oid}，並發送重新結帳連結給客人嗎？\n\n` +
-      `此操作會補回庫存、釋放/退回購物金，並讓客人重新選付款方式。\n` +
-      `這不是棄標，不會列入黑名單。`
-    )) {
+    if (!confirm('確定要取消原單、釋放庫存／購物金，並發送重新結帳連結嗎？')) {
       return;
     }
 
@@ -5732,6 +5727,12 @@ if (btnConfirmPayOkTopBind) {
     }
 
     const f = currentRecord.fields || currentRecord || {};
+    const notifyOrderId = String(f.order_id || '').trim();
+
+    if (!notifyOrderId) {
+      alert('這筆訂單沒有 order_id，無法發送現金分期通知。');
+      return;
+    }
 
     if (isDepositForfeitOrder(f)) {
       alert('這筆訂單已棄標，訂金已沒收，不能再收款、出貨、發尾款單或重新結帳。');
@@ -5781,9 +5782,7 @@ if (btnConfirmPayOkTopBind) {
       return;
     }
 
-    // ✅ 已進入分期：不要再走 markCashInstProgress 前端自記錄
-    // 改走 /admin/order/confirm-pay，讓後端 advanceCashInstAfterPaid 完整推進：
-    // cash_inst_paid_count / remaining / next_due_date / due_dates_json
+    // 已進入分期：讓後端 advanceCashInstAfterPaid 推進下一期
     const currentPaid =
       Math.max(
         Number(f.cash_inst_paid_count || 0) || 0,
@@ -5798,11 +5797,11 @@ if (btnConfirmPayOkTopBind) {
 
     try {
       await sendCashInstLineNotify(
-  isAllDone ? 'all_done' : `part_${nextPart}`,
-  nextPart,
-  totalParts,
-  notifyOrderId
-);
+        isAllDone ? 'all_done' : `part_${nextPart}`,
+        nextPart,
+        totalParts,
+        notifyOrderId
+      );
     } catch (e) {
       console.error(e);
       alert('分期狀態已更新，但現金分期 LINE 通知發送失敗：' + (e.message || e));
