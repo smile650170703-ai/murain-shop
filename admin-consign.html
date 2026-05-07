@@ -503,8 +503,8 @@ body.is-consign-page #btnCartRemindTop{
   <button class="btn-secondary" id="btnConsignSelectAll" type="button">☑ 全選本頁</button>
   <button class="btn-secondary" id="btnConsignClearSelected" type="button">清除勾選</button>
   <button class="btn-secondary" id="btnConsignBatchCopyBank" type="button">📋 批次複製匯款資料</button>
-  <button class="btn-secondary" id="btnConsignBatchBankDone" type="button">✅ 批次標記已匯款</button>
-  <button class="btn-primary" id="btnConsignBatchCreditDone" type="button">✅ 批次確認轉購物金</button>
+<button class="btn-secondary" id="btnConsignBatchBankDone" type="button">✅ 批次標記已匯款＋發LINE通知</button>  
+ <button class="btn-primary" id="btnConsignBatchCreditDone" type="button">✅ 批次確認轉購物金</button>
 </div>
 
 <div id="msg"></div>
@@ -2899,9 +2899,9 @@ return method === 'bank_transfer' && status === 'pending_bank';
       return;
     }
 
-    if (!confirm(`確定要把 ${okRows.length} 筆標記為「已匯款」嗎？\n\n這些資料會結案並進入一時貿易資料。`)) {
-      return;
-    }
+    if (!confirm(`確定要把 ${okRows.length} 筆標記為「已匯款」，並發送 LINE 卡片通知客人已完成匯款嗎？\n\n這些資料會結案並進入一時貿易資料。`)) {
+  return;
+}
 
     await runBatchConsignActionRows(okRows, action);
     return;
@@ -3126,10 +3126,18 @@ async function consignAction(orderItemId, action, opts = {}){
       };
     }
 
-    if (!silent) alert('已更新');
-    if (!noReload) await loadConsignSettlementList();
+    if (action === 'mark_bank_done' && j.line_sent !== true) {
+  return {
+    ok:false,
+    error:'line_not_sent',
+    reason:j.line_reason || 'line_not_sent'
+  };
+}
 
-    return { ok:true, skipped:false };
+if (!silent) alert('已更新');
+if (!noReload) await loadConsignSettlementList();
+
+return { ok:true, skipped:false };
 
   } finally {
     CONSIGN_ACTION_BUSY.delete(key);
