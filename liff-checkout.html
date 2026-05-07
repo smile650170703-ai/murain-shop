@@ -3834,7 +3834,62 @@ function applyCartBankInfo(bankInfo = {}) {
     currencyEl.textContent = currency;
   }
 }
+function escapeHtmlText(v){
+  return String(v ?? '').replace(/[&<>"']/g, m => ({
+    '&':'&amp;',
+    '<':'&lt;',
+    '>':'&gt;',
+    '"':'&quot;',
+    "'":'&#39;'
+  }[m]));
+}
 
+function getCartItemBrand(it = {}){
+  const v =
+    it.brand ??
+    it.Brand ??
+    it.sub_category ??
+    it.SubCategory ??
+    it["品牌"] ??
+    "";
+
+  if (Array.isArray(v)) {
+    return v.map(x => {
+      if (x == null) return "";
+      if (typeof x === "object") return String(x.name || x.Name || x.title || x.id || "");
+      return String(x);
+    }).filter(Boolean).join(" / ").trim();
+  }
+
+  if (v && typeof v === "object") {
+    return String(v.name || v.Name || v.title || v.id || "").trim();
+  }
+
+  return String(v || "").trim();
+}
+
+function getCartItemDisplayName(it = {}){
+  const direct = String(it.display_name || it.displayName || '').trim();
+  if (direct) return direct;
+
+  const sku = String(it.sku || it.SKU || '').trim();
+  const brand = getCartItemBrand(it);
+
+  const name = String(
+    it.name ||
+    it.Name ||
+    it.title ||
+    it.Title ||
+    sku ||
+    '商品'
+  ).trim();
+
+  if (brand && !name.toLowerCase().startsWith(brand.toLowerCase())) {
+    return `${brand}｜${name}`;
+  }
+
+  return name;
+}
 function renderCartItemList(items){
   const wrap = document.getElementById('cartItemList');
   const tip = document.getElementById('cartRemoveTip');
@@ -3852,18 +3907,18 @@ function renderCartItemList(items){
   }
 
   items.forEach(it => {
-    const sku = String(it.sku || '').trim();
-    const name = String(it.name || sku || '商品').trim();
-    const qty = Number(it.qty || 0) || 0;
-    const price = Number(it.price || 0) || 0;
-    const lineTotal = qty * price;
+const sku = String(it.sku || it.SKU || '').trim();
+const name = getCartItemDisplayName(it);
+const qty = Number(it.qty || 0) || 0;
+const price = Number(it.price || 0) || 0;
+const lineTotal = qty * price;
 
     const row = document.createElement('div');
     row.className = 'cart-item-card';
     row.innerHTML = `
       <div class="cart-item-top">
-        <div class="cart-item-name">${name}</div>
-        ${CART_CAN_SELF_REMOVE ? `<button type="button" class="cart-remove-btn" data-sku="${sku}" aria-label="刪除此商品">✕</button>` : ``}
+        <div class="cart-item-name">${escapeHtmlText(name)}</div>
+${CART_CAN_SELF_REMOVE ? `<button type="button" class="cart-remove-btn" data-sku="${escapeHtmlText(sku)}" aria-label="刪除此商品">✕</button>` : ``}
       </div>
       <div class="cart-item-meta">
         <span>數量：${qty}</span>
@@ -3941,9 +3996,9 @@ updateShopCartBack();
 CART_BANK_INFO = j.bank_info || null;
 applyCartBankInfo(CART_BANK_INFO);
 
-    const detail = items.map(it =>
-      `${it.name || it.sku} x ${it.qty}（NT$${Number(it.price || 0)}）`
-    ).join('\n');
+const detail = items.map(it =>
+  `${getCartItemDisplayName(it)} x ${it.qty}（NT$${Number(it.price || 0)}）`
+).join('\n');
 
     const detailBox = document.querySelector('#itemsText');
     if (detailBox) detailBox.value = detail;
