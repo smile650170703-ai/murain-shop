@@ -1521,43 +1521,36 @@ textarea[readonly]{
   text-align:center;
 }
 
-/* ✅ 官網購物車專用：返回官網 / 返回會員中心 */
-.shop-cart-actions{
+/* ✅ 官網購物車專用：上一頁返回鍵；直播主購物車不顯示 */
+.shop-cart-back{
   display:none;
-  grid-template-columns:1fr 1fr;
-  gap:10px;
-  margin:0 0 18px;
+  margin:0 0 14px;
 }
 
-.shop-cart-actions.is-show{
-  display:grid;
-}
-
-.shop-cart-link{
-  min-height:42px;
-  border-radius:999px;
-  border:1px solid rgba(220,196,162,.28);
-  background:rgba(255,255,255,.72);
-  color:#6b5552;
-  text-decoration:none;
+.shop-cart-back.is-show{
   display:flex;
+  justify-content:flex-start;
+}
+
+.shop-cart-back-btn{
+  width:42px;
+  height:42px;
+  border-radius:999px;
+  border:1px solid rgba(220,196,162,.30);
+  background:rgba(255,255,255,.78);
+  color:#6b5552;
+  display:inline-flex;
   align-items:center;
   justify-content:center;
-  font-size:13px;
-  font-weight:900;
-  letter-spacing:.04em;
+  font-size:24px;
+  line-height:1;
+  font-weight:700;
   box-shadow:0 8px 18px rgba(177,136,130,.06);
+  cursor:pointer;
 }
 
-.shop-cart-link.primary{
-  background:linear-gradient(135deg, var(--cream), var(--rose));
-  color:#4f3f3d;
-}
-
-@media (max-width:360px){
-  .shop-cart-actions{
-    grid-template-columns:1fr;
-  }
+.shop-cart-back-btn:active{
+  transform:scale(.96);
 }
     </style>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
@@ -1571,10 +1564,9 @@ textarea[readonly]{
   </div>
 
   <!-- ✅ 只有官網購物車 customer_type=web 才會顯示；直播主購物車不顯示 -->
-  <div class="shop-cart-actions" id="shopCartActions" hidden>
-    <a class="shop-cart-link" id="backToShopLink" href="https://murain.tw/">返回官網</a>
-    <a class="shop-cart-link primary" id="backToMemberLink" href="https://murain.tw/member.html">返回會員中心</a>
-  </div>
+<div class="shop-cart-back" id="shopCartBack" hidden>
+  <button type="button" class="shop-cart-back-btn" id="shopCartBackBtn" aria-label="返回上一頁">‹</button>
+</div>
 
   <!-- 1. 訂單金額 -->
   <div class="section-card">
@@ -3752,25 +3744,43 @@ let CART_CUSTOMER_TYPE = '';
 let CART_CAN_SELF_REMOVE = false;
 let CART_BANK_INFO = null;
 
-// ✅ 會員中心 LIFF：用 member.html 自己的 LIFF ID
-// 你的 member.html 目前是這個 LIFF_ID：2008430261-EGZPg3Qp
-const MEMBER_CENTER_LIFF_ID = "2008430261-EGZPg3Qp";
-const MEMBER_CENTER_PAGE_URL = "https://murain.tw/member.html";
-const SHOP_HOME_URL = "https://murain.tw/";
+// ✅ 官網購物車專用：上一頁返回鍵
+// 直播主購物車 customer_type=live 不顯示。
+const SHOP_BACK_FALLBACK_URL = "https://murain.tw/shop.html";
 
-function buildMemberCenterLiffUrl() {
-  return `https://liff.line.me/${MEMBER_CENTER_LIFF_ID}?url=${encodeURIComponent(MEMBER_CENTER_PAGE_URL)}`;
+function goBackFromShopCart() {
+  try {
+    // 有上一頁就回上一頁
+    if (window.history.length > 1) {
+      window.history.back();
+
+      // 如果上一頁失敗，補一個保底回官網商品頁
+      setTimeout(() => {
+        try {
+          if (!document.hidden) {
+            window.location.href = SHOP_BACK_FALLBACK_URL;
+          }
+        } catch (e) {}
+      }, 500);
+
+      return;
+    }
+  } catch (e) {}
+
+  // 沒上一頁就回商品頁
+  window.location.href = SHOP_BACK_FALLBACK_URL;
 }
 
-function updateShopCartActions() {
+function updateShopCartBack() {
   const isWebCart = String(CART_CUSTOMER_TYPE || '').trim().toLowerCase() === 'web';
 
-  const box = document.getElementById('shopCartActions');
-  const shopLink = document.getElementById('backToShopLink');
-  const memberLink = document.getElementById('backToMemberLink');
+  const box = document.getElementById('shopCartBack');
+  const btn = document.getElementById('shopCartBackBtn');
 
-  if (shopLink) shopLink.href = SHOP_HOME_URL;
-  if (memberLink) memberLink.href = buildMemberCenterLiffUrl();
+  if (btn && !btn.dataset.bound) {
+    btn.dataset.bound = "1";
+    btn.addEventListener('click', goBackFromShopCart);
+  }
 
   if (!box) return;
 
@@ -3902,8 +3912,8 @@ async function loadCart(){
    CART_CUSTOMER_TYPE = String(j.customer_type || '').trim().toLowerCase();
 CART_CAN_SELF_REMOVE = !!j.can_self_remove;
 
-// ✅ 官網車 web 才顯示返回官網 / 返回會員中心；直播車 live 不顯示
-updateShopCartActions();
+// ✅ 官網車 web 才顯示上一頁返回鍵；直播車 live 不顯示
+updateShopCartBack();
 
 // ✅ 後端依官網/直播回傳的匯款帳號
 CART_BANK_INFO = j.bank_info || null;
