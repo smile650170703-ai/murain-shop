@@ -1235,7 +1235,7 @@
   border:1.35px solid #000 !important;
 }
 
-/* 下方小圖：滿框 */
+/* 下方小圖：目前商品在第一個、正方形、細框、盡量滿框 */
 .shop-preview-related{
   flex:0 0 auto !important;
   padding:10px 0 calc(20px + env(safe-area-inset-bottom)) !important;
@@ -1244,11 +1244,12 @@
 
 .shop-preview-related-row{
   display:flex !important;
-  gap:14px !important;
+  gap:12px !important;
   overflow-x:auto !important;
   padding:0 16px 10px !important;
   scrollbar-width:none !important;
   -webkit-overflow-scrolling:touch !important;
+  align-items:flex-start !important;
 }
 
 .shop-preview-related-row::-webkit-scrollbar{
@@ -1260,11 +1261,13 @@
   flex:0 0 92px !important;
   width:92px !important;
   height:92px !important;
-  border-radius:20px !important;
+  aspect-ratio:1 / 1 !important;
+  border-radius:18px !important;
   background:#fff !important;
-  border:0 !important;
+  border:1px solid rgba(17,17,17,.06) !important;
   box-shadow:none !important;
   overflow:hidden !important;
+  padding:0 !important;
 }
 
 .shop-preview-related-item img{
@@ -1273,7 +1276,27 @@
   object-fit:cover !important;
   object-position:center center !important;
   padding:0 !important;
+  margin:0 !important;
   display:block !important;
+  background:#fff !important;
+}
+
+/* 目前選到的商品：細微框框 */
+.shop-preview-related-item.active,
+.shop-preview-related-item.is-active,
+.shop-preview-related-item[aria-current="true"]{
+  border-color:rgba(17,17,17,.18) !important;
+}
+
+.shop-preview-related-item.active::after,
+.shop-preview-related-item.is-active::after,
+.shop-preview-related-item[aria-current="true"]::after{
+  content:"" !important;
+  position:absolute !important;
+  inset:3px !important;
+  border-radius:15px !important;
+  border:1px solid rgba(17,17,17,.22) !important;
+  pointer-events:none !important;
 }
 
 /* 小手機 */
@@ -2649,11 +2672,13 @@ async function loadPreviewRelated(p){
   const currentSku = previewSku(p);
   const cat = previewCat(p);
 
-  let seedList = (allItems || [])
+  /* 先放目前商品在第一個 */
+  let seedRest = (allItems || [])
     .filter(item => previewSku(item) && previewSku(item) !== currentSku)
-    .slice(0, 12);
+    .slice(0, 11);
 
-  renderPreviewRelatedList(seedList);
+  let seedList = [p, ...seedRest];
+  renderPreviewRelatedList(seedList, currentSku);
 
   try{
     const u = new URL(PRODUCT_API);
@@ -2666,11 +2691,12 @@ async function loadPreviewRelated(p){
     const json = await res.json().catch(() => ({}));
     const fetched = Array.isArray(json.items) ? json.items : [];
 
-    const related = fetched
+    const relatedRest = fetched
       .filter(item => previewSku(item) && previewSku(item) !== currentSku)
-      .slice(0, 12);
+      .slice(0, 11);
 
-    renderPreviewRelatedList(related);
+    const related = [p, ...relatedRest];
+    renderPreviewRelatedList(related, currentSku);
   }catch(e){
     if(!seedList.length){
       wrap.style.display = 'none';
@@ -2679,12 +2705,24 @@ async function loadPreviewRelated(p){
   }
 }
 
-function renderPreviewRelatedList(list){
+function renderPreviewRelatedList(list, activeSku){
   const row = $('previewRelatedRow');
   const wrap = $('previewRelatedWrap');
   if(!row || !wrap) return;
 
-  previewRelatedItems = Array.isArray(list) ? list : [];
+  let items = Array.isArray(list) ? list.filter(Boolean) : [];
+
+  /* 去重，保留第一個（也就是目前商品） */
+  const seen = new Set();
+  items = items.filter(item => {
+    const key = previewSku(item) || previewTitle(item);
+    if(!key) return false;
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  previewRelatedItems = items;
 
   if(!previewRelatedItems.length){
     wrap.style.display = 'none';
@@ -2697,13 +2735,24 @@ function renderPreviewRelatedList(list){
   row.innerHTML = previewRelatedItems.map((item, idx) => {
     const img = previewImage(item);
     const title = previewTitle(item);
+    const sku = previewSku(item);
+    const active = idx === 0 || (activeSku && sku === activeSku);
 
     return `
-      <button class="shop-preview-related-item" type="button" data-idx="${idx}" aria-label="${escapeHtml(title)}">
+      <button
+        class="shop-preview-related-item ${active ? 'active' : ''}"
+        type="button"
+        data-idx="${idx}"
+        aria-label="${escapeHtml(title)}"
+        aria-current="${active ? 'true' : 'false'}"
+      >
         ${img ? `<img src="${escapeHtml(img)}" alt="${escapeHtml(title)}" loading="lazy">` : ``}
       </button>
     `;
   }).join('');
+
+  /* 讓目前商品固定顯示在第一個位置 */
+  row.scrollLeft = 0;
 
   row.querySelectorAll('.shop-preview-related-item').forEach(btn => {
     btn.addEventListener('click', () => {
