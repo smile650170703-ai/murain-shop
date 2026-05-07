@@ -1520,6 +1520,45 @@ textarea[readonly]{
   width:100%;
   text-align:center;
 }
+
+/* ✅ 官網購物車專用：返回官網 / 返回會員中心 */
+.shop-cart-actions{
+  display:none;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  margin:0 0 18px;
+}
+
+.shop-cart-actions.is-show{
+  display:grid;
+}
+
+.shop-cart-link{
+  min-height:42px;
+  border-radius:999px;
+  border:1px solid rgba(220,196,162,.28);
+  background:rgba(255,255,255,.72);
+  color:#6b5552;
+  text-decoration:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:13px;
+  font-weight:900;
+  letter-spacing:.04em;
+  box-shadow:0 8px 18px rgba(177,136,130,.06);
+}
+
+.shop-cart-link.primary{
+  background:linear-gradient(135deg, var(--cream), var(--rose));
+  color:#4f3f3d;
+}
+
+@media (max-width:360px){
+  .shop-cart-actions{
+    grid-template-columns:1fr;
+  }
+}
     </style>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 </head>
@@ -1529,6 +1568,12 @@ textarea[readonly]{
   <div class="header">
     <div class="brand">XUYUAN</div>
     <div class="page-title">結帳</div>
+  </div>
+
+  <!-- ✅ 只有官網購物車 customer_type=web 才會顯示；直播主購物車不顯示 -->
+  <div class="shop-cart-actions" id="shopCartActions" hidden>
+    <a class="shop-cart-link" id="backToShopLink" href="https://murain.tw/">返回官網</a>
+    <a class="shop-cart-link primary" id="backToMemberLink" href="https://murain.tw/member.html">返回會員中心</a>
   </div>
 
   <!-- 1. 訂單金額 -->
@@ -3707,6 +3752,32 @@ let CART_CUSTOMER_TYPE = '';
 let CART_CAN_SELF_REMOVE = false;
 let CART_BANK_INFO = null;
 
+// ✅ 會員中心 LIFF：用 member.html 自己的 LIFF ID
+// 你的 member.html 目前是這個 LIFF_ID：2008430261-EGZPg3Qp
+const MEMBER_CENTER_LIFF_ID = "2008430261-EGZPg3Qp";
+const MEMBER_CENTER_PAGE_URL = "https://murain.tw/member.html";
+const SHOP_HOME_URL = "https://murain.tw/";
+
+function buildMemberCenterLiffUrl() {
+  return `https://liff.line.me/${MEMBER_CENTER_LIFF_ID}?url=${encodeURIComponent(MEMBER_CENTER_PAGE_URL)}`;
+}
+
+function updateShopCartActions() {
+  const isWebCart = String(CART_CUSTOMER_TYPE || '').trim().toLowerCase() === 'web';
+
+  const box = document.getElementById('shopCartActions');
+  const shopLink = document.getElementById('backToShopLink');
+  const memberLink = document.getElementById('backToMemberLink');
+
+  if (shopLink) shopLink.href = SHOP_HOME_URL;
+  if (memberLink) memberLink.href = buildMemberCenterLiffUrl();
+
+  if (!box) return;
+
+  box.hidden = !isWebCart;
+  box.classList.toggle('is-show', isWebCart);
+}
+
 function applyCartBankInfo(bankInfo = {}) {
   const info = bankInfo && typeof bankInfo === 'object' ? bankInfo : {};
 
@@ -3828,8 +3899,11 @@ async function loadCart(){
     const total = Number(j.total_amount || 0);
     CART_TOTAL_RAW = total;
 
-    CART_CUSTOMER_TYPE = String(j.customer_type || '').trim().toLowerCase();
+   CART_CUSTOMER_TYPE = String(j.customer_type || '').trim().toLowerCase();
 CART_CAN_SELF_REMOVE = !!j.can_self_remove;
+
+// ✅ 官網車 web 才顯示返回官網 / 返回會員中心；直播車 live 不顯示
+updateShopCartActions();
 
 // ✅ 後端依官網/直播回傳的匯款帳號
 CART_BANK_INFO = j.bank_info || null;
