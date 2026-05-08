@@ -20,6 +20,14 @@
 th,td{border-bottom:1px solid var(--line);padding:11px 10px;vertical-align:middle;font-size:14px;white-space:nowrap;background:#fff}th{position:sticky;top:0;z-index:2;background:#f8fafc;text-align:left;font-size:13px;color:#0f172a}tr:hover td{background:#fbfdff}
 .money{color:#063f91;font-weight:900}.tag{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:900;border:1px solid #cfe3ff;background:#eef6ff;color:#0f3f8c}.tag.ok{border-color:#b7e4d7;background:#effcf6;color:#0f766e}.tag.warn{border-color:#f5d7a1;background:#fff7e6;color:#b45309}
 .msg{white-space:pre-wrap;line-height:1.6;font-size:14px;min-height:22px;margin-top:8px}.msg.ok{color:var(--ok)}.msg.err{color:var(--danger)}.empty{color:var(--muted);padding:16px 0}.photo-link{color:#0b4a9e;font-weight:800;text-decoration:underline;text-underline-offset:2px}
+.photo-thumbs{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.photo-thumb{width:52px;height:52px;border-radius:10px;object-fit:cover;border:1px solid var(--line);box-shadow:0 4px 10px rgba(15,23,42,.12);cursor:pointer;background:#fff}
+.photo-thumb:hover{transform:scale(1.04)}
+.photo-viewer-backdrop{position:fixed;inset:0;background:rgba(2,8,23,.72);display:none;align-items:center;justify-content:center;padding:20px;z-index:80}
+.photo-viewer-backdrop.show{display:flex}
+.photo-viewer{position:relative;max-width:min(920px,96vw);max-height:92vh;background:#fff;border-radius:18px;padding:14px;border:1px solid var(--line);box-shadow:0 30px 90px rgba(2,8,23,.45)}
+.photo-viewer img{display:block;max-width:100%;max-height:82vh;border-radius:12px;object-fit:contain}
+.photo-viewer-close{position:absolute;top:-12px;right:-12px;width:36px;height:36px;border-radius:999px;border:none;background:#0f172a;color:#fff;font-weight:900;cursor:pointer;box-shadow:0 8px 18px rgba(2,8,23,.25)}
 .modal-backdrop{position:fixed;inset:0;background:rgba(2,8,23,.46);display:none;align-items:center;justify-content:center;padding:22px;z-index:50}.modal-backdrop.show{display:flex}.modal{width:min(680px,96vw);max-height:88vh;overflow:hidden;background:#fff;border-radius:22px;border:1px solid var(--line);box-shadow:0 30px 80px rgba(2,8,23,.35);display:flex;flex-direction:column}.modal-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--line);background:#f8fafc}.modal-title{font-size:19px;font-weight:900}.modal-body{padding:18px 20px;overflow:auto}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}label{display:block;font-size:13px;font-weight:800;margin-bottom:6px;color:#334155}input,textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:11px 12px;font-size:14px;outline:none;background:#fff}textarea{min-height:90px;resize:vertical}.full{grid-column:1/-1}
 @media(max-width:980px){.kpi-grid{grid-template-columns:1fr 1fr}}@media(max-width:640px){.wrap{padding:16px}h1{font-size:26px}.kpi-grid,.form-grid{grid-template-columns:1fr}.table-wrap{max-height:none}}
 </style>
@@ -66,6 +74,13 @@ th,td{border-bottom:1px solid var(--line);padding:11px 10px;vertical-align:middl
   </div>
 </div></div>
 
+<div class="photo-viewer-backdrop" id="photoViewer">
+  <div class="photo-viewer">
+    <button class="photo-viewer-close" id="btnClosePhotoViewer" type="button">×</button>
+    <img id="photoViewerImg" src="" alt="還款照片">
+  </div>
+</div>
+
 <script>
 const STORAGE_OK="company_entry_ok"; if(sessionStorage.getItem(STORAGE_OK)!=="1"){location.href="/company-files/company-index.html";}
 const API_BASE="https://api.murain.tw";
@@ -79,8 +94,113 @@ function text(v){if(Array.isArray(v))return v.map(x=>x==null?"":typeof x==="obje
 function escHtml(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");}
 function pick(obj,names){const src=obj||{};for(const name of names){if(src[name]!==undefined&&src[name]!==null&&String(text(src[name])).trim()!=="")return src[name];}return "";}
 function normalizeMaster(row){const f=row?.fields||row||{};return{id:row?.id||row?.recordId||"",name:text(pick(f,["借款主檔","主檔名稱","name","Name","名稱"]))||"房貸／借款主檔",principal:num(pick(f,["原始本金","本金","loan_principal","principal"])),paidTotal:num(pick(f,["已退總額","已還總額","已還金額","repaid_total","paidTotal"])),remain:num(pick(f,["剩餘本金","剩餘金額","remaining","remain"])),lastDate:text(pick(f,["最近還款日","last_repay_date","lastDate"]))};}
-function normalizeRepayment(row){const f=row?.fields||row||{};const profitLink=pick(f,["公司進利總結","來源月份","月份","profitSummary","month"]);const sourceText=text(profitLink);return{id:row?.id||row?.recordId||"",date:text(pick(f,["還款日期","日期","repayDate","date"])),amount:num(pick(f,["還款金額","自動帶入還款金額","金額","amount","repayAmount"])),sourceMonth:sourceText,masterName:text(pick(f,["借款主檔","房貸／借款主檔","loanMaster","master"])),profitSummary:sourceText,note:text(pick(f,["備註","note","Note"])),photo:pick(f,["備註 照片","備註 照片","照片","photo","attachment"])};}
-function photoHtml(v){if(Array.isArray(v)&&v.length){const urls=v.map(x=>typeof x==="object"?(x.url||""):String(x||"")).filter(Boolean);return urls.map((u,i)=>`<a class="photo-link" target="_blank" href="${escHtml(u)}">照片${i+1}</a>`).join(" ");}const s=text(v).trim();if(!s)return "";if(/^https?:\/\//i.test(s))return `<a class="photo-link" target="_blank" href="${escHtml(s)}">查看照片</a>`;return escHtml(s);}
+function isRecIdText(s){
+  const t = String(s || "").trim();
+  if (!t) return false;
+  return /^rec[a-zA-Z0-9]+( \/ rec[a-zA-Z0-9]+)*$/.test(t);
+}
+
+function cleanLinkedText(v, fallback = ""){
+  const s = text(v).trim();
+  if (!s) return fallback;
+  return isRecIdText(s) ? fallback : s;
+}
+
+function normalizeRepayment(row){
+  const f = row?.fields || row || {};
+
+  const profitDisplay = pick(f, [
+    "來源月份／結帳顯示",
+    "來源月份/結帳顯示",
+    "公司進利總結顯示",
+    "公司進利總結名稱",
+    "結帳名稱",
+    "月份顯示",
+    "月份",
+    "來源月份",
+    "profitSummaryName",
+    "profitSummaryMonth"
+  ]);
+
+  const profitLinked = pick(f, [
+    "公司進利總結",
+    "profitSummary"
+  ]);
+
+  const masterDisplay = pick(f, [
+    "借款主檔名稱",
+    "借款主檔顯示",
+    "房貸主檔名稱",
+    "主檔名稱"
+  ]);
+
+  const masterLinked = pick(f, [
+    "借款主檔",
+    "房貸／借款主檔",
+    "loanMaster",
+    "master"
+  ]);
+
+  const hasProfitLink = !!text(profitLinked).trim();
+
+  const sourceText =
+    cleanLinkedText(profitDisplay, "") ||
+    cleanLinkedText(profitLinked, "") ||
+    (hasProfitLink ? "公司進利結帳" : "手動新增");
+
+  const masterText =
+    cleanLinkedText(masterDisplay, "") ||
+    cleanLinkedText(masterLinked, "") ||
+    master?.name ||
+    "-";
+
+  return {
+    id: row?.id || row?.recordId || "",
+    date: text(pick(f, ["還款日期","日期","repayDate","date"])),
+    amount: num(pick(f, ["還款金額","自動帶入還款金額","金額","amount","repayAmount"])),
+    sourceMonth: sourceText,
+    masterName: masterText,
+    profitSummary: hasProfitLink ? sourceText : "",
+    note: text(pick(f, ["備註","note","Note"])),
+    photo: pick(f, ["備註 照片","備註照片","照片","photo","attachment"])
+  };
+}
+function photoUrls(v){
+  if(Array.isArray(v) && v.length){
+    return v.map(x=>{
+      if(typeof x === "object"){
+        return x.thumbnails?.large?.url || x.url || x.thumbnails?.full?.url || "";
+      }
+      return String(x || "");
+    }).filter(Boolean);
+  }
+
+  const s = text(v).trim();
+  if(/^https?:\/\//i.test(s)) return [s];
+  return [];
+}
+
+function photoHtml(v){
+  const urls = photoUrls(v);
+  if(!urls.length) return "";
+
+  return `<div class="photo-thumbs">` + urls.map((u,i)=>{
+    const safeUrl = escHtml(u);
+    const encoded = encodeURIComponent(u);
+    return `<img class="photo-thumb" src="${safeUrl}" alt="還款照片${i+1}" onclick="openPhotoViewer(decodeURIComponent('${encoded}'))">`;
+  }).join("") + `</div>`;
+}
+
+function openPhotoViewer(url){
+  if(!url) return;
+  $("photoViewerImg").src = url;
+  $("photoViewer").classList.add("show");
+}
+
+function closePhotoViewer(){
+  $("photoViewer").classList.remove("show");
+  $("photoViewerImg").src = "";
+}
 async function fetchJson(url,params={}){const u=new URL(url,location.origin);Object.entries(params).forEach(([k,v])=>{if(v!==undefined&&v!==null&&String(v).trim()!=="")u.searchParams.set(k,String(v));});const r=await fetch(u.toString());const data=await r.json().catch(()=>({}));if(!r.ok||data.ok===false)throw new Error(data.message||data.error||`${r.status} ${r.statusText}`);return data;}
 async function firstWorking(urls,params={}){let lastErr=null;for(const u of urls){try{return{url:u,data:await fetchJson(u,params)}}catch(e){lastErr=e}}throw lastErr||new Error("找不到可用 API");}
 function readMasterFromData(data){const rows=Array.isArray(data.masters)?data.masters:Array.isArray(data.masterRows)?data.masterRows:Array.isArray(data.rows)?data.rows:Array.isArray(data.data)?data.data:[];if(data.master)return normalizeMaster(data.master);return rows.length?normalizeMaster(rows[0]):null;}
@@ -92,7 +212,17 @@ function openModal(){$("manualDate").value=yyyyMMddValue();$("manualAmount").val
 function closeModal(){$("modalBackdrop").classList.remove("show");}
 async function firstWorkingPost(urls,body={}){let lastErr=null;for(const u of urls){try{const r=await fetch(u,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});const data=await r.json().catch(()=>({}));if(!r.ok||data.ok===false)throw new Error(data.message||data.error||`${r.status} ${r.statusText}`);return{url:u,data};}catch(e){lastErr=e}}throw lastErr||new Error("找不到可用新增 API");}
 async function createManualRepayment(){const date=$("manualDate").value;const amount=Number($("manualAmount").value||0)||0;const note=$("manualNote").value.trim();if(!date){alert("請選擇還款日期");return}if(!amount){alert("請輸入還款金額");return}$("btnSubmitManual").disabled=true;try{await firstWorkingPost(API_CREATE_REPAY_CANDIDATES,{master_id:master?.id||"",date,amount,note});closeModal();await loadAll();}catch(err){alert(`建立失敗：${err.message||err}`);}finally{$("btnSubmitManual").disabled=false;}}
-$("btnReload").addEventListener("click",loadAll);$("btnAdd").addEventListener("click",openModal);$("btnCloseModal").addEventListener("click",closeModal);$("modalBackdrop").addEventListener("click",e=>{if(e.target.id==="modalBackdrop")closeModal();});$("btnSubmitManual").addEventListener("click",createManualRepayment);loadAll();
+$("btnReload").addEventListener("click",loadAll);
+$("btnAdd").addEventListener("click",openModal);
+$("btnCloseModal").addEventListener("click",closeModal);
+$("modalBackdrop").addEventListener("click",e=>{if(e.target.id==="modalBackdrop")closeModal();});
+$("btnSubmitManual").addEventListener("click",createManualRepayment);
+
+$("btnClosePhotoViewer").addEventListener("click",closePhotoViewer);
+$("photoViewer").addEventListener("click",e=>{if(e.target.id==="photoViewer")closePhotoViewer();});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closePhotoViewer();});
+
+loadAll();
 </script>
 </body>
 </html>
