@@ -55,7 +55,7 @@ th,td{border-bottom:1px solid var(--line);padding:11px 10px;vertical-align:middl
       <div class="kpi"><div class="label">最近還款日</div><div class="value" id="lastDateText">-</div><div class="sub" id="countText">0 筆還款紀錄</div></div>
     </div>
     <div class="table-wrap">
-      <table><thead><tr><th>還款日期</th><th>還款金額</th><th>來源月份／結帳</th><th>借款主檔</th><th>公司進利總結</th><th>備註</th><th>照片</th></tr></thead><tbody id="repayRows"><tr><td colspan="7" class="empty">載入中...</td></tr></tbody></table>
+      <table><thead><tr><th>還款日期</th><th>還款金額</th><th>公司進利總結</th><th>自動帶入還款金額</th><th>備註</th><th>照片</th></tr></thead><tbody id="repayRows"><tr><td colspan="6" class="empty">載入中...</td></tr></tbody></table>
     </div>
     <div class="msg" id="msg"></div>
   </div>
@@ -110,16 +110,16 @@ function normalizeRepayment(row){
   const f = row?.fields || row || {};
 
   const profitDisplay = pick(f, [
-    "來源月份／結帳顯示",
-    "來源月份/結帳顯示",
     "公司進利總結顯示",
     "公司進利總結名稱",
+    "公司進利總結",
     "結帳名稱",
     "月份顯示",
     "月份",
     "來源月份",
     "profitSummaryName",
-    "profitSummaryMonth"
+    "profitSummaryMonth",
+    "profitSummary"
   ]);
 
   const profitLinked = pick(f, [
@@ -127,40 +127,32 @@ function normalizeRepayment(row){
     "profitSummary"
   ]);
 
-  const masterDisplay = pick(f, [
-    "借款主檔名稱",
-    "借款主檔顯示",
-    "房貸主檔名稱",
-    "主檔名稱"
-  ]);
-
-  const masterLinked = pick(f, [
-    "借款主檔",
-    "房貸／借款主檔",
-    "loanMaster",
-    "master"
-  ]);
-
   const hasProfitLink = !!text(profitLinked).trim();
 
-  const sourceText =
+  const profitText =
     cleanLinkedText(profitDisplay, "") ||
     cleanLinkedText(profitLinked, "") ||
     (hasProfitLink ? "公司進利結帳" : "手動新增");
 
-  const masterText =
-    cleanLinkedText(masterDisplay, "") ||
-    cleanLinkedText(masterLinked, "") ||
-    master?.name ||
-    "-";
+  const autoAmount = num(pick(f, [
+    "自動帶入還款金額",
+    "auto_repay_amount",
+    "autoAmount"
+  ]));
+
+  const repayAmount = num(pick(f, [
+    "還款金額",
+    "金額",
+    "amount",
+    "repayAmount"
+  ]));
 
   return {
     id: row?.id || row?.recordId || "",
     date: text(pick(f, ["還款日期","日期","repayDate","date"])),
-    amount: num(pick(f, ["還款金額","自動帶入還款金額","金額","amount","repayAmount"])),
-    sourceMonth: sourceText,
-    masterName: masterText,
-    profitSummary: hasProfitLink ? sourceText : "",
+    amount: repayAmount || autoAmount,
+    profitSummary: hasProfitLink ? profitText : "",
+    autoAmount,
     note: text(pick(f, ["備註","note","Note"])),
     photo: pick(f, ["備註 照片","備註照片","照片","photo","attachment"])
   };
@@ -206,7 +198,21 @@ async function firstWorking(urls,params={}){let lastErr=null;for(const u of urls
 function readMasterFromData(data){const rows=Array.isArray(data.masters)?data.masters:Array.isArray(data.masterRows)?data.masterRows:Array.isArray(data.rows)?data.rows:Array.isArray(data.data)?data.data:[];if(data.master)return normalizeMaster(data.master);return rows.length?normalizeMaster(rows[0]):null;}
 function readRepaymentsFromData(data){const rows=Array.isArray(data.repayments)?data.repayments:Array.isArray(data.repaymentRows)?data.repaymentRows:Array.isArray(data.items)?data.items:Array.isArray(data.rows)?data.rows:Array.isArray(data.data)?data.data:[];return rows.map(normalizeRepayment);}
 function yyyyMMddValue(){const now=new Date();const tw=new Date(now.toLocaleString("en-US",{timeZone:"Asia/Taipei"}));return `${tw.getFullYear()}-${String(tw.getMonth()+1).padStart(2,"0")}-${String(tw.getDate()).padStart(2,"0")}`;}
-function render(){const computedPaid=repayments.reduce((sum,r)=>sum+num(r.amount),0);const principal=master?.principal||0;const paidTotal=master?.paidTotal||computedPaid;const remain=master?.remain||Math.max(0,principal-paidTotal);const lastDate=master?.lastDate||repayments.map(r=>r.date).filter(Boolean).sort().slice(-1)[0]||"-";$("masterTitle").textContent=master?.name||"主檔總覽";$("masterNameText").textContent=master?.name||"-";$("principalText").textContent=money(principal);$("paidText").textContent=money(paidTotal);$("remainText").textContent=money(remain);$("lastDateText").textContent=lastDate||"-";$("countText").textContent=`${repayments.length} 筆還款紀錄`;if(!repayments.length){$("repayRows").innerHTML=`<tr><td colspan="7" class="empty">目前沒有還款紀錄。</td></tr>`;return;}$("repayRows").innerHTML=repayments.map(r=>`<tr><td>${escHtml(r.date||"-")}</td><td class="money">${money(r.amount)}</td><td>${escHtml(r.sourceMonth||"-")}</td><td>${escHtml(r.masterName||master?.name||"-")}</td><td>${r.profitSummary?`<span class="tag ok">${escHtml(r.profitSummary)}</span>`:`<span class="tag warn">手動／未連結</span>`}</td><td>${escHtml(r.note||"")}</td><td>${photoHtml(r.photo)}</td></tr>`).join("");}
+function render(){const computedPaid=repayments.reduce((sum,r)=>sum+num(r.amount),0);const principal=master?.principal||0;const paidTotal=master?.paidTotal||computedPaid;const remain=master?.remain||Math.max(0,principal-paidTotal);const lastDate=master?.lastDate||repayments.map(r=>r.date).filter(Boolean).sort().slice(-1)[0]||"-";$("masterTitle").textContent=master?.name||"主檔總覽";$("masterNameText").textContent=master?.name||"-";$("principalText").textContent=money(principal);$("paidText").textContent=money(paidTotal);$("remainText").textContent=money(remain);$("lastDateText").textContent=lastDate||"-";$("countText").textContent=`${repayments.length} 筆還款紀錄`;if(!repayments.length){
+  $("repayRows").innerHTML=`<tr><td colspan="6" class="empty">目前沒有還款紀錄。</td></tr>`;
+  return;
+}
+
+$("repayRows").innerHTML=repayments.map(r=>`
+  <tr>
+    <td>${escHtml(r.date||"-")}</td>
+    <td class="money">${money(r.amount)}</td>
+    <td>${r.profitSummary ? `<span class="tag ok">${escHtml(r.profitSummary)}</span>` : `<span class="tag warn">手動／未連結</span>`}</td>
+    <td class="money">${r.autoAmount ? money(r.autoAmount) : "-"}</td>
+    <td>${escHtml(r.note||"")}</td>
+    <td>${photoHtml(r.photo)}</td>
+  </tr>
+`).join("");}
 async function loadAll(){$("msg").textContent="載入中...";$("msg").className="msg";try{const combined=await firstWorking(API_COMBINED_CANDIDATES,{max:300});master=readMasterFromData(combined.data);repayments=readRepaymentsFromData(combined.data);if(!repayments.length){try{const repayData=await firstWorking(API_REPAY_CANDIDATES,{max:500,master_id:master?.id||""});repayments=readRepaymentsFromData(repayData.data);}catch{}}repayments.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));render();$("msg").textContent=`✅ 載入完成：${repayments.length} 筆還款紀錄`;$("msg").className="msg ok";}catch(err){$("msg").textContent=`❌ ${err.message||err}\n請確認後端是否有房貸／借款主檔紀錄 API。`;$("msg").className="msg err";$("repayRows").innerHTML=`<tr><td colspan="7" class="empty">❌ ${escHtml(err.message||err)}</td></tr>`;}}
 function openModal(){$("manualDate").value=yyyyMMddValue();$("manualAmount").value="";$("manualNote").value="";$("modalBackdrop").classList.add("show");}
 function closeModal(){$("modalBackdrop").classList.remove("show");}
