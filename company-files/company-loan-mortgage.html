@@ -19,6 +19,8 @@
 .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px;background:#fff;max-height:calc(100vh - 365px)}table{width:100%;min-width:1050px;border-collapse:separate;border-spacing:0}
 th,td{border-bottom:1px solid var(--line);padding:11px 10px;vertical-align:middle;font-size:14px;white-space:nowrap;background:#fff}th{position:sticky;top:0;z-index:2;background:#f8fafc;text-align:left;font-size:13px;color:#0f172a}tr:hover td{background:#fbfdff}
 .money{color:#063f91;font-weight:900}.tag{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:900;border:1px solid #cfe3ff;background:#eef6ff;color:#0f3f8c}.tag.ok{border-color:#b7e4d7;background:#effcf6;color:#0f766e}.tag.warn{border-color:#f5d7a1;background:#fff7e6;color:#b45309}
+.profit-link{text-decoration:none;cursor:pointer}
+.profit-link:hover{filter:brightness(.96);transform:translateY(-1px)}
 .msg{white-space:pre-wrap;line-height:1.6;font-size:14px;min-height:22px;margin-top:8px}.msg.ok{color:var(--ok)}.msg.err{color:var(--danger)}.empty{color:var(--muted);padding:16px 0}.photo-link{color:#0b4a9e;font-weight:800;text-decoration:underline;text-underline-offset:2px}
 .photo-thumbs{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .photo-thumb{width:52px;height:52px;border-radius:10px;object-fit:cover;border:1px solid var(--line);box-shadow:0 4px 10px rgba(15,23,42,.12);cursor:pointer;background:#fff}
@@ -105,34 +107,58 @@ function cleanLinkedText(v, fallback = ""){
   if (!s) return fallback;
   return isRecIdText(s) ? fallback : s;
 }
+function linkedIds(v){
+  if(Array.isArray(v)){
+    return v.map(x=>{
+      if(x && typeof x === "object") return String(x.id || x.recordId || x.value || "").trim();
+      return String(x || "").trim();
+    }).filter(x=>/^rec[a-zA-Z0-9]+$/.test(x));
+  }
 
+  if(v && typeof v === "object"){
+    const id = String(v.id || v.recordId || v.value || "").trim();
+    return /^rec[a-zA-Z0-9]+$/.test(id) ? [id] : [];
+  }
+
+  const s = String(v || "").trim();
+  return /^rec[a-zA-Z0-9]+$/.test(s) ? [s] : [];
+}
+
+function firstLinkedId(v){
+  return linkedIds(v)[0] || "";
+}
+
+function profitSummaryUrl(id){
+  if(!id) return "";
+  return `/company-files/company-profit-summary.html?profit_id=${encodeURIComponent(id)}`;
+}
 function normalizeRepayment(row){
   const f = row?.fields || row || {};
-
-  const profitDisplay = pick(f, [
-    "公司進利總結顯示",
-    "公司進利總結名稱",
-    "公司進利總結",
-    "結帳名稱",
-    "月份顯示",
-    "月份",
-    "來源月份",
-    "profitSummaryName",
-    "profitSummaryMonth",
-    "profitSummary"
-  ]);
 
   const profitLinked = pick(f, [
     "公司進利總結",
     "profitSummary"
   ]);
 
-  const hasProfitLink = !!text(profitLinked).trim();
+  const profitId = firstLinkedId(profitLinked);
+  const hasProfitLink = !!profitId || !!text(profitLinked).trim();
+
+  // 這裡不要再把「公司進利總結」關聯欄位放進來
+  // 因為 Airtable API 會回 recXXXX，不會回「額外結帳3」
+  const profitDisplay = pick(f, [
+    "公司進利總結顯示",
+    "公司進利總結名稱",
+    "結帳名稱",
+    "月份顯示",
+    "月份",
+    "來源月份",
+    "profitSummaryName",
+    "profitSummaryMonth"
+  ]);
 
   const profitText =
     cleanLinkedText(profitDisplay, "") ||
-    cleanLinkedText(profitLinked, "") ||
-    (hasProfitLink ? "公司進利結帳" : "手動新增");
+    (hasProfitLink ? "查看公司進利總結" : "手動新增");
 
   const autoAmount = num(pick(f, [
     "自動帶入還款金額",
@@ -151,6 +177,7 @@ function normalizeRepayment(row){
     id: row?.id || row?.recordId || "",
     date: text(pick(f, ["還款日期","日期","repayDate","date"])),
     amount: repayAmount || autoAmount,
+    profitId,
     profitSummary: hasProfitLink ? profitText : "",
     autoAmount,
     note: text(pick(f, ["備註","note","Note"])),
@@ -207,7 +234,15 @@ $("repayRows").innerHTML=repayments.map(r=>`
   <tr>
     <td>${escHtml(r.date||"-")}</td>
     <td class="money">${money(r.amount)}</td>
-    <td>${r.profitSummary ? `<span class="tag ok">${escHtml(r.profitSummary)}</span>` : `<span class="tag warn">手動／未連結</span>`}</td>
+    <td>${
+  r.profitSummary
+    ? (
+      r.profitId
+        ? `<a class="tag ok profit-link" href="${escHtml(profitSummaryUrl(r.profitId))}" target="_blank" title="開啟這筆公司進利總結">${escHtml(r.profitSummary)}</a>`
+        : `<span class="tag ok">${escHtml(r.profitSummary)}</span>`
+    )
+    : `<span class="tag warn">手動／未連結</span>`
+}</td>
     <td class="money">${r.autoAmount ? money(r.autoAmount) : "-"}</td>
     <td>${escHtml(r.note||"")}</td>
     <td>${photoHtml(r.photo)}</td>
