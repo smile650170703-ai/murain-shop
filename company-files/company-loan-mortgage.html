@@ -56,6 +56,55 @@ th,td{border-bottom:1px solid var(--line);padding:11px 10px;vertical-align:middl
   color:#14213d;
   font-size:14px;
 }
+
+.profit-mini-section{
+  margin-top:14px;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#fff;
+  overflow:hidden;
+}
+
+.profit-mini-title{
+  padding:10px 12px;
+  font-size:14px;
+  font-weight:900;
+  color:#0f172a;
+  background:#f8fafc;
+  border-bottom:1px solid var(--line);
+}
+
+.profit-mini-wrap{
+  overflow:auto;
+  max-height:320px;
+}
+
+.profit-mini-table{
+  width:100%;
+  min-width:760px;
+  border-collapse:separate;
+  border-spacing:0;
+}
+
+.profit-mini-table th,
+.profit-mini-table td{
+  padding:9px 10px;
+  font-size:13px;
+  white-space:normal;
+  border-bottom:1px solid var(--line);
+  background:#fff;
+  vertical-align:top;
+}
+
+.profit-mini-table th{
+  position:sticky;
+  top:0;
+  z-index:1;
+  background:#f8fafc;
+  color:#0f172a;
+  font-weight:900;
+}
+
 @media(max-width:640px){
   .profit-detail-grid{grid-template-columns:1fr}
 }
@@ -149,6 +198,7 @@ const API_COMBINED_CANDIDATES=[`${API_BASE}/op/company/loan-mortgage/list`,`${AP
 const API_REPAY_CANDIDATES=[`${API_BASE}/op/company/loan-mortgage/repayment-list`,`${API_BASE}/op/company/loan-mortgage/repayments`,`${API_BASE}/op/company/loan-repayment/list`,`${API_BASE}/op/company/mortgage-repayment/list`];
 const API_CREATE_REPAY_CANDIDATES=[`${API_BASE}/op/company/loan-mortgage/repayment-create`,`${API_BASE}/op/company/loan-repayment/create`,`${API_BASE}/op/company/mortgage-repayment/create`];
 const API_PROFIT_LIST=`${API_BASE}/op/company/profit-summary/list`;
+  const API_PROFIT_DETAIL=`${API_BASE}/op/company/profit-summary/detail`;
 
 const $=id=>document.getElementById(id);
 let master=null, repayments=[];
@@ -240,7 +290,164 @@ function sisterPersonalExpenseValue(r){
 function transferMortgageAmountValue(r){
   return getVal(r, ["transferMortgageAmount","transferRepayAmount","轉房貸金額"], 0);
 }
+function mortgageTransferSourceInfo(r){
+  const useBalance = bool(
+    r?.useBalanceForMortgage ??
+    r?.balanceRepay ??
+    r?.["轉房貸_用結餘"]
+  );
 
+  const useSisterCompanyFee = bool(
+    r?.useSisterFeeForMortgage ??
+    r?.sisterFeeRepayAuto ??
+    r?.["轉房貸_用妹妹公司費用"]
+  );
+
+  // 依你的欄位順序：第一個先看「轉房貸_用結餘」，再看「轉房貸_用妹妹公司費用」
+  if(useBalance){
+    return {
+      key: "balance",
+      label: "轉房貸_用結餘"
+    };
+  }
+
+  if(useSisterCompanyFee){
+    return {
+      key: "sister_company_fee",
+      label: "轉房貸_用妹妹公司費用"
+    };
+  }
+
+  return {
+    key: "",
+    label: "未標示"
+  };
+}
+
+function detailVal(row, keys, fallback = ""){
+  const src = row?.fields || row || {};
+  for(const k of keys){
+    const v = src?.[k];
+    if(v !== undefined && v !== null && String(text(v)).trim() !== ""){
+      return v;
+    }
+  }
+  return fallback;
+}
+
+function normalizeMonthlyProfitItem(row){
+  return {
+    orderId: text(detailVal(row, [
+      "order_id",
+      "OrderID",
+      "訂單編號",
+      "單號",
+      "orderId"
+    ], "")),
+    productDetail: text(detailVal(row, [
+      "商品明細",
+      "productDetail",
+      "items",
+      "detail",
+      "明細",
+      "商品"
+    ], "")),
+    netProfit: num(detailVal(row, [
+      "淨利_本單",
+      "netProfit",
+      "profit",
+      "淨利",
+      "profit_this_order",
+      "amount",
+      "金額"
+    ], 0))
+  };
+}
+
+async function fetchMonthlyProfitItemsForProfitRow(r){
+  const id = rowId(r);
+  const month = profitMonthLabel(r);
+
+  if(!id && !month){
+    return {
+      items: [],
+      error: "缺少公司進利總結 ID / 月份，無法讀取本月淨利清單。"
+    };
+  }
+
+  try{
+    const data = await fetchJson(API_PROFIT_DETAIL, {
+      id,
+      month,
+      key: "monthlyProfit",
+      field: "monthlyProfit",
+      type: "monthlyProfit",
+      max: 500
+    });
+
+    const rows =
+      Array.isArray(data.items) ? data.items :
+      Array.isArray(data.rows) ? data.rows :
+      Array.isArray(data.details) ? data.details :
+      [];
+
+    return {
+      items: rows.map(normalizeMonthlyProfitItem),
+      error: ""
+    };
+  }catch(e){
+    return {
+      items: [],
+      error: String(e?.message || e || "讀取本月淨利清單失敗")
+    };
+  }
+}
+
+function renderMonthlyProfitMiniTable(items = [], error = ""){
+  if(error){
+    return `
+      <div class="profit-mini-section">
+        <div class="profit-mini-title">本月淨利清單</div>
+        <div class="empty" style="padding:12px;">❌ ${escHtml(error)}</div>
+      </div>
+    `;
+  }
+
+  if(!Array.isArray(items) || !items.length){
+    return `
+      <div class="profit-mini-section">
+        <div class="profit-mini-title">本月淨利清單</div>
+        <div class="empty" style="padding:12px;">目前沒有本月淨利來源明細。</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="profit-mini-section">
+      <div class="profit-mini-title">本月淨利清單｜${items.length} 筆</div>
+      <div class="profit-mini-wrap">
+        <table class="profit-mini-table">
+          <thead>
+            <tr>
+              <th style="width:170px;">單號</th>
+              <th>商品明細</th>
+              <th style="width:140px;">淨利_本單</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(it => `
+              <tr>
+                <td>${escHtml(it.orderId || "-")}</td>
+                <td>${escHtml(it.productDetail || "-")}</td>
+                <td class="money">${money(it.netProfit)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
 async function loadProfitSummaryRows(){
   try{
     const data = await fetchJson(API_PROFIT_LIST,{max:300});
@@ -282,32 +489,48 @@ function closeProfitModal(){
   $("profitModalBody").innerHTML = "";
 }
 
-function renderProfitDetailHtml(r){
+function renderProfitDetailHtml(r, monthlyProfitItems = [], monthlyProfitError = ""){
   if(!r){
     return `<div class="empty">找不到這筆公司進利總結資料。</div>`;
   }
 
   const month = profitMonthLabel(r) || "-";
-  const confirmed = bool(r.confirmed ?? r.confirmedCompanyAccount ?? r["確認入公司帳"]);
+  const source = mortgageTransferSourceInfo(r);
+
   const balance = getVal(r, ["balance","結餘"], 0);
   const monthlyProfit = getVal(r, ["monthlyProfit","本月淨利"], 0);
-  const monthlyExpense = monthlyExpenseValue(r);
-  const sisterExpense = sisterPersonalExpenseValue(r);
   const transferMortgage = transferMortgageAmountValue(r);
-  const repayCreated = bool(r.repaymentRecordCreated ?? r.refundCreated ?? r["已建立還款紀錄"]);
   const repayDate = text(r.mortgageRepayDate ?? r.repaymentDate ?? r["房貸還款日期"] ?? "");
+
+  const shouldShowMonthlyProfitList = source.key === "balance";
 
   return `
     <div class="profit-detail-grid">
       <div class="profit-detail-item">
-        <div class="profit-detail-label">月份／結帳</div>
+        <div class="profit-detail-label">公司進利總結</div>
         <div class="profit-detail-value small">${escHtml(month)}</div>
       </div>
 
       <div class="profit-detail-item">
-        <div class="profit-detail-label">確認入公司帳</div>
-        <div class="profit-detail-value small">${confirmed ? "已確認" : "未確認"}</div>
+        <div class="profit-detail-label">轉房貸來源</div>
+        <div class="profit-detail-value small">${escHtml(source.label)}</div>
       </div>
+
+      <div class="profit-detail-item">
+        <div class="profit-detail-label">轉房貸金額／自動帶入還款金額</div>
+        <div class="profit-detail-value">${money(transferMortgage)}</div>
+      </div>
+
+      ${
+        source.key === "balance"
+          ? `
+            <div class="profit-detail-item">
+              <div class="profit-detail-label">本月淨利</div>
+              <div class="profit-detail-value">${money(monthlyProfit)}</div>
+            </div>
+          `
+          : ""
+      }
 
       <div class="profit-detail-item">
         <div class="profit-detail-label">結餘</div>
@@ -315,40 +538,23 @@ function renderProfitDetailHtml(r){
       </div>
 
       <div class="profit-detail-item">
-        <div class="profit-detail-label">本月淨利</div>
-        <div class="profit-detail-value">${money(monthlyProfit)}</div>
-      </div>
-
-      <div class="profit-detail-item">
-        <div class="profit-detail-label">每月開銷支出費用</div>
-        <div class="profit-detail-value">${money(monthlyExpense)}</div>
-      </div>
-
-      <div class="profit-detail-item">
-        <div class="profit-detail-label">每個月妹妹個人開銷*2</div>
-        <div class="profit-detail-value">${money(sisterExpense)}</div>
-      </div>
-
-      <div class="profit-detail-item">
-        <div class="profit-detail-label">轉房貸金額</div>
-        <div class="profit-detail-value">${money(transferMortgage)}</div>
-      </div>
-
-      <div class="profit-detail-item">
-        <div class="profit-detail-label">還款紀錄</div>
-        <div class="profit-detail-value small">${repayCreated ? "已建立還款紀錄" : "尚未建立還款紀錄"}</div>
-      </div>
-
-      <div class="profit-detail-item">
         <div class="profit-detail-label">房貸還款日期</div>
         <div class="profit-detail-value small">${escHtml(repayDate || "-")}</div>
       </div>
-
-      <div class="profit-detail-item">
-        <div class="profit-detail-label">Airtable Record ID</div>
-        <div class="profit-detail-value small">${escHtml(rowId(r) || "-")}</div>
-      </div>
     </div>
+
+    ${
+      shouldShowMonthlyProfitList
+        ? renderMonthlyProfitMiniTable(monthlyProfitItems, monthlyProfitError)
+        : `
+          <div class="profit-mini-section">
+            <div class="profit-mini-title">本月淨利清單</div>
+            <div class="empty" style="padding:12px;">
+              這筆不是「轉房貸_用結餘」，所以不顯示本月淨利來源清單。
+            </div>
+          </div>
+        `
+    }
   `;
 }
 
@@ -371,9 +577,21 @@ async function openProfitDetail(profitId, fallbackTitle=""){
   }
 
   const title = profitMonthLabel(row) || fallbackTitle || "公司進利總結";
+  const source = mortgageTransferSourceInfo(row);
+
   $("profitModalTitle").textContent = `${title}｜公司進利總結明細`;
-  $("profitModalHint").textContent = "此視窗只在房貸／借款主檔紀錄頁內顯示，不會跳轉頁面。";
-  $("profitModalBody").innerHTML = renderProfitDetailHtml(row);
+  $("profitModalHint").textContent = `轉房貸來源：${source.label}`;
+
+  let monthlyProfitItems = [];
+  let monthlyProfitError = "";
+
+  if(source.key === "balance"){
+    const result = await fetchMonthlyProfitItemsForProfitRow(row);
+    monthlyProfitItems = result.items || [];
+    monthlyProfitError = result.error || "";
+  }
+
+  $("profitModalBody").innerHTML = renderProfitDetailHtml(row, monthlyProfitItems, monthlyProfitError);
 }
 function normalizeRepayment(row){
   const f = row?.fields || row || {};
