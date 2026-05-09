@@ -19,8 +19,46 @@
 .table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px;background:#fff;max-height:calc(100vh - 365px)}table{width:100%;min-width:1050px;border-collapse:separate;border-spacing:0}
 th,td{border-bottom:1px solid var(--line);padding:11px 10px;vertical-align:middle;font-size:14px;white-space:nowrap;background:#fff}th{position:sticky;top:0;z-index:2;background:#f8fafc;text-align:left;font-size:13px;color:#0f172a}tr:hover td{background:#fbfdff}
 .money{color:#063f91;font-weight:900}.tag{display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:999px;font-size:12px;font-weight:900;border:1px solid #cfe3ff;background:#eef6ff;color:#0f3f8c}.tag.ok{border-color:#b7e4d7;background:#effcf6;color:#0f766e}.tag.warn{border-color:#f5d7a1;background:#fff7e6;color:#b45309}
-.profit-link{text-decoration:none;cursor:pointer}
+.profit-link{
+  text-decoration:none;
+  cursor:pointer;
+  font-family:inherit;
+  border-color:#b7e4d7;
+  background:#effcf6;
+  color:#0f766e;
+}
 .profit-link:hover{filter:brightness(.96);transform:translateY(-1px)}
+
+.profit-detail-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+}
+.profit-detail-item{
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#fff;
+  padding:12px;
+}
+.profit-detail-label{
+  color:#64748b;
+  font-size:12px;
+  font-weight:900;
+  margin-bottom:6px;
+}
+.profit-detail-value{
+  color:#0b4a9e;
+  font-size:17px;
+  font-weight:900;
+  line-height:1.4;
+}
+.profit-detail-value.small{
+  color:#14213d;
+  font-size:14px;
+}
+@media(max-width:640px){
+  .profit-detail-grid{grid-template-columns:1fr}
+}
 .msg{white-space:pre-wrap;line-height:1.6;font-size:14px;min-height:22px;margin-top:8px}.msg.ok{color:var(--ok)}.msg.err{color:var(--danger)}.empty{color:var(--muted);padding:16px 0}.photo-link{color:#0b4a9e;font-weight:800;text-decoration:underline;text-underline-offset:2px}
 .photo-thumbs{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .photo-thumb{width:52px;height:52px;border-radius:10px;object-fit:cover;border:1px solid var(--line);box-shadow:0 4px 10px rgba(15,23,42,.12);cursor:pointer;background:#fff}
@@ -91,13 +129,31 @@ th,td{border-bottom:1px solid var(--line);padding:11px 10px;vertical-align:middl
   </div>
 </div>
 
+<div class="modal-backdrop" id="profitModalBackdrop">
+  <div class="modal" style="width:min(860px,96vw);">
+    <div class="modal-head">
+      <div>
+        <div class="modal-title" id="profitModalTitle">公司進利總結明細</div>
+        <div class="hint" id="profitModalHint"></div>
+      </div>
+      <button class="btn" id="btnCloseProfitModal" type="button">關閉</button>
+    </div>
+    <div class="modal-body" id="profitModalBody"></div>
+  </div>
+</div>
+
 <script>
 const STORAGE_OK="company_entry_ok"; if(sessionStorage.getItem(STORAGE_OK)!=="1"){location.href="/company-files/company-index.html";}
 const API_BASE="https://api.murain.tw";
 const API_COMBINED_CANDIDATES=[`${API_BASE}/op/company/loan-mortgage/list`,`${API_BASE}/op/company/loan-mortgage/summary`,`${API_BASE}/op/company/loan/list`,`${API_BASE}/op/company/mortgage/list`];
 const API_REPAY_CANDIDATES=[`${API_BASE}/op/company/loan-mortgage/repayment-list`,`${API_BASE}/op/company/loan-mortgage/repayments`,`${API_BASE}/op/company/loan-repayment/list`,`${API_BASE}/op/company/mortgage-repayment/list`];
 const API_CREATE_REPAY_CANDIDATES=[`${API_BASE}/op/company/loan-mortgage/repayment-create`,`${API_BASE}/op/company/loan-repayment/create`,`${API_BASE}/op/company/mortgage-repayment/create`];
-const $=id=>document.getElementById(id); let master=null, repayments=[];
+const API_PROFIT_LIST=`${API_BASE}/op/company/profit-summary/list`;
+
+const $=id=>document.getElementById(id);
+let master=null, repayments=[];
+let profitSummaryRows=[];
+let profitSummaryMap=new Map();
 function money(v){const n=Number(String(v??"").replace(/[^\d.-]/g,""))||0;const sign=n<0?"-":"";return `${sign}NT$ ${Math.abs(Math.round(n)).toLocaleString("zh-TW")}`;}
 function num(v){const n=Number(String(v??"").replace(/[^\d.-]/g,""));return Number.isFinite(n)?n:0;}
 function text(v){if(Array.isArray(v))return v.map(x=>x==null?"":typeof x==="object"?String(x.name||x.url||x.id||""):String(x)).filter(Boolean).join(" / ");if(v==null)return "";if(typeof v==="object")return String(v.name||v.url||v.id||"");return String(v);}
@@ -136,9 +192,188 @@ function firstLinkedId(v){
   return linkedIds(v)[0] || "";
 }
 
-function profitSummaryUrl(id){
-  if(!id) return "";
-  return `/company-files/company-profit-summary.html?profit_id=${encodeURIComponent(id)}`;
+function rowId(r){
+  return String(r?.id || r?.recordId || "").trim();
+}
+
+function bool(v){
+  if(typeof v === "boolean") return v;
+  const s = String(v ?? "").trim().toLowerCase();
+  return ["1","true","yes","y","on","checked","是","已確認","已建立","已扣款"].includes(s);
+}
+
+function getVal(r, keys, fallback = 0){
+  for(const k of keys){
+    const v = r?.[k];
+    if(v !== undefined && v !== null && String(v).trim?.() !== "") return v;
+  }
+  return fallback;
+}
+
+function profitMonthLabel(r){
+  return text(
+    r?.month ||
+    r?.Month ||
+    r?.["月份"] ||
+    r?.name ||
+    r?.Name ||
+    r?.["名稱"] ||
+    r?.["公司進利總結"] ||
+    r?.["結帳名稱"] ||
+    ""
+  );
+}
+
+function monthlyExpenseValue(r){
+  return getVal(r, ["monthlyExpense","每月開銷支出費用"], 0);
+}
+
+function sisterPersonalExpenseValue(r){
+  const direct = getVal(r, ["monthlySisterPersonalExpense2","sisterPersonalExpense2","每個月妹妹個人開銷*2","每個月妹妹個人開銷２"], null);
+  if(direct !== null && direct !== undefined) return direct;
+
+  return num(getVal(r, ["cardSisterExpense","信用卡-妹妹個人支出"], 0)) +
+         num(getVal(r, ["cashBorrowSister","現金-借支 [妹妹]","現金-借支 [ 妹妹 ]"], 0)) +
+         num(getVal(r, ["sisterMortgage","妹妹白河農會房貸"], 0));
+}
+
+function transferMortgageAmountValue(r){
+  return getVal(r, ["transferMortgageAmount","transferRepayAmount","轉房貸金額"], 0);
+}
+
+async function loadProfitSummaryRows(){
+  try{
+    const data = await fetchJson(API_PROFIT_LIST,{max:300});
+    profitSummaryRows = Array.isArray(data.rows) ? data.rows : [];
+    profitSummaryMap = new Map(
+      profitSummaryRows
+        .map(r => [rowId(r), r])
+        .filter(([id]) => id)
+    );
+  }catch(e){
+    console.warn("loadProfitSummaryRows failed", e);
+    profitSummaryRows = [];
+    profitSummaryMap = new Map();
+  }
+}
+
+function enrichProfitSummaryText(r){
+  if(!r?.profitId) return r;
+
+  const profitRow = profitSummaryMap.get(r.profitId);
+  const label = profitMonthLabel(profitRow);
+
+  if(label){
+    return {
+      ...r,
+      profitSummary: label
+    };
+  }
+
+  return r;
+}
+
+function openProfitModal(){
+  $("profitModalBackdrop").classList.add("show");
+}
+
+function closeProfitModal(){
+  $("profitModalBackdrop").classList.remove("show");
+  $("profitModalBody").innerHTML = "";
+}
+
+function renderProfitDetailHtml(r){
+  if(!r){
+    return `<div class="empty">找不到這筆公司進利總結資料。</div>`;
+  }
+
+  const month = profitMonthLabel(r) || "-";
+  const confirmed = bool(r.confirmed ?? r.confirmedCompanyAccount ?? r["確認入公司帳"]);
+  const balance = getVal(r, ["balance","結餘"], 0);
+  const monthlyProfit = getVal(r, ["monthlyProfit","本月淨利"], 0);
+  const monthlyExpense = monthlyExpenseValue(r);
+  const sisterExpense = sisterPersonalExpenseValue(r);
+  const transferMortgage = transferMortgageAmountValue(r);
+  const repayCreated = bool(r.repaymentRecordCreated ?? r.refundCreated ?? r["已建立還款紀錄"]);
+  const repayDate = text(r.mortgageRepayDate ?? r.repaymentDate ?? r["房貸還款日期"] ?? "");
+
+  return `
+    <div class="profit-detail-grid">
+      <div class="profit-detail-item">
+        <div class="profit-detail-label">月份／結帳</div>
+        <div class="profit-detail-value small">${escHtml(month)}</div>
+      </div>
+
+      <div class="profit-detail-item">
+        <div class="profit-detail-label">確認入公司帳</div>
+        <div class="profit-detail-value small">${confirmed ? "已確認" : "未確認"}</div>
+      </div>
+
+      <div class="profit-detail-item">
+        <div class="profit-detail-label">結餘</div>
+        <div class="profit-detail-value">${money(balance)}</div>
+      </div>
+
+      <div class="profit-detail-item">
+        <div class="profit-detail-label">本月淨利</div>
+        <div class="profit-detail-value">${money(monthlyProfit)}</div>
+      </div>
+
+      <div class="profit-detail-item">
+        <div class="profit-detail-label">每月開銷支出費用</div>
+        <div class="profit-detail-value">${money(monthlyExpense)}</div>
+      </div>
+
+      <div class="profit-detail-item">
+        <div class="profit-detail-label">每個月妹妹個人開銷*2</div>
+        <div class="profit-detail-value">${money(sisterExpense)}</div>
+      </div>
+
+      <div class="profit-detail-item">
+        <div class="profit-detail-label">轉房貸金額</div>
+        <div class="profit-detail-value">${money(transferMortgage)}</div>
+      </div>
+
+      <div class="profit-detail-item">
+        <div class="profit-detail-label">還款紀錄</div>
+        <div class="profit-detail-value small">${repayCreated ? "已建立還款紀錄" : "尚未建立還款紀錄"}</div>
+      </div>
+
+      <div class="profit-detail-item">
+        <div class="profit-detail-label">房貸還款日期</div>
+        <div class="profit-detail-value small">${escHtml(repayDate || "-")}</div>
+      </div>
+
+      <div class="profit-detail-item">
+        <div class="profit-detail-label">Airtable Record ID</div>
+        <div class="profit-detail-value small">${escHtml(rowId(r) || "-")}</div>
+      </div>
+    </div>
+  `;
+}
+
+async function openProfitDetail(profitId, fallbackTitle=""){
+  $("profitModalTitle").textContent = "公司進利總結明細";
+  $("profitModalHint").textContent = fallbackTitle || "";
+  $("profitModalBody").innerHTML = `<div class="empty">載入中...</div>`;
+  openProfitModal();
+
+  if(!profitSummaryMap.size){
+    await loadProfitSummaryRows();
+  }
+
+  const row = profitSummaryMap.get(String(profitId || "").trim());
+
+  if(!row){
+    $("profitModalHint").textContent = `找不到資料 ID：${profitId || "-"}`;
+    $("profitModalBody").innerHTML = `<div class="empty">目前公司進利總結清單沒有回傳這筆資料，請確認後端 /op/company/profit-summary/list 是否有包含這個 ID。</div>`;
+    return;
+  }
+
+  const title = profitMonthLabel(row) || fallbackTitle || "公司進利總結";
+  $("profitModalTitle").textContent = `${title}｜公司進利總結明細`;
+  $("profitModalHint").textContent = "此視窗只在房貸／借款主檔紀錄頁內顯示，不會跳轉頁面。";
+  $("profitModalBody").innerHTML = renderProfitDetailHtml(row);
 }
 function normalizeRepayment(row){
   const f = row?.fields || row || {};
@@ -246,7 +481,7 @@ $("repayRows").innerHTML=repayments.map(r=>`
   r.profitSummary
     ? (
       r.profitId
-        ? `<a class="tag ok profit-link" href="${escHtml(profitSummaryUrl(r.profitId))}" target="_blank" title="開啟這筆公司進利總結">${escHtml(r.profitSummary)}</a>`
+        ? `<button type="button" class="tag ok profit-link" data-profit-id="${escHtml(r.profitId)}" data-profit-title="${escHtml(r.profitSummary)}" title="查看這筆公司進利總結明細">${escHtml(r.profitSummary)}</button>`
         : `<span class="tag ok">${escHtml(r.profitSummary)}</span>`
     )
     : `<span class="tag warn">手動／未連結</span>`
@@ -256,7 +491,38 @@ $("repayRows").innerHTML=repayments.map(r=>`
     <td>${photoHtml(r.photo)}</td>
   </tr>
 `).join("");}
-async function loadAll(){$("msg").textContent="載入中...";$("msg").className="msg";try{const combined=await firstWorking(API_COMBINED_CANDIDATES,{max:300});master=readMasterFromData(combined.data);repayments=readRepaymentsFromData(combined.data);if(!repayments.length){try{const repayData=await firstWorking(API_REPAY_CANDIDATES,{max:500,master_id:master?.id||""});repayments=readRepaymentsFromData(repayData.data);}catch{}}repayments.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));render();$("msg").textContent=`✅ 載入完成：${repayments.length} 筆還款紀錄`;$("msg").className="msg ok";}catch(err){$("msg").textContent=`❌ ${err.message||err}\n請確認後端是否有房貸／借款主檔紀錄 API。`;$("msg").className="msg err";$("repayRows").innerHTML=`<tr><td colspan="7" class="empty">❌ ${escHtml(err.message||err)}</td></tr>`;}}
+async function loadAll(){
+  $("msg").textContent="載入中...";
+  $("msg").className="msg";
+
+  try{
+    const combined=await firstWorking(API_COMBINED_CANDIDATES,{max:300});
+    master=readMasterFromData(combined.data);
+    repayments=readRepaymentsFromData(combined.data);
+
+    if(!repayments.length){
+      try{
+        const repayData=await firstWorking(API_REPAY_CANDIDATES,{max:500,master_id:master?.id||""});
+        repayments=readRepaymentsFromData(repayData.data);
+      }catch{}
+    }
+
+    await loadProfitSummaryRows();
+
+    repayments = repayments.map(enrichProfitSummaryText);
+    repayments.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
+
+    render();
+
+    $("msg").textContent=`✅ 載入完成：${repayments.length} 筆還款紀錄`;
+    $("msg").className="msg ok";
+
+  }catch(err){
+    $("msg").textContent=`❌ ${err.message||err}\n請確認後端是否有房貸／借款主檔紀錄 API。`;
+    $("msg").className="msg err";
+    $("repayRows").innerHTML=`<tr><td colspan="6" class="empty">❌ ${escHtml(err.message||err)}</td></tr>`;
+  }
+}
 function openModal(){$("manualDate").value=yyyyMMddValue();$("manualAmount").value="";$("manualNote").value="";$("modalBackdrop").classList.add("show");}
 function closeModal(){$("modalBackdrop").classList.remove("show");}
 async function firstWorkingPost(urls,body={}){let lastErr=null;for(const u of urls){try{const r=await fetch(u,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});const data=await r.json().catch(()=>({}));if(!r.ok||data.ok===false)throw new Error(data.message||data.error||`${r.status} ${r.statusText}`);return{url:u,data};}catch(e){lastErr=e}}throw lastErr||new Error("找不到可用新增 API");}
@@ -269,7 +535,23 @@ $("btnSubmitManual").addEventListener("click",createManualRepayment);
 
 $("btnClosePhotoViewer").addEventListener("click",closePhotoViewer);
 $("photoViewer").addEventListener("click",e=>{if(e.target.id==="photoViewer")closePhotoViewer();});
-document.addEventListener("keydown",e=>{if(e.key==="Escape")closePhotoViewer();});
+
+$("btnCloseProfitModal").addEventListener("click",closeProfitModal);
+$("profitModalBackdrop").addEventListener("click",e=>{if(e.target.id==="profitModalBackdrop")closeProfitModal();});
+
+document.addEventListener("click",e=>{
+  const profitBtn = e.target.closest("[data-profit-id]");
+  if(profitBtn){
+    openProfitDetail(profitBtn.dataset.profitId, profitBtn.dataset.profitTitle || "");
+  }
+});
+
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){
+    closePhotoViewer();
+    closeProfitModal();
+  }
+});
 
 loadAll();
 </script>
