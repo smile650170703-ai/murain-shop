@@ -550,9 +550,12 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 </div>
 
     <div class="side-box">
-    <label>LINE 名稱搜尋</label>
-    <input id="line_search" type="text" placeholder="輸入 LINE 名稱" />
-  </div>
+  <label>LINE 名稱搜尋</label>
+  <input id="line_search" type="text" placeholder="輸入 LINE 名稱" />
+
+  <label style="margin-top:10px;">訂單單號搜尋</label>
+  <input id="order_search" type="text" placeholder="輸入訂單單號" />
+</div>
 
 <div class="side-box hidden" id="benefitReviewPanel">
   <div class="side-box-head">
@@ -768,7 +771,8 @@ let ORDERS_CACHE = []; // ← 匯出用，存純欄位物件
 let ALL_ORDERS_CACHE = [];
 let VENDOR_SUMMARY_CACHE = [];
 let LINE_SEARCH_TERM = '';
- let currentConsignAccountingRows = [];
+let ORDER_SEARCH_TERM = '';
+let currentConsignAccountingRows = [];
 let currentConsignAccountingBucket = '';
 
 let currentPanelMode = 'orders';      // orders / consign
@@ -1124,14 +1128,38 @@ function monthKeyOfRecord(f){
   return month;
 }
 
+function normalizeSearchText(v){
+  return String(v || '').trim().toLowerCase().replace(/\s+/g, '');
+}
+
 function applyLineNameSearch(rows){
-  const q = String(LINE_SEARCH_TERM || '').trim().toLowerCase();
-  if (!q) return rows || [];
+  const qLine = normalizeSearchText(LINE_SEARCH_TERM);
+  const qOrder = normalizeSearchText(ORDER_SEARCH_TERM);
+
+  if (!qLine && !qOrder) return rows || [];
 
   return (rows || []).filter(rec => {
     const f = rec.fields || rec || {};
-    const lineName = String(getLineName(f, parseShippingInfo(f)) || '').trim().toLowerCase();
-    return lineName.includes(q);
+
+    const lineName = normalizeSearchText(
+      getLineName(f, parseShippingInfo(f)) || ''
+    );
+
+    const orderText = normalizeSearchText([
+      f.order_id,
+      f.orderId,
+      f.OrderId,
+      f.order_no,
+      f.orderNo,
+      f['訂單單號'],
+      f['訂單編號'],
+      rec.id
+    ].filter(Boolean).join(' '));
+
+    const lineOk = !qLine || lineName.includes(qLine);
+    const orderOk = !qOrder || orderText.includes(qOrder);
+
+    return lineOk && orderOk;
   });
 }
 
@@ -2516,10 +2544,12 @@ async function loadOrders(filter='all', extra = {}){
       throw new Error(j.error || 'load_failed');
     }
 
-    currentOrders = j.orders || j.records || [];
-    ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
-    renderOrderList();
-    updateSummary();
+    const loadedOrders = j.orders || j.records || [];
+currentOrders = applyLineNameSearch(loadedOrders);
+
+ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
+renderOrderList();
+updateSummary();
   }catch(e){
     console.error(e);
     listEl.innerHTML = '<div class="error">載入失敗：' + (e.message || e) + '</div>';
@@ -5696,13 +5726,25 @@ if (btnCartRemindTop){
   });
 }
 
-// LINE 名稱搜尋
+// LINE 名稱搜尋 + 訂單單號搜尋
+async function handleSideSearchInput(){
+  const lineSearchEl = $('#line_search');
+  const orderSearchEl = $('#order_search');
+
+  LINE_SEARCH_TERM = lineSearchEl ? (lineSearchEl.value || '') : '';
+  ORDER_SEARCH_TERM = orderSearchEl ? (orderSearchEl.value || '') : '';
+
+  await reloadCurrentView();
+}
+
 const lineSearchEl = $('#line_search');
 if (lineSearchEl){
-  lineSearchEl.addEventListener('input', async ()=>{
-    LINE_SEARCH_TERM = lineSearchEl.value || '';
-    await reloadCurrentView();
-  });
+  lineSearchEl.addEventListener('input', handleSideSearchInput);
+}
+
+const orderSearchEl = $('#order_search');
+if (orderSearchEl){
+  orderSearchEl.addEventListener('input', handleSideSearchInput);
 }
 
 // 賣貨便月份預設本月
