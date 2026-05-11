@@ -86,7 +86,7 @@
       box-shadow:0 10px 30px rgba(15,23,42,.05);
     }
     .head{
-      display:flex;
+    
       justify-content:space-between;
       align-items:center;
       gap:12px;
@@ -98,7 +98,7 @@
       font-weight:900;
     }
     .toolbar{
-      display:flex;
+    
       gap:10px;
       flex-wrap:wrap;
       align-items:center;
@@ -149,7 +149,7 @@
     }
     
     .hero-total{
-      display:flex;
+    
       justify-content:center;
       align-items:center;
       margin:4px 0 18px;
@@ -274,11 +274,11 @@
       color:#64748b;
     }
     .ops{
-      display:flex;
-      gap:7px;
-      flex-wrap:wrap;
-      min-width:360px;
-    }
+  display:flex;
+  gap:7px;
+  flex-wrap:wrap;
+  min-width:auto;
+}
     .empty{
       color:var(--muted);
       padding:16px 0;
@@ -389,39 +389,66 @@
     </div>
 
     <div class="card">
-      <div class="head">
-        <div>
-          <div class="title">總清單表</div>
-          <div class="hint">只顯示主要欄位。每月開銷、妹妹個人開銷、轉房貸金額旁邊的「＋」可展開組成欄位。</div>
-        </div>
-        <div class="toolbar">
-          <button class="btn" type="button" id="btnReload">重新整理</button>
-          <button class="btn secondary" type="button" id="btnLatest">跳到最新月份</button>
-        </div>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>月份</th>
-              <th>確認入公司帳</th>
-              <th>結餘</th>
-              <th>本月淨利</th>
-              <th>每月開銷支出費用</th>
-              <th>每個月妹妹個人開銷*2</th>
-              <th>轉房貸金額</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="rows">
-            <tr><td colspan="8" class="empty">載入中...</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="msg" id="msg"></div>
+  <div class="head">
+    <div class="title">已確認清單</div>
+    <div class="toolbar">
+      <span class="tag ok" id="confirmedCountTag">0 筆</span>
+      <button class="btn" type="button" id="btnReload">重新整理</button>
+      <button class="btn secondary" type="button" id="btnLatest">跳到最新月份</button>
     </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>月份</th>
+          <th>確認入公司帳</th>
+          <th>結餘</th>
+          <th>本月淨利</th>
+          <th>每月開銷支出費用</th>
+          <th>每個月妹妹個人開銷*2</th>
+          <th>轉房貸金額</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="confirmedRows">
+        <tr><td colspan="8" class="empty">載入中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="head">
+    <div class="title">未確認清單</div>
+    <div class="toolbar">
+      <span class="tag warn" id="unconfirmedCountTag">0 筆</span>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>月份</th>
+          <th>確認入公司帳</th>
+          <th>結餘</th>
+          <th>本月淨利</th>
+          <th>每月開銷支出費用</th>
+          <th>每個月妹妹個人開銷*2</th>
+          <th>轉房貸金額</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="unconfirmedRows">
+        <tr><td colspan="8" class="empty">載入中...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="msg" id="msg"></div>
+</div>
   </div>
 
   <div class="modal-backdrop" id="modalBackdrop">
@@ -661,44 +688,74 @@ function renderHeroTotal() {
   if ($("heroSub")) $("heroSub").textContent = `目前加總 ${confirmedRows.length} 個已確認月份的結餘。`;
 }
 
+function renderProfitRowHtml(r){
+  const month = monthLabel(r);
+  const id = r.id || r.recordId || "";
+  const confirmed = bool(r.confirmed ?? r.confirmedCompanyAccount ?? r["確認入公司帳"]);
+
+  const balance = getVal(r, ["balance", "結餘"], 0);
+  const monthlyProfit = getVal(r, ["monthlyProfit", "本月淨利"], 0);
+  const mExpense = monthlyExpenseValue(r);
+  const sExpense = sisterPersonalExpenseValue(r);
+  const repayAmount = transferMortgageAmountValue(r);
+
+  return `
+    <tr data-row-id="${escHtml(id)}" data-month="${escHtml(month)}">
+      <td><strong>${escHtml(month)}</strong></td>
+      <td>${tagYesNo(confirmed, "已確認", "未確認")}</td>
+      <td>${amountLink(r, "balance", "結餘", balance)}</td>
+      <td>${amountLink(r, "monthlyProfit", "本月淨利", monthlyProfit)}</td>
+      <td>
+        <span class="money-inline">
+          ${amountLink(r, "monthlyExpense", "每月開銷支出費用", mExpense)}
+          <button class="plus-btn" data-expand="monthlyExpense" data-id="${escHtml(id)}">＋</button>
+        </span>
+      </td>
+      <td>
+        <span class="money-inline">
+          ${amountLink(r, "sisterPersonalExpense", "每個月妹妹個人開銷*2", sExpense)}
+          <button class="plus-btn" data-expand="sisterPersonal" data-id="${escHtml(id)}">＋</button>
+        </span>
+      </td>
+      <td>
+        <span class="money-inline">
+          ${amountLink(r, "transferMortgageAmount", "轉房貸金額", repayAmount)}
+          <button class="plus-btn" data-expand="transferMortgage" data-id="${escHtml(id)}">＋</button>
+        </span>
+      </td>
+      <td>
+        <div class="ops">
+          <button
+            class="btn-mini btn green"
+            data-action="confirm_company_account"
+            data-id="${escHtml(id)}"
+            ${confirmed ? "disabled" : ""}
+          >確認入帳</button>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
 function renderRows() {
-  if (!allRows.length) {
-    $("rows").innerHTML = `<tr><td colspan="8" class="empty">目前沒有資料。</td></tr>`;
-    return;
-  }
+  const confirmedRows = allRows.filter(r =>
+    bool(r.confirmed ?? r.confirmedCompanyAccount ?? r["確認入公司帳"])
+  );
 
-  $("rows").innerHTML = allRows.map(r => {
-    const month = monthLabel(r);
-    const id = r.id || r.recordId || "";
-    const confirmed = bool(r.confirmed ?? r.confirmedCompanyAccount ?? r["確認入公司帳"]);
-    const balanceRepay = bool(r.useBalanceForMortgage ?? r.balanceRepay ?? r["轉房貸_用結餘"]);
-    const repayCreated = bool(r.repaymentRecordCreated ?? r.refundCreated ?? r["已建立還款紀錄"]);
+  const unconfirmedRows = allRows.filter(r =>
+    !bool(r.confirmed ?? r.confirmedCompanyAccount ?? r["確認入公司帳"])
+  );
 
-    const balance = getVal(r, ["balance", "結餘"], 0);
-    const monthlyProfit = getVal(r, ["monthlyProfit", "本月淨利"], 0);
-    const mExpense = monthlyExpenseValue(r);
-    const sExpense = sisterPersonalExpenseValue(r);
-    const repayAmount = transferMortgageAmountValue(r);
+  $("confirmedCountTag").textContent = `${confirmedRows.length} 筆`;
+  $("unconfirmedCountTag").textContent = `${unconfirmedRows.length} 筆`;
 
-    return `
-      <tr data-row-id="${escHtml(id)}" data-month="${escHtml(month)}">
-        <td><strong>${escHtml(month)}</strong></td>
-        <td>${tagYesNo(confirmed, "已確認", "未確認")}</td>
-        <td>${amountLink(r, "balance", "結餘", balance)}</td>
-        <td>${amountLink(r, "monthlyProfit", "本月淨利", monthlyProfit)}</td>
-        <td><span class="money-inline">${amountLink(r, "monthlyExpense", "每月開銷支出費用", mExpense)}<button class="plus-btn" data-expand="monthlyExpense" data-id="${escHtml(id)}">＋</button></span></td>
-        <td><span class="money-inline">${amountLink(r, "sisterPersonalExpense", "每個月妹妹個人開銷*2", sExpense)}<button class="plus-btn" data-expand="sisterPersonal" data-id="${escHtml(id)}">＋</button></span></td>
-        <td><span class="money-inline">${amountLink(r, "transferMortgageAmount", "轉房貸金額", repayAmount)}<button class="plus-btn" data-expand="transferMortgage" data-id="${escHtml(id)}">＋</button></span></td>
-        <td>
-          <div class="ops">
-            <button class="btn-mini btn green" data-action="confirm_company_account" data-id="${escHtml(id)}" ${confirmed ? "disabled" : ""}>確認入帳</button>
-            <button class="btn-mini btn orange" data-action="use_balance_repay" data-id="${escHtml(id)}" ${balanceRepay ? "disabled" : ""}>結餘轉還款</button>
-            <button class="btn-mini btn gray" data-loan-panel="1" data-id="${escHtml(id)}" data-month="${escHtml(month)}" data-created="${repayCreated ? "1" : "0"}">房貸／借款主檔紀錄</button>
-          </div>
-        </td>
-      </tr>
-    `;
-  }).join("");
+  $("confirmedRows").innerHTML = confirmedRows.length
+    ? confirmedRows.map(renderProfitRowHtml).join("")
+    : `<tr><td colspan="8" class="empty">目前沒有已確認資料。</td></tr>`;
+
+  $("unconfirmedRows").innerHTML = unconfirmedRows.length
+    ? unconfirmedRows.map(renderProfitRowHtml).join("")
+    : `<tr><td colspan="8" class="empty">目前沒有未確認資料。</td></tr>`;
 }
 
 async function loadRows({ keepScroll = false } = {}) {
@@ -717,7 +774,9 @@ async function loadRows({ keepScroll = false } = {}) {
       setTimeout(() => { document.querySelector(".table-wrap").scrollTop = oldScroll; }, 0);
     }
   } catch (err) {
-    $("rows").innerHTML = `<tr><td colspan="8" class="empty">❌ ${escHtml(err.message || err)}</td></tr>`;
+    const errHtml = `<tr><td colspan="8" class="empty">❌ ${escHtml(err.message || err)}</td></tr>`;
+    $("confirmedRows").innerHTML = errHtml;
+    $("unconfirmedRows").innerHTML = errHtml;
     $("msg").textContent = `❌ ${err.message || err}`;
     $("msg").className = "msg err";
   }
