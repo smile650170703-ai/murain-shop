@@ -192,6 +192,7 @@ async function ensureXuyuanOfficialFriendBeforeBind() {
       const [isLoading, setIsLoading] = useState(false);
       const [statusMsg, setStatusMsg] = useState("");
       const [lineProfile, setLineProfile] = useState(null);
+      const [isAlreadyBound, setIsAlreadyBound] = useState(false);
       const [formData, setFormData] = useState({ phone: "", name: "", email: "" });
       const phoneInputRef = React.useRef(null);
       
@@ -352,10 +353,17 @@ setFormData((prev) => ({ ...prev, email: autoEmail }));
       throw new Error(j.error || "bind_failed");
     }
 
-    setStep(3);
-    generateFortune();
+const alreadyBound = j.already_bound === true;
 
-    setTimeout(goAfterBind, 1500);
+setIsAlreadyBound(alreadyBound);
+setStep(3);
+
+// 已經綁定過就不要再產生「新會員運勢」內容
+if (!alreadyBound) {
+  generateFortune();
+}
+
+setTimeout(goAfterBind, alreadyBound ? 1200 : 1500);
 
   } catch (e) {
     console.error("bind failed:", e);
@@ -526,30 +534,35 @@ setFormData((prev) => ({ ...prev, email: autoEmail }));
                   <span className="text-5xl text-gold drop-shadow-[0_0_20px_rgba(212,175,55,0.6)] animate-float">✓</span>
                 </div>
 
-                <h2 className="text-3xl text-white mb-2 tracking-wide font-medium">綁定成功</h2>
-                <p className="text-white/40 text-xs tracking-[0.2em] uppercase mb-12">
-                  歡迎加入 XUYUAN
-                </p>
+    <h2 className="text-3xl text-white mb-2 tracking-wide font-medium">
+  {isAlreadyBound ? "已完成綁定" : "綁定成功"}
+</h2>
 
-                {/* 運勢卡片 (黑金卡質感) */}
-                <div className="w-full bg-gradient-to-br from-[#1a1a1a] to-black border border-white/10 p-8 relative overflow-hidden group shadow-2xl">
-                  {/* 金屬邊框流光 */}
-                  <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-gold to-transparent opacity-50 animate-shimmer" />
-                  
-                  <div className="text-[10px] text-gold uppercase tracking-[0.3em] mb-4 flex items-center justify-center gap-3 opacity-80">
-                    <span className="w-8 h-[1px] bg-gold/30"></span>
-                    <span>專屬運勢</span>
-                    <span className="w-8 h-[1px] bg-gold/30"></span>
-                  </div>
-                  
-                  {isFortuneLoading ? (
-                    <div className="text-white/30 text-xs animate-pulse font-light tracking-wider">正在解讀星象...</div>
-                  ) : (
-                    <p className="text-white text-sm font-serif leading-relaxed tracking-wide opacity-90 text-shadow-sm">
-                      {fortune}
-                    </p>
-                  )}
-                </div>
+<p className="text-white/40 text-xs tracking-[0.2em] uppercase mb-12">
+  {isAlreadyBound ? "您已完成會員綁定，無需重複操作" : "歡迎加入 XUYUAN"}
+</p>
+
+{/* 只有第一次綁定成功，才顯示運勢卡片 */}
+{!isAlreadyBound && (
+  <div className="w-full bg-gradient-to-br from-[#1a1a1a] to-black border border-white/10 p-8 relative overflow-hidden group shadow-2xl">
+    {/* 金屬邊框流光 */}
+    <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-gold to-transparent opacity-50 animate-shimmer" />
+    
+    <div className="text-[10px] text-gold uppercase tracking-[0.3em] mb-4 flex items-center justify-center gap-3 opacity-80">
+      <span className="w-8 h-[1px] bg-gold/30"></span>
+      <span>專屬運勢</span>
+      <span className="w-8 h-[1px] bg-gold/30"></span>
+    </div>
+    
+    {isFortuneLoading ? (
+      <div className="text-white/30 text-xs animate-pulse font-light tracking-wider">正在解讀星象...</div>
+    ) : (
+      <p className="text-white text-sm font-serif leading-relaxed tracking-wide opacity-90 text-shadow-sm">
+        {fortune}
+      </p>
+    )}
+  </div>
+)}
 
                 <button onClick={handleClose} className="mt-12 text-white/30 text-[10px] uppercase tracking-[0.2em] hover:text-gold transition-colors py-2 border-b border-transparent hover:border-gold/50">
                   關閉視窗
