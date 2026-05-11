@@ -386,6 +386,23 @@
       cursor:pointer;
     }
     .money-link:hover{ color:#0ea5e9; }
+    .balance-col-head{
+  color:#b4235a;
+}
+.modal-table th.net-profit-col{
+  color:#9f1239;
+}
+
+.modal-table td.net-profit-col strong{
+  color:#be123c;
+}
+.balance-col .money-link{
+  color:#b4235a;
+}
+
+.balance-col .money-link:hover{
+  color:#e11d48;
+}
     .tag{
       display:inline-flex;
       align-items:center;
@@ -577,8 +594,8 @@
      <thead>
   <tr>
     <th>月份</th>
-    <th>結餘</th>
-    <th>本月淨利</th>
+<th class="balance-col-head">結餘</th>
+<th>本月淨利</th>
     <th>每月開銷支出費用</th>
     <th>每個月妹妹個人開銷*2</th>
   </tr>
@@ -830,12 +847,17 @@ function renderHeroTotal() {
     return;
   }
 
-  // ✅ 直接跟「已確認清單」使用同一批資料
+function profitMonthSortValue(r){
+  const m = monthLabel(r).trim().match(/^(\d{4})-(\d{1,2})月?/);
+  return m ? (Number(m[1]) * 100 + Number(m[2])) : 999999;
+}
+
+function renderRows() {
   const confirmedRows = allRows.filter(r =>
     bool(r.confirmed ?? r.confirmedCompanyAccount ?? r["確認入公司帳"])
   );
 
-  const confirmedBalanceTotal = confirmedRows.reduce((sum, r) => {
+  const unconfirmedRows = allRows.filter(r => {
     return sum + num(getVal(r, ["balance", "結餘"], 0));
   }, 0);
 
@@ -861,7 +883,7 @@ function renderProfitRowHtml(r){
     <tr data-row-id="${escHtml(id)}" data-month="${escHtml(month)}">
       <td><strong>${escHtml(month)}</strong></td>
       <td>${tagYesNo(confirmed, "已確認", "未確認")}</td>
-      <td>${amountLink(r, "balance", "結餘", balance)}</td>
+    <td class="balance-col">${amountLink(r, "balance", "結餘", balance)}</td>
       <td>${amountLink(r, "monthlyProfit", "本月淨利", monthlyProfit)}</td>
       <td>
         <span class="money-inline">
@@ -955,9 +977,9 @@ function renderRows() {
       r["轉房貸_用結餘"]
     );
 
-    // 已確認入帳，或已勾結餘轉還款，就不要再出現在小框框
+       // 已確認入帳，或已勾結餘轉還款，就不要再出現在小框框
     return !confirmed && !balanceRepay;
-  });
+  }).sort((a, b) => profitMonthSortValue(a) - profitMonthSortValue(b));
 
   $("confirmedCountTag").textContent = `${confirmedRows.length} 筆`;
   $("pendingMiniCountTag").textContent = `${unconfirmedRows.length} 筆`;
@@ -1076,12 +1098,20 @@ function renderDetailTable(items) {
     <div class="table-wrap" style="max-height:58vh;">
       <table class="modal-table">
         <thead>
-          <tr>${finalKeys.map(k => `<th>${escHtml(labelForKey(k))}</th>`).join("")}</tr>
+          <tr>${finalKeys.map(k => `
+  <th class="${k === "netProfit" ? "net-profit-col" : ""}">
+    ${escHtml(labelForKey(k))}
+  </th>
+`).join("")}</tr>
         </thead>
         <tbody>
           ${items.map(it => `
             <tr>
-              ${finalKeys.map(k => `<td>${formatDetailValue(k, it?.[k])}</td>`).join("")}
+              ${finalKeys.map(k => `
+  <td class="${k === "netProfit" ? "net-profit-col" : ""}">
+    ${formatDetailValue(k, it?.[k])}
+  </td>
+`).join("")}
             </tr>
           `).join("")}
         </tbody>
