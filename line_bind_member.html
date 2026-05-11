@@ -237,16 +237,46 @@ async function ensureXuyuanOfficialFriendBeforeBind() {
           }
 
           const profile = await window.liff.getProfile();
-          setLineProfile(profile);
-          
-          let autoEmail = "";
-          try {
-            const token = window.liff.getDecodedIDToken?.();
-            if (token && token.email) autoEmail = token.email;
-          } catch (e) {}
+setLineProfile(profile);
+
+let autoEmail = "";
+try {
+  const token = window.liff.getDecodedIDToken?.();
+  if (token && token.email) autoEmail = token.email;
+} catch (e) {}
 
 setFormData((prev) => ({ ...prev, email: autoEmail }));
-          setStatusMsg("");
+
+// ✅ 進入綁定頁時先查：這個 LINE 是否其實已經綁定過
+const uid = String(profile?.userId || "").trim();
+
+if (uid) {
+  try {
+    const memberRes = await fetch(
+      API_BASE + "/line/member-info?user_id=" + encodeURIComponent(uid)
+    );
+    const memberJson = await memberRes.json().catch(() => ({}));
+
+    // ✅ 已經有會員資料：直接顯示已綁定，不再讓他填手機、姓名
+    if (memberRes.ok && memberJson?.ok) {
+      setIsAlreadyBound(true);
+      setStep(3);
+      setStatusMsg("");
+
+      // 從會員中心 / 結帳頁帶進來時，顯示一下後回原頁
+      // 如果是客人直接打開綁定頁，沒有 return_url，就停留在這個提示畫面
+      if (getReturnUrl()) {
+        setTimeout(goAfterBind, 1200);
+      }
+
+      return;
+    }
+  } catch (e) {
+    console.warn("check existing member failed:", e);
+  }
+}
+
+setStatusMsg("");
         } catch (e) {
           console.error(e);
           setStatusMsg("初始化失敗");
