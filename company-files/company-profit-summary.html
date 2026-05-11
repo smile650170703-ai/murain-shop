@@ -210,15 +210,35 @@
   margin-bottom:8px;
 }
 
+.pending-mini-title-wrap{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
 .pending-mini-title{
   font-size:16px;
   font-weight:900;
 }
 
+.pending-mini-head-actions{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+}
+
+.pending-mini-head-actions .btn-mini{
+  padding:7px 10px;
+  font-size:12px;
+  border-radius:10px;
+}
+
 .pending-mini-grid-head,
 .pending-mini-row{
   display:grid;
-  grid-template-columns:90px 115px 1fr;
+  grid-template-columns:28px 100px 1fr;
   gap:8px;
   align-items:center;
 }
@@ -232,7 +252,7 @@
 }
 
 .pending-mini-list{
-  max-height:190px;
+  max-height:150px;
   overflow:auto;
 }
 
@@ -245,6 +265,13 @@
   border-bottom:none;
 }
 
+.pending-mini-check{
+  width:16px;
+  height:16px;
+  margin:0;
+  accent-color:#0f766e;
+}
+
 .pending-mini-month{
   font-weight:900;
   font-size:13px;
@@ -254,13 +281,6 @@
   color:#063f91;
   font-weight:900;
   font-size:13px;
-}
-
-.pending-mini-actions{
-  display:flex;
-  justify-content:flex-end;
-  gap:6px;
-  flex-wrap:wrap;
 }
 
 .pending-mini-actions .btn-mini{
@@ -515,22 +535,29 @@
     </div>
   </div>
 
-  <div class="pending-mini-card">
-    <div class="pending-mini-head">
+<div class="pending-mini-card">
+  <div class="pending-mini-head">
+    <div class="pending-mini-title-wrap">
       <div class="pending-mini-title">未確認清單</div>
       <span class="tag warn" id="pendingMiniCountTag">0 筆</span>
     </div>
 
-    <div class="pending-mini-grid-head">
-      <div>月份</div>
-      <div>結餘</div>
-      <div style="text-align:right;">操作</div>
-    </div>
-
-    <div class="pending-mini-list" id="unconfirmedMiniRows">
-      <div class="empty">載入中...</div>
+    <div class="pending-mini-head-actions">
+      <button class="btn-mini btn green" type="button" id="btnMiniConfirm">確認入帳</button>
+      <button class="btn-mini btn orange" type="button" id="btnMiniBalanceRepay">結餘轉還款</button>
     </div>
   </div>
+
+  <div class="pending-mini-grid-head">
+    <div></div>
+    <div>月份</div>
+    <div>結餘</div>
+  </div>
+
+  <div class="pending-mini-list" id="unconfirmedMiniRows">
+    <div class="empty">載入中...</div>
+  </div>
+</div>
 </div>
 
    <div class="card">
@@ -897,30 +924,19 @@ function renderUnconfirmedMiniRowHtml(r){
   const month = monthLabel(r);
   const id = r.id || r.recordId || "";
   const balance = getVal(r, ["balance", "結餘"], 0);
-  const balanceRepay = bool(
-    r.useBalanceForMortgage ??
-    r.balanceRepay ??
-    r["轉房貸_用結餘"]
-  );
 
   return `
     <div class="pending-mini-row" data-row-id="${escHtml(id)}" data-month="${escHtml(month)}">
+      <div>
+        <input
+          type="checkbox"
+          class="pending-mini-check"
+          data-id="${escHtml(id)}"
+          data-month="${escHtml(month)}"
+        />
+      </div>
       <div class="pending-mini-month">${escHtml(month)}</div>
       <div class="pending-mini-balance">${money(balance)}</div>
-      <div class="pending-mini-actions">
-        <button
-          class="btn-mini btn green"
-          data-action="confirm_company_account"
-          data-id="${escHtml(id)}"
-        >確認入帳</button>
-
-        <button
-          class="btn-mini btn orange"
-          data-action="use_balance_repay"
-          data-id="${escHtml(id)}"
-          ${balanceRepay ? "disabled" : ""}
-        >結餘轉還款</button>
-      </div>
     </div>
   `;
 }
@@ -930,25 +946,21 @@ function renderRows() {
   );
 
   const unconfirmedRows = allRows.filter(r => {
-    const confirmed = bool(r.confirmed ?? r.confirmedCompanyAccount ?? r["確認入公司帳"]);
+    const confirmed = bool(
+      r.confirmed ??
+      r.confirmedCompanyAccount ??
+      r["確認入公司帳"]
+    );
+
     const balanceRepay = bool(
       r.useBalanceForMortgage ??
       r.balanceRepay ??
       r["轉房貸_用結餘"]
     );
 
-    // 只要有「確認入帳」或「結餘轉還款」其中一個成立，就不要再出現在小框框
+    // 已確認入帳，或已勾結餘轉還款，就不要再出現在小框框
     return !confirmed && !balanceRepay;
   });
-
-  const confirmedBalanceTotal = confirmedRows.reduce((sum, r) => {
-    return sum + num(getVal(r, ["balance", "結餘"], 0));
-  }, 0);
-
-  $("heroTotalAsset").textContent = money(confirmedBalanceTotal);
-  $("heroSub").textContent = confirmedRows.length
-    ? `目前加總 ${confirmedRows.length} 個已確認月份的結餘。`
-    : `目前沒有已確認月份的結餘。`;
 
   $("confirmedCountTag").textContent = `${confirmedRows.length} 筆`;
   $("pendingMiniCountTag").textContent = `${unconfirmedRows.length} 筆`;
@@ -1096,7 +1108,52 @@ function openLoanPanel(id, month) {
   openModal(`${month}｜房貸／借款主檔紀錄`, "結餘轉還款、妹妹費用轉還款、還款紀錄都集中在這裡看。", html);
 }
 
+function getSelectedPendingMiniRows(){
+  return [...document.querySelectorAll(".pending-mini-check:checked")].map(ck => ({
+    id: ck.dataset.id || "",
+    month: ck.dataset.month || ""
+  })).filter(x => x.id);
+}
 
+async function runPendingMiniBatchAction(action){
+  const picked = getSelectedPendingMiniRows();
+
+  if (!picked.length) {
+    alert("請先勾選要處理的月份。");
+    return;
+  }
+
+  const actionText = {
+    confirm_company_account: "確認入帳",
+    use_balance_repay: "結餘轉還款"
+  }[action] || action;
+
+  const monthText = picked.map(x => x.month).filter(Boolean).join("、");
+
+  if (!confirm(`確定要對 ${picked.length} 筆執行「${actionText}」？\n${monthText}`)) {
+    return;
+  }
+
+  $("msg").textContent = `執行中：${actionText}...`;
+  $("msg").className = "msg";
+
+  try {
+    for (const row of picked) {
+      await apiPost(API_ACTION, {
+        id: row.id,
+        action,
+        month: row.month
+      });
+    }
+
+    $("msg").textContent = `✅ 已完成：${actionText} ${picked.length} 筆`;
+    $("msg").className = "msg ok";
+    await loadRows({ keepScroll:true });
+  } catch (err) {
+    $("msg").textContent = `❌ ${err.message || err}`;
+    $("msg").className = "msg err";
+  }
+}
 async function runAction(action, id) {
   const rowEl = document.querySelector(`[data-row-id="${CSS.escape(id)}"]`);
 const month = rowEl?.dataset?.month || "";
@@ -1129,7 +1186,13 @@ const month = rowEl?.dataset?.month || "";
     $("msg").className = "msg err";
   }
 }
+$("btnMiniConfirm").addEventListener("click", () => {
+  runPendingMiniBatchAction("confirm_company_account");
+});
 
+$("btnMiniBalanceRepay").addEventListener("click", () => {
+  runPendingMiniBatchAction("use_balance_repay");
+});
 $("btnReload").addEventListener("click", () => loadRows());
 $("btnLatest").addEventListener("click", () => {
   if (!allRows.length) return;
