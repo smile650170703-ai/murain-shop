@@ -574,18 +574,17 @@
 
   <div class="table-wrap">
     <table>
-      <thead>
+     <thead>
   <tr>
     <th>月份</th>
     <th>結餘</th>
     <th>本月淨利</th>
     <th>每月開銷支出費用</th>
     <th>每個月妹妹個人開銷*2</th>
-    <th>轉房貸金額</th>
   </tr>
 </thead>
 <tbody id="confirmedRows">
-  <tr><td colspan="6" class="empty">載入中...</td></tr>
+  <tr><td colspan="5" class="empty">載入中...</td></tr>
 </tbody>
     </table>
   </div>
@@ -631,7 +630,18 @@ function text(v) {
   if (v == null) return "";
   return String(v);
 }
+function dateOnly(v){
+  const s = text(v).trim();
+  if(!s) return "";
 
+  const m1 = s.match(/^(\d{4}年\d{1,2}月\d{1,2}日)/);
+  if(m1) return m1[1];
+
+  const m2 = s.match(/^(\d{4}-\d{1,2}-\d{1,2})/);
+  if(m2) return m2[1];
+
+  return s;
+}
 function bool(v) {
   if (typeof v === "boolean") return v;
   const s = String(v ?? "").trim().toLowerCase();
@@ -779,8 +789,8 @@ function renderBreakdownRow(r, type) {
   const title = { monthlyExpense:"每月開銷支出費用", sisterPersonal:"每個月妹妹個人開銷*2", transferMortgage:"轉房貸金額" }[type] || "明細";
   return `
     <tr class="detail-row" data-detail-row="${escHtml(monthLabel(r))}-${type}">
-      <td colspan="8">
-        <strong>${escHtml(monthLabel(r))}｜${title}</strong>
+<td colspan="5">
+<strong>${escHtml(monthLabel(r))}｜${title}</strong>
         <div class="breakdown" style="margin-top:10px;">
           ${items.map(([label,value,key]) => `
             <div class="break-item" data-detail-key="${escHtml(key || type)}" data-detail-label="${escHtml(label)}" data-month="${escHtml(monthLabel(r))}" data-id="${escHtml(r.id || r.recordId || "")}" style="cursor:pointer;">
@@ -866,11 +876,6 @@ function renderProfitRowHtml(r){
         </span>
       </td>
       <td>
-        <span class="money-inline">
-          ${amountLink(r, "transferMortgageAmount", "轉房貸金額", repayAmount)}
-          <button class="plus-btn" data-expand="transferMortgage" data-id="${escHtml(id)}">＋</button>
-        </span>
-      </td>
       <td>
         <div class="ops">
           <button
@@ -892,7 +897,6 @@ function renderProfitRowHtml(r){
   const monthlyProfit = getVal(r, ["monthlyProfit", "本月淨利"], 0);
   const mExpense = monthlyExpenseValue(r);
   const sExpense = sisterPersonalExpenseValue(r);
-  const repayAmount = transferMortgageAmountValue(r);
 
   return `
     <tr data-row-id="${escHtml(id)}" data-month="${escHtml(month)}">
@@ -967,7 +971,7 @@ function renderRows() {
 
   $("confirmedRows").innerHTML = confirmedRows.length
     ? confirmedRows.map(renderConfirmedProfitRowHtml).join("")
-    : `<tr><td colspan="6" class="empty">目前沒有已確認資料。</td></tr>`;
+    : `<tr><td colspan="5" class="empty">目前沒有已確認資料。</td></tr>`;
 
   $("unconfirmedMiniRows").innerHTML = unconfirmedRows.length
     ? unconfirmedRows.map(renderUnconfirmedMiniRowHtml).join("")
@@ -989,7 +993,7 @@ async function loadRows({ keepScroll = false } = {}) {
       setTimeout(() => { document.querySelector(".table-wrap").scrollTop = oldScroll; }, 0);
     }
   } catch (err) {
-    const errHtmlConfirmed = `<tr><td colspan="6" class="empty">❌ ${escHtml(err.message || err)}</td></tr>`;
+    const errHtmlConfirmed = `<tr><td colspan="5" class="empty">❌ ${escHtml(err.message || err)}</td></tr>`;
 const errHtmlUnconfirmed = `<div class="empty">❌ ${escHtml(err.message || err)}</div>`;
 $("confirmedRows").innerHTML = errHtmlConfirmed;
 $("unconfirmedMiniRows").innerHTML = errHtmlUnconfirmed;
@@ -1009,7 +1013,43 @@ function openModal(title, hint, html) {
   $("modalBody").innerHTML = html;
   $("modalBackdrop").classList.add("show");
 }
+function renderBalanceDetailTable(r){
+  const monthlyProfit = getVal(r, ["monthlyProfit", "本月淨利"], 0);
+  const monthlyExpense = monthlyExpenseValue(r);
+  const sisterExpense = sisterPersonalExpenseValue(r);
+  const balance = getVal(r, ["balance", "結餘"], 0);
 
+  return `
+    <div class="table-wrap" style="max-height:58vh;">
+      <table class="modal-table">
+        <thead>
+          <tr>
+            <th>欄位</th>
+            <th>金額</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>本月淨利</td>
+            <td><strong>${money(monthlyProfit)}</strong></td>
+          </tr>
+          <tr>
+            <td>每月開銷支出費用</td>
+            <td><strong>-${money(monthlyExpense).replace(/^-?NT\$\s*/, "NT$ ")}</strong></td>
+          </tr>
+          <tr>
+            <td>每個月妹妹個人開銷*2</td>
+            <td><strong>-${money(sisterExpense).replace(/^-?NT\$\s*/, "NT$ ")}</strong></td>
+          </tr>
+          <tr>
+            <td>結餘</td>
+            <td><strong>${money(balance)}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
 function renderDetailTable(items) {
   if (!Array.isArray(items) || !items.length) {
     return `<div class="empty">目前沒有來源明細。</div>`;
@@ -1022,7 +1062,18 @@ function renderDetailTable(items) {
     });
   }
 
-  const preferred = ["date","日期","month","月份","category","分類","title","項目","detail","說明","note","備註","amount","金額","status","狀態","signed","簽收","checked","核對"];
+  const preferred = [
+  "date","日期","month","月份","category","分類","title","項目","detail","說明","note","備註",
+  "amount","金額","status","狀態","signed","簽收","checked","核對",
+
+  "orderId",
+  "createdAt",
+  "lineName",
+  "streamer",
+  "paidAmount",
+  "netProfit",
+  "productDetail"
+];
   const finalKeys = [
     ...preferred.filter(k => keys.includes(k)),
     ...keys.filter(k => !preferred.includes(k)).slice(0, 8)
@@ -1048,19 +1099,55 @@ function renderDetailTable(items) {
 
 function labelForKey(k) {
   const map = {
-    date:"日期", month:"月份", category:"分類", title:"項目", detail:"說明", note:"備註",
-    amount:"金額", status:"狀態", signed:"簽收", checked:"核對"
+    date:"日期",
+    month:"月份",
+    category:"分類",
+    title:"項目",
+    detail:"說明",
+    note:"備註",
+    amount:"金額",
+    status:"狀態",
+    signed:"簽收",
+    checked:"核對",
+
+    orderId:"訂單編號",
+    createdAt:"日期",
+    lineName:"LINE名稱",
+    streamer:"直播主",
+    paidAmount:"應付金額",
+    netProfit:"淨利_本單",
+    productDetail:"商品明細"
   };
   return map[k] || k;
 }
 
 function formatDetailValue(k, v) {
-  if (k === "amount" || k === "金額") return `<strong>${money(v)}</strong>`;
+  if (k === "createdAt") {
+    return escHtml(dateOnly(v));
+  }
+
+  if (["amount", "金額", "paidAmount", "netProfit"].includes(k)) {
+    return `<strong>${money(v)}</strong>`;
+  }
+
   if (typeof v === "boolean") return v ? "是" : "否";
   return escHtml(text(v));
 }
 
 async function openDetail(month, key, label, id = "") {
+  if (key === "balance") {
+    const row = getRowById(id) || getRowByMonth(month);
+
+    if (row) {
+      openModal(
+        `${month}｜結餘`,
+        "結餘＝本月淨利－每月開銷支出費用－每個月妹妹個人開銷*2",
+        renderBalanceDetailTable(row)
+      );
+      return;
+    }
+  }
+
   openModal(`${month}｜${label}`, "載入來源明細中...", `<div class="empty">載入中...</div>`);
 
   try {
