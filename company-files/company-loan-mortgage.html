@@ -335,34 +335,6 @@ function detailVal(row, keys, fallback = ""){
   return fallback;
 }
 
-function normalizeMonthlyProfitItem(row){
-  return {
-    orderId: text(detailVal(row, [
-      "order_id",
-      "OrderID",
-      "訂單編號",
-      "單號",
-      "orderId"
-    ], "")),
-    productDetail: text(detailVal(row, [
-      "商品明細",
-      "productDetail",
-      "items",
-      "detail",
-      "明細",
-      "商品"
-    ], "")),
-    netProfit: num(detailVal(row, [
-      "淨利_本單",
-      "netProfit",
-      "profit",
-      "淨利",
-      "profit_this_order",
-      "amount",
-      "金額"
-    ], 0))
-  };
-}
 
 async function fetchMonthlyProfitItemsForProfitRow(r){
   const id = rowId(r);
@@ -403,51 +375,7 @@ async function fetchMonthlyProfitItemsForProfitRow(r){
   }
 }
 
-function renderMonthlyProfitMiniTable(items = [], error = ""){
-  if(error){
-    return `
-      <div class="profit-mini-section">
-        <div class="profit-mini-title">本月淨利清單</div>
-        <div class="empty" style="padding:12px;">❌ ${escHtml(error)}</div>
-      </div>
-    `;
-  }
 
-  if(!Array.isArray(items) || !items.length){
-    return `
-      <div class="profit-mini-section">
-        <div class="profit-mini-title">本月淨利清單</div>
-        <div class="empty" style="padding:12px;">目前沒有本月淨利來源明細。</div>
-      </div>
-    `;
-  }
-
-  return `
-    <div class="profit-mini-section">
-      <div class="profit-mini-title">本月淨利清單｜${items.length} 筆</div>
-      <div class="profit-mini-wrap">
-        <table class="profit-mini-table">
-          <thead>
-            <tr>
-              <th style="width:170px;">單號</th>
-              <th>商品明細</th>
-              <th style="width:140px;">淨利_本單</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${items.map(it => `
-              <tr>
-                <td>${escHtml(it.orderId || "-")}</td>
-                <td>${escHtml(it.productDetail || "-")}</td>
-                <td class="money">${money(it.netProfit)}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
-}
 async function loadProfitSummaryRows(){
   try{
     const data = await fetchJson(API_PROFIT_LIST,{max:300});
@@ -488,69 +416,153 @@ function closeProfitModal(){
   $("profitModalBackdrop").classList.remove("show");
   $("profitModalBody").innerHTML = "";
 }
+function normalizeMonthlyProfitItem(row){
+  return {
+    orderId: text(detailVal(row, [
+      "orderId",
+      "order_id",
+      "OrderID",
+      "訂單編號",
+      "單號"
+    ], "")),
+
+    createdAt: text(detailVal(row, [
+      "createdAt",
+      "CreatedAt",
+      "created_at",
+      "建立時間",
+      "結單完成時間",
+      "出貨完成",
+      "日期"
+    ], "")),
+
+    streamer: text(detailVal(row, [
+      "streamer",
+      "streamer_name",
+      "直播主"
+    ], "")),
+
+    paidAmount: num(detailVal(row, [
+      "paidAmount",
+      "應付金額",
+      "付款金額",
+      "付款總額",
+      "金額"
+    ], 0)),
+
+    productDetail: text(detailVal(row, [
+      "productDetail",
+      "商品明細",
+      "items",
+      "detail",
+      "明細",
+      "商品"
+    ], "")),
+
+    netProfit: num(detailVal(row, [
+      "netProfit",
+      "淨利_本單",
+      "總淨利(含發票稅)",
+      "profit",
+      "淨利",
+      "profit_this_order",
+      "amount"
+    ], 0))
+  };
+}
+
+function renderMonthlyProfitMiniTable(items = [], error = ""){
+  if(error){
+    return `
+      <div class="profit-mini-section">
+        <div class="profit-mini-title">本月淨利清單</div>
+        <div class="empty" style="padding:12px;">❌ ${escHtml(error)}</div>
+      </div>
+    `;
+  }
+
+  if(!Array.isArray(items) || !items.length){
+    return `
+      <div class="profit-mini-section">
+        <div class="profit-mini-title">本月淨利清單</div>
+        <div class="empty" style="padding:12px;">目前沒有本月淨利來源明細。</div>
+      </div>
+    `;
+  }
+
+  const totalNetProfit = items.reduce((sum, it) => sum + num(it.netProfit), 0);
+
+  return `
+    <div class="profit-mini-section">
+      <div class="profit-mini-title">
+        本月淨利清單｜${items.length} 筆｜合計 ${money(totalNetProfit)}
+      </div>
+      <div class="profit-mini-wrap">
+        <table class="profit-mini-table" style="min-width:1080px;">
+          <thead>
+            <tr>
+              <th style="width:170px;">訂單編號</th>
+              <th style="width:150px;">CreatedAt</th>
+              <th style="width:90px;">直播主</th>
+              <th style="width:120px;">應付金額</th>
+              <th>商品明細</th>
+              <th style="width:140px;">淨利_本單</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(it => `
+              <tr>
+                <td>${escHtml(it.orderId || "-")}</td>
+                <td>${escHtml(it.createdAt || "-")}</td>
+                <td>${escHtml(it.streamer || "-")}</td>
+                <td class="money">${money(it.paidAmount)}</td>
+                <td>${escHtml(it.productDetail || "-")}</td>
+                <td class="money">${money(it.netProfit)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
 
 function renderProfitDetailHtml(r, monthlyProfitItems = [], monthlyProfitError = ""){
   if(!r){
     return `<div class="empty">找不到這筆公司進利總結資料。</div>`;
   }
 
-  const month = profitMonthLabel(r) || "-";
-  const source = mortgageTransferSourceInfo(r);
+  const useBalance = bool(
+    r?.useBalanceForMortgage ??
+    r?.balanceRepay ??
+    r?.["轉房貸_用結餘"]
+  );
 
-  const balance = getVal(r, ["balance","結餘"], 0);
   const monthlyProfit = getVal(r, ["monthlyProfit","本月淨利"], 0);
-  const transferMortgage = transferMortgageAmountValue(r);
-  const repayDate = text(r.mortgageRepayDate ?? r.repaymentDate ?? r["房貸還款日期"] ?? "");
-
-  const shouldShowMonthlyProfitList = source.key === "balance";
 
   return `
     <div class="profit-detail-grid">
       <div class="profit-detail-item">
-        <div class="profit-detail-label">公司進利總結</div>
-        <div class="profit-detail-value small">${escHtml(month)}</div>
+        <div class="profit-detail-label">欄位：轉房貸_用結餘</div>
+        <div class="profit-detail-value small">
+          ${useBalance ? "✅ 已打勾" : "— 未打勾"}
+        </div>
       </div>
 
       <div class="profit-detail-item">
-        <div class="profit-detail-label">轉房貸來源</div>
-        <div class="profit-detail-value small">${escHtml(source.label)}</div>
-      </div>
-
-      <div class="profit-detail-item">
-        <div class="profit-detail-label">轉房貸金額／自動帶入還款金額</div>
-        <div class="profit-detail-value">${money(transferMortgage)}</div>
-      </div>
-
-      ${
-        source.key === "balance"
-          ? `
-            <div class="profit-detail-item">
-              <div class="profit-detail-label">本月淨利</div>
-              <div class="profit-detail-value">${money(monthlyProfit)}</div>
-            </div>
-          `
-          : ""
-      }
-
-      <div class="profit-detail-item">
-        <div class="profit-detail-label">結餘</div>
-        <div class="profit-detail-value">${money(balance)}</div>
-      </div>
-
-      <div class="profit-detail-item">
-        <div class="profit-detail-label">房貸還款日期</div>
-        <div class="profit-detail-value small">${escHtml(repayDate || "-")}</div>
+        <div class="profit-detail-label">本月淨利</div>
+        <div class="profit-detail-value">${money(monthlyProfit)}</div>
       </div>
     </div>
 
     ${
-      shouldShowMonthlyProfitList
+      useBalance
         ? renderMonthlyProfitMiniTable(monthlyProfitItems, monthlyProfitError)
         : `
           <div class="profit-mini-section">
             <div class="profit-mini-title">本月淨利清單</div>
             <div class="empty" style="padding:12px;">
-              這筆不是「轉房貸_用結餘」，所以不顯示本月淨利來源清單。
+              這筆「轉房貸_用結餘」沒有打勾，所以不顯示本月淨利來源清單。
             </div>
           </div>
         `
