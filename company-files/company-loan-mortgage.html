@@ -164,6 +164,10 @@ th,td{border-bottom:1px solid var(--line);padding:11px 10px;vertical-align:middl
   line-height:1.45;
   min-width:360px;
 }
+  .cash-detail-inline{
+  white-space:normal !important;
+  line-height:1.45;
+}
   .profit-modal{
   width:min(1180px,96vw);
 }
@@ -457,7 +461,92 @@ async function fetchMonthlyProfitItemsForProfitRow(r){
   }
 }
 
+function normalizeSisterCompanyCashItem(row){
+  return {
+    date: text(detailVal(row, [
+      "date",
+      "交易日期",
+      "日期"
+    ], "")),
 
+    category: text(detailVal(row, [
+      "category",
+      "費用支出對象",
+      "費用支出歸類",
+      "分類",
+      "類別",
+      "性質"
+    ], "")),
+
+    detail: text(detailVal(row, [
+      "detail",
+      "交易明細",
+      "交易明細備註",
+      "名稱",
+      "項目",
+      "說明"
+    ], "")),
+
+    note: text(detailVal(row, [
+      "note",
+      "備註",
+      "內部備註"
+    ], "")),
+
+    amount: num(detailVal(row, [
+      "amount",
+      "交易金額",
+      "金額",
+      "支付金額",
+      "成交金額",
+      "金額TWD"
+    ], 0)),
+
+    status: text(detailVal(row, [
+      "status",
+      "核對狀態"
+    ], ""))
+  };
+}
+
+async function fetchSisterCompanyCashItemsForProfitRow(r){
+  const id = rowId(r);
+  const month = profitMonthLabel(r);
+
+  if(!id && !month){
+    return {
+      items: [],
+      error: "缺少公司進利總結 ID / 月份，無法讀取現金支出明細。"
+    };
+  }
+
+  try{
+    const data = await fetchJson(API_PROFIT_DETAIL, {
+      id,
+      month,
+      key: "paySisterCompanyCash",
+      field: "paySisterCompanyCash",
+      type: "paySisterCompanyCash",
+      max: 500
+    });
+
+    const rows =
+      Array.isArray(data.items) ? data.items :
+      Array.isArray(data.rows) ? data.rows :
+      Array.isArray(data.details) ? data.details :
+      [];
+
+    return {
+      items: rows.map(normalizeSisterCompanyCashItem),
+      error: ""
+    };
+  }catch(e){
+    return {
+      items: [],
+      error: String(e?.message || e || "讀取現金支出明細失敗")
+    };
+  }
+}
 async function loadProfitSummaryRows(){
   try{
     const data = await fetchJson(API_PROFIT_LIST,{max:300});
@@ -613,46 +702,131 @@ function renderMonthlyProfitMiniTable(items = [], error = ""){
     </div>
   `;
 }
+function renderSisterCompanyCashMiniTable(items = [], error = ""){
+  if(error){
+    return `
+      <div class="profit-mini-section">
+        <div class="profit-mini-title">現金支出相關明細</div>
+        <div class="empty" style="padding:12px;">❌ ${escHtml(error)}</div>
+      </div>
+    `;
+  }
 
-function renderProfitDetailHtml(r, monthlyProfitItems = [], monthlyProfitError = ""){
+  if(!Array.isArray(items) || !items.length){
+    return `
+      <div class="profit-mini-section">
+        <div class="profit-mini-title">現金支出相關明細</div>
+        <div class="empty" style="padding:12px;">目前沒有現金支出來源明細。</div>
+      </div>
+    `;
+  }
+
+  const totalAmount = items.reduce((sum, it) => sum + num(it.amount), 0);
+
+  return `
+    <div class="profit-mini-section">
+      <div class="profit-mini-title">
+        現金支出相關明細｜${items.length} 筆｜合計 ${money(totalAmount)}
+      </div>
+      <div class="profit-mini-wrap">
+        <table class="profit-mini-table">
+          <thead>
+            <tr>
+              <th style="width:130px;">日期</th>
+              <th style="width:180px;">費用支出對象</th>
+              <th style="width:360px;">交易明細</th>
+              <th style="width:120px;">金額</th>
+              <th style="width:120px;">狀態</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(it => `
+              <tr>
+                <td>${escHtml(dateOnly(it.date))}</td>
+                <td>${escHtml(it.category || "-")}</td>
+                <td class="cash-detail-inline">${escHtml(it.detail || it.note || "-")}</td>
+                <td class="money">${money(it.amount)}</td>
+                <td>${escHtml(it.status || "-")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+function renderProfitDetailHtml(
+  r,
+  monthlyProfitItems = [],
+  monthlyProfitError = "",
+  sisterCompanyCashItems = [],
+  sisterCompanyCashError = ""
+){
   if(!r){
     return `<div class="empty">找不到這筆公司進利總結資料。</div>`;
   }
 
-  const useBalance = bool(
-    r?.useBalanceForMortgage ??
-    r?.balanceRepay ??
-    r?.["轉房貸_用結餘"]
+  const source = mortgageTransferSourceInfo(r);
+
+  const monthlyProfit = getVal(r, [
+    "monthlyProfit",
+    "本月淨利"
+  ], 0);
+
+  const paySisterAllSigned = bool(
+    r?.paySisterAllSigned ??
+    r?.["支付妹妹公司費用_全部簽收"]
   );
 
-  const monthlyProfit = getVal(r, ["monthlyProfit","本月淨利"], 0);
+  const paySisterCompanyExpense = getVal(r, [
+    "paySisterCompanyExpense",
+    "支付妹妹公司費用"
+  ], 0);
 
-  return `
-    <div class="profit-detail-grid">
-      <div class="profit-detail-item">
-        <div class="profit-detail-label">欄位：轉房貸_用結餘</div>
-        <div class="profit-detail-value small">
-          ${useBalance ? "✅ 已打勾" : "— 未打勾"}
+  if(source.key === "sister_company_fee"){
+    return `
+      <div class="profit-detail-grid">
+        <div class="profit-detail-item">
+          <div class="profit-detail-label">欄位：支付妹妹公司費用_全部簽收</div>
+          <div class="profit-detail-value small">
+            ${paySisterAllSigned ? "✅ 已打勾" : "— 未打勾"}
+          </div>
+        </div>
+
+        <div class="profit-detail-item">
+          <div class="profit-detail-label">支付妹妹公司費用</div>
+          <div class="profit-detail-value">${money(paySisterCompanyExpense)}</div>
         </div>
       </div>
 
-      <div class="profit-detail-item">
-        <div class="profit-detail-label">本月淨利</div>
-        <div class="profit-detail-value">${money(monthlyProfit)}</div>
-      </div>
-    </div>
-  ${
-      useBalance
-        ? renderMonthlyProfitMiniTable(monthlyProfitItems, monthlyProfitError)
-        : `
-          <div class="profit-mini-section">
-            <div class="profit-mini-title">本月淨利清單</div>
-            <div class="empty" style="padding:12px;">
-              這筆「轉房貸_用結餘」沒有打勾，所以不顯示本月淨利來源清單。
-            </div>
+      ${renderSisterCompanyCashMiniTable(sisterCompanyCashItems, sisterCompanyCashError)}
+    `;
+  }
+
+  if(source.key === "balance"){
+    return `
+      <div class="profit-detail-grid">
+        <div class="profit-detail-item">
+          <div class="profit-detail-label">欄位：轉房貸_用結餘</div>
+          <div class="profit-detail-value small">
+            ✅ 已打勾
           </div>
-        `
-    }
+        </div>
+
+        <div class="profit-detail-item">
+          <div class="profit-detail-label">本月淨利</div>
+          <div class="profit-detail-value">${money(monthlyProfit)}</div>
+        </div>
+      </div>
+
+      ${renderMonthlyProfitMiniTable(monthlyProfitItems, monthlyProfitError)}
+    `;
+  }
+
+  return `
+    <div class="empty">
+      這筆目前沒有可顯示的轉房貸來源明細。
+    </div>
   `;
 }
 
@@ -683,6 +857,8 @@ $("profitModalHint").textContent = "";
 
   let monthlyProfitItems = [];
   let monthlyProfitError = "";
+  let sisterCompanyCashItems = [];
+  let sisterCompanyCashError = "";
 
   if(source.key === "balance"){
     const result = await fetchMonthlyProfitItemsForProfitRow(row);
@@ -690,7 +866,19 @@ $("profitModalHint").textContent = "";
     monthlyProfitError = result.error || "";
   }
 
-  $("profitModalBody").innerHTML = renderProfitDetailHtml(row, monthlyProfitItems, monthlyProfitError);
+  if(source.key === "sister_company_fee"){
+    const result = await fetchSisterCompanyCashItemsForProfitRow(row);
+    sisterCompanyCashItems = result.items || [];
+    sisterCompanyCashError = result.error || "";
+  }
+
+  $("profitModalBody").innerHTML = renderProfitDetailHtml(
+    row,
+    monthlyProfitItems,
+    monthlyProfitError,
+    sisterCompanyCashItems,
+    sisterCompanyCashError
+  );
 }
 function normalizeRepayment(row){
   const f = row?.fields || row || {};
