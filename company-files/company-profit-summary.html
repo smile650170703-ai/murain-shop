@@ -456,6 +456,37 @@
 .balance-col .money-link:hover{
   color:#e11d48;
 }
+    .confirmed-table tr.is-negative-balance td{
+  background:#fff6f8;
+}
+
+.confirmed-table tr.is-negative-balance:hover td{
+  background:#fff1f5;
+}
+
+.confirmed-table tr.is-negative-balance td:first-child{
+  background:#fff6f8;
+}
+
+.confirmed-table tr.is-negative-balance:hover td:first-child{
+  background:#fff1f5;
+}
+
+.confirmed-table tr.is-positive-balance td{
+  background:#f7fffb;
+}
+
+.confirmed-table tr.is-positive-balance:hover td{
+  background:#effcf6;
+}
+
+.confirmed-table tr.is-positive-balance td:first-child{
+  background:#f7fffb;
+}
+
+.confirmed-table tr.is-positive-balance:hover td:first-child{
+  background:#effcf6;
+}
     .tag{
       display:inline-flex;
       align-items:center;
@@ -549,6 +580,34 @@
       box-shadow:none !important;
       font-size:14px;
     }
+    .product-detail-toggle{
+  width:24px;
+  height:24px;
+  min-width:24px;
+  padding:0;
+  border-radius:999px;
+  border:1px solid #bfdbfe;
+  background:#eff6ff;
+  color:#0b4a9e;
+  font-weight:900;
+  line-height:1;
+}
+
+.product-detail-box{
+  display:none;
+  margin-top:8px;
+  padding:8px 10px;
+  border:1px solid #dbeafe;
+  border-radius:12px;
+  background:#f8fbff;
+  white-space:normal;
+  line-height:1.5;
+  max-width:520px;
+}
+
+.product-detail-box.show{
+  display:block;
+}
     .close-btn{
       width:auto;
       border:none;
@@ -967,12 +1026,15 @@ function renderProfitRowHtml(r){
   const id = r.id || r.recordId || "";
 
   const balance = getVal(r, ["balance", "結餘"], 0);
+  const balanceNum = num(balance);
+  const balanceRowClass = balanceNum < 0 ? "is-negative-balance" : (balanceNum > 0 ? "is-positive-balance" : "");
+
   const monthlyProfit = getVal(r, ["monthlyProfit", "本月淨利"], 0);
   const mExpense = monthlyExpenseValue(r);
   const sExpense = sisterPersonalExpenseValue(r);
 
   return `
-    <tr data-row-id="${escHtml(id)}" data-month="${escHtml(month)}">
+        <tr class="${balanceRowClass}" data-row-id="${escHtml(id)}" data-month="${escHtml(month)}">
       <td><strong>${escHtml(month)}</strong></td>
       <td class="balance-col">${amountLink(r, "balance", "結餘", balance)}</td>
       <td>${amountLink(r, "monthlyProfit", "本月淨利", monthlyProfit)}</td>
@@ -1201,6 +1263,14 @@ function formatDetailValue(k, v) {
     return escHtml(dateOnly(v));
   }
 
+  if (k === "productDetail") {
+    const detail = escHtml(text(v) || "-");
+    return `
+      <button type="button" class="product-detail-toggle">＋</button>
+      <div class="product-detail-box">${detail}</div>
+    `;
+  }
+
   if (["amount", "金額", "paidAmount", "netProfit"].includes(k)) {
     return `<strong>${money(v)}</strong>`;
   }
@@ -1368,6 +1438,20 @@ $("modalBackdrop").addEventListener("click", (e) => {
 });
 
 document.addEventListener("click", (e) => {
+    const productBtn = e.target.closest(".product-detail-toggle");
+  if (productBtn) {
+    const box = productBtn.nextElementSibling;
+    const isOpen = box?.classList?.contains("show");
+
+    document.querySelectorAll(".product-detail-box.show").forEach(el => el.classList.remove("show"));
+    document.querySelectorAll(".product-detail-toggle").forEach(btn => btn.textContent = "＋");
+
+    if (box && !isOpen) {
+      box.classList.add("show");
+      productBtn.textContent = "－";
+    }
+    return;
+  }
   const expandBtn = e.target.closest("[data-expand]");
   if (expandBtn) {
     toggleBreakdown(expandBtn.dataset.id, expandBtn.dataset.expand, expandBtn);
