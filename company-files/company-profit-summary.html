@@ -446,7 +446,11 @@
   color:#9f1239;
 }
 
-.modal-table td.net-profit-col strong{
+.modal-table td.net-profit-col strong.profit-positive{
+  color:#047857;
+}
+
+.modal-table td.net-profit-col strong.profit-negative{
   color:#be123c;
 }
 .balance-col .money-link{
@@ -486,6 +490,74 @@
 
 .confirmed-table tr.is-positive-balance:hover td:first-child{
   background:#effcf6;
+}
+    /* 金額正負色 */
+.money-link.profit-positive,
+.modal-table td.profit-positive strong{
+  color:#047857 !important;
+}
+
+.money-link.profit-negative,
+.modal-table td.profit-negative strong{
+  color:#be123c !important;
+}
+
+.balance-col .money-link.balance-positive{
+  color:#047857 !important;
+}
+
+.balance-col .money-link.balance-negative{
+  color:#be123c !important;
+}
+
+/* 彈窗列底色：正數綠、負數紅、合計列淡藍 */
+.modal-table tr.row-positive td{
+  background:#f0fdf4 !important;
+}
+
+.modal-table tr.row-negative td{
+  background:#fff1f2 !important;
+}
+
+.modal-table tr.row-total td{
+  background:#eef6ff !important;
+  font-weight:900;
+}
+
+.modal-table tr.row-expense-total td{
+  background:#fff6f8 !important;
+  font-weight:900;
+}
+
+.modal-table tr.row-sister-subtotal td{
+  background:#fff7ed !important;
+  font-weight:900;
+}
+
+/* 小卡片顏色 */
+.break-item.break-red{
+  border-color:#fecdd3;
+  background:#fff6f8;
+}
+
+.break-item.break-red .break-label,
+.break-item.break-red .break-value{
+  color:#be123c;
+}
+
+.break-item.break-green{
+  border-color:#bbf7d0;
+  background:#f0fdf4;
+}
+
+.break-item.break-green .break-label,
+.break-item.break-green .break-value{
+  color:#047857;
+}
+
+.break-item.break-total{
+  border-color:#bfdbfe;
+  background:#eef6ff;
 }
     .tag{
       display:inline-flex;
@@ -827,7 +899,18 @@ function monthLabel(r) {
 function amountLink(r, key, label, amount) {
   const month = monthLabel(r);
   const id = r.id || r.recordId || "";
-  return `<span class="money-link" data-detail-key="${key}" data-detail-label="${escHtml(label)}" data-month="${escHtml(month)}" data-id="${escHtml(id)}">${money(amount)}</span>`;
+  const n = num(amount);
+
+  let toneClass = "";
+  if (key === "monthlyProfit") {
+    toneClass = n >= 0 ? "profit-positive" : "profit-negative";
+  }
+
+  if (key === "balance") {
+    toneClass = n >= 0 ? "balance-positive" : "balance-negative";
+  }
+
+  return `<span class="money-link ${toneClass}" data-detail-key="${key}" data-detail-label="${escHtml(label)}" data-month="${escHtml(month)}" data-id="${escHtml(id)}">${money(amount)}</span>`;
 }
 
 
@@ -912,7 +995,17 @@ function breakdownItems(r, type) {
   }
   return [];
 }
+function breakdownColorClass(type, key){
+  if (type === "monthlyExpense") {
+    return key === "depositForfeitProfit" ? "break-green" : "break-red";
+  }
 
+  if (type === "sisterPersonal") {
+    return "break-red";
+  }
+
+  return "";
+}
 function renderBreakdownRow(r, type) {
   const items = breakdownItems(r, type);
   const title = { monthlyExpense:"每月開銷支出費用", sisterPersonal:"每個月妹妹個人開銷*2", transferMortgage:"轉房貸金額" }[type] || "明細";
@@ -922,7 +1015,7 @@ function renderBreakdownRow(r, type) {
 <strong>${escHtml(monthLabel(r))}｜${title}</strong>
         <div class="breakdown" style="margin-top:10px;">
           ${items.map(([label,value,key]) => `
-            <div class="break-item" data-detail-key="${escHtml(key || type)}" data-detail-label="${escHtml(label)}" data-month="${escHtml(monthLabel(r))}" data-id="${escHtml(r.id || r.recordId || "")}" style="cursor:pointer;">
+            <div class="break-item ${breakdownColorClass(type, key)}" data-detail-key="${escHtml(key || type)}" data-detail-label="${escHtml(label)}" data-month="${escHtml(monthLabel(r))}" data-id="${escHtml(r.id || r.recordId || "")}" style="cursor:pointer;">
               <div class="break-label">${escHtml(label)}｜點我看來源</div>
               <div class="break-value">${typeof value === "number" || /^-?\d/.test(String(value)) ? money(value) : escHtml(value)}</div>
             </div>
@@ -1143,10 +1236,13 @@ function openModal(title, hint, html) {
   $("modalBackdrop").classList.add("show");
 }
 function renderBalanceDetailTable(r){
-  const monthlyProfit = getVal(r, ["monthlyProfit", "本月淨利"], 0);
-  const monthlyExpense = monthlyExpenseValue(r);
-  const sisterExpense = sisterPersonalExpenseValue(r);
-  const balance = getVal(r, ["balance", "結餘"], 0);
+  const monthlyProfit = num(getVal(r, ["monthlyProfit", "本月淨利"], 0));
+  const monthlyExpense = num(monthlyExpenseValue(r));
+  const sisterExpense = num(sisterPersonalExpenseValue(r));
+  const balance = num(getVal(r, ["balance", "結餘"], 0));
+
+  const rowClass = (n) => n >= 0 ? "row-positive" : "row-negative";
+  const balanceClass = balance >= 0 ? "row-positive" : "row-negative";
 
   return `
     <div class="table-wrap" style="max-height:58vh;">
@@ -1158,22 +1254,112 @@ function renderBalanceDetailTable(r){
           </tr>
         </thead>
         <tbody>
-          <tr>
+          <tr class="${rowClass(monthlyProfit)}">
             <td>本月淨利</td>
             <td><strong>${money(monthlyProfit)}</strong></td>
           </tr>
-          <tr>
+          <tr class="${rowClass(-monthlyExpense)}">
             <td>每月開銷支出費用</td>
-            <td><strong>-${money(monthlyExpense).replace(/^-?NT\$\s*/, "NT$ ")}</strong></td>
+            <td><strong>${money(-monthlyExpense)}</strong></td>
           </tr>
-          <tr>
+          <tr class="${rowClass(-sisterExpense)}">
             <td>每個月妹妹個人開銷*2</td>
-            <td><strong>-${money(sisterExpense).replace(/^-?NT\$\s*/, "NT$ ")}</strong></td>
+            <td><strong>${money(-sisterExpense)}</strong></td>
           </tr>
-          <tr>
+          <tr class="${balanceClass}">
             <td>結餘</td>
             <td><strong>${money(balance)}</strong></td>
           </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+  function renderMonthlyExpenseSummaryTable(items) {
+  const safeItems = Array.isArray(items) ? items : [];
+
+  return `
+    <div class="table-wrap" style="max-height:58vh;">
+      <table class="modal-table">
+        <thead>
+          <tr>
+            <th>日期</th>
+            <th>分類</th>
+            <th>金額</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${safeItems.map((it, idx) => {
+            const category = text(it.category || it["分類"] || it.label || "");
+            const amount = num(it.amount ?? it["金額"]);
+            const isLast = idx === safeItems.length - 1;
+            const isDepositForfeit = category.includes("定金沒收");
+            const rowClass = isLast
+              ? "row-expense-total"
+              : (isDepositForfeit ? "row-positive" : "row-negative");
+
+            return `
+              <tr class="${rowClass}">
+                <td>${escHtml(text(it.date || it["日期"] || ""))}</td>
+                <td>${escHtml(category)}</td>
+                <td><strong>${money(amount)}</strong></td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderSisterExpenseSummaryTable(items) {
+  const safeItems = Array.isArray(items) ? items : [];
+  const sourceRows = safeItems.slice(0, 3);
+  const finalRow = safeItems[3] || null;
+
+  const subtotal = sourceRows.reduce((sum, it) => {
+    return sum + num(it.amount ?? it["金額"]);
+  }, 0);
+
+  const sourceHtml = sourceRows.map(it => {
+    const category = text(it.category || it["分類"] || it.label || "");
+    const amount = num(it.amount ?? it["金額"]);
+
+    return `
+      <tr class="row-negative">
+        <td>${escHtml(text(it.date || it["日期"] || ""))}</td>
+        <td>${escHtml(category)}</td>
+        <td><strong>${money(amount)}</strong></td>
+      </tr>
+    `;
+  }).join("");
+
+  const finalHtml = finalRow ? `
+    <tr class="row-expense-total">
+      <td>${escHtml(text(finalRow.date || finalRow["日期"] || ""))}</td>
+      <td>${escHtml(text(finalRow.category || finalRow["分類"] || finalRow.label || "每個月妹妹個人開銷*2"))}</td>
+      <td><strong>${money(finalRow.amount ?? finalRow["金額"])}</strong></td>
+    </tr>
+  ` : "";
+
+  return `
+    <div class="table-wrap" style="max-height:58vh;">
+      <table class="modal-table">
+        <thead>
+          <tr>
+            <th>日期</th>
+            <th>分類</th>
+            <th>金額</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sourceHtml}
+          <tr class="row-sister-subtotal">
+            <td></td>
+            <td>妹妹個人開銷小計</td>
+            <td><strong>${money(subtotal)}</strong></td>
+          </tr>
+          ${finalHtml}
         </tbody>
       </table>
     </div>
@@ -1271,9 +1457,13 @@ function formatDetailValue(k, v) {
     `;
   }
 
-  if (["amount", "金額", "paidAmount", "netProfit"].includes(k)) {
-    return `<strong>${money(v)}</strong>`;
-  }
+ if (["amount", "金額", "paidAmount", "netProfit"].includes(k)) {
+  const n = num(v);
+  const cls = k === "netProfit"
+    ? (n >= 0 ? "profit-positive" : "profit-negative")
+    : "";
+  return `<strong class="${cls}">${money(v)}</strong>`;
+}
 
   if (typeof v === "boolean") return v ? "是" : "否";
   return escHtml(text(v));
@@ -1307,7 +1497,25 @@ async function openDetail(month, key, label, id = "") {
       </div>
     ` : "";
 
-    openModal(`${month}｜${label}`, `來源明細：${items.length} 筆`, summaryHtml + renderDetailTable(items));
+   if (key === "monthlyExpense") {
+  openModal(
+    `${month}｜${label}`,
+    `來源明細：${items.length} 筆`,
+    renderMonthlyExpenseSummaryTable(items)
+  );
+  return;
+}
+
+if (key === "sisterPersonalExpense") {
+  openModal(
+    `${month}｜${label}`,
+    `來源明細：${items.length} 筆`,
+    renderSisterExpenseSummaryTable(items)
+  );
+  return;
+}
+
+openModal(`${month}｜${label}`, `來源明細：${items.length} 筆`, summaryHtml + renderDetailTable(items));
   } catch (err) {
     openModal(`${month}｜${label}`, "讀取失敗", `<div class="empty">❌ ${escHtml(err.message || err)}</div>`);
   }
