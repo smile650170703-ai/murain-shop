@@ -475,61 +475,48 @@
   color:inherit !important;
 }
 
-/* 本月淨利：正數綠、負數紅，只改數字 */
-.money-link.amount-green,
-strong.amount-green{
-  color:#047857 !important;
-}
-
 .money-link.amount-red,
 strong.amount-red{
   color:#be123c !important;
 }
 
-/* ✅ 結餘數字不要紅綠，維持原本藍色 */
-.balance-col .money-link,
-.balance-col .money-link.balance-positive,
-.balance-col .money-link.balance-negative{
+.money-link.amount-green,
+strong.amount-green{
+  color:#047857 !important;
+}
+
+/* ✅ 已確認清單：不要整列底色 */
+.confirmed-table tr.is-negative-balance td,
+.confirmed-table tr.is-negative-balance:hover td,
+.confirmed-table tr.is-negative-balance td:first-child,
+.confirmed-table tr.is-negative-balance:hover td:first-child,
+.confirmed-table tr.is-positive-balance td,
+.confirmed-table tr.is-positive-balance:hover td,
+.confirmed-table tr.is-positive-balance td:first-child,
+.confirmed-table tr.is-positive-balance:hover td:first-child{
+  background:#fff !important;
+}
+
+/* ✅ 本月淨利、每月開銷、妹妹開銷：主清單維持藍色 */
+.confirmed-table td:not(.balance-col) .money-link{
   color:#063f91 !important;
 }
 
-.balance-col .money-link:hover,
-.balance-col .money-link.balance-positive:hover,
-.balance-col .money-link.balance-negative:hover{
+.confirmed-table td:not(.balance-col) .money-link:hover{
   color:#0ea5e9 !important;
 }
 
-/* ✅ 結餘主清單：只有整列底色區分 */
-.confirmed-table tr.is-negative-balance td{
-  background:#fff6f8 !important;
+/* ✅ 結餘數字才依正負變色 */
+.balance-col .money-link.amount-red{
+  color:#be123c !important;
 }
 
-.confirmed-table tr.is-negative-balance:hover td{
-  background:#fff1f5 !important;
+.balance-col .money-link.amount-green{
+  color:#047857 !important;
 }
 
-.confirmed-table tr.is-negative-balance td:first-child{
-  background:#fff6f8 !important;
-}
-
-.confirmed-table tr.is-negative-balance:hover td:first-child{
-  background:#fff1f5 !important;
-}
-
-.confirmed-table tr.is-positive-balance td{
-  background:#f7fffb !important;
-}
-
-.confirmed-table tr.is-positive-balance:hover td{
-  background:#effcf6 !important;
-}
-
-.confirmed-table tr.is-positive-balance td:first-child{
-  background:#f7fffb !important;
-}
-
-.confirmed-table tr.is-positive-balance:hover td:first-child{
-  background:#effcf6 !important;
+.balance-col .money-link:hover{
+  color:#0ea5e9 !important;
 }
 
 /* ✅ 小卡不要整張變色，只讓金額變色 */
@@ -549,31 +536,29 @@ strong.amount-red{
   color:#0b4a9e;
 }
 
-.break-item .break-value.amount-red{
+.break-item .break-value .amount-red{
   color:#be123c !important;
 }
 
-.break-item .break-value.amount-green{
+.break-item .break-value .amount-green{
   color:#047857 !important;
 }
 
-/* ✅ 彈窗不要整列變色，只有結餘最後一列可以整列底色 */
+/* ✅ 彈窗一般列不要整列變色 */
 .modal-table tr.row-positive td,
 .modal-table tr.row-negative td,
 .modal-table tr.row-total td,
 .modal-table tr.row-expense-total td,
-.modal-table tr.row-sister-subtotal td{
+.modal-table tr.row-sister-subtotal td,
+.modal-table tr.balance-row-positive td,
+.modal-table tr.balance-row-negative td{
   background:#fff !important;
   font-weight:normal;
 }
 
-.modal-table tr.balance-row-positive td{
-  background:#f7fffb !important;
-  font-weight:900;
-}
-
-.modal-table tr.balance-row-negative td{
-  background:#fff6f8 !important;
+/* ✅ 結餘 / 每月開銷 / 妹妹開銷：跳出清單最後一列淡黃色 */
+.modal-table tr.row-final-total td{
+  background:#fff8db !important;
   font-weight:900;
 }
     .tag{
@@ -842,7 +827,31 @@ function money(v) {
   const sign = n < 0 ? "-" : "";
   return `${sign}NT$ ${Math.abs(Math.round(n)).toLocaleString("zh-TW")}`;
 }
+function signedMoney(v, mode = "auto") {
+  const raw = num(v);
+  const absText = Math.abs(Math.round(raw)).toLocaleString("zh-TW");
 
+  if (mode === "expense") {
+    return `-NT$ ${absText}`;
+  }
+
+  if (mode === "income") {
+    return `NT$ ${absText}`;
+  }
+
+  const sign = raw < 0 ? "-" : "";
+  return `${sign}NT$ ${absText}`;
+}
+
+function signedAmountClass(v, mode = "auto") {
+  if (mode === "expense") return "amount-red";
+  if (mode === "income") return "amount-green";
+  return num(v) < 0 ? "amount-red" : "amount-green";
+}
+
+function signedMoneyHtml(v, mode = "auto") {
+  return `<strong class="${signedAmountClass(v, mode)}">${signedMoney(v, mode)}</strong>`;
+}
 function text(v) {
   if (Array.isArray(v)) return v.map(x => typeof x === "object" ? (x.name || x.id || "") : String(x)).filter(Boolean).join(" / ");
   if (v == null) return "";
@@ -916,21 +925,23 @@ function monthLabel(r) {
 function amountLink(r, key, label, amount) {
   const month = monthLabel(r);
   const id = r.id || r.recordId || "";
-  const n = num(amount);
 
   let toneClass = "";
+  let displayText = money(amount);
 
-  // ✅ 本月淨利：只有數字正綠負紅
+  // ✅ 已確認清單：本月淨利跟每月開銷一樣維持藍色
   if (key === "monthlyProfit") {
-    toneClass = n >= 0 ? "amount-green" : "amount-red";
-  }
-
-  // ✅ 結餘不要讓數字紅綠，結餘只靠整列底色
-  if (key === "balance") {
     toneClass = "";
+    displayText = money(amount);
   }
 
-  return `<span class="money-link ${toneClass}" data-detail-key="${key}" data-detail-label="${escHtml(label)}" data-month="${escHtml(month)}" data-id="${escHtml(id)}">${money(amount)}</span>`;
+  // ✅ 已確認清單：只有結餘依正負變色
+  if (key === "balance") {
+    toneClass = signedAmountClass(amount, "auto");
+    displayText = signedMoney(amount, "auto");
+  }
+
+  return `<span class="money-link ${toneClass}" data-detail-key="${key}" data-detail-label="${escHtml(label)}" data-month="${escHtml(month)}" data-id="${escHtml(id)}">${displayText}</span>`;
 }
 
 
@@ -1015,18 +1026,19 @@ function breakdownItems(r, type) {
   }
   return [];
 }
-function breakdownValueToneClass(type, key){
-  // 每月開銷：公司1-7 金額紅色，公司8 金額綠色
+function breakdownValueMode(type, key){
+  // 每月開銷：公司1-7 是支出，紅色且前面有 -
+  // 公司8 定金沒收進利是收入，綠色
   if (type === "monthlyExpense") {
-    return key === "depositForfeitProfit" ? "amount-green" : "amount-red";
+    return key === "depositForfeitProfit" ? "income" : "expense";
   }
 
-  // 妹妹個人開銷：妹妹1-3 金額都紅色
+  // 妹妹個人開銷：妹妹1-3 都是支出，紅色且前面有 -
   if (type === "sisterPersonal") {
-    return "amount-red";
+    return "expense";
   }
 
-  return "";
+  return "auto";
 }
 function renderBreakdownRow(r, type) {
   const items = breakdownItems(r, type);
@@ -1039,7 +1051,7 @@ function renderBreakdownRow(r, type) {
           ${items.map(([label,value,key]) => `
             <div class="break-item" data-detail-key="${escHtml(key || type)}" data-detail-label="${escHtml(label)}" data-month="${escHtml(monthLabel(r))}" data-id="${escHtml(r.id || r.recordId || "")}" style="cursor:pointer;">
   <div class="break-label">${escHtml(label)}｜點我看來源</div>
-  <div class="break-value ${breakdownValueToneClass(type, key)}">${typeof value === "number" || /^-?\d/.test(String(value)) ? money(value) : escHtml(value)}</div>
+  <div class="break-value">${typeof value === "number" || /^-?\d/.test(String(value)) ? signedMoneyHtml(value, breakdownValueMode(type, key)) : escHtml(value)}</div>
 </div>
           `).join("")}
         </div>
@@ -1136,20 +1148,17 @@ function renderProfitRowHtml(r){
     </tr>
   `;
 }
-  function renderConfirmedProfitRowHtml(r){
+function renderConfirmedProfitRowHtml(r){
   const month = monthLabel(r);
   const id = r.id || r.recordId || "";
 
   const balance = getVal(r, ["balance", "結餘"], 0);
-  const balanceNum = num(balance);
-  const balanceRowClass = balanceNum < 0 ? "is-negative-balance" : (balanceNum > 0 ? "is-positive-balance" : "");
-
   const monthlyProfit = getVal(r, ["monthlyProfit", "本月淨利"], 0);
   const mExpense = monthlyExpenseValue(r);
   const sExpense = sisterPersonalExpenseValue(r);
 
   return `
-        <tr class="${balanceRowClass}" data-row-id="${escHtml(id)}" data-month="${escHtml(month)}">
+    <tr data-row-id="${escHtml(id)}" data-month="${escHtml(month)}">
       <td><strong>${escHtml(month)}</strong></td>
       <td class="balance-col">${amountLink(r, "balance", "結餘", balance)}</td>
       <td>${amountLink(r, "monthlyProfit", "本月淨利", monthlyProfit)}</td>
@@ -1263,9 +1272,6 @@ function renderBalanceDetailTable(r){
   const sisterExpense = num(sisterPersonalExpenseValue(r));
   const balance = num(getVal(r, ["balance", "結餘"], 0));
 
-  const amountTone = (n) => n >= 0 ? "amount-green" : "amount-red";
-  const balanceRowClass = balance >= 0 ? "balance-row-positive" : "balance-row-negative";
-
   return `
     <div class="table-wrap" style="max-height:58vh;">
       <table class="modal-table">
@@ -1278,19 +1284,19 @@ function renderBalanceDetailTable(r){
         <tbody>
           <tr>
             <td>本月淨利</td>
-            <td><strong class="${amountTone(monthlyProfit)}">${money(monthlyProfit)}</strong></td>
+            <td>${signedMoneyHtml(monthlyProfit, "auto")}</td>
           </tr>
           <tr>
             <td>每月開銷支出費用</td>
-            <td><strong class="amount-red">${money(-monthlyExpense)}</strong></td>
+            <td>${signedMoneyHtml(monthlyExpense, "expense")}</td>
           </tr>
           <tr>
             <td>每個月妹妹個人開銷*2</td>
-            <td><strong class="amount-red">${money(-sisterExpense)}</strong></td>
+            <td>${signedMoneyHtml(sisterExpense, "expense")}</td>
           </tr>
-          <tr class="${balanceRowClass}">
+          <tr class="row-final-total">
             <td>結餘</td>
-            <td><strong>${money(balance)}</strong></td>
+            <td>${signedMoneyHtml(balance, "auto")}</td>
           </tr>
         </tbody>
       </table>
@@ -1316,15 +1322,13 @@ function renderMonthlyExpenseSummaryTable(items) {
             const amount = num(it.amount ?? it["金額"]);
             const isLast = idx === safeItems.length - 1;
             const isCompany8 = category.includes("定金沒收") || category.includes("[公司8]");
-
-            // 公司1-7 金額紅色，公司8 金額綠色，最後總額金額紅色
-            const toneClass = (!isLast && isCompany8) ? "amount-green" : "amount-red";
+            const mode = isLast ? "expense" : (isCompany8 ? "income" : "expense");
 
             return `
-              <tr>
+              <tr class="${isLast ? "row-final-total" : ""}">
                 <td>${escHtml(text(it.date || it["日期"] || ""))}</td>
                 <td>${escHtml(category)}</td>
-                <td><strong class="${toneClass}">${money(amount)}</strong></td>
+                <td>${signedMoneyHtml(amount, mode)}</td>
               </tr>
             `;
           }).join("")}
@@ -1351,16 +1355,16 @@ function renderSisterExpenseSummaryTable(items) {
       <tr>
         <td>${escHtml(text(it.date || it["日期"] || ""))}</td>
         <td>${escHtml(category)}</td>
-        <td><strong class="amount-red">${money(amount)}</strong></td>
+        <td>${signedMoneyHtml(amount, "expense")}</td>
       </tr>
     `;
   }).join("");
 
   const finalHtml = finalRow ? `
-    <tr>
+    <tr class="row-final-total">
       <td>${escHtml(text(finalRow.date || finalRow["日期"] || ""))}</td>
       <td>${escHtml(text(finalRow.category || finalRow["分類"] || finalRow.label || "每個月妹妹個人開銷*2"))}</td>
-      <td><strong class="amount-red">${money(finalRow.amount ?? finalRow["金額"])}</strong></td>
+      <td>${signedMoneyHtml(finalRow.amount ?? finalRow["金額"], "expense")}</td>
     </tr>
   ` : "";
 
@@ -1379,7 +1383,7 @@ function renderSisterExpenseSummaryTable(items) {
           <tr>
             <td></td>
             <td>妹妹個人開銷小計</td>
-            <td><strong class="amount-red">${money(subtotal)}</strong></td>
+            <td>${signedMoneyHtml(subtotal, "expense")}</td>
           </tr>
           ${finalHtml}
         </tbody>
