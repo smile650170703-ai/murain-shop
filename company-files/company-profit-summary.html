@@ -906,6 +906,45 @@ function signedAmountClass(v, mode = "auto") {
 function signedMoneyHtml(v, mode = "auto") {
   return `<strong class="${signedAmountClass(v, mode)}">${signedMoney(v, mode)}</strong>`;
 }
+  const EXPENSE_DETAIL_KEYS = new Set([
+  "companyGoodsExpense",
+  "monthlyReturnSettlement",
+  "useCompanySubsidy",
+  "cardCompanyExpense",
+  "cashCompanyLumi",
+  "cashCompanySister",
+  "cashCompanyShippingSister",
+  "cardSisterExpense",
+  "cashBorrowSister"
+]);
+
+const INCOME_DETAIL_KEYS = new Set([
+  "depositForfeitProfit"
+]);
+
+function detailAmountHtml(v, detailKey = "") {
+  const n = num(v);
+  const absText = Math.abs(Math.round(n)).toLocaleString("zh-TW");
+
+  // 支出類：原本正數 → 顯示 -NT$，紅色
+  // 如果原本就是負數 → 代表反向/退回，顯示正數，綠色
+  if (EXPENSE_DETAIL_KEYS.has(detailKey)) {
+    if (n < 0) {
+      return `<strong class="amount-green">NT$ ${absText}</strong>`;
+    }
+    return `<strong class="amount-red">-NT$ ${absText}</strong>`;
+  }
+
+  // 收入類：正數綠色；負數紅色
+  if (INCOME_DETAIL_KEYS.has(detailKey)) {
+    if (n < 0) {
+      return `<strong class="amount-red">-NT$ ${absText}</strong>`;
+    }
+    return `<strong class="amount-green">NT$ ${absText}</strong>`;
+  }
+
+  return `<strong>${money(v)}</strong>`;
+}
 function text(v) {
   if (Array.isArray(v)) return v.map(x => typeof x === "object" ? (x.name || x.id || "") : String(x)).filter(Boolean).join(" / ");
   if (v == null) return "";
@@ -1445,7 +1484,7 @@ function renderSisterExpenseSummaryTable(items) {
     </div>
   `;
 }
-function renderDetailTable(items) {
+function renderDetailTable(items, detailKey = "") {
   if (!Array.isArray(items) || !items.length) {
     return `<div class="empty">目前沒有來源明細。</div>`;
   }
@@ -1493,7 +1532,7 @@ function renderDetailTable(items) {
             <tr>
               ${finalKeys.map(k => `
   <td class="${k === "netProfit" ? "net-profit-col" : ""}">
-    ${formatDetailValue(k, it?.[k])}
+    ${formatDetailValue(k, it?.[k], detailKey)}
   </td>
 `).join("")}
             </tr>
@@ -1528,7 +1567,7 @@ function labelForKey(k) {
   };
   return map[k] || k;
 }
-function formatDetailValue(k, v) {
+function formatDetailValue(k, v, detailKey = "") {
   if (k === "photoUrls") {
     const urls = Array.isArray(v) ? v : (text(v) ? [text(v)] : []);
 
@@ -1565,6 +1604,11 @@ if (["amount", "金額", "paidAmount", "netProfit"].includes(k)) {
   if (k === "netProfit") {
     const toneClass = n >= 0 ? "amount-green" : "amount-red";
     return `<strong class="${toneClass}">${money(v)}</strong>`;
+  }
+
+  // 來源明細金額：依照點開的是哪個小卡決定正負號與顏色
+  if (k === "amount" || k === "金額") {
+    return detailAmountHtml(v, detailKey);
   }
 
   return `<strong>${money(v)}</strong>`;
@@ -1620,7 +1664,7 @@ if (key === "sisterPersonalExpense") {
   return;
 }
 
-openModal(`${month}｜${label}`, `來源明細：${items.length} 筆`, summaryHtml + renderDetailTable(items));
+openModal(`${month}｜${label}`, `來源明細：${items.length} 筆`, summaryHtml + renderDetailTable(items, key));
   } catch (err) {
     openModal(`${month}｜${label}`, "讀取失敗", `<div class="empty">❌ ${escHtml(err.message || err)}</div>`);
   }
