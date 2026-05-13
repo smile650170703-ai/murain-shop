@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>購物金異常｜訂單後台</title>
+<style>
+  *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
+  body{margin:0;background:#020617;color:#e2e8f0}
+  .wrap{max-width:1180px;margin:0 auto;padding:16px}
+  h1{margin:0 0 8px;font-size:24px}
+  .page-tabs{margin:0 0 18px}
+  .page-tabs-bar{display:flex;flex-wrap:wrap;gap:10px;padding:12px 14px;border-radius:18px;background:#020617;border:1px solid rgba(148,163,184,.28)}
+  .page-tab{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border-radius:999px;text-decoration:none;font-size:13px;font-weight:800;background:rgba(15,23,42,.92);color:#e2e8f0;border:1px solid rgba(148,163,184,.55)}
+  .page-tab.is-active{background:#f97316;color:#111827;border-color:#f97316}
+  .card{background:rgba(15,23,42,.95);border:1px solid rgba(148,163,184,.3);border-radius:16px;padding:14px;margin-top:12px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+  input{padding:8px 10px;border-radius:10px;border:1px solid rgba(148,163,184,.6);background:#020617;color:#e2e8f0;font-size:13px}
+  button{padding:8px 12px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:transparent;color:#e5e7eb;font-size:13px;cursor:pointer}
+  button.primary{border:none;background:#22d3ee;color:#0f172a;font-weight:800}
+  button.danger{border:none;background:#f97316;color:#111827;font-weight:900}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  .muted{color:#94a3b8;font-size:13px}
+  .error{color:#fecaca;font-size:13px}
+  .ok{color:#bbf7d0;font-size:13px}
+  table{width:100%;border-collapse:collapse;margin-top:10px;font-size:13px}
+  th,td{border-bottom:1px solid rgba(148,163,184,.25);padding:8px;vertical-align:top}
+  th{text-align:left;color:#cbd5f5;background:rgba(2,6,23,.45);position:sticky;top:0}
+  .badge{display:inline-block;padding:2px 7px;border-radius:999px;font-size:11px;border:1px solid rgba(148,163,184,.6);margin:2px 2px 0 0}
+  .badge.red{border-color:#fca5a5;background:rgba(239,68,68,.14);color:#fecaca}
+  .badge.yellow{border-color:#facc15;background:rgba(234,179,8,.14);color:#fde68a}
+  .badge.green{border-color:#22c55e;background:rgba(34,197,94,.14);color:#bbf7d0}
+  .money{font-weight:800;color:#fca5a5}
+  .note{max-width:320px;white-space:pre-wrap;color:#cbd5e1;font-size:12px}
+  .top-hint{line-height:1.7;color:#cbd5e1;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>⚠️ 購物金異常</h1>
+
+  <div class="page-tabs">
+    <div class="page-tabs-bar">
+      <a class="page-tab" href="admin-all.html">全部訂單</a>
+      <a class="page-tab" href="admin-ship.html">⭐待出貨訂單</a>
+      <a class="page-tab" href="admin-bank.html">匯款待確認</a>
+      <a class="page-tab" href="admin-benefit-review.html">💰 審核購物金</a>
+      <a class="page-tab is-active" href="admin-credit-error.html">⚠️ 購物金異常</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="top-hint">
+      這裡只處理「付款已成功，但購物金正式扣款失敗」的訂單。<br>
+      按下處理後會重新扣購物金、補開發票、發付款成功通知。<br>
+      發票金額仍然是訂單的實付金額 net_amount，不會改成商品原價。
+    </div>
+
+    <div class="toolbar">
+      <input id="opKeyInput" type="password" placeholder="後台 OP_KEY" />
+      <button class="primary" id="btnSaveKey" type="button">儲存 OP_KEY</button>
+      <button id="btnReload" type="button">重新載入</button>
+      <input id="orderSearch" type="text" placeholder="搜尋訂單編號 / LINE名稱" />
+    </div>
+
+    <div id="msg" class="muted">尚未載入</div>
+  </div>
+
+  <div class="card">
+    <div id="list"></div>
+  </div>
+</div>
+
+<script>
+const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
+const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
+
+let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
+let ALL_ROWS = [];
+let ERROR_ROWS = [];
+
+const $ = (s, r=document) => r.querySelector(s);
+
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+}
+
+function money(n){
+  return 'NT$ ' + Math.round(Number(n || 0)).toLocaleString('zh-TW');
+}
+
+function normBool(v){
+  return v === true || String(v || '').trim().toLowerCase() === 'true';
+}
+
+function parseShip(f){
+  try {
+    return f.shipping_info ? JSON.parse(f.shipping_info) : {};
+  } catch(e) {
+    return {};
+  }
+}
+
+function getLineName(f){
+  const si = parseShip(f);
+  return String(
+    f.line_name ||
+    f.LINE名稱 ||
+    f['LINE名稱'] ||
+    si.line?.displayName ||
+    si.line_profile?.displayName ||
+    si.line_profile?.name ||
+    ''
+  ).trim();
+}
+
+function isPaidOk(f){
+  const ps = String(f.pay_status || '').trim().toLowerCase();
+  const st = String(f.status || '').trim().toLowerCase();
+  return (
+    ps === 'paid_ok' ||
+    ps === 'paid' ||
+    st === 'paid' ||
+    st === 'completed' ||
+    st === 'shipped'
+  );
+}
+
+function isCreditErrorRow(rec){
+  const f = rec.fields || rec || {};
+  const creditUsed = Math.max(0, Number(f.credit_used || f.CreditUsed || 0) || 0);
+  const spendDone = normBool(f.credit_spend_done);
+  return creditUsed > 0 && isPaidOk(f) && !spendDone;
+}
+
+function render(){
+  const q = String($('#orderSearch')?.value || '').trim().toLowerCase();
+  const rows = (ERROR_ROWS || []).filter(rec => {
+    const f = rec.fields || rec || {};
+    const oid = String(f.order_id || '').toLowerCase();
+    const line = getLineName(f).toLowerCase();
+    return !q || oid.includes(q) || line.includes(q);
+  });
+
+  const msg = $('#msg');
+  if (msg) {
+    msg.textContent = `目前共 ${rows.length} 筆購物金異常 / 疑似異常訂單。`;
+  }
+
+  const list = $('#list');
+  if (!rows.length) {
+    list.innerHTML = '<div class="muted">目前沒有購物金異常訂單。</div>';
+    return;
+  }
+
+  list.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>訂單</th>
+          <th>客人</th>
+          <th>金額</th>
+          <th>狀態</th>
+          <th>內部備註</th>
+          <th>處理</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(rec => {
+          const f = rec.fields || rec || {};
+          const oid = String(f.order_id || '').trim();
+          const note = String(f.internal_note || '');
+          const hasTag = note.includes('CREDIT_CAPTURE_ERROR');
+          const creditUsed = Math.max(0, Number(f.credit_used || 0) || 0);
+          const net = Number(f.net_amount ?? f.net ?? 0) || 0;
+          const total = Number(f.total_amount ?? f.total ?? 0) || 0;
+
+          return `
+            <tr>
+              <td>
+                <b>${esc(oid || '-')}</b><br>
+                ${hasTag
+                  ? '<span class="badge red">CREDIT_CAPTURE_ERROR</span>'
+                  : '<span class="badge yellow">疑似異常</span>'
+                }
+              </td>
+              <td>${esc(getLineName(f) || '-')}</td>
+              <td>
+                商品總額：${money(total)}<br>
+                <span class="money">購物金：${money(creditUsed)}</span><br>
+                實付 / 發票：${money(net)}
+              </td>
+              <td>
+                <span class="badge green">${esc(f.pay_status || '-')}</span>
+                <span class="badge">${esc(f.status || '-')}</span><br>
+                credit_spend_done：${normBool(f.credit_spend_done) ? 'true' : 'false'}
+              </td>
+              <td><div class="note">${esc(note || '-')}</div></td>
+              <td>
+                <button type="button" onclick="dryRun('${esc(oid)}')">檢查</button><br>
+                <button class="danger" type="button" onclick="releaseOrder('${esc(oid)}')">重新扣購物金並放行</button>
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadRows(){
+  if (!OP_KEY) {
+    OP_KEY = prompt('請輸入後台 OP_KEY') || '';
+    if (OP_KEY) localStorage.setItem(STORAGE_KEY, OP_KEY);
+  }
+
+  if ($('#opKeyInput')) $('#opKeyInput').value = OP_KEY || '';
+
+  const msg = $('#msg');
+  const list = $('#list');
+
+  msg.textContent = '載入中…';
+  list.innerHTML = '';
+
+  try {
+    const params = new URLSearchParams();
+    params.set('filter', 'all');
+    params.set('op_key', OP_KEY);
+
+    const r = await fetch(`${API}/admin/orders?` + params.toString());
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.error || ('HTTP ' + r.status));
+    }
+
+    ALL_ROWS = j.orders || j.records || [];
+    ERROR_ROWS = ALL_ROWS.filter(isCreditErrorRow);
+
+    render();
+  } catch(e) {
+    console.error(e);
+    msg.textContent = '';
+    list.innerHTML = '<div class="error">載入失敗：' + esc(e.message || e) + '</div>';
+  }
+}
+
+async function dryRun(orderId){
+  if (!orderId) return;
+
+  try {
+    const r = await fetch(`${API}/admin/order/credit-capture-release`, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        order_id: orderId,
+        dry_run: true
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+    alert(j.message || j.error || JSON.stringify(j));
+  } catch(e) {
+    alert('檢查失敗：' + (e.message || e));
+  }
+}
+
+async function releaseOrder(orderId){
+  if (!orderId) return;
+
+  const ok = confirm(
+    `確定要處理訂單 ${orderId} 嗎？\n\n` +
+    `會重新扣購物金、補開發票、發付款成功通知。\n` +
+    `請確認此訂單的金流付款已成功。`
+  );
+
+  if (!ok) return;
+
+  try {
+    const r = await fetch(`${API}/admin/order/credit-capture-release`, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        order_id: orderId
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+
+    alert(j.message || '處理完成');
+    await loadRows();
+
+  } catch(e) {
+    alert('處理失敗：' + (e.message || e));
+  }
+}
+
+$('#btnSaveKey')?.addEventListener('click', () => {
+  OP_KEY = String($('#opKeyInput')?.value || '').trim();
+  localStorage.setItem(STORAGE_KEY, OP_KEY);
+  alert('已儲存 OP_KEY');
+});
+
+$('#btnReload')?.addEventListener('click', loadRows);
+$('#orderSearch')?.addEventListener('input', render);
+
+window.addEventListener('DOMContentLoaded', loadRows);
+</script>
+</body>
+</html>
