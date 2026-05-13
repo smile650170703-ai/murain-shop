@@ -682,6 +682,26 @@ strong.amount-green{
 .product-detail-box.show{
   display:block;
 }
+    .photo-thumb-list{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+
+.photo-thumb{
+  width:54px;
+  height:54px;
+  object-fit:cover;
+  border-radius:10px;
+  border:1px solid var(--line);
+  cursor:pointer;
+  background:#f8fafc;
+}
+
+.photo-thumb:hover{
+  outline:2px solid #93c5fd;
+}
     .close-btn{
       width:auto;
       border:none;
@@ -699,6 +719,26 @@ strong.amount-green{
       .table-wrap{ max-height:none; }
       .ops{ min-width:360px; }
     }
+    .photo-preview-modal{
+  max-width:92vw;
+  max-height:88vh;
+  background:#fff;
+  border-radius:18px;
+  padding:14px;
+  border:1px solid var(--line);
+  box-shadow:0 30px 80px rgba(2,8,23,.35);
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  align-items:flex-end;
+}
+
+.photo-preview-modal img{
+  max-width:88vw;
+  max-height:76vh;
+  object-fit:contain;
+  border-radius:12px;
+}
   </style>
 </head>
 <body>
@@ -808,6 +848,12 @@ strong.amount-green{
       <div class="modal-body" id="modalBody"></div>
     </div>
   </div>
+  <div id="photoBackdrop" class="modal-backdrop" onclick="closePhotoPreview()">
+  <div class="photo-preview-modal" onclick="event.stopPropagation()">
+    <button class="close-btn" onclick="closePhotoPreview()">關閉</button>
+    <img id="photoPreviewImg" src="" alt="拍照/截圖" />
+  </div>
+</div>
 
 <script>
 const STORAGE_OK = "company_entry_ok";
@@ -842,7 +888,15 @@ function signedMoney(v, mode = "auto") {
   const sign = raw < 0 ? "-" : "";
   return `${sign}NT$ ${absText}`;
 }
+function openPhotoPreview(url){
+  $("photoPreviewImg").src = url;
+  $("photoBackdrop").classList.add("show");
+}
 
+function closePhotoPreview(){
+  $("photoBackdrop").classList.remove("show");
+  $("photoPreviewImg").src = "";
+}
 function signedAmountClass(v, mode = "auto") {
   if (mode === "expense") return "amount-red";
   if (mode === "income") return "amount-green";
@@ -1399,13 +1453,17 @@ function renderDetailTable(items) {
   const keys = [];
   for (const it of items) {
     Object.keys(it || {}).forEach(k => {
-      if (!keys.includes(k) && !["id","recordId"].includes(k)) keys.push(k);
+      if (!keys.includes(k) && !["id","recordId","source"].includes(k)) keys.push(k);
     });
   }
 
   const preferred = [
-  "date","日期","month","月份","category","分類","title","項目","detail","說明","note","備註",
-  "amount","金額","status","狀態","signed","簽收","checked","核對",
+  "date","日期",
+  "category","分類",
+  "detail","說明",
+  "photoUrls","圖片",
+  "amount","金額",
+  "status","狀態",
 
   "orderId",
   "createdAt",
@@ -1454,6 +1512,7 @@ function labelForKey(k) {
     title:"項目",
     detail:"說明",
     note:"備註",
+    photoUrls:"圖片",
     amount:"金額",
     status:"狀態",
     signed:"簽收",
@@ -1469,7 +1528,24 @@ function labelForKey(k) {
   };
   return map[k] || k;
 }
+if (k === "photoUrls") {
+  const urls = Array.isArray(v) ? v : (text(v) ? [text(v)] : []);
 
+  if (!urls.length) return "-";
+
+  return `
+    <div class="photo-thumb-list">
+      ${urls.map(url => `
+        <img
+          src="${escHtml(url)}"
+          class="photo-thumb"
+          data-photo-url="${escHtml(url)}"
+          alt="拍照/截圖"
+        />
+      `).join("")}
+    </div>
+  `;
+}
 function formatDetailValue(k, v) {
   if (k === "createdAt") {
     return escHtml(dateOnly(v));
@@ -1675,6 +1751,12 @@ $("modalBackdrop").addEventListener("click", (e) => {
 });
 
 document.addEventListener("click", (e) => {
+  const photoThumb = e.target.closest(".photo-thumb");
+if (photoThumb) {
+  const url = photoThumb.dataset.photoUrl || "";
+  if (url) openPhotoPreview(url);
+  return;
+}
     const productBtn = e.target.closest(".product-detail-toggle");
   if (productBtn) {
     const box = productBtn.nextElementSibling;
