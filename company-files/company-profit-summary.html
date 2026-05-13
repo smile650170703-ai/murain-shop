@@ -469,7 +469,16 @@
 .amount-green{
   color:#047857 !important;
 }
+.green-check{
+  color:#047857;
+  font-size:18px;
+  font-weight:900;
+}
 
+.red-text{
+  color:#be123c !important;
+  font-weight:900;
+}
 .amount-red strong,
 .amount-green strong{
   color:inherit !important;
@@ -1484,6 +1493,114 @@ function renderSisterExpenseSummaryTable(items) {
     </div>
   `;
 }
+  function detailColumnsByKey(detailKey, keys) {
+  const has = (k) => keys.includes(k);
+  const keep = (arr) => arr.filter(k => has(k));
+
+  // 公司1、公司5、公司6、公司7、妹妹2：現金支出類
+  if ([
+    "companyGoodsExpense",
+    "cashCompanyLumi",
+    "cashCompanySister",
+    "cashCompanyShippingSister",
+    "cashBorrowSister"
+  ].includes(detailKey)) {
+    return keep([
+      "date",
+      "category",
+      "detail",
+      "photoUrls",
+      "amount",
+      "statusChecked",
+      "signedChecked"
+    ]);
+  }
+
+  // 公司2：退貨結算 / 取消訂單淨利表
+  if (detailKey === "monthlyReturnSettlement") {
+    return keep([
+      "orderId",
+      "createdAt",
+      "cancelDate",
+      "netProfit",
+      "productDetail"
+    ]);
+  }
+
+  // 公司3：購物金
+  if (detailKey === "useCompanySubsidy") {
+    return keep([
+      "orderId",
+      "createdAt",
+      "lineName",
+      "companySubsidyUsed"
+    ]);
+  }
+
+  // 公司4、妹妹1：信用卡帳單
+  if ([
+    "cardCompanyExpense",
+    "cardSisterExpense"
+  ].includes(detailKey)) {
+    return keep([
+      "bank",
+      "billMonth",
+      "transDate",
+      "cardDetail",
+      "amount",
+      "note",
+      "expenseCategory",
+      "purchaseLink",
+      "shippingLink",
+      "refundLink"
+    ]);
+  }
+
+  // 公司8：定金沒收進利
+  if (detailKey === "depositForfeitProfit") {
+    return keep([
+      "orderId",
+      "createdAt",
+      "lineName",
+      "depositForfeitAmount",
+      "cancelReason",
+      "depositForfeitDecision",
+      "depositForfeitTime",
+      "productDetail"
+    ]);
+  }
+
+  // 妹妹3：手動輸入
+  if (detailKey === "sisterMortgage") {
+    return keep([
+      "month",
+      "sisterMortgageAmount"
+    ]);
+  }
+
+  // 本月淨利來源
+  if (detailKey === "monthlyProfit") {
+    return keep([
+      "orderId",
+      "createdAt",
+      "lineName",
+      "streamer",
+      "paidAmount",
+      "netProfit",
+      "productDetail"
+    ]);
+  }
+
+  return keep([
+    "date",
+    "category",
+    "detail",
+    "photoUrls",
+    "amount",
+    "statusChecked",
+    "signedChecked"
+  ]);
+}
 function renderDetailTable(items, detailKey = "") {
   if (!Array.isArray(items) || !items.length) {
     return `<div class="empty">目前沒有來源明細。</div>`;
@@ -1492,49 +1609,36 @@ function renderDetailTable(items, detailKey = "") {
   const keys = [];
   for (const it of items) {
     Object.keys(it || {}).forEach(k => {
-      if (!keys.includes(k) && !["id","recordId","source"].includes(k)) keys.push(k);
+      if (!keys.includes(k) && !["id", "recordId", "source"].includes(k)) {
+        keys.push(k);
+      }
     });
   }
 
-  const preferred = [
-  "date","日期",
-  "category","分類",
-  "detail","說明",
-  "photoUrls","圖片",
-  "amount","金額",
-  "status","狀態",
+  let finalKeys = detailColumnsByKey(detailKey, keys);
 
-  "orderId",
-  "createdAt",
-  "lineName",
-  "streamer",
-  "paidAmount",
-  "netProfit",
-  "productDetail"
-];
-  const finalKeys = [
-    ...preferred.filter(k => keys.includes(k)),
-    ...keys.filter(k => !preferred.includes(k)).slice(0, 8)
-  ];
+  if (!finalKeys.length) {
+    finalKeys = keys.filter(k => !["id", "recordId", "source"].includes(k)).slice(0, 8);
+  }
 
   return `
     <div class="table-wrap" style="max-height:58vh;">
       <table class="modal-table">
         <thead>
           <tr>${finalKeys.map(k => `
-  <th class="${k === "netProfit" ? "net-profit-col" : ""}">
-    ${escHtml(labelForKey(k))}
-  </th>
-`).join("")}</tr>
+            <th class="${k === "netProfit" ? "net-profit-col" : ""}">
+              ${escHtml(labelForKey(k))}
+            </th>
+          `).join("")}</tr>
         </thead>
         <tbody>
           ${items.map(it => `
             <tr>
               ${finalKeys.map(k => `
-  <td class="${k === "netProfit" ? "net-profit-col" : ""}">
-    ${formatDetailValue(k, it?.[k], detailKey)}
-  </td>
-`).join("")}
+                <td class="${k === "netProfit" ? "net-profit-col" : ""}">
+                  ${formatDetailValue(k, it?.[k], detailKey)}
+                </td>
+              `).join("")}
             </tr>
           `).join("")}
         </tbody>
@@ -1545,29 +1649,61 @@ function renderDetailTable(items, detailKey = "") {
 
 function labelForKey(k) {
   const map = {
+    // 現金支出類
     date:"日期",
-    month:"月份",
     category:"分類",
-    title:"項目",
     detail:"說明",
-    note:"備註",
     photoUrls:"圖片",
     amount:"金額",
-    status:"狀態",
-    signed:"簽收",
-    checked:"核對",
+    statusChecked:"狀態",
+    signedChecked:"簽收",
 
-    orderId:"訂單編號",
-    createdAt:"日期",
-    lineName:"LINE名稱",
+    // 公司2 / 公司3 / 公司8
+    orderId:"單號",
+    createdAt:"建單時間",
+    cancelDate:"取消日期",
+    netProfit:"取消進利",
+    productDetail:"商品明細",
+    lineName:"Line名稱",
+    companySubsidyUsed:"支出購物金金額",
+
+    // 信用卡帳單
+    bank:"銀行",
+    billMonth:"月份",
+    transDate:"交易日期",
+    cardDetail:"明細",
+    note:"備註",
+    expenseCategory:"類別",
+    purchaseLink:"[關聯] 採購單",
+    shippingLink:"[關聯] 轉運單",
+    refundLink:"[關聯] 退款登記",
+
+    // 公司8
+    depositForfeitAmount:"訂金沒收金額",
+    cancelReason:"取消原因",
+    depositForfeitDecision:"訂金沒收判定",
+    depositForfeitTime:"訂金沒收時間",
+
+    // 妹妹3
+    month:"月份",
+    sisterMortgageAmount:"白河農會房貸",
+
+    // 本月淨利
     streamer:"直播主",
     paidAmount:"應付金額",
-    netProfit:"淨利_本單",
-    productDetail:"商品明細"
+
+    status:"狀態",
+    signed:"簽收",
+    checked:"核對"
   };
   return map[k] || k;
 }
 function formatDetailValue(k, v, detailKey = "") {
+  // 現金支出類：狀態 / 簽收分開欄位，有打勾才顯示綠色勾勾
+  if (k === "statusChecked" || k === "signedChecked") {
+    return bool(v) ? `<span class="green-check">✓</span>` : "";
+  }
+
   if (k === "photoUrls") {
     const urls = Array.isArray(v) ? v : (text(v) ? [text(v)] : []);
 
@@ -1586,8 +1722,16 @@ function formatDetailValue(k, v, detailKey = "") {
       </div>
     `;
   }
-  if (k === "createdAt") {
-    return escHtml(dateOnly(v));
+
+  if ([
+    "createdAt",
+    "cancelDate",
+    "transDate",
+    "depositForfeitTime"
+  ].includes(k)) {
+    const value = escHtml(dateOnly(v));
+    if (k === "cancelDate") return `<span class="red-text">${value}</span>`;
+    return value;
   }
 
   if (k === "productDetail") {
@@ -1598,24 +1742,30 @@ function formatDetailValue(k, v, detailKey = "") {
     `;
   }
 
-if (["amount", "金額", "paidAmount", "netProfit"].includes(k)) {
-  const n = num(v);
-
-  if (k === "netProfit") {
-    const toneClass = n >= 0 ? "amount-green" : "amount-red";
-    return `<strong class="${toneClass}">${money(v)}</strong>`;
+  // 紅色金額欄位
+  if ([
+    "netProfit",
+    "companySubsidyUsed",
+    "depositForfeitAmount"
+  ].includes(k)) {
+    return `<strong class="amount-red">${money(v)}</strong>`;
   }
 
-  // 來源明細金額：依照點開的是哪個小卡決定正負號與顏色
-  if (k === "amount" || k === "金額") {
-    return detailAmountHtml(v, detailKey);
+  // 妹妹3 手動輸入金額
+  if (k === "sisterMortgageAmount") {
+    return `<strong>${money(v)}</strong>`;
   }
 
-  return `<strong>${money(v)}</strong>`;
-}
+  // 一般金額
+  if (["amount", "金額", "paidAmount"].includes(k)) {
+    if (k === "amount" || k === "金額") {
+      return detailAmountHtml(v, detailKey);
+    }
+    return `<strong>${money(v)}</strong>`;
+  }
 
   if (typeof v === "boolean") return v ? "是" : "否";
-  return escHtml(text(v));
+  return escHtml(text(v) || "-");
 }
 
 async function openDetail(month, key, label, id = "") {
