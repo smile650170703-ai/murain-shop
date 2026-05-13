@@ -1608,7 +1608,7 @@ textarea[readonly]{
     <input id="credit_input" type="number" min="0" step="1" placeholder="輸入折抵金額" />
     <div class="credit-hint">
       <span>不可兌現</span>
-      <span id="credit_available">可用餘額：NT$ 0</span>
+      <span id="credit_available">可用購物金：NT$ 0</span>
     </div>
     <div class="muted" id="credit_msg"></div>
 
@@ -2689,32 +2689,54 @@ function redirectToMemberBind() {
 }
 
 // 更新購物金 UI（避免「閃一下又變 0」）
+// 購物車頁規則：
+// - 後端若有回 available_for_this_checkout，就用它
+// - 它已經包含「同一張購物車/同一張 OD 的 hold 加回來」
+// - 不同購物車的 hold 已經被扣掉
 function updateCreditUIFromMember(info){
-  // 兼容不同欄位名：credit / balance / member.credit...
-  const candidates = [
-  info?.credit,
-  info?.balance,
-  info?.member?.credit,
-  info?.member?.balance
-];
+  const n = (v) => {
+    const x = Number(v);
+    return Number.isFinite(x) ? Math.max(0, Math.floor(x)) : null;
+  };
 
-  let credit = 0;
-  for (const v of candidates) {
-    const n = Number(v);
-    if (Number.isFinite(n)) { credit = Math.max(0, Math.floor(n)); break; }
+  // ✅ member-info 只是拿姓名/電話/地址，不要用它的 credit 覆蓋購物金
+  // 避免先顯示總購物金，後面才被 credit-balance 改掉造成閃爍或誤判。
+  if (
+    info &&
+    info._from === 'member-info' &&
+    info.available_for_this_checkout === undefined &&
+    info.availableForThisCheckout === undefined &&
+    info.available === undefined &&
+    info.balance === undefined
+  ) {
+    return;
   }
 
-  // ✅ 只防「member-info」那種缺欄位造成的 0；credit-balance 回來的 0 要能真的生效
-if (credit === 0 && AVAILABLE_CREDIT > 0 && info && info._from === 'member-info') {
-  return;
-}
+  const credit =
+    n(info?.available_for_this_checkout) ??
+    n(info?.availableForThisCheckout) ??
+    n(info?.balance) ??
+    n(info?.credit) ??
+    n(info?.available) ??
+    n(info?.member?.available_for_this_checkout) ??
+    n(info?.member?.availableForThisCheckout) ??
+    n(info?.member?.balance) ??
+    n(info?.member?.credit) ??
+    0;
+
+  // ✅ 只防「member-info」那種缺欄位造成的 0；
+  // credit-balance 回來的 0 要能真的生效。
+  if (credit === 0 && AVAILABLE_CREDIT > 0 && info && info._from === 'member-info') {
+    return;
+  }
 
   AVAILABLE_CREDIT = credit;
 
   const el = document.getElementById('credit_available');
-  if (el) el.textContent = "可用餘額：NT$ " + credit.toLocaleString();
+  if (el) {
+    el.textContent = "可用購物金：NT$ " + credit.toLocaleString();
+  }
 
-  // 讓折抵後金額同步刷新
   updateCreditAndTotal();
 }
 
@@ -2779,34 +2801,51 @@ async function initLiffAndMember() {
 
   // 2) ✅ 購物金餘額：用 credit-balance（唯一真相）
 try {
-  const b = await jfetch(`${API}/member/credit-balance?line_user_id=${encodeURIComponent(uidForApi)}`);
+const b = await jfetch(
+  `${API}/member/credit-balance?line_user_id=${encodeURIComponent(uidForApi)}&cart_token=${encodeURIComponent(cartToken || '')}`
+);
 
-  if (!b || !b.ok) {
-    console.log("credit-balance not ok", b);
-    return;
-  }
+if (!b || !b.ok) {
+  console.log("credit-balance not ok", b);
+  return;
+}
 
-  // 防呆：避免回傳缺欄位時把 UI 覆蓋成 0
-  const hasAny =
-    (b.balance !== undefined) ||
-    (b.credit  !== undefined) ||
-    (b.total   !== undefined);
+// 防呆：避免回傳缺欄位時把 UI 覆蓋成 0
+const hasAny =
+  (b.available_for_this_checkout !== undefined) ||
+  (b.availableForThisCheckout !== undefined) ||
+  (b.balance !== undefined) ||
+  (b.credit !== undefined) ||
+  (b.available !== undefined);
 
-  if (!hasAny) {
-    console.log("credit-balance missing fields, skip update", b);
-    return;
-  }
+if (!hasAny) {
+  console.log("credit-balance missing fields, skip update", b);
+  return;
+}
 
-  const balRaw = Number(b.balance ?? b.credit ?? b.total);
-  const c = Math.max(0, Math.floor(Number.isFinite(balRaw) ? balRaw : 0));
+const c = Math.max(0, Math.floor(Number(
+  b.available_for_this_checkout ??
+  b.availableForThisCheckout ??
+  b.balance ??
+  b.credit ??
+  b.available ??
+  0
+) || 0));
 
-  // 合併回 MEMBER_INFO
-  MEMBER_INFO = Object.assign({}, MEMBER_INFO || {}, { credit: c });
+// 合併回 MEMBER_INFO
+MEMBER_INFO = Object.assign({}, MEMBER_INFO || {}, {
+  credit: c,
+  available_for_this_checkout: c,
+  available: b.available,
+  hold: b.hold,
+  total_balance: b.total_balance,
+  current_order_hold: b.current_order_hold
+});
 
-  // 更新 UI / 全域 AVAILABLE_CREDIT
-  updateCreditUIFromMember({ credit: c, _from: "credit-balance" });
-  CREDIT_READY = true;
-updateCreditAndTotal(); // ✅ 讓 500 在「餘額已知」後再重新計算一次
+// 更新 UI / 全域 AVAILABLE_CREDIT
+updateCreditUIFromMember(Object.assign({}, b, { _from: "credit-balance" }));
+CREDIT_READY = true;
+updateCreditAndTotal(); // ✅ 讓回填購物金在「餘額已知」後再重新計算一次
 
 } catch (e) {
   console.log("credit-balance error", e);
