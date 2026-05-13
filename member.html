@@ -3560,11 +3560,20 @@ async function loadCredits() {
 
       credits.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
 
-      const balRaw = (json.balance ?? json.credit ?? json.credit_balance ?? null);
-      const bal = (balRaw === null) ? null : Number(balRaw);
-      if (bal !== null && !Number.isNaN(bal)) {
-        creditValue.textContent = "NT$ " + bal.toLocaleString("zh-TW");
-      }
+      // 會員中心顯示「可用購物金」
+// 後端已經把全部 hold 扣掉；沒有 cart_token，所以不加回任何訂單 hold。
+const balRaw = (
+  json.available ??
+  json.balance ??
+  json.credit ??
+  json.credit_balance ??
+  null
+);
+
+const bal = (balRaw === null) ? null : Number(balRaw);
+if (bal !== null && !Number.isNaN(bal)) {
+  creditValue.textContent = "NT$ " + Math.max(0, Math.floor(bal)).toLocaleString("zh-TW");
+}
 
       if (currentFilter === "credits") renderCredits();
 
@@ -3648,10 +3657,11 @@ async function loadMemberInfo() {
 
     if (res.ok && json.ok) {
       memberInfo = json;
-      const c = Number(memberInfo.credit || 0);
-      creditValue.textContent = "NT$ " + c.toLocaleString("zh-TW");
-      showMemberMainSections();
-      return true;
+      // 購物金顯示以 /member/credits 回傳的「可用購物金」為準。
+// member-info 主要只負責會員姓名/電話/地址，不在這裡更新購物金，避免顯示總額造成誤會。
+creditValue.textContent = "讀取中...";
+showMemberMainSections();
+return true;
     }
 
     if (res.status === 404 || json?.error === "not_found") {
