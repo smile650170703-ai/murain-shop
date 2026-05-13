@@ -930,7 +930,20 @@ function signedMoneyHtml(v, mode = "auto") {
 const INCOME_DETAIL_KEYS = new Set([
   "depositForfeitProfit"
 ]);
+function subsidyTypeZh(v) {
+  const raw = String(v || "").trim().toLowerCase();
 
+  const map = {
+    use: "使用",
+    refund: "退款",
+    add: "新增",
+    adjust: "調整",
+    hold: "保留",
+    manual: "手動"
+  };
+
+  return map[raw] || String(v || "-");
+}
 function detailAmountHtml(v, detailKey = "") {
   const n = num(v);
   const absText = Math.abs(Math.round(n)).toLocaleString("zh-TW");
@@ -1528,33 +1541,44 @@ function renderSisterExpenseSummaryTable(items) {
   }
 
   // 公司3：購物金
-  if (detailKey === "useCompanySubsidy") {
-    return keep([
-      "orderId",
-      "createdAt",
-      "lineName",
-      "companySubsidyUsed"
-    ]);
-  }
+if (detailKey === "useCompanySubsidy") {
+  return keep([
+    "orderId",
+    "createdAt",
+    "lineName",
+    "type",
+    "companySubsidyUsed"
+  ]);
+}
 
-  // 公司4、妹妹1：信用卡帳單
-  if ([
-    "cardCompanyExpense",
-    "cardSisterExpense"
-  ].includes(detailKey)) {
-    return keep([
-      "bank",
-      "billMonth",
-      "transDate",
-      "cardDetail",
-      "amount",
-      "note",
-      "expenseCategory",
-      "purchaseLink",
-      "shippingLink",
-      "refundLink"
-    ]);
-  }
+ // 公司4：信用卡公司支出，保留關聯欄位
+if (detailKey === "cardCompanyExpense") {
+  return keep([
+    "bank",
+    "billMonth",
+    "transDate",
+    "cardDetail",
+    "amount",
+    "note",
+    "expenseCategory",
+    "purchaseLink",
+    "shippingLink",
+    "refundLink"
+  ]);
+}
+
+// 妹妹1：信用卡-妹妹個人支出，去除 3 個關聯欄位
+if (detailKey === "cardSisterExpense") {
+  return keep([
+    "bank",
+    "billMonth",
+    "transDate",
+    "cardDetail",
+    "amount",
+    "note",
+    "expenseCategory"
+  ]);
+}
 
   // 公司8：定金沒收進利
   if (detailKey === "depositForfeitProfit") {
@@ -1664,8 +1688,9 @@ function labelForKey(k) {
     cancelDate:"取消日期",
     netProfit:"取消進利",
     productDetail:"商品明細",
-    lineName:"Line名稱",
-    companySubsidyUsed:"支出購物金金額",
+   lineName:"Line名稱",
+type:"類型",
+companySubsidyUsed:"支出購物金金額",
 
     // 信用卡帳單
     bank:"銀行",
@@ -1699,6 +1724,9 @@ function labelForKey(k) {
   return map[k] || k;
 }
 function formatDetailValue(k, v, detailKey = "") {
+  if (k === "type") {
+  return escHtml(subsidyTypeZh(v));
+}
   // 現金支出類：狀態 / 簽收分開欄位，有打勾才顯示綠色勾勾
   if (k === "statusChecked" || k === "signedChecked") {
     return bool(v) ? `<span class="green-check">✓</span>` : "";
@@ -1742,14 +1770,21 @@ function formatDetailValue(k, v, detailKey = "") {
     `;
   }
 
-  // 紅色金額欄位
-  if ([
-    "netProfit",
-    "companySubsidyUsed",
-    "depositForfeitAmount"
-  ].includes(k)) {
-    return `<strong class="amount-red">${money(v)}</strong>`;
-  }
+ // 公司2：取消進利，維持紅色
+if (k === "netProfit") {
+  return `<strong class="amount-red">${money(v)}</strong>`;
+}
+
+// 公司3：支出購物金金額
+// 正數 → 加 -，紅色；負數 → 去掉 -，綠色
+if (k === "companySubsidyUsed") {
+  return detailAmountHtml(v, "useCompanySubsidy");
+}
+
+// 公司8：定金沒收進利，顯示綠色
+if (k === "depositForfeitAmount") {
+  return `<strong class="amount-green">${money(Math.abs(num(v)))}</strong>`;
+}
 
   // 妹妹3 手動輸入金額
   if (k === "sisterMortgageAmount") {
