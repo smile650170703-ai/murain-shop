@@ -5629,63 +5629,6 @@ async function copyToClipboard(text) {
   }
 })();
 
-// ===== pending pay：中斷付款回來時，只提示，不自動跳轉 =====
-// 目的：讓客人可以重新選付款方式，也可以重新填購物金
-async function guardPendingPay(token){
-  try {
-    const info = (typeof getPendingPay === "function") ? getPendingPay(token) : null;
-    if (!info || !info.order_id) return false;
-
-    const qs = getQS();
-    if (qs.get("force") === "1") return false;
-
-    // ✅ 超過 2 小時就清掉本機 pending 記錄，但不代表後端訂單取消
-    const MAX_PENDING_MS = 2 * 60 * 60 * 1000;
-    if (info.at && (Date.now() - Number(info.at) > MAX_PENDING_MS)) {
-      try { clearPendingPay(token); } catch(e){}
-      return false;
-    }
-
-    // ✅ 先問後端狀態，避免本機殘留
-    try {
-      const sr = await fetch(`${API}/order/status?order_id=${encodeURIComponent(info.order_id)}`);
-      if (sr.ok) {
-        const s = await sr.json().catch(()=>({}));
-        const st = String(s.pay_status || s.status || "").toLowerCase();
-
-        // 已付款 / 已取消 / 已失敗，就清掉 pendingPay
-        if (["paid_ok","paid","success","cancelled","canceled","failed"].includes(st)) {
-          try { clearPendingPay(token); } catch(e){}
-          return false;
-        }
-      }
-    } catch(e){}
-
-    const seenKey = `pending_pay_notice_seen:${token}:${info.order_id}`;
-    let seen = false;
-    try { seen = sessionStorage.getItem(seenKey) === "1"; } catch(e){}
-
-    if (!seen) {
-      alert(
-        `您上次線上付款尚未完成（訂單：${info.order_id}）。\n\n` +
-        `可以直接在本頁重新送出付款，也可以改選其他付款方式。\n` +
-        `若要調整購物金折抵金額，也可以重新輸入；系統會沿用同一張訂單，不會重複建立新訂單。`
-      );
-
-      try { sessionStorage.setItem(seenKey, "1"); } catch(e){}
-    }
-
-    // ✅ 不自動跳 PayUNI，交給客人按「送出訂單」後重新計算
-    return false;
-
-  } catch (e) {
-    console.error("[guardPendingPay] check failed:", e);
-    return false;
-  }
-}
-
-
-
 // ✅ 防止 iOS/Safari 上一頁返回（BFCache）按鈕維持 disabled
 window.addEventListener('pageshow', function () {
   const btn = document.getElementById('submitBtn');
