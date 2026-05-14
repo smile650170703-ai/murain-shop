@@ -54,6 +54,8 @@
       這裡只處理「付款已成功，但購物金正式扣款失敗」的訂單。<br>
       按下處理後會重新扣購物金、補開發票、發付款成功通知。<br>
       發票金額仍然是訂單的實付金額 net_amount，不會改成商品原價。
+     <br>
+若標籤是「疑似異常」且沒有 CREDIT_CAPTURE_ERROR，請先確認 CreditsLedger；舊資料已人工處理者，只需補勾 credit_spend_done，不要按重新扣款。
     </div>
 
     <div class="toolbar">
@@ -130,7 +132,43 @@ function isPaidOk(f){
     st === 'shipped'
   );
 }
+function displayPayStatus(ps){
+  const s = String(ps || '').trim().toLowerCase();
 
+  const map = {
+    unpaid: '未收款',
+    pending: '待確認',
+    paid_ok: '已收款',
+    paid: '已付款',
+    deposit_ok: '訂金已收',
+    failed: '付款失敗',
+    cancelled: '已取消',
+    canceled: '已取消'
+  };
+
+  return map[s] || (ps || '-');
+}
+
+function displayOrderStatus(st){
+  const s = String(st || '').trim().toLowerCase();
+
+  const map = {
+    submitted: '已送出／未付款',
+    pending: '待處理',
+    paid: '已付款',
+    shipped: '已出貨',
+    completed: '已完成',
+    cancelled: '已取消',
+    canceled: '已取消',
+    failed: '失敗'
+  };
+
+  return map[s] || (st || '-');
+}
+
+function displayCreditSpendDone(v){
+  return normBool(v) ? '已完成' : '未完成';
+}
 function isCreditErrorRow(rec){
   const f = rec.fields || rec || {};
   const creditUsed = Math.max(0, Number(f.credit_used || f.CreditUsed || 0) || 0);
@@ -196,10 +234,15 @@ function render(){
                 實付 / 發票：${money(net)}
               </td>
               <td>
-                <span class="badge green">${esc(f.pay_status || '-')}</span>
-                <span class="badge">${esc(f.status || '-')}</span><br>
-                credit_spend_done：${normBool(f.credit_spend_done) ? 'true' : 'false'}
-              </td>
+  <span class="badge green">${esc(displayPayStatus(f.pay_status))}</span>
+  <span class="badge">${esc(displayOrderStatus(f.status))}</span><br>
+  購物金扣款：
+  ${
+    normBool(f.credit_spend_done)
+      ? '<span class="badge green">已完成</span>'
+      : '<span class="badge red">未完成</span>'
+  }
+</td>
               <td><div class="note">${esc(note || '-')}</div></td>
               <td>
                 <button type="button" onclick="dryRun('${esc(oid)}')">檢查</button><br>
