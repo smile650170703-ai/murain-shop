@@ -825,8 +825,9 @@
   <div id="statusText" class="status">先選模式，再按「新增一列」開始批次輸入。</div>
   <div class="actions" style="margin-top:0;">
   <button id="btnAddRow" class="btn btn-secondary" type="button">新增一列</button>
-  <button id="btnExportAndSubmit" class="btn btn-success" type="button">確認送出</button>
-  <button id="btnClearDrafts" class="btn btn-danger" type="button">清空本次清單</button>
+<button id="btnExportAndSubmit" class="btn btn-success" type="button">確認送出</button>
+<button id="btnPrintCurrentConsign" class="btn btn-secondary hidden" type="button">列印當次寄賣PDF</button>
+<button id="btnClearDrafts" class="btn btn-danger" type="button">清空本次清單</button>
 </div>
 </div>
 
@@ -1020,6 +1021,7 @@ draftTableHead: $('draftTableHead'),
 draftTableBody: $('draftTableBody'),
 btnAddRow: $('btnAddRow'),
 btnExportAndSubmit: $('btnExportAndSubmit'),
+btnPrintCurrentConsign: $('btnPrintCurrentConsign'),
 btnClearDrafts: $('btnClearDrafts'),
 submitError: $('submitError'),
 
@@ -1150,7 +1152,9 @@ function setMode(mode) {
   el.memberSearchCard.classList.toggle('active', isConsign);
 el.patchCard.classList.toggle('hidden', !isPatch);
 el.draftsCard.classList.toggle('hidden', isPatch);
-
+if (el.btnPrintCurrentConsign) {
+  el.btnPrintCurrentConsign.classList.toggle('hidden', !isConsign);
+}
 if (!isConsign) {
   el.consignLedgerCard.classList.add('hidden');
 }
@@ -2431,7 +2435,286 @@ function openConsignLedgerPdfWindow(data, fileBaseName) {
     w.document.title = fileBaseName || '寄賣清冊';
   } catch {}
 }
+function buildCurrentConsignStockInPdfHtml(rows) {
+  const consignRows = Array.isArray(rows)
+    ? rows.filter(row => String(row.商品來源 || '') === '寄賣')
+    : [];
 
+  const first = consignRows[0] || {};
+  const consignorName = String(first.寄賣人 || '').trim() || '未填';
+  const totalQty = consignRows.reduce((sum, row) => {
+    return sum + Math.max(0, normalizeNumber(row.StockQty, 0));
+  }, 0);
+
+  const moneyText = (v) => {
+    const n = normalizeNumber(v, 0);
+    return `NT$ ${Math.round(n).toLocaleString('zh-TW')}`;
+  };
+
+  const itemHtml = consignRows.map((row, idx) => {
+    const photoUrl = String(row['直播截圖Url'] || '').trim();
+    const photoHtml = photoUrl
+      ? `<img class="ledger-photo" src="${excelEscape(photoUrl)}" alt="直播截圖">`
+      : `<div class="no-photo">未上傳</div>`;
+
+    return `
+      <tr>
+        <td class="center">${idx + 1}</td>
+        <td class="photo-cell">${photoHtml}</td>
+        <td>${excelEscape(row.SKU || '')}</td>
+        <td>${excelEscape(row.Name || '')}</td>
+        <td class="center">${excelEscape(row.StockQty || 1)}</td>
+        <td class="right">${moneyText(row['起標價格'])}</td>
+        <td class="right">${moneyText(row['一標多少'])}</td>
+        <td>${excelEscape(row.入庫日期 || '')}</td>
+        <td>${excelEscape(row.庫存位置 || '')}</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <!doctype html>
+    <html lang="zh-Hant">
+    <head>
+      <meta charset="UTF-8">
+      <title>當次寄賣入庫PDF</title>
+      <style>
+        * { box-sizing: border-box; }
+
+        body {
+          margin: 0;
+          background: #f3f4f6;
+          color: #111827;
+          font-family: "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif;
+        }
+
+        .page {
+          width: 1120px;
+          margin: 24px auto;
+          background: #fff;
+          padding: 28px;
+          border: 1px solid #e5e7eb;
+        }
+
+        .title {
+          margin: 0;
+          font-size: 26px;
+          font-weight: 900;
+          letter-spacing: .04em;
+        }
+
+        .sub {
+          margin-top: 8px;
+          color: #6b7280;
+          font-size: 13px;
+        }
+
+        .info-table,
+        .items-table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 18px;
+        }
+
+        .info-table th,
+        .info-table td,
+        .items-table th,
+        .items-table td {
+          border: 1px solid #111827;
+          padding: 8px 10px;
+          font-size: 13px;
+          vertical-align: middle;
+        }
+
+        .info-table th {
+          width: 140px;
+          background: #f3f4f6;
+          text-align: left;
+          font-weight: 900;
+        }
+
+        .items-table thead th {
+          background: #e8dfcf;
+          color: #111827;
+          font-weight: 900;
+          text-align: center;
+        }
+
+        .center { text-align: center; }
+        .right { text-align: right; }
+
+        .photo-cell {
+          width: 130px;
+          text-align: center;
+        }
+
+        .ledger-photo {
+          display: block;
+          width: 110px;
+          height: 110px;
+          object-fit: cover;
+          margin: 0 auto;
+          border: 1px solid #d1d5db;
+          background: #f9fafb;
+        }
+
+        .no-photo {
+          width: 110px;
+          height: 110px;
+          margin: 0 auto;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: 1px dashed #d1d5db;
+          color: #9ca3af;
+          font-size: 12px;
+          background: #f9fafb;
+        }
+
+        @media print {
+          body {
+            background: #fff;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          .page {
+            width: auto;
+            margin: 0;
+            border: 0;
+            padding: 12mm;
+          }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="page">
+        <h1 class="title">當次寄賣入庫明細</h1>
+        <div class="sub">產生日期：${excelEscape(todayFileDate())}</div>
+
+        <table class="info-table">
+          <tbody>
+            <tr>
+              <th>寄賣人</th>
+              <td>${excelEscape(consignorName)}</td>
+              <th>本次件數</th>
+              <td>${excelEscape(totalQty)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <table class="items-table">
+          <thead>
+            <tr>
+              <th>序號</th>
+              <th>直播截圖</th>
+              <th>SKU</th>
+              <th>商品名稱</th>
+              <th>數量</th>
+              <th>起標價格</th>
+              <th>一標多少</th>
+              <th>入庫日期</th>
+              <th>庫存位置</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemHtml}
+          </tbody>
+        </table>
+      </div>
+
+      <script>
+        function waitImagesThenPrint() {
+          const imgs = Array.from(document.images || []);
+          let pending = imgs.length;
+          let printed = false;
+
+          function doPrint() {
+            if (printed) return;
+            printed = true;
+            setTimeout(function() {
+              window.print();
+            }, 500);
+          }
+
+          if (!pending) {
+            doPrint();
+            return;
+          }
+
+          imgs.forEach(function(img) {
+            if (img.complete) {
+              pending -= 1;
+              if (pending <= 0) doPrint();
+              return;
+            }
+
+            img.onload = function() {
+              pending -= 1;
+              if (pending <= 0) doPrint();
+            };
+
+            img.onerror = function() {
+              pending -= 1;
+              if (pending <= 0) doPrint();
+            };
+          });
+
+          setTimeout(doPrint, 5000);
+        }
+
+        window.addEventListener('load', waitImagesThenPrint);
+      <\/script>
+    </body>
+    </html>
+  `;
+}
+
+function openCurrentConsignStockInPdfWindow(rows) {
+  const consignRows = Array.isArray(rows)
+    ? rows.filter(row => String(row.商品來源 || '') === '寄賣')
+    : [];
+
+  if (!consignRows.length) {
+    showError(el.submitError, '目前沒有當次寄賣入庫資料可列印 PDF');
+    return false;
+  }
+
+  const first = consignRows[0] || {};
+  const fileBaseName = [
+    safeFilePart(first.寄賣人 || '未命名寄賣人'),
+    todayFileDate(),
+    '當次寄賣入庫'
+  ].filter(Boolean).join('_');
+
+  const html = buildCurrentConsignStockInPdfHtml(consignRows);
+  const w = window.open('', '_blank');
+
+  if (!w) {
+    throw new Error('瀏覽器阻擋彈出視窗，請允許此網站開啟新視窗後再試一次');
+  }
+
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+
+  try {
+    w.document.title = fileBaseName;
+  } catch {}
+
+  return true;
+}
+
+function printCurrentConsignStockInPdf() {
+  showError(el.submitError, '');
+
+  try {
+    return openCurrentConsignStockInPdfWindow(state.drafts);
+  } catch (err) {
+    showError(el.submitError, err.message || '產生當次寄賣入庫 PDF 失敗');
+    return false;
+  }
+}
 async function loadConsignLedgerConsignors() {
   showError(el.consignLedgerError, '');
 
@@ -2596,13 +2879,16 @@ async function exportAndSubmit() {
     if (!ok) return;
   }
 
-  // 寄賣入庫：送出時額外產出寄賣入庫明細 Excel
-  if (state.mode === 'consign') {
-    const ok = downloadConsignStockInExcel();
-    if (!ok) return;
-  }
+// 寄賣入庫：送出時額外產出寄賣入庫明細 Excel + 當次寄賣入庫 PDF
+if (state.mode === 'consign') {
+  const ok = downloadConsignStockInExcel();
+  if (!ok) return;
 
-  await submitAll();
+  const pdfOk = printCurrentConsignStockInPdf();
+  if (!pdfOk) return;
+}
+
+await submitAll();
 }
 
 const STOCK_IN_BATCH_SIZE = 6;
@@ -3150,6 +3436,10 @@ el.btnAddRow.addEventListener('click', addBlankRow);
 el.btnClearForm.addEventListener('click', () => clearForm(true));
 el.btnClearDrafts.addEventListener('click', clearDrafts);
 el.btnExportAndSubmit.addEventListener('click', exportAndSubmit);
+
+if (el.btnPrintCurrentConsign) {
+  el.btnPrintCurrentConsign.addEventListener('click', printCurrentConsignStockInPdf);
+}
     if (el.liveScreenshotField) {
   el.liveScreenshotField.tabIndex = 0;
   el.liveScreenshotField.addEventListener('click', () => {
