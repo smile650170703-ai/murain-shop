@@ -52,9 +52,9 @@
   <div class="card">
     <div class="top-hint">
       這裡只處理「付款已成功，但購物金正式扣款失敗」的訂單。<br>
-      按下處理後會重新扣購物金，並依下方選項決定是否補開發票，最後發付款成功通知。<br>
+      按下處理後會重新扣購物金，並依照原本訂單開票規則自動判斷是否補開發票，最後發付款成功通知。<br>
 發票金額仍然是訂單的實付金額 net_amount，不會改成商品原價。<br>
-若該訂單本來就不用開立發票，請勾選「不補開發票」。
+若該訂單原本不是需要開發票的付款方式，系統會自動跳過，不需要手動判斷。
      <br>
 若標籤是「疑似異常」且沒有 CREDIT_CAPTURE_ERROR，請先確認 CreditsLedger；舊資料已人工處理者，只需補勾 credit_spend_done，不要按重新扣款。
     </div>
@@ -64,10 +64,6 @@
       <button class="primary" id="btnSaveKey" type="button">儲存 OP_KEY</button>
       <button id="btnReload" type="button">重新載入</button>
       <input id="orderSearch" type="text" placeholder="搜尋訂單編號 / LINE名稱" />
-     <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#cbd5e1;">
-  <input id="skipInvoice" type="checkbox" style="width:auto;">
-  這次處理不補開發票
-</label>
     </div>
 
     <div id="msg" class="muted">尚未載入</div>
@@ -308,8 +304,7 @@ async function dryRun(orderId){
       body: JSON.stringify({
   op_key: OP_KEY,
   order_id: orderId,
-  dry_run: true,
-  skip_invoice: !!$('#skipInvoice')?.checked
+  dry_run: true
 })
     });
 
@@ -322,16 +317,9 @@ async function dryRun(orderId){
 
 async function releaseOrder(orderId){
   if (!orderId) return;
-
-  const skipInvoice = !!$('#skipInvoice')?.checked;
-
 const ok = confirm(
   `確定要處理訂單 ${orderId} 嗎？\n\n` +
-  (
-    skipInvoice
-      ? `會重新扣購物金、跳過補開發票、發付款成功通知。\n`
-      : `會重新扣購物金、補開發票、發付款成功通知。\n`
-  ) +
+  `會重新扣購物金，並依照原本開票規則自動判斷是否補開發票，最後發付款成功通知。\n` +
   `請確認此訂單的金流付款已成功。`
 );
 
@@ -343,8 +331,7 @@ const ok = confirm(
       headers: { 'Content-Type':'application/json' },
       body: JSON.stringify({
   op_key: OP_KEY,
-  order_id: orderId,
-  skip_invoice: skipInvoice
+  order_id: orderId
 })
     });
 
