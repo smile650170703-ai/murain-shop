@@ -827,6 +827,7 @@
   <button id="btnAddRow" class="btn btn-secondary" type="button">新增一列</button>
 <button id="btnExportAndSubmit" class="btn btn-success" type="button">確認送出</button>
 <button id="btnPrintCurrentConsign" class="btn btn-secondary hidden" type="button">列印當次寄賣PDF</button>
+<button id="btnDownloadCurrentConsignImages" class="btn btn-secondary hidden" type="button">下載當次圖片</button>
 <button id="btnClearDrafts" class="btn btn-danger" type="button">清空本次清單</button>
 </div>
 </div>
@@ -1022,6 +1023,7 @@ draftTableBody: $('draftTableBody'),
 btnAddRow: $('btnAddRow'),
 btnExportAndSubmit: $('btnExportAndSubmit'),
 btnPrintCurrentConsign: $('btnPrintCurrentConsign'),
+btnDownloadCurrentConsignImages: $('btnDownloadCurrentConsignImages'),
 btnClearDrafts: $('btnClearDrafts'),
 submitError: $('submitError'),
 
@@ -1154,6 +1156,10 @@ el.patchCard.classList.toggle('hidden', !isPatch);
 el.draftsCard.classList.toggle('hidden', isPatch);
 if (el.btnPrintCurrentConsign) {
   el.btnPrintCurrentConsign.classList.toggle('hidden', !isConsign);
+}
+
+if (el.btnDownloadCurrentConsignImages) {
+  el.btnDownloadCurrentConsignImages.classList.toggle('hidden', !isConsign);
 }
 if (!isConsign) {
   el.consignLedgerCard.classList.add('hidden');
@@ -1939,7 +1945,130 @@ function labelFileDate() {
   const mm = String(d.getMinutes()).padStart(2, '0');
   return `${y}${m}${day}_${hh}${mm}`;
 }
+function safeImageFileNamePart(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[\\/:*?"<>|#%{}^~[\]`]/g, '_')
+    .replace(/\s+/g, '')
+    .slice(0, 80);
+}
 
+function getImageExtFromUrlOrType(url, type = '') {
+  const lowerType = String(type || '').toLowerCase();
+
+  if (lowerType.includes('png')) return 'png';
+  if (lowerType.includes('webp')) return 'webp';
+  if (lowerType.includes('gif')) return 'gif';
+  if (lowerType.includes('jpeg') || lowerType.includes('jpg')) return 'jpg';
+
+  const cleanUrl = String(url || '').split('?')[0].toLowerCase();
+
+  if (cleanUrl.endsWith('.png')) return 'png';
+  if (cleanUrl.endsWith('.webp')) return 'webp';
+  if (cleanUrl.endsWith('.gif')) return 'gif';
+  if (cleanUrl.endsWith('.jpeg')) return 'jpg';
+  if (cleanUrl.endsWith('.jpg')) return 'jpg';
+
+  return 'jpg';
+}
+
+function buildConsignImageFileName(row, index = 0, ext = 'jpg') {
+  const name = safeImageFileNamePart(row.Name || row['商品名稱'] || `寄賣商品${index + 1}`);
+  const startPrice = Math.round(normalizeNumber(row['起標價格'], 0));
+  const bidStep = Math.round(normalizeNumber(row['一標多少'], 0));
+
+  return `${name}_起標價${startPrice}_一標${bidStep}.${ext}`;
+}
+
+async function downloadImageByUrl(url, filename) {
+  const resp = await fetch(url, {
+    method: 'GET',
+    mode: 'cors'
+  });
+
+  if (!resp.ok) {
+    throw new Error(`圖片下載失敗：HTTP ${resp.status}`);
+  }
+
+  const blob = await resp.blob();
+  const blobUrl = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
+}
+
+async function downloadCurrentConsignImages() {
+  showError(el.submitError, '');
+
+  const rows = state.drafts.filter(row => {
+    return String(row.商品來源 || '').trim() === '寄賣' &&
+      String(row['直播截圖Url'] || '').trim();
+  });
+
+  if (!rows.length) {
+    showError(el.submitError, '目前沒有可下載的寄賣圖片，請先在「直播截圖」欄位貼上或上傳圖片');
+    return false;
+  }
+
+  if (!window.confirm(`確定要下載當次寄賣圖片嗎？共 ${rows.length} 張`)) {
+    return false;
+  }
+
+  if (el.btnDownloadCurrentConsignImages) {
+    el.btnDownloadCurrentConsignImages.disabled = true;
+    el.btnDownloadCurrentConsignImages.textContent = '下載中...';
+  }
+
+  let successCount = 0;
+  const failed = [];
+
+  try {
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const url = String(row['直播截圖Url'] || '').trim();
+
+      try {
+        const ext = getImageExtFromUrlOrType(url);
+        const filename = buildConsignImageFileName(row, i, ext);
+
+        await downloadImageByUrl(url, filename);
+        successCount += 1;
+
+        // 避免瀏覽器一次觸發太多下載被擋
+        await new Promise(resolve => setTimeout(resolve, 450));
+      } catch (err) {
+        failed.push({
+          row,
+          message: err.message || '下載失敗'
+        });
+      }
+    }
+
+    if (failed.length) {
+      showError(
+        el.submitError,
+        `已下載 ${successCount} 張，${failed.length} 張失敗。若失敗原因是圖片跨網域限制，需改成後端打包下載。`
+      );
+      return false;
+    }
+
+    showError(el.submitError, '');
+    alert(`已下載 ${successCount} 張寄賣圖片`);
+    return true;
+
+  } finally {
+    if (el.btnDownloadCurrentConsignImages) {
+      el.btnDownloadCurrentConsignImages.disabled = false;
+      el.btnDownloadCurrentConsignImages.textContent = '下載當次圖片';
+    }
+  }
+}
 function buildOwnLabelRows(rows) {
   const output = [];
 
@@ -3436,6 +3565,9 @@ el.btnExportAndSubmit.addEventListener('click', exportAndSubmit);
 
 if (el.btnPrintCurrentConsign) {
   el.btnPrintCurrentConsign.addEventListener('click', printCurrentConsignStockInPdf);
+}
+    if (el.btnDownloadCurrentConsignImages) {
+  el.btnDownloadCurrentConsignImages.addEventListener('click', downloadCurrentConsignImages);
 }
     if (el.liveScreenshotField) {
   el.liveScreenshotField.tabIndex = 0;
