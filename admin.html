@@ -424,9 +424,14 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     <span id="tradeBadge" class="count-badge" style="display:none;">0</span>
   </a>
 
-  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-benefit-review.html" id="btnBenefitReviewLink" href="admin-benefit-review.html">
+    <a class="filter-btn btn-badge-wrap" data-admin-file="admin-benefit-review.html" id="btnBenefitReviewLink" href="admin-benefit-review.html">
     <span>💰 審核購物金</span>
     <span id="benefitBadge" class="count-badge" style="display:none;">0</span>
+  </a>
+
+  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-credit-error.html" id="btnCreditErrorLink" href="admin-credit-error.html">
+    <span>⚠️ 購物金異常</span>
+    <span id="creditErrorBadge" class="count-badge" style="display:none;">0</span>
   </a>
 </div>
 <div class="filter-row">
@@ -689,9 +694,16 @@ const ADMIN_PAGE_MAP = {
     useDate: false
   },
 
-  'admin-benefit-review.html': {
+    'admin-benefit-review.html': {
     title: '審核購物金',
     mode: 'benefit_review',
+    viewKey: '',
+    useDate: false
+  },
+
+  'admin-credit-error.html': {
+    title: '購物金異常',
+    mode: 'credit_error',
     viewKey: '',
     useDate: false
   }
@@ -2382,12 +2394,54 @@ async function fetchBenefitPendingCount() {
     return 0;
   }
 }
+ function isCreditErrorPaidOk(f){
+  const ps = String(f.pay_status || '').trim().toLowerCase();
+  const st = String(f.status || '').trim().toLowerCase();
+
+  return (
+    ps === 'paid_ok' ||
+    ps === 'paid' ||
+    st === 'paid' ||
+    st === 'completed' ||
+    st === 'shipped'
+  );
+}
+
+function isCreditErrorDashboardRow(rec){
+  const f = rec.fields || rec || {};
+  const creditUsed = Math.max(0, Number(f.credit_used || f.CreditUsed || 0) || 0);
+  const spendDone =
+    f.credit_spend_done === true ||
+    String(f.credit_spend_done || '').trim().toLowerCase() === 'true';
+
+  return creditUsed > 0 && isCreditErrorPaidOk(f) && !spendDone;
+}
+
+async function fetchCreditErrorCount() {
+  try {
+    const params = new URLSearchParams();
+    params.set('filter', 'all');
+    params.set('op_key', OP_KEY);
+
+    const r = await fetch(`${API}/admin/orders?` + params.toString());
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) return 0;
+
+    const rows = j.orders || j.records || [];
+    return rows.filter(isCreditErrorDashboardRow).length;
+
+  } catch (e) {
+    console.warn('fetchCreditErrorCount failed', e);
+    return 0;
+  }
+}
 
 async function refreshDashboardBadges() {
   if (!OP_KEY) return;
 
   try {
-    const [
+        const [
       cartOpenCount,
       shipRows,
       bankRows,
@@ -2395,7 +2449,8 @@ async function refreshDashboardBadges() {
       depositRows,
       cashInstRows,
       consignTrade,
-      benefitCount
+      benefitCount,
+      creditErrorCount
     ] = await Promise.all([
       fetchOpenCartCount(),
       fetchAdminRowsByView('ship'),
@@ -2404,7 +2459,8 @@ async function refreshDashboardBadges() {
       fetchAdminRowsByView('deposit_unshipped'),
       fetchAdminRowsByView('cashinst_unpaid'),
       fetchConsignTradeCounts(),
-      fetchBenefitPendingCount()
+      fetchBenefitPendingCount(),
+      fetchCreditErrorCount()
     ]);
 
     dashSetBadge($('#cartOpenBadge'), cartOpenCount);
@@ -2423,6 +2479,7 @@ async function refreshDashboardBadges() {
     dashSetBadge($('#consignBadge'), consignTrade.consignCount);
     dashSetBadge($('#tradeBadge'), consignTrade.tradeCount);
     dashSetBadge($('#benefitBadge'), benefitCount);
+    dashSetBadge($('#creditErrorBadge'), creditErrorCount);
   } catch (e) {
     console.warn('refreshDashboardBadges failed', e);
   }
