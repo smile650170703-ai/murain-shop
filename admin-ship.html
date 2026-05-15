@@ -703,11 +703,14 @@ function setupAdminPageChrome(){
     });
   }
  const vendorMonthBox = document.getElementById('vendorMonthBox');
-if (vendorMonthBox && ADMIN_PAGE_FILE !== 'admin-pickup.html') {
+if (vendorMonthBox && !shouldShowVendorMonthStats()) {
   vendorMonthBox.classList.add('hidden');
 }
 }
 
+function shouldShowVendorMonthStats(){
+  return ['admin-pickup.html', 'admin-ship.html'].includes(ADMIN_PAGE_FILE);
+}
 
 
 function shouldUseAdminLinkNav(el){
@@ -1101,8 +1104,8 @@ function finalizeOrderRows(rows, emptyText = '查無符合條件的訂單。', o
     msgEl.textContent = currentOrders.length ? okText : emptyText;
   }
 
-  // ✅ 賣貨便月份統計只在「賣貨便登記」頁渲染
-  if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+  // ✅ 賣貨便月份統計：賣貨便登記頁＋待出貨頁都顯示
+  if (shouldShowVendorMonthStats()) {
     renderVendorMonthSummary();
   }
 }
@@ -1151,8 +1154,8 @@ async function applyFullView(mode = 'all', save = true){
   currentPanelMode = 'orders';
   await ensureOpKey();
 
-  // ✅ 賣貨便月份統計只在「賣貨便登記」頁載入
-  if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+  // ✅ 賣貨便月份統計：賣貨便登記頁＋待出貨頁都載入
+  if (shouldShowVendorMonthStats()) {
     await loadVendorSummaryCache();
   }
 
@@ -2825,6 +2828,11 @@ async function reloadCurrentView(){
     ALL_ORDERS_CACHE = [...(currentOrders || [])];
 
     updateCurrentSubTabCount(currentOrders.length);
+
+    if (shouldShowVendorMonthStats()) {
+      await loadVendorSummaryCache();
+      renderVendorMonthSummary();
+    }
 
     const msgEl = $('#msg');
     if (msgEl) {
@@ -5453,6 +5461,11 @@ async function loadAdminDefaultPage(){
   // ✅ 補：固定子頁載入後，更新當頁小圓圈
   updateCurrentSubTabCount(currentOrders.length);
 
+  if (shouldShowVendorMonthStats()) {
+    await loadVendorSummaryCache();
+    renderVendorMonthSummary();
+  }
+
   const msgEl = $('#msg');
   if (msgEl) {
     msgEl.textContent = `目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`;
@@ -5673,9 +5686,9 @@ if (vendorMonthEl){
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   vendorMonthEl.value = `${yyyy}-${mm}`;
   vendorMonthEl.addEventListener('change', ()=>{
-    if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
-  renderVendorMonthSummary();
-}
+    if (shouldShowVendorMonthStats()) {
+      renderVendorMonthSummary();
+    }
   });
 }
 
