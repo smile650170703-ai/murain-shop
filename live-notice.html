@@ -1509,33 +1509,73 @@
       }
     }
 
-    async function refreshCartBadge(){
-      try{
-        const cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
-        if (!cartToken){ setCartBadge(0); return; }
-
-        const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`);
-        if (!r.ok){ setCartBadge(0); return; }
-
-        const j = await r.json().catch(() => ({}));
-        const items = Array.isArray(j.items) ? j.items : [];
-        let count = 0;
-        items.forEach(it => { count += Number(it.qty || 0) || 0; });
-        setCartBadge(count);
-      }catch(e){
-        setCartBadge(0);
-      }
+async function refreshCartBadge(){
+  try{
+    const cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
+    if (!cartToken){
+      setCartBadge(0);
+      return;
     }
 
-    function goCartCheckout(){
-      try{
-        const cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
-        if (!cartToken){ alert('目前購物車是空的'); return; }
-        location.href = `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(cartToken)}`;
-      }catch(e){
-        alert('目前無法開啟購物車');
-      }
+    const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`);
+    if (!r.ok){
+      localStorage.removeItem(HOME_CART_KEY);
+      setCartBadge(0);
+      return;
     }
+
+    const j = await r.json().catch(() => ({}));
+    const status = String(j.cart_status || j.status || '').trim().toLowerCase();
+    const customerType = String(j.customer_type || '').trim().toLowerCase();
+
+    // ✅ 官網正常購物：已送出/已結單的舊 cart_token 不再當成目前購物車
+    if (customerType === 'web' && status && status !== 'open') {
+      localStorage.removeItem(HOME_CART_KEY);
+      setCartBadge(0);
+      return;
+    }
+
+    const items = Array.isArray(j.items) ? j.items : [];
+    let count = 0;
+    items.forEach(it => { count += Number(it.qty || 0) || 0; });
+    setCartBadge(count);
+  }catch(e){
+    setCartBadge(0);
+  }
+}
+
+async function goCartCheckout(){
+  try{
+    const cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
+    if (!cartToken){
+      alert('目前購物車是空的');
+      return;
+    }
+
+    const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`);
+    if (!r.ok) {
+      localStorage.removeItem(HOME_CART_KEY);
+      setCartBadge(0);
+      alert('目前購物車是空的');
+      return;
+    }
+
+    const j = await r.json().catch(() => ({}));
+    const status = String(j.cart_status || j.status || '').trim().toLowerCase();
+    const customerType = String(j.customer_type || '').trim().toLowerCase();
+
+    if (customerType === 'web' && status && status !== 'open') {
+      localStorage.removeItem(HOME_CART_KEY);
+      setCartBadge(0);
+      alert('原購物車已成立訂單，若要購買其他商品，請重新加入購物車。');
+      return;
+    }
+
+    location.href = `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(cartToken)}`;
+  }catch(e){
+    alert('目前無法開啟購物車');
+  }
+}
 
     if (cartBtn){ cartBtn.addEventListener('click', goCartCheckout); }
     window.addEventListener('DOMContentLoaded', refreshCartBadge);
