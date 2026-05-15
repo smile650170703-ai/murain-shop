@@ -2023,6 +2023,31 @@ const CREDITS_API = API_BASE + "/member/credits";
 const CONSIGN_API = API_BASE + "/member/consign";
 const MEMBER_INFO_API = API_BASE + "/line/member-info";
 const LIFF_ID     = "2008430261-EGZPg3Qp";
+  // ✅ 會員中心固定回跳正常官網網址，不要回到 liff.line.me 裡
+const MEMBER_NORMAL_URL = "https://murain.tw/member.html";
+
+function buildCleanMemberReturnUrl(extraParams = {}) {
+  const u = new URL(MEMBER_NORMAL_URL);
+
+  try {
+    const now = new URL(window.location.href);
+
+    // 保留原本要定位的訂單，不保留 logged_out / liff 狀態
+    const orderId = now.searchParams.get("order_id");
+    if (orderId) u.searchParams.set("order_id", orderId);
+
+    const tab = now.searchParams.get("tab");
+    if (tab) u.searchParams.set("tab", tab);
+  } catch (e) {}
+
+  Object.entries(extraParams || {}).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && String(v) !== "") {
+      u.searchParams.set(k, String(v));
+    }
+  });
+
+  return u.toString();
+}
 // ✅ 官網會員中心 / 官網購物車共用的 LINE userId
 const SHARED_LINE_USER_ID_KEY = "murain_line_user_id";
 
@@ -2062,11 +2087,8 @@ function clearSharedLineUserId() {
   } catch (e) {}
 }
 function getBindReturnUrl() {
-  try {
-    return window.location.href;
-  } catch (e) {
-    return location.href;
-  }
+  // ✅ 綁定完成後也回正常 member.html，不要回 liff.line.me 包住的會員中心
+  return buildCleanMemberReturnUrl({ from_bind: "1" });
 }
 
 function buildMemberBindUrl(returnUrl) {
@@ -2176,18 +2198,16 @@ function showBindGate(mode = "login") {
     bindGatePrimaryBtn.textContent = "使用 LINE 登入";
     bindGateNote.textContent = "登入後系統會自動檢查是否已完成會員綁定。";
     bindGatePrimaryBtn.onclick = () => {
-  let cleanUrl = window.location.href;
+  const returnUrl = buildCleanMemberReturnUrl({ line_login: "1" });
 
   try {
-    const u = new URL(window.location.href);
-    u.searchParams.delete("logged_out");
-    cleanUrl = u.toString();
-  } catch (e) {}
-
-  try {
-    liff.login({ redirectUri: cleanUrl });
+    liff.login({ redirectUri: returnUrl });
   } catch (e) {
-    liff.login();
+    try {
+      window.location.href = returnUrl;
+    } catch (_) {
+      location.href = MEMBER_NORMAL_URL;
+    }
   }
 };
     statusText.textContent = "請先登入";
