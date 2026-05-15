@@ -2329,7 +2329,50 @@ async function requireShopMember(){
   if (!ok) throw new Error('member_required');
   return SHOP_MEMBER_INFO;
 }
+async function refreshShopMemberPriceViewForPreview(){
+  try{
+    const oldSku = (
+      typeof previewProduct !== 'undefined' &&
+      previewProduct &&
+      typeof previewSku === 'function'
+    ) ? String(previewSku(previewProduct) || '').trim() : '';
 
+    try {
+      Object.keys(sessionStorage).forEach(k => {
+        if (k.startsWith('SHOP_LIST_CACHE_V2|public|')) {
+          sessionStorage.removeItem(k);
+        }
+      });
+    } catch(e) {}
+
+    if (typeof fetchProducts === 'function') {
+      await fetchProducts();
+    }
+
+    if (
+      oldSku &&
+      Array.isArray(allItems) &&
+      typeof previewSku === 'function' &&
+      typeof openProductPreview === 'function'
+    ) {
+      const fresh = allItems.find(item => String(previewSku(item) || '').trim() === oldSku);
+      if (fresh) openProductPreview(fresh);
+    }
+  }catch(e){}
+}
+
+async function loginShopMemberAndRefreshPrice(e){
+  if(e){
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  const ok = await initShopMember(true);
+  if(!ok) return false;
+
+  await refreshShopMemberPriceViewForPreview();
+  return true;
+}
 function productCanSeeMemberPrice(p){
   return !!(
     SHOP_MEMBER_INFO &&
@@ -3311,11 +3354,10 @@ async function previewAddToCart(){
     return;
   }
 
-    if (!SHOP_MEMBER_INFO) {
-    redirectShopMemberBindForPreview();
-    return;
+  if (!SHOP_MEMBER_INFO) {
+    const ok = await initShopMember(true);
+    if (!ok) return;
   }
-
   const btn = $('previewCartBtn');
 
   try{
@@ -3412,7 +3454,18 @@ document.addEventListener('DOMContentLoaded', () => {
     location.href = `/product.html?sku=${encodeURIComponent(sku)}`;
   });
 
-  $('previewCartBtn')?.addEventListener('click', previewAddToCart);
+    $('previewCartBtn')?.addEventListener('click', previewAddToCart);
+
+  $('previewPrice')?.addEventListener('click', async (e) => {
+    if (!e.target.closest('.member-price-login-text')) return;
+    await loginShopMemberAndRefreshPrice(e);
+  });
+
+  $('previewPrice')?.addEventListener('keydown', async (e) => {
+    if (!e.target.closest('.member-price-login-text')) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    await loginShopMemberAndRefreshPrice(e);
+  });
 
   document.addEventListener('keydown', (e) => {
     if(e.key === 'Escape') closeProductPreview();
@@ -3580,6 +3633,20 @@ const hasDiscount = showListPrice && showMemberPrice && listPrice > price;
       card.onclick = () => {
   openProductPreview(p);
 };
+
+      const memberPriceBtn = card.querySelector('.member-price-login-text');
+      if (memberPriceBtn) {
+        memberPriceBtn.setAttribute('role', 'button');
+        memberPriceBtn.setAttribute('tabindex', '0');
+
+        memberPriceBtn.addEventListener('click', loginShopMemberAndRefreshPrice);
+        memberPriceBtn.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            loginShopMemberAndRefreshPrice(e);
+          }
+        });
+      }
+
       const heartBtn = card.querySelector('.product-wish-btn');
 if(heartBtn){
   const activeNow = isWishlisted(p);
