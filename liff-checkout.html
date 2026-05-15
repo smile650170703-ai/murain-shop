@@ -3214,7 +3214,15 @@ function clearCreditPersist(){
 }
 
 /* ===== PayReturn/PayFail 回來用的參數 ===== */
+const from = qs.get('from') || '';
+const statusFromPay = qs.get('status') || '';
 const orderIdFromPay = qs.get('order_id') || '';
+
+const payReturnStatusU = String(statusFromPay || '').trim().toUpperCase();
+
+const isPayReturnFail =
+  String(from || '').trim().toLowerCase() === 'payreturn' &&
+  !['SUCCESS', '1', 'OK'].includes(payReturnStatusU);
 
 const creditUsedFromPay = Math.max(0, Number(qs.get('credit_used') || 0) || 0);
 const lockCreditFromPay =
@@ -3803,6 +3811,10 @@ let CART_CUSTOMER_TYPE = '';
 let CART_CAN_SELF_REMOVE = false;
 let CART_BANK_INFO = null;
 
+// ✅ 後端回傳的 CartToken 狀態與 active order
+let CART_STATUS = '';
+let CART_ACTIVE_ORDER = null;
+
 // ✅ 官網購物車專用：上一頁返回鍵
 // 直播主購物車 customer_type=live 不顯示。
 const SHOP_BACK_FALLBACK_URL = "https://murain.tw/shop.html";
@@ -3996,7 +4008,177 @@ ${CART_CAN_SELF_REMOVE ? `<button type="button" class="cart-remove-btn" data-sku
     });
   }
 }
+function isPendingOnlineOrderForEdit() {
+  const o = CART_ACTIVE_ORDER || {};
+  return (
+    CART_CUSTOMER_TYPE === 'web' &&
+    CART_STATUS === 'submitted' &&
+    o &&
+    o.can_continue_payment === true
+  );
+}
 
+function ensurePendingOrderPanelEl() {
+  let el = document.getElementById('pendingOrderPanel');
+  if (el) return el;
+
+  el = document.createElement('div');
+  el.id = 'pendingOrderPanel';
+  el.className = 'section-card';
+  el.style.display = 'none';
+
+  const page = document.querySelector('.page') || document.body;
+  const header = page.querySelector('.header');
+  if (header && header.nextSibling) {
+    page.insertBefore(el, header.nextSibling);
+  } else {
+    page.insertBefore(el, page.firstChild);
+  }
+
+  return el;
+}
+
+function lockCheckoutForPendingOrder(locked) {
+  const credit = document.getElementById('credit_input');
+  if (credit) {
+    credit.disabled = !!locked;
+    credit.classList.toggle('is-disabled', !!locked);
+  }
+
+  // 商品 X 由後端 can_self_remove 控制；這裡再保險一次
+  if (locked) {
+    document.querySelectorAll('.cart-remove-btn').forEach(btn => {
+      btn.style.display = 'none';
+    });
+  }
+}
+
+function renderPendingOrderPanel() {
+  const el = ensurePendingOrderPanelEl();
+  const o = CART_ACTIVE_ORDER || {};
+
+  if (!isPendingOnlineOrderForEdit()) {
+    el.style.display = 'none';
+    lockCheckoutForPendingOrder(false);
+    return;
+  }
+
+  const orderId = String(o.order_id || '').trim();
+  const pm = String(o.payment_method || '').trim().toLowerCase();
+  const isZeroCard = pm.startsWith('zero_card_');
+
+  lockCheckoutForPendingOrder(true);
+
+  el.style.display = '';
+  el.innerHTML = `
+    <div class="section-header">尚未完成付款</div>
+    <div class="warning-text">
+      您有一筆尚未完成付款的訂單${orderId ? `（${escapeHtmlText(orderId)}）` : ''}。
+      若要繼續完成付款，商品、金額與購物金折抵會維持原訂單內容，不能在此階段修改。
+    </div>
+
+    <button type="button" class="btn" id="btnContinuePendingPay">
+      ${isZeroCard ? '繼續完成中租申請' : '繼續付款'}
+    </button>
+
+    <button type="button" class="btn-secondary" id="btnCancelPendingForEdit">
+      取消訂單並返回購物車修改
+    </button>
+
+    <div class="muted">
+      若您已完成付款，請勿取消訂單；可稍候至會員中心查看付款狀態，或聯繫客服確認。
+    </div>
+  `;
+
+  const btnPay = document.getElementById('btnContinuePendingPay');
+  const btnCancel = document.getElementById('btnCancelPendingForEdit');
+
+  if (btnPay) {
+    btnPay.addEventListener('click', continuePendingOrderPayment);
+  }
+
+  if (btnCancel) {
+    btnCancel.addEventListener('click', cancelPendingOrderForEdit);
+  }
+}
+
+async function continuePendingOrderPayment() {
+  const o = CART_ACTIVE_ORDER || {};
+  const orderId = String(o.order_id || '').trim();
+  const pm = String(o.payment_method || '').trim().toLowerCase();
+
+  if (!orderId) {
+    alert('找不到訂單編號，請聯繫客服。');
+    return;
+  }
+
+  let redirect = String(o.next_url || '').trim();
+
+  try {
+    if (pm.startsWith('zero_card_')) {
+      const r2 = await jfetch(`${API}/zero-card/start`, {
+        method: 'POST',
+        body: JSON.stringify({ order_id: orderId })
+      });
+
+      redirect =
+        r2?.payment_url || r2?.paymentUrl ||
+        r2?.next_url || r2?.nextUrl ||
+        r2?.redirect_url || r2?.redirectUrl ||
+        r2?.pay_url || r2?.payUrl ||
+        r2?.url || '';
+    }
+
+    if (!redirect && (pm.startsWith('paid_') || pm === 'aftee_direct' || pm === 'paid_aftee_direct' || pm === 'paid_af')) {
+      redirect = `${API}/payuni/start?order_id=${encodeURIComponent(orderId)}`;
+    }
+
+    if (!redirect) {
+      alert('付款連結取得失敗，請稍後再試或聯繫客服。');
+      return;
+    }
+
+    try { saveCheckoutState(true); } catch(e){}
+    window.location.href = redirect;
+  } catch (e) {
+    console.error('continuePendingOrderPayment error', e);
+    alert('付款連結取得失敗，請稍後再試。');
+  }
+}
+
+async function cancelPendingOrderForEdit() {
+  const yes = confirm(
+    '確定要取消這筆未完成付款的訂單，並返回購物車修改嗎？\n\n' +
+    '取消後原訂單會作廢，庫存與購物金會重新釋放。'
+  );
+
+  if (!yes) return;
+
+  try {
+    const r = await fetch(`${API}/cart/cancel-online-pending-for-edit`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ cart_token: cartToken })
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j || j.ok === false) {
+      throw new Error(j?.message || j?.error || 'cancel_pending_failed');
+    }
+
+    try { clearCheckoutState(); } catch(e){}
+    try { clearCreditPersist(); } catch(e){}
+
+    alert('已取消原訂單，您可以重新修改購物車。');
+
+    await loadCart();
+    try { updateCreditAndTotal(); } catch(e){}
+  } catch (e) {
+    console.error('cancelPendingOrderForEdit error', e);
+    alert(e?.message || '取消失敗，請聯繫客服協助處理。');
+  }
+}
 async function removeCartItemSelf(sku){
   if (!cartToken || !sku) return;
 
@@ -4046,6 +4228,9 @@ async function loadCart(){
    CART_CUSTOMER_TYPE = String(j.customer_type || '').trim().toLowerCase();
 CART_CAN_SELF_REMOVE = !!j.can_self_remove;
 
+CART_STATUS = String(j.cart_status || j.status || '').trim().toLowerCase();
+CART_ACTIVE_ORDER = j.active_order || null;
+
 // ✅ 官網車 web 才顯示上一頁返回鍵；直播車 live 不顯示
 updateShopCartBack();
 
@@ -4061,10 +4246,12 @@ const detail = items.map(it =>
     if (detailBox) detailBox.value = detail;
 
     renderCartItemList(items);
-    setTotal(total);
-    calcZC();
+setTotal(total);
+calcZC();
 
-    CART_LOADED = true;
+try { renderPendingOrderPanel(); } catch(e) {}
+
+CART_LOADED = true;
   } catch (e) {
     console.error('loadCart error', e);
     alert('讀取購物車失敗，請再試一次。');
@@ -5670,11 +5857,31 @@ async function copyToClipboard(text) {
     // 5) 已結單就直接擋
     try { if (guardAlreadyCheckedOut(cartToken)) return; } catch(e){}
 
-    // 6) 先載入購物車（把 items/total 固定下來）
-    await loadCart();
+// 6) 先載入購物車（把 items/total 固定下來）
+await loadCart();
 
-    // 7) 再初始化 LIFF + 會員資料 + 購物金餘額
-    await initLiffAndMember();
+if (isPayReturnFail) {
+  const seenKey = `murain_payreturn_fail_seen_${cartToken}_${orderIdFromPay || ''}_${statusFromPay || ''}`;
+  let seen = false;
+
+  try {
+    seen = sessionStorage.getItem(seenKey) === '1';
+  } catch (e) {}
+
+  if (!seen) {
+    alert(
+      `剛剛線上付款沒有成功完成${orderIdFromPay ? `（訂單：${orderIdFromPay}）` : ''}。\n\n` +
+      `您可以按「繼續付款」再次付款；若要修改商品，請先取消訂單並返回購物車修改。`
+    );
+
+    try {
+      sessionStorage.setItem(seenKey, '1');
+    } catch (e) {}
+  }
+}
+
+// 7) 再初始化 LIFF + 會員資料 + 購物金餘額
+await initLiffAndMember();
 
     // 8) 統一重算一次（確保折抵後金額/分期試算穩定）
     try { updateCreditAndTotal(); } catch(e){}
