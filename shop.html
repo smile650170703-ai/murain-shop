@@ -1155,8 +1155,8 @@
 /* 圖片點點 */
 .shop-preview-dots{
   flex:0 0 auto !important;
-  min-height:20px !important;
-  margin:9px auto 13px !important;
+  min-height:22px !important;
+  margin:12px auto 20px !important;
   display:flex !important;
   align-items:center !important;
   justify-content:center !important;
@@ -1184,7 +1184,7 @@
 .shop-preview-info{
   position:relative !important;
   flex:0 0 auto !important;
-  padding:0 30px 10px !important;
+  padding:10px 30px 12px !important;
   background:#fff !important;
 }
 
@@ -1301,7 +1301,7 @@
   display:grid !important;
   grid-template-columns:1fr 1fr !important;
   gap:12px !important;
-  padding:0 30px 18px !important;
+  padding:4px 30px 22px !important;
   background:#fff !important;
 }
 
@@ -1331,8 +1331,11 @@
 /* 下方小圖：目前商品在第一個、正方形、細框、盡量滿框 */
 .shop-preview-related{
   flex:0 0 auto !important;
-  padding:10px 0 calc(20px + env(safe-area-inset-bottom)) !important;
-  background:#eeeeee !important;
+  margin:10px 10px 0 !important;
+  padding:14px 0 calc(18px + env(safe-area-inset-bottom)) !important;
+  background:#fff !important;
+  border-radius:28px 28px 0 0 !important;
+  box-shadow:0 -10px 30px rgba(17,17,17,.035) !important;
 }
 
 .shop-preview-related-row{
@@ -1410,8 +1413,8 @@
     font-size:21px !important;
   }
 
-  .shop-preview-info{
-    padding:0 26px 9px !important;
+   .shop-preview-info{
+    padding:10px 26px 10px !important;
   }
 
   .shop-preview-heart{
@@ -1426,8 +1429,8 @@
     font-size:13px !important;
   }
 
-  .shop-preview-actions{
-    padding:0 26px 16px !important;
+   .shop-preview-actions{
+    padding:4px 26px 18px !important;
   }
 
   .shop-preview-detail,
@@ -2089,6 +2092,7 @@ async function goCartCheckout(){
   const SHOP_LIFF_ID = '2008430261-KLwoQjm4';
 const SHOP_BIND_LIFF_ID = '2008430261-kOeNLR9x';
 const SHOP_LINE_UID_KEY = 'murain_line_user_id';
+const SHOP_RETURN_SKU_KEY = 'murain_shop_return_sku';
 
 let SHOP_MEMBER_INFO = null;
 let SHOP_MEMBER_CHECKING = null;
@@ -2115,13 +2119,55 @@ function getShopCustomerName(){
   ).trim();
 }
 
+function buildShopCleanReturnUrl(){
+  const u = new URL(location.href);
+  u.searchParams.delete('logged_out');
+  return u.toString();
+}
+
+function buildShopReturnUrlForPreview(productArg){
+  const u = new URL(buildShopCleanReturnUrl());
+  const product = productArg || ((typeof previewProduct !== 'undefined') ? previewProduct : null);
+
+  let sku = '';
+  try{
+    sku = (typeof previewSku === 'function') ? previewSku(product) : '';
+  }catch(e){
+    sku = '';
+  }
+
+  if (sku) {
+    u.searchParams.set('open_sku', sku);
+    u.searchParams.set('after_member_login', '1');
+  }
+
+  return u.toString();
+}
+
 function buildShopBindUrl(returnUrl){
-  const pageUrl = `https://murain.tw/line_bind_member.html?return_url=${encodeURIComponent(returnUrl || location.href)}`;
+  const pageUrl = `https://murain.tw/line_bind_member.html?return_url=${encodeURIComponent(returnUrl || buildShopCleanReturnUrl())}`;
   return `https://liff.line.me/${SHOP_BIND_LIFF_ID}?url=${encodeURIComponent(pageUrl)}`;
 }
 
-function redirectShopMemberBind(){
-  location.href = buildShopBindUrl(location.href);
+function redirectShopMemberBind(returnUrl){
+  location.href = buildShopBindUrl(returnUrl || buildShopCleanReturnUrl());
+}
+
+function redirectShopMemberBindForPreview(){
+  const product = (typeof previewProduct !== 'undefined') ? previewProduct : null;
+  let sku = '';
+
+  try{
+    sku = (typeof previewSku === 'function') ? previewSku(product) : '';
+  }catch(e){
+    sku = '';
+  }
+
+  if (sku) {
+    localStorage.setItem(SHOP_RETURN_SKU_KEY, sku);
+  }
+
+  redirectShopMemberBind(buildShopReturnUrlForPreview(product));
 }
 
 async function checkShopMemberByUid(uid){
@@ -2164,7 +2210,7 @@ async function initShopMember(forceLogin){
     // 沒有 LIFF SDK 時，強制登入才導去 LIFF
     if (!window.liff) {
       if (forceLogin) {
-        location.href = `https://liff.line.me/${SHOP_LIFF_ID}?url=${encodeURIComponent(location.href)}`;
+        location.href = `https://liff.line.me/${SHOP_LIFF_ID}?url=${encodeURIComponent(buildShopCleanReturnUrl())}`;
       }
       return false;
     }
@@ -2174,7 +2220,7 @@ async function initShopMember(forceLogin){
 
       if (!liff.isLoggedIn()) {
         if (forceLogin) {
-          liff.login({ redirectUri: location.href });
+         liff.login({ redirectUri: buildShopCleanReturnUrl() });
         }
         return false;
       }
@@ -2538,6 +2584,7 @@ let crumb = '官方商城 / 新品上市';
   }
 
   /* ===== 商城商品快速預覽頁 ===== */
+let previewProduct = null;
 let previewImages = [];
 let previewImageIdx = 0;
 
@@ -3198,6 +3245,11 @@ async function previewAddToCart(){
     return;
   }
 
+    if (!SHOP_MEMBER_INFO) {
+    redirectShopMemberBindForPreview();
+    return;
+  }
+
   const btn = $('previewCartBtn');
 
   try{
@@ -3250,6 +3302,11 @@ async function previewAddToCart(){
     }, 900);
 
   }catch(e){
+    if (String(e?.message || e) === 'member_required') {
+      redirectShopMemberBindForPreview();
+      return;
+    }
+
     alert('加入失敗，請稍後再試');
     updatePreviewCartButton(previewProduct);
   }finally{
@@ -3284,7 +3341,32 @@ document.addEventListener('DOMContentLoaded', () => {
     if(e.key === 'Escape') closeProductPreview();
   });
 });
+function openPendingPreviewAfterMemberLogin(){
+  let u;
 
+  try{
+    u = new URL(location.href);
+  }catch(e){
+    return;
+  }
+
+  const qsSku = String(u.searchParams.get('open_sku') || '').trim();
+  const savedSku = String(localStorage.getItem(SHOP_RETURN_SKU_KEY) || '').trim();
+  const sku = qsSku || savedSku;
+
+  if (!sku || !Array.isArray(allItems) || !allItems.length) return;
+
+  const found = allItems.find(item => String(previewSku(item) || '').trim() === sku);
+  if (!found) return;
+
+  localStorage.removeItem(SHOP_RETURN_SKU_KEY);
+
+  u.searchParams.delete('open_sku');
+  u.searchParams.delete('after_member_login');
+  history.replaceState({}, '', u.toString());
+
+  openProductPreview(found);
+}
   function renderProducts(list){
     const wrap = $('productList');
     wrap.innerHTML = '';
@@ -3440,7 +3522,8 @@ if(heartBtn){
       wrap.appendChild(card);
     });
 
-    updateToolbarTitle();
+     updateToolbarTitle();
+    openPendingPreviewAfterMemberLogin();
   }
 
   function renderPagination(meta){
