@@ -2048,6 +2048,17 @@ function clearSharedLineUserId() {
     localStorage.removeItem("line_user_id");
     localStorage.removeItem("LINE_USER_ID");
     sessionStorage.removeItem(SHARED_LINE_USER_ID_KEY);
+
+    // ✅ 登出會員時，也清掉官網 web 購物車本機記錄
+    // 避免畫面看起來像「購物車還是登入的」
+    localStorage.removeItem("MURAIN_WEB_CART_TOKEN");
+
+    // ✅ 清掉商品列表會員版快取，避免登出後還看到舊會員版畫面
+    Object.keys(sessionStorage).forEach((k) => {
+      if (String(k).startsWith("SHOP_LIST_CACHE_")) {
+        sessionStorage.removeItem(k);
+      }
+    });
   } catch (e) {}
 }
 function getBindReturnUrl() {
@@ -2084,6 +2095,7 @@ let currentFilter = "history";
 
 const urlParams = new URLSearchParams(window.location.search || "");
 let focusOrderId = urlParams.get("order_id") || "";
+  const IS_MEMBER_LOGGED_OUT = urlParams.get("logged_out") === "1";
 let hasScrolledToInitialOrder = false;
 
 // DOM Elements
@@ -2164,12 +2176,20 @@ function showBindGate(mode = "login") {
     bindGatePrimaryBtn.textContent = "使用 LINE 登入";
     bindGateNote.textContent = "登入後系統會自動檢查是否已完成會員綁定。";
     bindGatePrimaryBtn.onclick = () => {
-      try {
-        liff.login({ redirectUri: window.location.href });
-      } catch (e) {
-        liff.login();
-      }
-    };
+  let cleanUrl = window.location.href;
+
+  try {
+    const u = new URL(window.location.href);
+    u.searchParams.delete("logged_out");
+    cleanUrl = u.toString();
+  } catch (e) {}
+
+  try {
+    liff.login({ redirectUri: cleanUrl });
+  } catch (e) {
+    liff.login();
+  }
+};
     statusText.textContent = "請先登入";
     creditValue.textContent = "NT$ --";
   }
@@ -3758,10 +3778,28 @@ async function initLiff() {
   try {
     await liff.init({ liffId: LIFF_ID });
 
-    if (!liff.isLoggedIn()) {
-      showBindGate("login");
-      return;
+// ✅ 剛按過登出時，不要再自動抓 LINE profile，不然會看起來登出後又登入
+if (IS_MEMBER_LOGGED_OUT) {
+  try {
+    if (liff.isLoggedIn()) {
+      liff.logout();
     }
+  } catch (e) {}
+
+  clearSharedLineUserId();
+  currentUserId = "";
+  orders = [];
+  credits = [];
+  consignItems = [];
+
+  showBindGate("login");
+  return;
+}
+
+if (!liff.isLoggedIn()) {
+  showBindGate("login");
+  return;
+}
 
     const profile = await liff.getProfile();
 
