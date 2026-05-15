@@ -725,7 +725,15 @@
 
 .shop-preview-detail{ background:#fff; color:#111; border:1.35px solid #111; }
 .shop-preview-cart{ background:#050505; color:#fff; border:1.35px solid #050505; }
-
+.shop-preview-cart.is-soldout,
+.shop-preview-cart:disabled.is-soldout{
+  background:#d8d8d8 !important;
+  color:#888 !important;
+  border-color:#d8d8d8 !important;
+  cursor:not-allowed !important;
+  opacity:1 !important;
+  box-shadow:none !important;
+}
 .shop-preview-related{
   flex:0 0 auto;
   padding:12px 0 calc(24px + env(safe-area-inset-bottom));
@@ -2466,6 +2474,46 @@ function previewCat(p){
 function previewSub(p){
   return String(p?.subcategory || p?.subcategory_code || p?.brand || p?.fields?.subcategory || '').trim();
 }
+  function previewStockValue(p){
+  const candidates = [
+    p?.stock,
+    p?.StockQty,
+    p?.stock_qty,
+    p?.庫存,
+    p?.fields?.stock,
+    p?.fields?.StockQty,
+    p?.fields?.stock_qty,
+    p?.fields?.庫存
+  ];
+
+  for (const v of candidates){
+    if (v !== undefined && v !== null && String(v).trim() !== ''){
+      const n = Number(String(v).replace(/[^\d.-]/g, ''));
+      if (Number.isFinite(n)) return n;
+    }
+  }
+
+  return 0;
+}
+
+function updatePreviewCartButton(p, loadingText){
+  const btn = $('previewCartBtn');
+  if (!btn) return;
+
+  const stock = previewStockValue(p);
+
+  btn.classList.remove('is-soldout');
+
+  if (stock <= 0){
+    btn.disabled = true;
+    btn.textContent = '已完售';
+    btn.classList.add('is-soldout');
+    return;
+  }
+
+  btn.disabled = false;
+  btn.textContent = loadingText || '加入購物籃';
+}
 function previewBrand(p){
   const brand = String(
     p?.brand ||
@@ -2761,6 +2809,7 @@ function updatePreviewWishBtn(p){
 function openProductPreview(p){
   previewProduct = p;
   updatePreviewWishBtn(p);
+  updatePreviewCartButton(p);
 
   const title = previewTitle(p);
   const price = previewPriceValue(p);
@@ -2950,14 +2999,20 @@ async function previewEnsureCart(){
 async function previewAddToCart(){
   if(!previewProduct) return;
 
+  const stock = previewStockValue(previewProduct);
+  if(stock <= 0){
+    updatePreviewCartButton(previewProduct);
+    return;
+  }
+
   const sku = previewSku(previewProduct);
   if(!sku){
     alert('找不到商品 SKU');
+    updatePreviewCartButton(previewProduct);
     return;
   }
 
   const btn = $('previewCartBtn');
-  const oldText = btn ? btn.textContent : '加入購物籃';
 
   try{
     if(btn){
@@ -2981,6 +3036,17 @@ async function previewAddToCart(){
 
     if(json && json.ok === false){
       alert(json.message || '加入失敗，請稍後再試');
+
+      if(
+        json.error === 'out_of_stock' ||
+        json.code === 'out_of_stock' ||
+        String(json.message || '').includes('缺貨')
+      ){
+        updatePreviewCartButton({ ...previewProduct, stock: 0 });
+      }else{
+        updatePreviewCartButton(previewProduct);
+      }
+
       return;
     }
 
@@ -2991,13 +3057,15 @@ async function previewAddToCart(){
     if(btn) btn.textContent = '已加入';
 
     setTimeout(() => {
-      if(btn) btn.textContent = oldText;
+      updatePreviewCartButton(previewProduct);
     }, 900);
 
   }catch(e){
     alert('加入失敗，請稍後再試');
+    updatePreviewCartButton(previewProduct);
   }finally{
-    if(btn) btn.disabled = false;
+    const finalStock = previewStockValue(previewProduct);
+    if(btn && finalStock > 0) btn.disabled = false;
   }
 }
 
