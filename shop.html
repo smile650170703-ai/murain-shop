@@ -2081,8 +2081,148 @@ async function goCartCheckout(){
       toggleBackToTop();
     })();
   </script>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script>
   const PRODUCT_API = 'https://api.murain.tw/public/products-paged';
+
+  const SHOP_LIFF_ID = '2008430261-KLwoQjm4';
+const SHOP_BIND_LIFF_ID = '2008430261-kOeNLR9x';
+const SHOP_LINE_UID_KEY = 'murain_line_user_id';
+
+let SHOP_MEMBER_INFO = null;
+let SHOP_MEMBER_CHECKING = null;
+
+function shopApiBase(){
+  return (typeof HOME_API !== 'undefined' && HOME_API)
+    ? HOME_API
+    : 'https://api.murain.tw';
+}
+
+function getShopLineUserId(){
+  return String(localStorage.getItem(SHOP_LINE_UID_KEY) || '').trim();
+}
+
+function getShopCustomerName(){
+  return String(
+    SHOP_MEMBER_INFO?.display_name ||
+    SHOP_MEMBER_INFO?.lineDisplayName ||
+    SHOP_MEMBER_INFO?.displayName ||
+    SHOP_MEMBER_INFO?.name ||
+    SHOP_MEMBER_INFO?.member?.display_name ||
+    SHOP_MEMBER_INFO?.member?.name ||
+    ''
+  ).trim();
+}
+
+function buildShopBindUrl(returnUrl){
+  const pageUrl = `https://murain.tw/line_bind_member.html?return_url=${encodeURIComponent(returnUrl || location.href)}`;
+  return `https://liff.line.me/${SHOP_BIND_LIFF_ID}?url=${encodeURIComponent(pageUrl)}`;
+}
+
+function redirectShopMemberBind(){
+  location.href = buildShopBindUrl(location.href);
+}
+
+async function checkShopMemberByUid(uid){
+  uid = String(uid || '').trim();
+  if (!uid) return false;
+
+  const r = await fetch(`${shopApiBase()}/line/member-info?user_id=${encodeURIComponent(uid)}`);
+  const j = await r.json().catch(() => ({}));
+
+  if (r.ok && j && j.ok) {
+    SHOP_MEMBER_INFO = {
+      ...j,
+      line_user_id: uid
+    };
+    localStorage.setItem(SHOP_LINE_UID_KEY, uid);
+    return true;
+  }
+
+  if (r.status === 404 || j?.error === 'not_found') {
+    localStorage.removeItem(SHOP_LINE_UID_KEY);
+  }
+
+  SHOP_MEMBER_INFO = null;
+  return false;
+}
+
+async function initShopMember(forceLogin){
+  if (SHOP_MEMBER_INFO) return true;
+  if (SHOP_MEMBER_CHECKING) return SHOP_MEMBER_CHECKING;
+
+  SHOP_MEMBER_CHECKING = (async () => {
+    let uid = getShopLineUserId();
+
+    // 先用 localStorage 的 LINE user id 查會員
+    if (uid) {
+      const ok = await checkShopMemberByUid(uid);
+      if (ok) return true;
+    }
+
+    // 沒有 LIFF SDK 時，強制登入才導去 LIFF
+    if (!window.liff) {
+      if (forceLogin) {
+        location.href = `https://liff.line.me/${SHOP_LIFF_ID}?url=${encodeURIComponent(location.href)}`;
+      }
+      return false;
+    }
+
+    try {
+      await liff.init({ liffId: SHOP_LIFF_ID });
+
+      if (!liff.isLoggedIn()) {
+        if (forceLogin) {
+          liff.login({ redirectUri: location.href });
+        }
+        return false;
+      }
+
+      const profile = await liff.getProfile();
+      uid = String(profile?.userId || '').trim();
+
+      if (!uid) return false;
+
+      localStorage.setItem(SHOP_LINE_UID_KEY, uid);
+
+      const ok = await checkShopMemberByUid(uid);
+
+      if (!ok && forceLogin) {
+        redirectShopMemberBind();
+      }
+
+      return ok;
+    } catch (e) {
+      console.log('shop member init failed', e);
+
+      if (forceLogin) {
+        location.href = `https://liff.line.me/${SHOP_LIFF_ID}?url=${encodeURIComponent(location.href)}`;
+      }
+
+      return false;
+    }
+  })();
+
+  try {
+    return await SHOP_MEMBER_CHECKING;
+  } finally {
+    SHOP_MEMBER_CHECKING = null;
+  }
+}
+
+async function requireShopMember(){
+  const ok = await initShopMember(true);
+  if (!ok) throw new Error('member_required');
+  return SHOP_MEMBER_INFO;
+}
+
+function productCanSeeMemberPrice(p){
+  return !!(
+    SHOP_MEMBER_INFO &&
+    p &&
+    p.member_price_visible === true
+  );
+}
 
   const mockProducts = [
     {
@@ -2511,6 +2651,14 @@ function updatePreviewCartButton(p, loadingText){
     return;
   }
 
+  // ✅ 官網：未登入綁定不能購買
+  // 但按鈕不要灰掉，讓客人點了可以去登入
+  if (!SHOP_MEMBER_INFO) {
+    btn.disabled = false;
+    btn.textContent = '登入會員後購買';
+    return;
+  }
+
   btn.disabled = false;
   btn.textContent = loadingText || '加入購物籃';
 }
@@ -2731,7 +2879,14 @@ async function loadPreviewImages(product){
 
   try{
     const apiBase = (typeof HOME_API !== 'undefined') ? HOME_API : 'https://api.murain.tw';
-    const res = await fetch(`${apiBase}/product/${encodeURIComponent(sku)}`);
+    const detailUrl = new URL(`${apiBase}/product/${encodeURIComponent(sku)}`);
+
+if (SHOP_MEMBER_INFO) {
+  const uid = getShopLineUserId();
+  if (uid) detailUrl.searchParams.set('line_user_id', uid);
+}
+
+const res = await fetch(detailUrl.toString());
     const json = await res.json().catch(() => ({}));
 
     const detail =
@@ -2821,7 +2976,10 @@ function openProductPreview(p){
   if($('previewSku')) $('previewSku').textContent = previewBrand(p);
   if($('previewTitle')) $('previewTitle').textContent = title || 'XUYUAN SELECT';
 
-  if($('previewPrice')){
+ if($('previewPrice')){
+  const canSeePrice = productCanSeeMemberPrice(p) && price > 0;
+
+  if (canSeePrice) {
     if(listPrice > 0){
       $('previewPrice').innerHTML = `
         <span>${previewMoney(price)}</span>
@@ -2830,7 +2988,13 @@ function openProductPreview(p){
     }else{
       $('previewPrice').textContent = previewMoney(price);
     }
+  } else {
+    $('previewPrice').innerHTML = `
+      ${listPrice > 0 ? `<span class="preview-list-price">${previewMoney(listPrice)}</span>` : ``}
+      <span>登入會員看會員價</span>
+    `;
   }
+}
 
   loadPreviewRelated(p);
 
@@ -2953,6 +3117,14 @@ function renderPreviewRelatedList(list, activeSku){
 }
 
 async function previewEnsureCart(){
+  const member = await requireShopMember();
+  const uid = getShopLineUserId();
+  const customerName = getShopCustomerName();
+
+  if (!uid || !member) {
+    throw new Error('member_required');
+  }
+
   const key = 'MURAIN_WEB_CART_TOKEN';
   let token = String(localStorage.getItem(key) || '').trim();
 
@@ -2964,14 +3136,19 @@ async function previewEnsureCart(){
         const j0 = await r0.json().catch(() => ({}));
         const status = String(j0.cart_status || j0.status || '').trim().toLowerCase();
         const customerType = String(j0.customer_type || '').trim().toLowerCase();
+        const cartOwner = String(j0.line_user_id || '').trim();
 
-        if (customerType === 'web' && status === 'open') {
+        if (
+          customerType === 'web' &&
+          status === 'open' &&
+          (!cartOwner || cartOwner === uid)
+        ) {
           return token;
         }
       }
     } catch(e) {}
 
-    // 不是 open，就不要沿用舊購物車
+    // 不是 open，或不是目前會員的車，就不要沿用舊購物車
     localStorage.removeItem(key);
     token = '';
   }
@@ -2981,11 +3158,19 @@ async function previewEnsureCart(){
     headers:{ 'content-type':'application/json' },
     body: JSON.stringify({
       streamer_name:'官網',
-      customer_type:'web'
+      customer_type:'web',
+      line_user_id: uid,
+      customer_name: customerName
     })
   });
 
   const json = await res.json().catch(() => ({}));
+
+  if (!res.ok || json.ok === false) {
+    alert(json.message || '請先登入並完成會員綁定後再購買。');
+    throw new Error(json.error || 'cart_create_failed');
+  }
+
   token = String(json.cart_token || '').trim();
 
   if(token){
@@ -3026,10 +3211,13 @@ async function previewAddToCart(){
       method:'POST',
       headers:{ 'content-type':'application/json' },
       body: JSON.stringify({
-        cart_token: token,
-        sku,
-        qty: 1
-      })
+  cart_token: token,
+  sku,
+  qty: 1,
+  customer_type: 'web',
+  line_user_id: getShopLineUserId(),
+  customer_name: getShopCustomerName()
+})
     });
 
     const json = await res.json().catch(() => ({}));
@@ -3158,9 +3346,10 @@ document.addEventListener('DOMContentLoaded', () => {
         'fields.官網原價'
       ]);
 
-      /* 原價只要有值就顯示，不再限定一定要大於售價 */
-      const showListPrice = listPrice > 0;
-      const hasDiscount = showListPrice && price > 0 && listPrice > price;
+    /* 原價只要有值就顯示，不再限定一定要大於售價 */
+const showListPrice = listPrice > 0;
+const showMemberPrice = productCanSeeMemberPrice(p) && price > 0;
+const hasDiscount = showListPrice && showMemberPrice && listPrice > price;
 
       const eager = idx < 4 ? 'eager' : 'lazy';
       const priority = idx < 4 ? 'high' : 'low';
@@ -3200,22 +3389,31 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="p-title">${safeTitle}</div>
           ${safeIntro ? `<div class="p-desc">${safeIntro}</div>` : ``}
 
-          <div class="p-price-panel">
-            ${showListPrice ? `
-              <div class="p-list-price">
-                <span class="label">原價</span>
-                <span class="value">NT$${listPrice.toLocaleString()}</span>
-              </div>
-            ` : ``}
+<div class="p-price-panel">
+  ${showListPrice ? `
+    <div class="p-list-price">
+      <span class="label">原價</span>
+      <span class="value">NT$${listPrice.toLocaleString()}</span>
+    </div>
+  ` : ``}
 
-                       <div class="p-sale-row">
-              <span class="p-sale-tag">${hasDiscount ? '折後價' : '售價'}</span>
-              <div class="p-sale-price">
-                <span class="currency">NT$</span>
-                <span class="amount">${price.toLocaleString()}</span>
-              </div>
-            </div>
-          </div>
+  ${showMemberPrice ? `
+    <div class="p-sale-row">
+      <span class="p-sale-tag">${hasDiscount ? '會員價' : '會員價'}</span>
+      <div class="p-sale-price">
+        <span class="currency">NT$</span>
+        <span class="amount">${price.toLocaleString()}</span>
+      </div>
+    </div>
+  ` : `
+    <div class="p-sale-row">
+      <span class="p-sale-tag">會員價</span>
+      <div class="p-sale-price">
+        <span class="amount" style="font-size:13px;letter-spacing:.08em;">登入會員看會員價</span>
+      </div>
+    </div>
+  `}
+</div>
         </div>
       `;
 
@@ -3307,12 +3505,16 @@ async function fetchProducts(){
   const loader = $('loading');
   const grid = $('productList');
 
-  const cacheKey = [
-    'SHOP_LIST_CACHE_V1',
-    String(currentPage || 1),
-    String(selectedCat || 'ALL'),
-    String(selectedSub || 'ALL')
-  ].join('|');
+  const shopMemberReady = await initShopMember(false);
+const shopMemberKey = shopMemberReady ? 'member' : 'public';
+
+const cacheKey = [
+  'SHOP_LIST_CACHE_V2',
+  shopMemberKey,
+  String(currentPage || 1),
+  String(selectedCat || 'ALL'),
+  String(selectedSub || 'ALL')
+].join('|');
 
  const hasCached = !!sessionStorage.getItem(cacheKey);
 
@@ -3358,11 +3560,17 @@ $('emptyTip').style.display = 'none';
     u.searchParams.set('page', String(currentPage));
     u.searchParams.set('limit', String(PAGE_SIZE));
 
-    if (selectedCat !== 'ALL') u.searchParams.set('cat', selectedCat);
-    if (selectedSub !== 'ALL') u.searchParams.set('sub', selectedSub);
+   if (selectedCat !== 'ALL') u.searchParams.set('cat', selectedCat);
+if (selectedSub !== 'ALL') u.searchParams.set('sub', selectedSub);
 
-    // 拿掉 no-store
-    const res = await fetch(u.toString());
+// ✅ 已登入＋綁定會員，才讓後端回傳 Products.Price
+if (shopMemberReady) {
+  const uid = getShopLineUserId();
+  if (uid) u.searchParams.set('line_user_id', uid);
+}
+
+// 拿掉 no-store
+const res = await fetch(u.toString());
     const json = await res.json();
 
     allItems = Array.isArray(json.items) ? json.items : [];
