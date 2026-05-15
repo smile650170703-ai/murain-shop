@@ -929,9 +929,9 @@ body{
           </p>
 
           <div class="wishlist-empty-actions">
-            <a class="wish-pill-btn" href="/member.html">登入</a>
-            <a class="wish-pill-btn secondary" href="/shop.html">去逛新品</a>
-          </div>
+  <a class="wish-pill-btn" href="/shop.html">去逛新品</a>
+  <a class="wish-pill-btn secondary" href="/member.html">會員中心</a>
+</div>
         </div>
       </section>
 
@@ -1041,8 +1041,23 @@ body{
   <!-- ===== Wishlist 收藏：沿用 shop.html 的 localStorage key ===== -->
   <script>
     const XUYUAN_WISHLIST_KEY = 'xuyuan_wishlist_v1';
-    const XUYUAN_RECENT_KEY = 'xuyuan_recent_viewed_v1';
-    const PRODUCT_API = 'https://api.murain.tw/public/products-paged';
+const XUYUAN_RECENT_KEY = 'xuyuan_recent_viewed_v1';
+const PRODUCT_API = 'https://api.murain.tw/public/products-paged';
+
+// ✅ 收藏中心不用登入，但如果有會員登入資料，才允許顯示會員價
+const WISHLIST_LINE_USER_ID_KEY = 'murain_line_user_id';
+
+function getWishlistLineUserId(){
+  try {
+    return String(localStorage.getItem(WISHLIST_LINE_USER_ID_KEY) || '').trim();
+  } catch(e) {
+    return '';
+  }
+}
+
+function wishlistCanShowMemberPrice(){
+  return !!getWishlistLineUserId();
+}
 
     const $ = (id) => document.getElementById(id);
 
@@ -1175,15 +1190,26 @@ body{
       );
 
       const price = moneyValue(p, [
-        'price',
-        'Price',
-        'sale_price',
-        'salePrice',
-        '售價',
-        'fields.price',
-        'fields.Price',
-        'fields.售價'
-      ]);
+  'price',
+  'Price',
+  'sale_price',
+  'salePrice',
+  '售價',
+  'fields.price',
+  'fields.Price',
+  'fields.售價'
+]);
+
+const listPrice = moneyValue(p, [
+  'list_price',
+  'listPrice',
+  'ListPrice',
+  '原價',
+  'fields.list_price',
+  'fields.listPrice',
+  'fields.ListPrice',
+  'fields.原價'
+]);
 
       const image = String(
         p?.thumb_url ||
@@ -1198,7 +1224,14 @@ body{
 
       const brand = pickBrandName(p);
 
-      return { sku, title, price, image, brand };
+      return {
+  sku,
+  title,
+  price,
+  list_price: listPrice,
+  image,
+  brand
+};
     }
 
     function isWishlisted(p){
@@ -1243,6 +1276,23 @@ body{
       return 'NT$ ' + num.toLocaleString();
     }
 
+    function formatWishPriceText(p){
+  const memberPrice = Number(p?.price || 0) || 0;
+  const listPrice = Number(p?.list_price || 0) || 0;
+
+  // ✅ 有登入會員資料，才顯示會員價
+  if (wishlistCanShowMemberPrice() && memberPrice > 0) {
+    return 'NT$ ' + memberPrice.toLocaleString();
+  }
+
+  // ✅ 未登入：不顯示之前 localStorage 裡殘留的會員價
+  if (listPrice > 0) {
+    return '原價 NT$ ' + listPrice.toLocaleString() + '｜登入會員看會員價';
+  }
+
+  return '登入會員看會員價';
+}
+
     function productLink(item){
       const sku = String(item?.sku || '').trim();
       return sku ? `/product.html?sku=${encodeURIComponent(sku)}` : '/shop.html';
@@ -1271,7 +1321,7 @@ body{
         </div>
         <div class="wish-info">
           <h3 class="wish-title">${escapeHtml(p.title || '未命名商品')}</h3>
-          <p class="wish-price">${escapeHtml(formatMoney(p.price) || '私訊詢價')}</p>
+          <p class="wish-price">${escapeHtml(formatWishPriceText(p))}</p>
         </div>
         ${showActions ? `
           <div class="wish-card-actions">
@@ -1365,6 +1415,11 @@ body{
         const u = new URL(PRODUCT_API);
         u.searchParams.set('page', '1');
         u.searchParams.set('limit', '4');
+
+        const uid = getWishlistLineUserId();
+if (uid) {
+  u.searchParams.set('line_user_id', uid);
+}
 
         const r = await fetch(u.toString(), { cache:'no-store' });
         if (!r.ok) return [];
