@@ -2266,16 +2266,38 @@ function buildShopCleanReturnUrl(){
   try {
     u = new URL(location.href);
   } catch(e) {
-    return localStorage.getItem(SHOP_RETURN_URL_KEY) || 'https://murain.tw/shop.html';
+    const saved = String(localStorage.getItem(SHOP_RETURN_URL_KEY) || '').trim();
+    return saved || 'https://murain.tw/shop.html';
   }
 
-  // 如果現在不是妳自己的網站，就不要拿 LINE / access.line.me 當回跳
   const isMurainSite =
     u.hostname === 'murain.tw' ||
     u.hostname === 'www.murain.tw';
 
-  if (!isMurainSite) {
-    return localStorage.getItem(SHOP_RETURN_URL_KEY) || 'https://murain.tw/shop.html';
+  const path = String(u.pathname || '').toLowerCase();
+
+  // 首頁不能當商品會員登入回跳，避免 LIFF Endpoint 把回跳洗成首頁
+  const isHomePage =
+    path === '/' ||
+    path === '/index.html' ||
+    path.endsWith('/index.html');
+
+  if (!isMurainSite || isHomePage) {
+    const saved = String(localStorage.getItem(SHOP_RETURN_URL_KEY) || '').trim();
+
+    if (
+      saved &&
+      (
+        saved.includes('/shop.html') ||
+        saved.includes('/product.html') ||
+        saved.includes('/haircare.html') ||
+        saved.includes('/member.html')
+      )
+    ) {
+      return saved;
+    }
+
+    return 'https://murain.tw/shop.html';
   }
 
   u.searchParams.delete('logged_out');
@@ -2290,7 +2312,8 @@ function buildShopCleanReturnUrl(){
 }
 
 function buildShopReturnUrlForPreview(productArg){
-  const u = new URL(buildShopCleanReturnUrl());
+  // 商品預覽一定回商城頁，不要拿首頁當底
+  const u = new URL('https://murain.tw/shop.html');
   const product = productArg || ((typeof previewProduct !== 'undefined') ? previewProduct : null);
 
   let sku = '';
