@@ -2394,6 +2394,7 @@ const SHOP_BIND_LIFF_ID = '2008430261-kOeNLR9x';
 const SHOP_LINE_UID_KEY = 'murain_line_user_id';
 const SHOP_RETURN_SKU_KEY = 'murain_shop_return_sku';
 const SHOP_RETURN_URL_KEY = 'murain_shop_return_url';
+const SHOP_MEMBER_LOGIN_PENDING_KEY = 'murain_shop_member_login_pending';
 
 let SHOP_MEMBER_INFO = null;
 let SHOP_MEMBER_CHECKING = null;
@@ -2407,7 +2408,30 @@ function shopApiBase(){
 function getShopLineUserId(){
   return String(localStorage.getItem(SHOP_LINE_UID_KEY) || '').trim();
 }
+function markShopMemberLoginPending(){
+  try {
+    localStorage.setItem(SHOP_MEMBER_LOGIN_PENDING_KEY, '1');
+  } catch(e) {}
+}
 
+function clearShopMemberLoginPending(){
+  try {
+    localStorage.removeItem(SHOP_MEMBER_LOGIN_PENDING_KEY);
+  } catch(e) {}
+}
+
+function isShopMemberLoginReturn(){
+  try {
+    const u = new URL(location.href);
+    if (u.searchParams.get('after_member_login') === '1') return true;
+  } catch(e) {}
+
+  try {
+    return String(localStorage.getItem(SHOP_MEMBER_LOGIN_PENDING_KEY) || '') === '1';
+  } catch(e) {}
+
+  return false;
+}
 function getShopCustomerName(){
   return String(
     SHOP_MEMBER_INFO?.display_name ||
@@ -2491,6 +2515,8 @@ function buildShopReturnUrlForPreview(productArg){
   return u.toString();
 }
 function buildShopMemberReturnUrl(){
+  markShopMemberLoginPending();
+
   const product = (typeof previewProduct !== 'undefined') ? previewProduct : null;
 
   let sku = '';
@@ -2565,41 +2591,47 @@ async function initShopMember(forceLogin){
   if (SHOP_MEMBER_INFO) return true;
   if (SHOP_MEMBER_CHECKING) return SHOP_MEMBER_CHECKING;
 
+  const shouldFinishLoginReturn = isShopMemberLoginReturn();
+
   SHOP_MEMBER_CHECKING = (async () => {
     let uid = getShopLineUserId();
 
     // 先用 localStorage 的 LINE user id 查會員
     if (uid) {
       const ok = await checkShopMemberByUid(uid);
-      if (ok) return true;
+      if (ok) {
+        clearShopMemberLoginPending();
+        return true;
+      }
     }
 
-    // ✅ 只是進商城看商品時，不要自動初始化商城 LIFF
-    // 從會員中心 LIFF 登出後點商城，如果一進頁就 init 另一個 LIFF，LINE 可能直接 400。
-    // 所以只有客人真的點「登入查看會員價 / 加入購物車」時，forceLogin=true 才啟動 LINE 登入。
-    if (!forceLogin) {
+    // 平常進商城不要自動初始化 LIFF，避免會員中心登出後進商城 400。
+    // 但如果是剛按過「登入查看會員價」回來，就允許補一次 LIFF 初始化取得 userId。
+    if (!forceLogin && !shouldFinishLoginReturn) {
       SHOP_MEMBER_INFO = null;
       return false;
     }
 
     if (!window.liff) {
-  if (forceLogin) {
-    try { buildShopMemberReturnUrl(); } catch (e) {}
-    location.href = `https://liff.line.me/${SHOP_LIFF_ID}`;
-  }
-  return false;
-}
+      if (forceLogin) {
+        try { buildShopMemberReturnUrl(); } catch (e) {}
+        location.href = `https://liff.line.me/${SHOP_LIFF_ID}`;
+      }
+      return false;
+    }
 
     try {
       await liff.init({ liffId: SHOP_LIFF_ID });
 
       if (!liff.isLoggedIn()) {
-  if (forceLogin) {
-    try { buildShopMemberReturnUrl(); } catch (e) {}
-    liff.login();
-  }
-  return false;
-}
+        if (forceLogin) {
+          try { buildShopMemberReturnUrl(); } catch (e) {}
+          liff.login();
+        } else {
+          clearShopMemberLoginPending();
+        }
+        return false;
+      }
 
       const profile = await liff.getProfile();
       uid = String(profile?.userId || '').trim();
@@ -2610,18 +2642,23 @@ async function initShopMember(forceLogin){
 
       const ok = await checkShopMemberByUid(uid);
 
-      if (!ok && forceLogin) {
+      if (ok) {
+        clearShopMemberLoginPending();
+        return true;
+      }
+
+      if (forceLogin || shouldFinishLoginReturn) {
         redirectShopMemberBind(buildShopMemberReturnUrl());
       }
 
-      return ok;
+      return false;
     } catch (e) {
       console.log('shop member init failed', e);
 
       if (forceLogin) {
-  try { buildShopMemberReturnUrl(); } catch (e) {}
-  location.href = `https://liff.line.me/${SHOP_LIFF_ID}`;
-}
+        try { buildShopMemberReturnUrl(); } catch (e) {}
+        location.href = `https://liff.line.me/${SHOP_LIFF_ID}`;
+      }
 
       return false;
     }
@@ -2684,13 +2721,21 @@ async function loginShopMemberAndRefreshPrice(e){
   return true;
 }
 function productCanSeeMemberPrice(p){
-  return !!(
-    SHOP_MEMBER_INFO &&
-    p &&
-    p.member_price_visible === true
-  );
-}
+  if (!SHOP_MEMBER_INFO || !p) return false;
 
+  const visible = p.member_price_visible;
+
+  if (
+    visible === false ||
+    visible === 0 ||
+    visible === '0' ||
+    String(visible).toLowerCase() === 'false'
+  ) {
+    return false;
+  }
+
+  return true;
+}
   const mockProducts = [
     {
       sku:'C001',
