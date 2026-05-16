@@ -4212,7 +4212,21 @@ async function refreshCartBadge(){
     const status = String(j.cart_status || j.status || '').trim().toLowerCase();
     const customerType = String(j.customer_type || '').trim().toLowerCase();
 
-    // ✅ 官網正常購物：已送出/已結單的舊 cart_token 不再當成目前購物車
+    // ✅ 官網 web 車如果是「線上付款未完成」，不要清掉 token
+    // 保留 token，讓客人按購物車可以回到結帳頁繼續付款 / 取消修改
+    const activeOrder = j.active_order || null;
+    const canContinuePending =
+      customerType === 'web' &&
+      status === 'submitted' &&
+      activeOrder &&
+      activeOrder.can_continue_payment === true;
+
+    if (canContinuePending) {
+      setCartBadge(1);
+      return;
+    }
+
+    // ✅ 其他已送出/已結單的舊 cart_token，才清掉
     if (customerType === 'web' && status && status !== 'open') {
       localStorage.removeItem(HOME_CART_KEY);
       setCartBadge(0);
@@ -4250,6 +4264,17 @@ async function goCartCheckout(){
     const customerType = String(j.customer_type || '').trim().toLowerCase();
 
     if (customerType === 'web' && status && status !== 'open') {
+      const activeOrder = j.active_order || null;
+      const canContinuePending =
+        status === 'submitted' &&
+        activeOrder &&
+        activeOrder.can_continue_payment === true;
+
+      if (canContinuePending) {
+        location.href = `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(cartToken)}`;
+        return;
+      }
+
       localStorage.removeItem(HOME_CART_KEY);
       setCartBadge(0);
       alert('原購物車已成立訂單，若要購買其他商品，請重新加入購物車。');
