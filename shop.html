@@ -2160,6 +2160,7 @@ async function goCartCheckout(){
 const SHOP_BIND_LIFF_ID = '2008430261-kOeNLR9x';
 const SHOP_LINE_UID_KEY = 'murain_line_user_id';
 const SHOP_RETURN_SKU_KEY = 'murain_shop_return_sku';
+const SHOP_RETURN_URL_KEY = 'murain_shop_return_url';
 
 let SHOP_MEMBER_INFO = null;
 let SHOP_MEMBER_CHECKING = null;
@@ -2187,9 +2188,32 @@ function getShopCustomerName(){
 }
 
 function buildShopCleanReturnUrl(){
-  const u = new URL(location.href);
+  let u;
+
+  try {
+    u = new URL(location.href);
+  } catch(e) {
+    return localStorage.getItem(SHOP_RETURN_URL_KEY) || 'https://murain.tw/shop.html';
+  }
+
+  // 如果現在不是妳自己的網站，就不要拿 LINE / access.line.me 當回跳
+  const isMurainSite =
+    u.hostname === 'murain.tw' ||
+    u.hostname === 'www.murain.tw';
+
+  if (!isMurainSite) {
+    return localStorage.getItem(SHOP_RETURN_URL_KEY) || 'https://murain.tw/shop.html';
+  }
+
   u.searchParams.delete('logged_out');
-  return u.toString();
+
+  const cleanUrl = u.toString();
+
+  try {
+    localStorage.setItem(SHOP_RETURN_URL_KEY, cleanUrl);
+  } catch(e) {}
+
+  return cleanUrl;
 }
 
 function buildShopReturnUrlForPreview(productArg){
@@ -2210,7 +2234,27 @@ function buildShopReturnUrlForPreview(productArg){
 
   return u.toString();
 }
+function buildShopMemberReturnUrl(){
+  const product = (typeof previewProduct !== 'undefined') ? previewProduct : null;
 
+  let sku = '';
+  try{
+    sku = product && typeof previewSku === 'function' ? previewSku(product) : '';
+  }catch(e){
+    sku = '';
+  }
+
+  if (sku) {
+    localStorage.setItem(SHOP_RETURN_SKU_KEY, sku);
+    const url = buildShopReturnUrlForPreview(product);
+    localStorage.setItem(SHOP_RETURN_URL_KEY, url);
+    return url;
+  }
+
+  const url = buildShopCleanReturnUrl();
+  localStorage.setItem(SHOP_RETURN_URL_KEY, url);
+  return url;
+}
 function buildShopBindUrl(returnUrl){
   const pageUrl = `https://murain.tw/line_bind_member.html?return_url=${encodeURIComponent(returnUrl || buildShopCleanReturnUrl())}`;
   return `https://liff.line.me/${SHOP_BIND_LIFF_ID}?url=${encodeURIComponent(pageUrl)}`;
@@ -2277,7 +2321,7 @@ async function initShopMember(forceLogin){
     // 沒有 LIFF SDK 時，強制登入才導去 LIFF
     if (!window.liff) {
       if (forceLogin) {
-        location.href = `https://liff.line.me/${SHOP_LIFF_ID}?url=${encodeURIComponent(buildShopCleanReturnUrl())}`;
+       location.href = `https://liff.line.me/${SHOP_LIFF_ID}?url=${encodeURIComponent(buildShopMemberReturnUrl())}`;
       }
       return false;
     }
@@ -2287,7 +2331,7 @@ async function initShopMember(forceLogin){
 
       if (!liff.isLoggedIn()) {
         if (forceLogin) {
-         liff.login({ redirectUri: buildShopCleanReturnUrl() });
+         liff.login({ redirectUri: buildShopMemberReturnUrl() });
         }
         return false;
       }
@@ -2302,7 +2346,7 @@ async function initShopMember(forceLogin){
       const ok = await checkShopMemberByUid(uid);
 
       if (!ok && forceLogin) {
-        redirectShopMemberBind();
+        redirectShopMemberBind(buildShopMemberReturnUrl());
       }
 
       return ok;
@@ -2310,7 +2354,7 @@ async function initShopMember(forceLogin){
       console.log('shop member init failed', e);
 
       if (forceLogin) {
-        location.href = `https://liff.line.me/${SHOP_LIFF_ID}?url=${encodeURIComponent(buildShopCleanReturnUrl())}`;
+        location.href = `https://liff.line.me/${SHOP_LIFF_ID}?url=${encodeURIComponent(buildShopMemberReturnUrl())}`;
       }
 
       return false;
