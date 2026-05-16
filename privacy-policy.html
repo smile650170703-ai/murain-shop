@@ -826,10 +826,49 @@
         cartBadge.hidden = true;
       }
     }
+  function getHomeSharedLineUserId(){
+    try {
+      return String(localStorage.getItem('murain_line_user_id') || '').trim();
+    } catch(e) {
+      return '';
+    }
+  }
 
+  async function restoreHomeWebCartTokenIfNeeded(){
+    let cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
+    if (cartToken) return cartToken;
+
+    const uid = getHomeSharedLineUserId();
+    if (!uid) return '';
+
+    try {
+      const r = await fetch(`${HOME_API}/cart/create`, {
+        method:'POST',
+        headers:{ 'content-type':'application/json' },
+        body: JSON.stringify({
+          streamer_name:'官網',
+          customer_type:'web',
+          line_user_id: uid,
+          customer_name:'',
+          restore_only:true
+        })
+      });
+
+      const j = await r.json().catch(() => ({}));
+      const token = String(j.cart_token || '').trim();
+
+      if (r.ok && j.ok !== false && token) {
+        localStorage.setItem(HOME_CART_KEY, token);
+        return token;
+      }
+    } catch(e) {}
+
+    return '';
+  }
 async function refreshCartBadge(){
   try{
-    const cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
+    const cartToken = await restoreHomeWebCartTokenIfNeeded();
+
     if (!cartToken){
       setCartBadge(0);
       return;
@@ -864,7 +903,8 @@ async function refreshCartBadge(){
 
 async function goCartCheckout(){
   try{
-    const cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
+    const cartToken = await restoreHomeWebCartTokenIfNeeded();
+
     if (!cartToken){
       alert('目前購物車是空的');
       return;
