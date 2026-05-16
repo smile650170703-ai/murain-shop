@@ -5913,32 +5913,133 @@ async function copyToClipboard(text) {
     // 4) 沒 token 就停（避免空跑然後把狀態存成空的）
     if (!cartToken) return;
 
-    // 5) 已結單就直接擋
+    // 5) PayUNI 付款失敗返回：不要再進原結帳頁，改提示回 LINE 點「立即完成訂單」
+    if (isPayReturnFail) {
+      try { clearCheckoutState(); } catch (e) {}
+      try { clearCreditPersist(); } catch (e) {}
+
+      // 清掉目前瀏覽器記住的舊購物車，避免官網購物車又進到失敗舊車
+      try {
+        const oldCart = String(localStorage.getItem("murain_cart_token") || "").trim();
+        if (!oldCart || oldCart === String(cartToken || "").trim()) {
+          localStorage.removeItem("murain_cart_token");
+        }
+      } catch (e) {}
+
+      // 清掉「此 cart 已結單」的前端記錄，避免被 guardAlreadyCheckedOut 帶去舊結果頁
+      try {
+        if (cartToken && typeof _coKey === "function") {
+          localStorage.removeItem(_coKey(cartToken));
+        }
+      } catch (e) {}
+
+      document.body.style.padding = "0";
+      document.body.style.margin = "0";
+      document.body.style.minHeight = "100vh";
+      document.body.style.background =
+        "radial-gradient(circle at 12% 0%, rgba(239,207,211,.70), transparent 24%)," +
+        "radial-gradient(circle at 88% 6%, rgba(255,235,220,.78), transparent 26%)," +
+        "linear-gradient(180deg, #fffaf7 0%, #fffdfb 48%, #fff5f6 100%)";
+
+      const safeOrderId = String(orderIdFromPay || "").replace(/[<>&"]/g, "");
+
+      document.body.innerHTML = `
+        <div style="
+          min-height:100vh;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          padding:28px 18px;
+          box-sizing:border-box;
+          font-family:'Noto Sans TC', -apple-system, BlinkMacSystemFont, sans-serif;
+          color:#5a4744;
+        ">
+          <div style="
+            width:100%;
+            max-width:420px;
+            border-radius:28px;
+            background:linear-gradient(135deg, rgba(255,255,255,.94), rgba(255,244,245,.90));
+            border:1px solid rgba(220,196,162,.28);
+            box-shadow:0 18px 42px rgba(177,136,130,.16);
+            padding:30px 24px;
+            text-align:center;
+          ">
+            <div style="
+              font-family:'Playfair Display', serif;
+              font-size:24px;
+              letter-spacing:.16em;
+              color:#6b5552;
+              margin-bottom:10px;
+              font-weight:600;
+            ">XUYUAN</div>
+
+            <div style="
+              width:58px;
+              height:58px;
+              margin:18px auto 18px;
+              border-radius:999px;
+              display:flex;
+              align-items:center;
+              justify-content:center;
+              background:rgba(201,109,114,.12);
+              color:#c96d72;
+              font-size:30px;
+              font-weight:800;
+            ">!</div>
+
+            <h1 style="
+              margin:0 0 10px;
+              font-size:20px;
+              letter-spacing:.05em;
+              color:#4f3f3d;
+            ">付款未完成</h1>
+
+            <p style="
+              margin:0 auto;
+              font-size:14px;
+              line-height:1.8;
+              color:#8b7470;
+            ">
+              您的付款尚未完成。<br>
+              請回到官方 LINE 聊天室，點擊<br>
+              <b style="color:#b07d63;">「立即完成訂單」</b><br>
+              系統會為您重新建立一台購物車。
+            </p>
+
+            ${safeOrderId ? `
+              <div style="
+                margin-top:18px;
+                padding:12px 14px;
+                border-radius:16px;
+                background:rgba(255,255,255,.58);
+                border:1px solid rgba(220,196,162,.20);
+                font-size:12px;
+                color:#9a8178;
+              ">
+                原訂單編號：${safeOrderId}
+              </div>
+            ` : ""}
+
+            <p style="
+              margin:18px 0 0;
+              font-size:12px;
+              line-height:1.7;
+              color:#b39a95;
+            ">
+              若尚未看到 LINE 通知，請稍等幾秒或聯繫客服協助。
+            </p>
+          </div>
+        </div>
+      `;
+
+      return;
+    }
+
+    // 6) 已結單就直接擋
     try { if (guardAlreadyCheckedOut(cartToken)) return; } catch(e){}
 
-// 6) 先載入購物車（把 items/total 固定下來）
-await loadCart();
-
-if (isPayReturnFail) {
-  const seenKey = `murain_payreturn_fail_seen_${cartToken}_${orderIdFromPay || ''}_${statusFromPay || ''}`;
-  let seen = false;
-
-  try {
-    seen = sessionStorage.getItem(seenKey) === '1';
-  } catch (e) {}
-
-  if (!seen) {
-    alert(
-      `剛剛線上付款沒有成功完成${orderIdFromPay ? `（訂單：${orderIdFromPay}）` : ''}。\n\n` +
-      `您可以按「繼續付款」再次付款；若要修改商品，請先取消訂單並返回購物車修改。`
-    );
-
-    try {
-      sessionStorage.setItem(seenKey, '1');
-    } catch (e) {}
-  }
-}
-
+    // 7) 先載入購物車（把 items/total 固定下來）
+    await loadCart();
 // 7) 再初始化 LIFF + 會員資料 + 購物金餘額
 await initLiffAndMember();
 
