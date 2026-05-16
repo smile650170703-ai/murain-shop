@@ -2741,16 +2741,144 @@ function updateCreditUIFromMember(info){
 }
 
 
+function getCheckoutSharedLineUserId(){
+  let uid = '';
+
+  try {
+    uid = String(lineUserIdFromPay || '').trim();
+  } catch(e) {}
+
+  if (!uid) {
+    try {
+      uid = String(localStorage.getItem('murain_line_user_id') || '').trim();
+    } catch(e) {}
+  }
+
+  return uid;
+}
+
+function canUseSharedUidForCurrentCart(uid){
+  uid = String(uid || '').trim();
+
+  // ✅ 只有官網 web 車可以吃全站登入狀態
+  if (String(CART_CUSTOMER_TYPE || '').trim().toLowerCase() !== 'web') return false;
+
+  // ✅ 一定要有本機 uid，也一定要有後端 cart owner
+  if (!uid || !CART_LINE_USER_ID) return false;
+
+  // ✅ uid 必須跟這台購物車 owner 完全相同，才免跳 LIFF login
+  return uid === CART_LINE_USER_ID;
+}
+
+async function loadCheckoutMemberByUid(uidForApi, profile = null){
+  uidForApi = String(uidForApi || '').trim();
+  if (!uidForApi) return false;
+
+  LINE_PROFILE = profile || LINE_PROFILE || null;
+
+  // ✅ 存起來：回購物車 / 重試時更穩
+  try { localStorage.setItem('murain_line_user_id', uidForApi); } catch (e) {}
+
+  // 1) 會員資料（名字 / 電話 / 地址）用 member-info
+  try {
+    const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(uidForApi)}`);
+    const j = await r.json().catch(() => ({}));
+    console.log("member-info 回來長這樣:", j);
+
+    if (r.ok && j && j.ok) {
+      j._from = 'member-info';
+      MEMBER_INFO = j;
+      applyMemberInfoToForm(j);
+    } else if (r.status === 404 || j?.error === "not_found") {
+      // ✅ 未綁定：先去綁定，再回原頁
+      redirectToMemberBind();
+      return false;
+    } else {
+      console.log("member-info not ok:", r.status, j);
+    }
+  } catch (e) {
+    console.log('member-info error', e);
+  }
+
+  // 2) ✅ 購物金餘額：用 credit-balance（唯一真相）
+  try {
+    const b = await jfetch(
+      `${API}/member/credit-balance?line_user_id=${encodeURIComponent(uidForApi)}&cart_token=${encodeURIComponent(cartToken || '')}`
+    );
+
+    if (!b || !b.ok) {
+      console.log("credit-balance not ok", b);
+      return true;
+    }
+
+    const hasAny =
+      (b.available_for_this_checkout !== undefined) ||
+      (b.availableForThisCheckout !== undefined) ||
+      (b.balance !== undefined) ||
+      (b.credit !== undefined) ||
+      (b.available !== undefined);
+
+    if (!hasAny) {
+      console.log("credit-balance missing fields, skip update", b);
+      return true;
+    }
+
+    const c = Math.max(0, Math.floor(Number(
+      b.available_for_this_checkout ??
+      b.availableForThisCheckout ??
+      b.balance ??
+      b.credit ??
+      b.available ??
+      0
+    ) || 0));
+
+    MEMBER_INFO = Object.assign({}, MEMBER_INFO || {}, {
+      credit: c,
+      available_for_this_checkout: c,
+      available: b.available,
+      hold: b.hold,
+      total_balance: b.total_balance,
+      current_order_hold: b.current_order_hold
+    });
+
+    updateCreditUIFromMember(Object.assign({}, b, { _from: "credit-balance" }));
+    CREDIT_READY = true;
+    updateCreditAndTotal();
+
+    return true;
+  } catch (e) {
+    console.log("credit-balance error", e);
+    return true;
+  }
+}
+
 async function initLiffAndMember() {
+  // ✅ 官網 web 車：先吃全站共用登入狀態
+  // 條件很嚴格：必須是 web 車，且本機 uid 必須等於後端 cart owner。
+  const sharedUid = getCheckoutSharedLineUserId();
+
+  if (canUseSharedUidForCurrentCart(sharedUid)) {
+    console.log('[checkout] use shared member uid for web cart', {
+      sharedUid,
+      cartOwner: CART_LINE_USER_ID,
+      cartType: CART_CUSTOMER_TYPE
+    });
+
+    const ok = await loadCheckoutMemberByUid(sharedUid, null);
+    if (ok) return;
+  }
+
+  // ✅ 直播主 live / regular 車，或本機沒有 uid，或 uid 不等於 cart owner
+  // 全部照舊走結帳 LIFF，不改原本直播主流程。
   if (!window.liff) return;
 
   await liff.init({ liffId: LIFF_ID });
 
   if (!liff.isLoggedIn()) {
-  try { saveCheckoutState(); } catch (e) {}
-  liff.login();
-  return;
-}
+    try { saveCheckoutState(); } catch (e) {}
+    liff.login();
+    return;
+  }
 
   let profile = null;
   let uidForApi = (typeof lineUserIdFromPay === 'string' && lineUserIdFromPay) ? lineUserIdFromPay : '';
@@ -2771,85 +2899,9 @@ async function initLiffAndMember() {
     try { uidForApi = localStorage.getItem('murain_line_user_id') || ''; } catch (e) {}
   }
 
-  // 真的沒有 user id 就只能放棄（畫面會是 0）
   if (!uidForApi) return;
-  LINE_PROFILE = profile;
 
-  // ✅ 存起來：回購物車/重試時更穩
-  try { localStorage.setItem('murain_line_user_id', uidForApi); } catch (e) {}
-
-  // 1) 會員資料（名字/電話/地址）用 member-info
-  try {
-    const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(uidForApi)}`);
-    const j = await r.json().catch(() => ({}));
-    console.log("member-info 回來長這樣:", j);
-
-    if (r.ok && j && j.ok) {
-      j._from = 'member-info';
-      MEMBER_INFO = j;
-      applyMemberInfoToForm(j);
-    } else if (r.status === 404 || j?.error === "not_found") {
-      // ✅ 未綁定：先去綁定，再回原頁
-      redirectToMemberBind();
-      return;
-    } else {
-      console.log("member-info not ok:", r.status, j);
-    }
-  } catch (e) {
-    console.log('member-info error', e);
-  }
-
-  // 2) ✅ 購物金餘額：用 credit-balance（唯一真相）
-try {
-const b = await jfetch(
-  `${API}/member/credit-balance?line_user_id=${encodeURIComponent(uidForApi)}&cart_token=${encodeURIComponent(cartToken || '')}`
-);
-
-if (!b || !b.ok) {
-  console.log("credit-balance not ok", b);
-  return;
-}
-
-// 防呆：避免回傳缺欄位時把 UI 覆蓋成 0
-const hasAny =
-  (b.available_for_this_checkout !== undefined) ||
-  (b.availableForThisCheckout !== undefined) ||
-  (b.balance !== undefined) ||
-  (b.credit !== undefined) ||
-  (b.available !== undefined);
-
-if (!hasAny) {
-  console.log("credit-balance missing fields, skip update", b);
-  return;
-}
-
-const c = Math.max(0, Math.floor(Number(
-  b.available_for_this_checkout ??
-  b.availableForThisCheckout ??
-  b.balance ??
-  b.credit ??
-  b.available ??
-  0
-) || 0));
-
-// 合併回 MEMBER_INFO
-MEMBER_INFO = Object.assign({}, MEMBER_INFO || {}, {
-  credit: c,
-  available_for_this_checkout: c,
-  available: b.available,
-  hold: b.hold,
-  total_balance: b.total_balance,
-  current_order_hold: b.current_order_hold
-});
-
-// 更新 UI / 全域 AVAILABLE_CREDIT
-updateCreditUIFromMember(Object.assign({}, b, { _from: "credit-balance" }));
-CREDIT_READY = true;
-updateCreditAndTotal(); // ✅ 讓回填購物金在「餘額已知」後再重新計算一次
-
-} catch (e) {
-  console.log("credit-balance error", e);
-}
+  await loadCheckoutMemberByUid(uidForApi, profile);
 }
 // ========= 會員資料 → 各付款/出貨欄位預填 =========
 function applyMemberInfoToForm(info) {
@@ -3815,6 +3867,10 @@ let CART_BANK_INFO = null;
 let CART_STATUS = '';
 let CART_ACTIVE_ORDER = null;
 
+// ✅ 官網 web 購物車車主 LINE userId
+// 只用來確認「本機登入 uid 是否等於這台 cart 的 owner」，避免拿錯人的車。
+let CART_LINE_USER_ID = '';
+
 // ✅ 官網購物車專用：上一頁返回鍵
 // 直播主購物車 customer_type=live 不顯示。
 const SHOP_BACK_FALLBACK_URL = "https://murain.tw/shop.html";
@@ -4230,6 +4286,9 @@ CART_CAN_SELF_REMOVE = !!j.can_self_remove;
 
 CART_STATUS = String(j.cart_status || j.status || '').trim().toLowerCase();
 CART_ACTIVE_ORDER = j.active_order || null;
+
+// ✅ 後端回傳的官網車 owner，用來判斷能不能吃全站登入狀態
+CART_LINE_USER_ID = String(j.line_user_id || '').trim();
 
 // ✅ 官網車 web 才顯示上一頁返回鍵；直播車 live 不顯示
 updateShopCartBack();
