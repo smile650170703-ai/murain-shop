@@ -106,6 +106,98 @@
     font-size:14px;
   }
 
+  .panel-card{
+    border:1px solid rgba(148,163,184,.3);
+    background:rgba(15,23,42,.95);
+    border-radius:18px;
+    padding:18px;
+    min-height:180px;
+  }
+
+  .chailease-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:12px;
+    margin-bottom:14px;
+  }
+
+  .panel-title{
+    font-size:18px;
+    font-weight:900;
+  }
+
+  .status-text{
+    margin-top:4px;
+    color:#94a3b8;
+    font-size:13px;
+  }
+
+  .btn-primary{
+    width:auto;
+    padding:10px 16px;
+    border-radius:999px;
+    border:none;
+    background:#22d3ee;
+    color:#0f172a;
+    font-size:14px;
+    font-weight:900;
+    cursor:pointer;
+    box-shadow:0 10px 30px rgba(34,211,238,.28);
+  }
+
+  .btn-primary:disabled{
+    opacity:.55;
+    cursor:not-allowed;
+    box-shadow:none;
+  }
+
+  .table-wrap{
+    overflow:auto;
+    border-radius:14px;
+    border:1px solid rgba(148,163,184,.22);
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    min-width:760px;
+  }
+
+  th,
+  td{
+    padding:11px 12px;
+    border-bottom:1px solid rgba(148,163,184,.18);
+    text-align:left;
+    font-size:13px;
+    vertical-align:middle;
+  }
+
+  th{
+    color:#cbd5e1;
+    background:rgba(2,6,23,.75);
+    font-size:12px;
+    white-space:nowrap;
+  }
+
+  td{
+    color:#e2e8f0;
+  }
+
+  tr:last-child td{
+    border-bottom:none;
+  }
+
+  .muted{
+    color:#94a3b8;
+  }
+
+  .chailease-check{
+    width:20px;
+    height:20px;
+    cursor:pointer;
+  }
+
   @media (max-width:900px){
     .wrap{
       padding:12px;
@@ -160,10 +252,303 @@
     <a class="filter-btn active" href="admin-chailease.html">中租請款</a>
   </div>
 
-  <div class="empty-card">
-    <div class="empty-title">中租請款</div>
-    <div class="empty-text">暫無內容</div>
+  <div class="panel-card">
+    <div class="chailease-head">
+      <div>
+        <div class="panel-title">中租請款清單</div>
+        <div id="statusText" class="status-text">載入中…</div>
+      </div>
+
+      <button id="btnSaveChailease" class="btn-primary" type="button">
+        儲存勾選
+      </button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>order_id</th>
+            <th>LINE名稱</th>
+            <th>付款方式</th>
+            <th>出貨時間_台灣</th>
+            <th>中租請款</th>
+          </tr>
+        </thead>
+        <tbody id="chaileaseBody">
+          <tr>
+            <td colspan="5" class="muted">載入中…</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
+
+<script>
+const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
+const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
+
+let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
+let CHAILEASE_ROWS = [];
+
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+
+function escapeHtml(s){
+  return String(s ?? '')
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;')
+    .replace(/'/g,'&#039;');
+}
+
+function parseJsonMaybe(v){
+  if (!v) return null;
+  if (typeof v === 'object') return v;
+  try {
+    return JSON.parse(String(v));
+  } catch(e) {
+    return null;
+  }
+}
+
+function pickLineName(f){
+  const shipInfo = parseJsonMaybe(f.shipping_info) || {};
+  const ship = shipInfo.ship || shipInfo || {};
+
+  return String(
+    f['LINE名稱'] ||
+    f.LINE名稱 ||
+    f.line_name ||
+    f.line_display_name ||
+    f.customer_name ||
+    ship.lineName ||
+    ship.line_name ||
+    ship.name ||
+    ''
+  ).trim() || '-';
+}
+
+function fmtPaymentMethod(pm){
+  const s = String(pm || '').trim();
+  if (!s) return '-';
+
+  const map = {
+    zero_card_3: '中租 3 期',
+    zero_card_6: '中租 6 期',
+    zero_card_12: '中租 12 期',
+    zero_card_18: '中租 18 期',
+    zero_card_24: '中租 24 期',
+    zero_card_30: '中租 30 期'
+  };
+
+  return map[s] || s;
+}
+
+function fmtTaiwanTime(v){
+  if (!v) return '-';
+
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) {
+    return String(v);
+  }
+
+  return d.toLocaleString('zh-TW', {
+    timeZone:'Asia/Taipei',
+    year:'numeric',
+    month:'2-digit',
+    day:'2-digit',
+    hour:'2-digit',
+    minute:'2-digit',
+    hour12:false
+  });
+}
+
+function boolValue(v){
+  if (typeof v === 'boolean') return v;
+  const s = String(v ?? '').trim().toLowerCase();
+  return ['1','true','yes','y','on','checked','是','已請款'].includes(s);
+}
+
+async function ensureOpKey(){
+  OP_KEY = localStorage.getItem(STORAGE_KEY) || OP_KEY || '';
+
+  if (!OP_KEY) {
+    OP_KEY = prompt('請輸入後台 OP_KEY') || '';
+    OP_KEY = OP_KEY.trim();
+
+    if (OP_KEY) {
+      localStorage.setItem(STORAGE_KEY, OP_KEY);
+    }
+  }
+
+  if (!OP_KEY) {
+    throw new Error('尚未輸入 OP_KEY');
+  }
+
+  return OP_KEY;
+}
+
+async function loadChaileaseList(){
+  const bodyEl = $('#chaileaseBody');
+  const statusEl = $('#statusText');
+  const btn = $('#btnSaveChailease');
+
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.textContent = '載入中…';
+  if (bodyEl) {
+    bodyEl.innerHTML = '<tr><td colspan="5" class="muted">載入中…</td></tr>';
+  }
+
+  try {
+    await ensureOpKey();
+
+    const url = `${API}/admin/orders?op_key=${encodeURIComponent(OP_KEY)}&view_key=chailease`;
+    const r = await fetch(url);
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+
+    CHAILEASE_ROWS = Array.isArray(j.orders) ? j.orders : [];
+    renderChaileaseRows();
+
+    if (statusEl) {
+      statusEl.textContent = CHAILEASE_ROWS.length
+        ? `共 ${CHAILEASE_ROWS.length} 筆待請款資料`
+        : '目前沒有待中租請款資料';
+    }
+
+  } catch(e) {
+    console.error(e);
+    if (statusEl) statusEl.textContent = '載入失敗：' + (e.message || e);
+    if (bodyEl) {
+      bodyEl.innerHTML = `<tr><td colspan="5" class="muted">載入失敗：${escapeHtml(e.message || e)}</td></tr>`;
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function renderChaileaseRows(){
+  const bodyEl = $('#chaileaseBody');
+  if (!bodyEl) return;
+
+  if (!CHAILEASE_ROWS.length) {
+    bodyEl.innerHTML = '<tr><td colspan="5" class="muted">目前沒有待中租請款資料</td></tr>';
+    return;
+  }
+
+  bodyEl.innerHTML = CHAILEASE_ROWS.map(rec => {
+    const f = rec.fields || {};
+    const orderId = String(f.order_id || '').trim();
+    const checked = boolValue(f['中租請款']);
+
+    return `
+      <tr data-record-id="${escapeHtml(rec.id || '')}">
+        <td>${escapeHtml(orderId || '-')}</td>
+        <td>${escapeHtml(pickLineName(f))}</td>
+        <td>${escapeHtml(fmtPaymentMethod(f.payment_method))}</td>
+        <td>${escapeHtml(f['出貨時間_台灣'] || fmtTaiwanTime(f.shipped_at || f.ship_at || f.updated_at))}</td>
+        <td>
+          <input
+            class="chailease-check"
+            type="checkbox"
+            data-record-id="${escapeHtml(rec.id || '')}"
+            ${checked ? 'checked' : ''}
+          >
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function saveChaileaseChecked(){
+  const btn = $('#btnSaveChailease');
+  const checked = $$('.chailease-check:checked');
+
+  if (!checked.length) {
+    alert('請先勾選要標記為「中租請款」的訂單。');
+    return;
+  }
+
+  if (!confirm(`確定要將 ${checked.length} 筆訂單標記為「中租請款」嗎？`)) {
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '儲存中…';
+  }
+
+  let ok = 0;
+  const failed = [];
+
+  try {
+    await ensureOpKey();
+
+    for (const cb of checked) {
+      const recordId = cb.dataset.recordId || '';
+      const rec = CHAILEASE_ROWS.find(x => String(x.id || '') === String(recordId));
+      const f = rec?.fields || {};
+      const orderId = String(f.order_id || '').trim();
+
+      if (!recordId && !orderId) {
+        failed.push('缺少 record_id / order_id');
+        continue;
+      }
+
+      try {
+        const r = await fetch(`${API}/admin/order/update`, {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({
+            op_key: OP_KEY,
+            record_id: recordId || null,
+            order_id: orderId || null,
+            fields: {
+              '中租請款': true
+            }
+          })
+        });
+
+        const j = await r.json().catch(() => ({}));
+
+        if (!r.ok || !j.ok) {
+          failed.push(`${orderId || recordId}：${j.message || j.error || ('HTTP ' + r.status)}`);
+          continue;
+        }
+
+        ok++;
+
+      } catch(e) {
+        failed.push(`${orderId || recordId}：${e.message || e}`);
+      }
+    }
+
+    if (failed.length) {
+      alert(`已儲存 ${ok} 筆，失敗 ${failed.length} 筆。\n\n${failed.slice(0, 8).join('\n')}`);
+    } else {
+      alert(`已成功儲存 ${ok} 筆中租請款。`);
+    }
+
+    location.reload();
+
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '儲存勾選';
+    }
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  $('#btnSaveChailease')?.addEventListener('click', saveChaileaseChecked);
+  loadChaileaseList();
+});
+</script>
 </body>
 </html>
