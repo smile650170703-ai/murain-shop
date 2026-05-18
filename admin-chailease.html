@@ -347,23 +347,46 @@ function fmtPaymentMethod(pm){
   return map[s] || s;
 }
 
-function fmtTaiwanTime(v){
+function fmtTaiwanDate(v){
   if (!v) return '-';
 
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) {
-    return String(v);
+    return String(v).slice(0, 10);
   }
 
-  return d.toLocaleString('zh-TW', {
+  const parts = new Intl.DateTimeFormat('zh-TW', {
     timeZone:'Asia/Taipei',
     year:'numeric',
     month:'2-digit',
-    day:'2-digit',
-    hour:'2-digit',
-    minute:'2-digit',
-    hour12:false
-  });
+    day:'2-digit'
+  }).formatToParts(d);
+
+  const y = parts.find(p => p.type === 'year')?.value || '';
+  const m = parts.find(p => p.type === 'month')?.value || '';
+  const day = parts.find(p => p.type === 'day')?.value || '';
+
+  return `${y}-${m}-${day}`;
+}
+
+function getChaileaseDateValue(f){
+  return (
+    f['中租可以請款的時間'] ||
+    f['中租可請款時間'] ||
+    f.shipped_at ||
+    f.ship_at ||
+    f.updated_at ||
+    ''
+  );
+}
+
+function chaileaseDateMs(rec){
+  const f = rec.fields || {};
+  const v = getChaileaseDateValue(f);
+  const d = new Date(v);
+  const ms = d.getTime();
+
+  return Number.isNaN(ms) ? 9999999999999 : ms;
 }
 
 function boolValue(v){
