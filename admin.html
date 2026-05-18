@@ -367,6 +367,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 <a class="page-tab" href="/op/preorder-order.html" target="_blank" rel="noopener noreferrer">預購</a>
 <a class="page-tab" href="/shop-product-admin" target="_blank" rel="noopener noreferrer">上架官網</a>
 <a class="page-tab" href="/stock.html" target="_blank" rel="noopener noreferrer">庫存</a>
+<a class="page-tab" href="/admin-auction.html" target="_blank" rel="noopener noreferrer">寄賣競標</a>
 <a class="page-tab" href="/procurement-center/procurement-index.html" target="_blank" rel="noopener noreferrer">進貨</a>
 <a class="page-tab" href="/company-files/company-index.html" target="_blank" rel="noopener noreferrer">公司檔案管理</a>
    <a class="page-tab" href="/admin-streamer-performance.html" target="_blank" rel="noopener noreferrer">直播主業績</a>
@@ -432,6 +433,11 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   <a class="filter-btn btn-badge-wrap" data-admin-file="admin-credit-error.html" id="btnCreditErrorLink" href="admin-credit-error.html">
     <span>⚠️ 購物金異常</span>
     <span id="creditErrorBadge" class="count-badge" style="display:none;">0</span>
+  </a>
+
+  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-chailease.html" id="btnChaileaseLink" href="admin-chailease.html">
+    <span>中租請款</span>
+    <span id="chaileaseBadge" class="count-badge" style="display:none;">0</span>
   </a>
 </div>
 <div class="filter-row">
@@ -705,6 +711,14 @@ const ADMIN_PAGE_MAP = {
     title: '購物金異常',
     mode: 'credit_error',
     viewKey: '',
+    useDate: false
+  },
+
+  'admin-chailease.html': {
+    title: '中租請款',
+    mode: 'orders',
+    viewKey: 'chailease',
+    viewName: '中租請款',
     useDate: false
   }
 };
@@ -2436,12 +2450,20 @@ async function fetchCreditErrorCount() {
     return 0;
   }
 }
-
+async function fetchChaileaseCount() {
+  try {
+    const rows = await fetchAdminRowsByView('chailease');
+    return rows.length;
+  } catch (e) {
+    console.warn('fetchChaileaseCount failed', e);
+    return 0;
+  }
+}
 async function refreshDashboardBadges() {
   if (!OP_KEY) return;
 
   try {
-        const [
+    const [
       cartOpenCount,
       shipRows,
       bankRows,
@@ -2450,7 +2472,8 @@ async function refreshDashboardBadges() {
       cashInstRows,
       consignTrade,
       benefitCount,
-      creditErrorCount
+      creditErrorCount,
+      chaileaseCount
     ] = await Promise.all([
       fetchOpenCartCount(),
       fetchAdminRowsByView('ship'),
@@ -2460,7 +2483,8 @@ async function refreshDashboardBadges() {
       fetchAdminRowsByView('cashinst_unpaid'),
       fetchConsignTradeCounts(),
       fetchBenefitPendingCount(),
-      fetchCreditErrorCount()
+      fetchCreditErrorCount(),
+      fetchChaileaseCount()
     ]);
 
     dashSetBadge($('#cartOpenBadge'), cartOpenCount);
@@ -2480,6 +2504,7 @@ async function refreshDashboardBadges() {
     dashSetBadge($('#tradeBadge'), consignTrade.tradeCount);
     dashSetBadge($('#benefitBadge'), benefitCount);
     dashSetBadge($('#creditErrorBadge'), creditErrorCount);
+    dashSetBadge($('#chaileaseBadge'), chaileaseCount);
   } catch (e) {
     console.warn('refreshDashboardBadges failed', e);
   }
