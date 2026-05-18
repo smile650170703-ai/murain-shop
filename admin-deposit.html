@@ -1729,6 +1729,45 @@ function displayPayStatus(ps){
     default:        return ps || '';
   }
 }
+ function noteDateLabel(text){
+  const m = String(text || '').match(/\d{4}-\d{2}-\d{2}/);
+  return m ? m[0] : '';
+}
+
+function displayInternalNoteChinese(raw){
+  const s = String(raw || '').trim();
+  if (!s) return '—';
+
+  const lines = [];
+
+  function addIfMatch(label, re){
+    const m = s.match(re);
+    if (!m) return;
+    const d = noteDateLabel(m[0]);
+    lines.push(d ? `${label}（${d}）` : label);
+  }
+
+  addIfMatch('尾款逾期，訂金已沒收', /\[TAIL_OVERDUE_DEPOSIT_FORFEIT\][^\[]*/);
+  addIfMatch('系統已自動補回庫存（尾款逾期取消）', /\[AUTO_RESTOCK_TAIL_OVERDUE_CANCEL\][^\[]*/);
+  addIfMatch('⚠️ 系統補庫存失敗，請人工確認庫存', /\[RESTOCK_FAILED_TAIL_OVERDUE\][^\[]*/);
+  addIfMatch('人工已補回庫存（尾款逾期訂金沒收）', /\[MANUAL_RESTOCK_TAIL_FORFEIT\][^\[]*/);
+
+  addIfMatch('現金分期逾期，訂金已沒收', /\[CASH_INST_OVERDUE_CANCEL(?::[^\]]+)?\][^\[]*/);
+  addIfMatch('系統已自動補回庫存（現金分期逾期）', /\[AUTO_RESTOCK_CASH_INST_OVERDUE\][^\[]*/);
+  addIfMatch('⚠️ 現金分期補庫存失敗，請人工確認庫存', /\[RESTOCK_FAILED_CASH_INST_OVERDUE\][^\[]*/);
+  addIfMatch('人工已補回庫存（現金分期訂金沒收）', /\[MANUAL_RESTOCK_CASH_INST_FORFEIT\][^\[]*/);
+
+  addIfMatch('線上付款失敗，系統已自動補回庫存', /\[AUTO_RESTOCK_PAYUNI_FAIL\][^\[]*/);
+  addIfMatch('中租／零卡付款失敗，系統已自動補回庫存', /\[AUTO_RESTOCK_ZC_NOTIFY_FAIL\][^\[]*/);
+  addIfMatch('後台重新結帳，系統已自動補回庫存', /\[AUTO_RESTOCK_ADMIN_RETRY_CHECKOUT\][^\[]*/);
+
+  const retry = s.match(/\[RETRY_CART=([^\]]+)\]/);
+  if (retry) {
+    lines.push(`已產生重新結帳購物車：${retry[1]}`);
+  }
+
+  return lines.length ? lines.join('\n') : s;
+}
  function isDepositForfeitOrder(f = {}) {
   const st = String(f.status || '').trim().toLowerCase();
   const ps = String(f.pay_status || '').trim().toLowerCase();
@@ -3736,8 +3775,16 @@ ${isCashInstOrder ? `
           <span>已發出款/保留通知 (pay_notice_sent)</span>
         </div>
 
-        <label class="mt-3">內部備註 (internal_note)</label>
+                <label class="mt-3">內部備註中文說明</label>
+        <div class="ro-field ${f.internal_note ? '' : 'ro-empty'}" style="height:auto;min-height:58px;align-items:flex-start;padding-top:10px;white-space:pre-wrap;">
+          ${escapeHtml(displayInternalNoteChinese(f.internal_note || ''))}
+        </div>
+
+        <label class="mt-3">系統原始備註 (internal_note，請勿刪除英文標籤)</label>
         <textarea id="d_internal_note">${f.internal_note || ''}</textarea>
+        <div class="tag-small mt-2">
+          上方中文只是方便查看；下方英文標籤是系統判斷用，請不要刪掉。
+        </div>
 
         <div class="detail-actions">
   <button class="btn-primary" id="btnSaveAndShip">儲存資料+標記已出貨+發 LINE 通知</button>
