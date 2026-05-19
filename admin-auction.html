@@ -395,7 +395,7 @@
 
         <div class="btn-row">
           <button class="blue" type="button" id="btnFetch">查詢寄賣商品</button>
-          <button class="soft" type="button" id="btnDemo">帶入範例列</button>
+          <button class="soft" type="button" id="btnDemo" style="display:none;">帶入範例列</button>
           <button class="soft" type="button" id="btnClear">清空商品列</button>
           <button class="primary" type="button" id="btnDraft">儲存本頁草稿</button>
         </div>
@@ -445,7 +445,7 @@
         </div>
         <div class="btn-row">
           <button class="soft" type="button" id="btnCheckAll">全選 / 取消全選</button>
-          <button class="soft" type="button" id="btnAddRow">新增空白商品列</button>
+          <button class="soft" type="button" id="btnAddRow" style="display:none;">新增空白商品列</button>
           <button class="green" type="button" id="btnApplyPrice">更新資料庫價格</button>
         </div>
         <div class="danger-note">
@@ -854,9 +854,19 @@ const API = {
         showToast(data.message || `已送出 ${picked.length} 筆價格更新`);
         // 更新畫面上的目前價格
         items = items.map(it => {
-          if (!it.checked) return it;
-          return { ...it, startPrice: it.newStartPrice || it.startPrice, stepPrice: it.newStepPrice || it.stepPrice };
-        });
+  if (!it.checked) return it;
+
+  const updatedFailCount = it.failCount || it.baseFailCount || "0";
+
+  return {
+    ...it,
+    checked:false,
+    startPrice: it.newStartPrice || it.startPrice,
+    stepPrice: it.newStepPrice || it.stepPrice,
+    baseFailCount: updatedFailCount,
+    failCount: updatedFailCount
+  };
+});
         render();
         saveDraft();
       }catch(err){
@@ -871,7 +881,7 @@ const API = {
       const mode = $("actionMode").value;
       const picked = pickedItems();
       const active = activeItems();
-      const pdfRows = mode === "price_update" ? active : picked;
+      const pdfRows = picked;
 
       if (!pdfRows.length) { showToast("請先勾選或載入至少一筆商品"); return false; }
 
@@ -901,7 +911,7 @@ const API = {
             <td>${esc(it.consignor || "-")}</td>
             <td style="text-align:center;">${esc(it.qty || "-")}</td>
             <td>${esc(it.batch || "-")}</td>
-            <td>${mode === "fail_notice" ? esc(round + "流標") : (isPicked ? "本次調整" : "未調整")}</td>
+            <td>${mode === "fail_notice" ? esc((it.round || round || "-") + "流標") : (isPicked ? "本次調整" : "未調整")}</td>
             <td>${money(it.startPrice)}</td>
             <td>${money(it.stepPrice)}</td>
             <td>${money(afterStart)}</td>
