@@ -359,7 +359,7 @@
         <div class="grid">
           <div><label for="opKey">OP_KEY</label><input id="opKey" type="password" placeholder="網頁密碼" autocomplete="off"></div>
           <div><label for="costKey">成本查看密碼</label><input id="costKey" type="password" placeholder="成本密碼" autocomplete="off"></div>
-          <div><label for="consignorName">寄賣人</label><input id="consignorName" type="text" placeholder="例如：王小美"></div>
+          <div>   <label for="consignorName">寄賣人</label>   <select id="consignorName">     <option value="">請選擇寄賣人</option>   </select> </div>
           <input id="batchNo" type="hidden" value="">
 
           <div>
@@ -445,7 +445,6 @@
         </div>
         <div class="btn-row">
           <button class="soft" type="button" id="btnCheckAll">全選 / 取消全選</button>
-          <button class="soft" type="button" id="btnAddRow" style="display:none;">新增空白商品列</button>
           <button class="green" type="button" id="btnApplyPrice">更新資料庫價格</button>
         </div>
         <div class="danger-note">
@@ -464,11 +463,10 @@
           <div><label for="pdfTitle">PDF 標題</label><input id="pdfTitle" type="text" value="寄賣價格調整確認單"></div>
           <div><label for="pdfNote">給寄賣人的確認說明</label><textarea id="pdfNote">以下為目前寄賣商品價格調整與再次上架前確認內容，請寄賣人確認商品價格、起標價與後續處理方式。</textarea></div>
         </div>
-        <div class="btn-row">
-          <button class="blue" type="button" id="btnPreview">產生 PDF / 列印</button>
-          <button class="orange" type="button" id="btnExportChecked">匯出勾選商品標籤 Excel</button>
-          <button class="orange" type="button" id="btnExportAll">匯出全部數量&gt;0 標籤 Excel</button>
-        </div>
+       <div class="btn-row">
+  <button class="blue" type="button" id="btnPreview">產生 PDF / 列印</button>
+  <button class="orange" type="button" id="btnExportChecked">匯出勾選商品標籤 Excel</button>
+</div>
         <div class="ok-note">
           Excel 欄位固定為：SKU、Name、寄賣人、起標價格、一標多少。
         </div>
@@ -483,11 +481,11 @@
     const API_BASE = "https://api.murain.tw";
 
 const API = {
+  consignors: `${API_BASE}/op/consign/ledger-print-data`,
   fetchProducts: `${API_BASE}/api/admin/consign-auction/products`,
   updatePrices: `${API_BASE}/api/admin/consign-auction/update-prices`,
   failNotice: `${API_BASE}/api/admin/consign-auction/fail-notice`
 };
-
     const $ = (id) => document.getElementById(id);
     const itemBody = $("itemBody");
 
@@ -776,7 +774,39 @@ const API = {
       if (!res.ok || data.ok === false) throw new Error(data.error || data.message || `HTTP ${res.status}`);
       return data;
     }
+async function loadConsignors(){
+  const sel = $("consignorName");
+  if (!sel) return;
 
+  const opKey = $("opKey")?.value || "";
+  if (!opKey) return;
+
+  try{
+    const url = `${API.consignors}?op_key=${encodeURIComponent(opKey)}`;
+    const res = await fetch(url, { method:"GET" });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || data.ok === false) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+
+    const rows = Array.isArray(data.consignors) ? data.consignors : [];
+
+    const current = sel.value || "";
+    sel.innerHTML = `<option value="">請選擇寄賣人</option>` + rows.map(c => {
+      const name = String(c.name || "").trim();
+      const lineName = String(c.lineName || "").trim();
+      const label = lineName ? `${name}｜LINE：${lineName}` : name;
+      return `<option value="${esc(name)}" data-record-id="${esc(c.recordId || "")}">${esc(label)}</option>`;
+    }).join("");
+
+    if (current) sel.value = current;
+
+  }catch(err){
+    console.warn("[loadConsignors failed]", err);
+    showToast("寄賣人清單載入失敗，請確認 OP_KEY");
+  }
+}
     async function fetchProducts(){
       const consignor = $("consignorName").value.trim();
       if (!consignor) { showToast("請先輸入寄賣人"); return; }
@@ -1053,8 +1083,11 @@ function buildPrint(){
     }
 
     $("docDate").value = $("docDate").value || todayLocal();
-    $("confirmDue").value = $("confirmDue").value || todayLocal(2);
-    render();
+$("confirmDue").value = $("confirmDue").value || todayLocal(2);
+render();
+
+$("opKey").addEventListener("change", loadConsignors);
+$("opKey").addEventListener("blur", loadConsignors);
 
         itemBody.addEventListener("input", syncItemsFromDom);
 
@@ -1087,7 +1120,6 @@ function buildPrint(){
 
     ["batchNo","actionMode","failRound"].forEach(id => { $(id).addEventListener("change", updateSummary); });
     $("btnFetch").addEventListener("click", fetchProducts);
-    $("btnAddRow").addEventListener("click", () => { syncItemsFromDom(); items.push(blankItem()); render(); });
     $("btnCheckAll").addEventListener("click", () => {
   const checks = Array.from(itemBody.querySelectorAll('[data-k="checked"]'));
   const allChecked = checks.every(c => c.checked);
@@ -1108,7 +1140,6 @@ function buildPrint(){
     $("btnApplyPrice").addEventListener("click", applyPriceUpdate);
     $("btnPreview").addEventListener("click", () => { if (!buildPrint()) return; saveDraft(); setTimeout(() => window.print(), 100); });
     $("btnExportChecked").addEventListener("click", () => exportExcel("checked"));
-    $("btnExportAll").addEventListener("click", () => exportExcel("all"));
   </script>
 </body>
 </html>
