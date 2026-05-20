@@ -785,7 +785,7 @@ async function loadConsignors(){
       const name = String(c.name || "").trim();
       const lineName = String(c.lineName || "").trim();
       const label = lineName ? `${name}｜LINE：${lineName}` : name;
-      return `<option value="${esc(name)}" data-record-id="${esc(c.recordId || "")}">${esc(label)}</option>`;
+      return `<option value="${esc(name)}" data-record-id="${esc(c.recordId || "")}" data-line-name="${esc(lineName || name)}">${esc(label)}</option>`;
     }).join("");
 
     if (current) sel.value = current;
@@ -1044,7 +1044,44 @@ function selectedConsignorRecordId(){
   const opt = sel?.selectedOptions?.[0];
   return String(opt?.dataset?.recordId || "").trim();
 }
+function safeFilePart(s, fallback = "寄賣文件"){
+  const text = String(s || "").trim() || fallback;
+  return text
+    .replace(/[\\/:*?"<>|#%{}^~[\]`]/g, "_")
+    .replace(/\s+/g, "_")
+    .slice(0, 80);
+}
 
+function selectedConsignorLineName(){
+  const sel = $("consignorName");
+  const opt = sel?.selectedOptions?.[0];
+
+  const fromData = String(opt?.dataset?.lineName || "").trim();
+  if (fromData) return fromData;
+
+  const label = String(opt?.textContent || "").trim();
+  const m = label.match(/LINE[：:]\s*(.+)$/);
+  if (m?.[1]) return m[1].trim();
+
+  return String(sel?.value || "").trim();
+}
+
+function auctionPrintFileName(prefix, lineName, docDate){
+  return `${safeFilePart(lineName, "寄賣人")}_${safeFilePart(docDate || todayLocal(), todayLocal())}_${safeFilePart(prefix, "寄賣文件")}`;
+}
+
+function printWithFileName(fileBaseName){
+  const oldTitle = document.title;
+  document.title = safeFilePart(fileBaseName, "寄賣文件");
+
+  setTimeout(() => {
+    window.print();
+
+    setTimeout(() => {
+      document.title = oldTitle;
+    }, 1500);
+  }, 100);
+}
 async function buildLedgerPrint(){
   const opKey = $("opKey").value;
   const consignorRecordId = selectedConsignorRecordId();
@@ -1132,7 +1169,9 @@ async function buildLedgerPrint(){
       </div>`;
 
     saveDraft();
-    setTimeout(() => window.print(), 100);
+printWithFileName(
+  auctionPrintFileName("目前寄賣包總表", consignor.lineName || consignor.name || selectedConsignorLineName(), docDate)
+);
 
   }catch(err){
     console.warn("[buildLedgerPrint failed]", err);
@@ -1234,7 +1273,20 @@ setTimeout(loadConsignors, 0);
     $("btnClear").addEventListener("click", () => { if (!confirm("確定要清空商品列嗎？")) return; items = [blankItem(), blankItem(), blankItem()]; render(); showToast("已清空商品列"); });
     $("btnDraft").addEventListener("click", saveDraft);
     $("btnApplyPrice").addEventListener("click", applyPriceUpdate);
-    $("btnPreview").addEventListener("click", () => { if (!buildPrint()) return; saveDraft(); setTimeout(() => window.print(), 100); });
+    $("btnPreview").addEventListener("click", () => {
+  if (!buildPrint()) return;
+  saveDraft();
+
+  const mode = $("actionMode")?.value || "";
+  const prefix =
+    mode === "fail_notice" ? "流標通知" :
+    mode === "owner_price_update" ? "主動改價" :
+    "流標後改價";
+
+  printWithFileName(
+    auctionPrintFileName(prefix, selectedConsignorLineName(), $("docDate").value || todayLocal())
+  );
+});
     $("btnLedgerPrint").addEventListener("click", buildLedgerPrint);
     $("btnExportChecked").addEventListener("click", () => exportExcel("checked"));
   </script>
