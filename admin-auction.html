@@ -383,16 +383,20 @@
           <div><label for="confirmDue">確認期限</label><input id="confirmDue" type="date"></div>
         </div>
 
-        <div class="grid two" style="margin-top:14px;">
-          <div class="mode-box">
-            <div class="mode-title">更改價格模式</div>
-            <div class="mode-desc">寄賣人同意調整價格後，勾選商品並輸入新起標價格 / 新一標多少。按「更新資料庫價格」才會更新 Products 的「起標價格、一標多少」，並產出價格調整確認 PDF。</div>
-          </div>
-          <div class="mode-box">
-            <div class="mode-title">流標通知模式</div>
-            <div class="mode-desc">商品流標後，勾選要通知的商品並產生 PDF，詢問寄賣人是否維持原價、調整價格、暫停寄賣或安排寄回。這個模式不會更新商品價格。</div>
-          </div>
-        </div>
+        <div class="grid three" style="margin-top:14px;">
+  <div class="mode-box">
+    <div class="mode-title">流標通知模式</div>
+    <div class="mode-desc">商品流標後，勾選要通知的商品並產生 PDF，詢問寄賣人是否維持原價、調整價格、暫停寄賣或安排寄回。這個模式不會更新商品價格。</div>
+  </div>
+  <div class="mode-box">
+    <div class="mode-title">流標後更改價格</div>
+    <div class="mode-desc">寄賣人因流標同意調整價格後，勾選商品並輸入新起標價格 / 新一標多少。按「更新資料庫價格」會更新價格，也會累計本次流標次數。</div>
+  </div>
+  <div class="mode-box">
+    <div class="mode-title">寄賣人主動更改價格</div>
+    <div class="mode-desc">寄賣人自己要求調整價格時使用。這個模式會更新起標價格 / 一標多少，但不會增加流標次數。</div>
+  </div>
+</div>
 
         <div class="btn-row">
           <button class="blue" type="button" id="btnFetch">查詢寄賣商品</button>
@@ -437,7 +441,6 @@
   <th style="width:130px">新起標價格</th>
   <th style="width:120px">新一標多少</th>
   <th style="width:110px">本次流標次數</th>
-  <th style="width:260px">備註 / 給寄賣人說明</th>
   <th style="width:70px">刪除</th>
 </tr>
             </thead>
@@ -461,11 +464,12 @@
       </div>
       <div class="card-bd">
         <div class="grid two">
-          <div><label for="pdfTitle">PDF 標題</label><input id="pdfTitle" type="text" value="寄賣價格調整確認單"></div>
-          <div><label for="pdfNote">給寄賣人的確認說明</label><textarea id="pdfNote">以下為目前寄賣商品價格調整與再次上架前確認內容，請寄賣人確認商品價格、起標價與後續處理方式。</textarea></div>
-        </div>
+  <div><label for="pdfTitle">PDF 標題</label><input id="pdfTitle" type="text" value="寄賣價格調整確認單"></div>
+  <input id="pdfNote" type="hidden" value="">
+</div>
        <div class="btn-row">
   <button class="blue" type="button" id="btnPreview">產生 PDF / 列印</button>
+  <button class="green" type="button" id="btnLedgerPrint">產生目前寄賣包總表 PDF</button>
   <button class="orange" type="button" id="btnExportChecked">匯出勾選商品標籤 Excel</button>
 </div>
         <div class="ok-note">
@@ -616,7 +620,7 @@ const API = {
                 failCount: tr.querySelector('[data-k="failCount"]')?.value || "",
         baseFailCount: tr.querySelector('[data-k="baseFailCount"]')?.value || tr.querySelector('[data-k="failCount"]')?.value || "0",
         media: tr.querySelector('[data-k="media"]')?.value || "",
-        note: tr.querySelector('[data-k="note"]')?.value || ""
+        note: ""
       };
     }
     function roundByFailCount(n){
@@ -630,7 +634,6 @@ function applyAutoMetaToItem(it){
   if (!it.checked) return it;
 
   const mode = $("actionMode")?.value || "";
-  const oldNote = String(it.note || "").trim();
 
   // 寄賣人自己主動改價：不增加流標次數
   if (mode === "owner_price_update") {
@@ -640,19 +643,18 @@ function applyAutoMetaToItem(it){
       ...it,
       round: "主動改價",
       failCount: keepFailCount,
-      note: oldNote || "寄賣人主動要求調整價格"
+      note: ""
     };
   }
 
   // 流標通知 / 流標後改價：才自動累計流標次數
   const meta = roundByFailCount(it.baseFailCount ?? it.failCount ?? 0);
-  const batchText = it.batch ? `同批處理：${it.batch}` : `同批處理：${todayLocal()}`;
 
   return {
     ...it,
     round: meta.round,
     failCount: meta.failCount,
-    note: oldNote || `${batchText}，${meta.round}流標／調價確認`
+    note: ""
   };
 }
     function syncItemsFromDom(){
@@ -718,7 +720,6 @@ function applyAutoMetaToItem(it){
               <input data-k="failCount" type="hidden" value="${esc(it.failCount || "0")}">
             </td>
 
-            <td><input data-k="note" value="${esc(it.note)}" placeholder="備註"></td>
             <td><button class="soft" type="button" data-del="${idx}" style="min-height:32px;padding:0 10px;">刪除</button></td>
           </tr>
         `;
@@ -906,7 +907,7 @@ if (mode !== "price_update" && mode !== "owner_price_update") {
           newStepPrice:numberOnly(it.newStepPrice),
                     round: mode === "owner_price_update" ? "主動改價" : it.round,
 failCount: mode === "owner_price_update" ? numberOnly(it.baseFailCount) : numberOnly(it.failCount),
-note:it.note
+note:""
         }))
       };
 
@@ -982,7 +983,6 @@ function buildPrint(){
         <th>目前起標價格</th>
         <th>目前一標多少</th>
         <th>寄賣人選擇</th>
-        <th>備註</th>
       </tr>
     `
     : `
@@ -997,7 +997,6 @@ function buildPrint(){
         <th>原一標多少</th>
         <th>新起標價格</th>
         <th>新一標多少</th>
-        <th>備註</th>
         <th>寄賣人確認</th>
       </tr>
     `;
@@ -1026,7 +1025,6 @@ function buildPrint(){
             □ 暫停寄賣<br>
             □ 安排寄回
           </td>
-          <td>${esc(it.note || "")}</td>
         </tr>`;
     }
 
@@ -1042,7 +1040,6 @@ function buildPrint(){
         <td>${money(it.stepPrice)}</td>
         <td>${money(afterStart)}</td>
         <td>${money(afterStep)}</td>
-        <td>${esc(it.note || "")}</td>
         <td style="min-width:90px;"></td>
       </tr>`;
   }).join("");
@@ -1079,7 +1076,106 @@ function buildPrint(){
 
   return true;
 }
+function selectedConsignorRecordId(){
+  const sel = $("consignorName");
+  const opt = sel?.selectedOptions?.[0];
+  return String(opt?.dataset?.recordId || "").trim();
+}
 
+async function buildLedgerPrint(){
+  const opKey = $("opKey").value;
+  const consignorRecordId = selectedConsignorRecordId();
+
+  if (!opKey) {
+    showToast("請先輸入 OP_KEY");
+    return;
+  }
+
+  if (!consignorRecordId) {
+    showToast("請先選擇寄賣人");
+    return;
+  }
+
+  try{
+    const url = `${API.consignors}?op_key=${encodeURIComponent(opKey)}&consignorRecordId=${encodeURIComponent(consignorRecordId)}`;
+    const res = await fetch(url, { method:"GET" });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || data.ok === false) {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+
+    const consignor = data.consignor || {};
+    const rows = Array.isArray(data.items) ? data.items : [];
+    const activeRows = rows.filter(it => Number(it.qty || 0) > 0);
+
+    if (!activeRows.length) {
+      showToast("這位寄賣人目前沒有數量大於 0 的寄賣商品");
+      return;
+    }
+
+    const docDate = todayLocal();
+    const totalQty = activeRows.reduce((sum, it) => sum + (Number(it.qty || 0) || 0), 0);
+
+    const rowsHtml = activeRows.map((it, i) => `
+      <tr>
+        <td style="text-align:center;">${i + 1}</td>
+        <td>${pdfImgHtml(it.livePhotoUrl || "")}</td>
+        <td>${esc(it.sku || "-")}</td>
+        <td>${esc(it.name || "-")}</td>
+        <td style="text-align:center;">${esc(it.qty || "0")}</td>
+        <td>${esc(it.consignMethod || "直播競標")}</td>
+        <td>${money(it.auctionStartPrice)}</td>
+        <td>${money(it.bidStep)}</td>
+      </tr>
+    `).join("");
+
+    $("printArea").innerHTML = `
+      <div class="pdf-preview">
+        <h1 class="pdf-title">目前寄賣商品總表</h1>
+        <div class="pdf-sub">此表為目前 Products 內數量大於 0 的寄賣商品清單</div>
+
+        <div class="pdf-info">
+          <div><b>寄賣人：</b>${esc(consignor.name || "-")}</div>
+          <div><b>LINE 名稱：</b>${esc(consignor.lineName || "-")}</div>
+          <div><b>手機：</b>${esc(consignor.phone || "-")}</div>
+          <div><b>Email：</b>${esc(consignor.email || "-")}</div>
+          <div><b>匯款資料：</b>${esc(consignor.remittanceInfo || "-")}</div>
+          <div><b>產出日期：</b>${esc(docDate)}</div>
+          <div><b>商品款數：</b>${activeRows.length} 款</div>
+          <div><b>商品總數量：</b>${totalQty} 件</div>
+        </div>
+
+        <table class="pdf-table">
+          <thead>
+            <tr>
+              <th>序</th>
+              <th>截圖</th>
+              <th>SKU</th>
+              <th>Name</th>
+              <th>數量</th>
+              <th>寄賣方式</th>
+              <th>目前起標價格</th>
+              <th>目前一標多少</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+
+        <div class="sign-box">
+          <div><b>寄賣人確認：</b><div class="sign-line"></div></div>
+          <div><b>處理人員：</b><div class="sign-line"></div></div>
+        </div>
+      </div>`;
+
+    saveDraft();
+    setTimeout(() => window.print(), 100);
+
+  }catch(err){
+    console.warn("[buildLedgerPrint failed]", err);
+    showToast("目前寄賣包總表產生失敗，請確認 OP_KEY / 寄賣人資料");
+  }
+}
     function exportExcel(type){
       syncItemsFromDom();
       const rows = type === "checked" ? pickedItems() : activeItems();
@@ -1175,6 +1271,7 @@ $("opKey").addEventListener("blur", loadConsignors);
     $("btnDraft").addEventListener("click", saveDraft);
     $("btnApplyPrice").addEventListener("click", applyPriceUpdate);
     $("btnPreview").addEventListener("click", () => { if (!buildPrint()) return; saveDraft(); setTimeout(() => window.print(), 100); });
+    $("btnLedgerPrint").addEventListener("click", buildLedgerPrint);
     $("btnExportChecked").addEventListener("click", () => exportExcel("checked"));
   </script>
 </body>
