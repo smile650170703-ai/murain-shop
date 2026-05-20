@@ -385,11 +385,11 @@
         <div class="grid two" style="margin-top:14px;">
           <div class="mode-box">
             <div class="mode-title">更改價格模式</div>
-            <div class="mode-desc">勾選商品後，輸入新起標價格 / 新一標多少。按「更新資料庫價格」會送到後端 API 更新 Products 的「起標價格、一標多少」。PDF 會產出此寄賣人目前數量大於 0 的全部商品清單。</div>
+            <div class="mode-desc">寄賣人同意調整價格後，勾選商品並輸入新起標價格 / 新一標多少。按「更新資料庫價格」才會更新 Products 的「起標價格、一標多少」，並產出價格調整確認 PDF。</div>
           </div>
           <div class="mode-box">
             <div class="mode-title">流標通知模式</div>
-            <div class="mode-desc">勾選本次流標商品，選第幾次流標後產生 PDF。這個模式不會直接改價格，PDF 會提醒寄賣人：流標三次將寄回商品，不再寄賣。</div>
+            <div class="mode-desc">商品流標後，勾選要通知的商品並產生 PDF，詢問寄賣人是否維持原價、調整價格、暫停寄賣或安排寄回。這個模式不會更新商品價格。</div>
           </div>
         </div>
 
@@ -875,80 +875,144 @@ const API = {
       }
     }
 
-    function buildPrint(){
-      syncItemsFromDom();
+function buildPrint(){
+  syncItemsFromDom();
 
-      const mode = $("actionMode").value;
-      const picked = pickedItems();
-      const active = activeItems();
-      const pdfRows = picked;
+  const mode = $("actionMode").value;
+  const isFailNotice = mode === "fail_notice";
+  const picked = pickedItems();
+  const pdfRows = picked;
 
-      if (!pdfRows.length) { showToast("請先勾選或載入至少一筆商品"); return false; }
+  if (!pdfRows.length) {
+    showToast("請先勾選至少一筆商品");
+    return false;
+  }
 
-      const title = $("pdfTitle").value || (mode === "price_update" ? "寄賣價格調整確認單" : "寄賣商品流標通知與調價確認單");
-      const consignor = $("consignorName").value || (pdfRows[0]?.consignor || "-");
-      const batch = $("batchNo").value || "全部批次";
-      const round = $("failRound").value || "-";
-      const docDate = $("docDate").value || todayLocal();
-      const due = $("confirmDue").value || "-";
-      const note = $("pdfNote").value || "";
-      const pickedSku = new Set(picked.map(it => it.sku));
+  const title = isFailNotice
+    ? "寄賣商品流標通知與是否調價確認單"
+    : "寄賣商品價格調整確認單";
 
-      const ruleHtml = mode === "fail_notice"
-        ? `<div class="pdf-rule"><b>流標規則提醒：</b>商品若累計流標三次，將安排寄回寄賣人，不再繼續寄賣。若寄賣人希望繼續寄賣，請於確認期限內回覆是否同意調整價格。</div>`
-        : `<div class="pdf-rule"><b>價格調整確認：</b>本確認單列出目前數量大於 0 的寄賣商品；有勾選調整的商品，請確認新的起標價格與一標多少。</div>`;
+  const consignor = $("consignorName").value || (pdfRows[0]?.consignor || "-");
+  const docDate = $("docDate").value || todayLocal();
+  const due = $("confirmDue").value || "-";
 
-      const rowsHtml = pdfRows.map((it, i) => {
-        const isPicked = pickedSku.has(it.sku);
-        const afterStart = it.newStartPrice || it.startPrice || "";
-        const afterStep = it.newStepPrice || it.stepPrice || "";
-        return `
-          <tr>
-            <td style="text-align:center;">${i + 1}</td>
-            <td>${pdfImgHtml(it.image || it.media)}</td>
-            <td>${esc(it.sku || "-")}</td>
-            <td>${esc(it.name || "-")}</td>
-            <td>${esc(it.consignor || "-")}</td>
-            <td style="text-align:center;">${esc(it.qty || "-")}</td>
-            <td>${esc(it.batch || "-")}</td>
-            <td>${mode === "fail_notice" ? esc((it.round || round || "-") + "流標") : (isPicked ? "本次調整" : "未調整")}</td>
-            <td>${money(it.startPrice)}</td>
-            <td>${money(it.stepPrice)}</td>
-            <td>${money(afterStart)}</td>
-            <td>${money(afterStep)}</td>
-            <td>${esc(it.note || "")}</td>
-            <td style="min-width:90px;"></td>
-          </tr>`;
-      }).join("");
+  const mainNote = isFailNotice
+    ? "以下商品本次競標未售出，請寄賣人確認後續處理方式。若同意調整價格，請於下方填寫希望調整後的價格，或直接回覆小幫手協助登記。"
+    : "以下為寄賣人已確認後的價格調整內容，請確認商品原價格與新價格是否正確。";
 
-      $("printArea").innerHTML = `
-        <div class="pdf-preview">
-          <h1 class="pdf-title">${esc(title)}</h1>
-          <div class="pdf-sub">寄賣商品價格調整、降價確認、再次上架前確認使用</div>
-          <div class="pdf-info">
-            <div><b>寄賣人：</b>${esc(consignor)}</div><div><b>寄賣批次：</b>${esc(batch)}</div>
-            <div><b>本次模式：</b>${mode === "price_update" ? "更改價格" : "流標通知 / 詢問是否調整價格"}</div><div><b>流標 / 調整輪次：</b>${esc(round)}</div>
-            <div><b>產出日期：</b>${esc(docDate)}</div><div><b>確認期限：</b>${esc(due)}</div>
-            <div><b>PDF 商品件數：</b>${pdfRows.length} 件</div><div><b>本次勾選件數：</b>${picked.length} 件</div>
-          </div>
-          <p style="font-size:13px;line-height:1.8;margin:0 0 12px;">${esc(note)}</p>
-          ${ruleHtml}
-          <table class="pdf-table">
-            <thead>
-              <tr>
-                <th>序</th><th>截圖</th><th>SKU</th><th>Name</th><th>寄賣人</th><th>數量</th><th>批次</th><th>狀態</th>
-                <th>原起標價格</th><th>原一標多少</th><th>新起標價格</th><th>新一標多少</th><th>備註</th><th>寄賣人確認</th>
-              </tr>
-            </thead>
-            <tbody>${rowsHtml}</tbody>
-          </table>
-          <div class="sign-box">
-            <div><b>寄賣人簽名 / 回覆確認：</b><div class="sign-line"></div></div>
-            <div><b>處理人員：</b><div class="sign-line"></div></div>
-          </div>
-        </div>`;
-      return true;
+  const ruleHtml = isFailNotice
+    ? `<div class="pdf-rule"><b>流標提醒：</b>商品流標後可選擇維持原價再次上架、調整價格後再次上架、暫停寄賣或安排寄回。若商品累計流標三次，將建議寄回或重新討論寄賣方式。</div>`
+    : `<div class="pdf-rule"><b>價格調整確認：</b>本確認單用於確認寄賣商品調整後的起標價格與一標加價金額。確認後，系統才會依新價格再次上架或後續處理。</div>`;
+
+  const headerHtml = isFailNotice
+    ? `
+      <tr>
+        <th>序</th>
+        <th>截圖</th>
+        <th>SKU</th>
+        <th>Name</th>
+        <th>數量</th>
+        <th>本次狀態</th>
+        <th>目前起標價格</th>
+        <th>目前一標多少</th>
+        <th>寄賣人選擇</th>
+        <th>備註</th>
+      </tr>
+    `
+    : `
+      <tr>
+        <th>序</th>
+        <th>截圖</th>
+        <th>SKU</th>
+        <th>Name</th>
+        <th>數量</th>
+        <th>本次狀態</th>
+        <th>原起標價格</th>
+        <th>原一標多少</th>
+        <th>新起標價格</th>
+        <th>新一標多少</th>
+        <th>備註</th>
+        <th>寄賣人確認</th>
+      </tr>
+    `;
+
+  const rowsHtml = pdfRows.map((it, i) => {
+    const itemRound = it.round || $("failRound").value || "-";
+    const afterStart = it.newStartPrice || it.startPrice || "";
+    const afterStep = it.newStepPrice || it.stepPrice || "";
+
+    if (isFailNotice) {
+      return `
+        <tr>
+          <td style="text-align:center;">${i + 1}</td>
+          <td>${pdfImgHtml(it.image || it.media)}</td>
+          <td>${esc(it.sku || "-")}</td>
+          <td>${esc(it.name || "-")}</td>
+          <td style="text-align:center;">${esc(it.qty || "-")}</td>
+          <td>${esc(itemRound)}流標</td>
+          <td>${money(it.startPrice)}</td>
+          <td>${money(it.stepPrice)}</td>
+          <td style="min-width:210px;line-height:1.8;">
+            □ 維持原價格再次上架<br>
+            □ 同意調整價格<br>
+            新起標價：__________<br>
+            新一標多少：________<br>
+            □ 暫停寄賣<br>
+            □ 安排寄回
+          </td>
+          <td>${esc(it.note || "")}</td>
+        </tr>`;
     }
+
+    return `
+      <tr>
+        <td style="text-align:center;">${i + 1}</td>
+        <td>${pdfImgHtml(it.image || it.media)}</td>
+        <td>${esc(it.sku || "-")}</td>
+        <td>${esc(it.name || "-")}</td>
+        <td style="text-align:center;">${esc(it.qty || "-")}</td>
+        <td>${esc(itemRound)}調整</td>
+        <td>${money(it.startPrice)}</td>
+        <td>${money(it.stepPrice)}</td>
+        <td>${money(afterStart)}</td>
+        <td>${money(afterStep)}</td>
+        <td>${esc(it.note || "")}</td>
+        <td style="min-width:90px;"></td>
+      </tr>`;
+  }).join("");
+
+  $("printArea").innerHTML = `
+    <div class="pdf-preview">
+      <h1 class="pdf-title">${esc(title)}</h1>
+      <div class="pdf-sub">
+        ${isFailNotice ? "本單為流標通知與是否調價詢問，尚未更新商品價格" : "本單為寄賣商品價格調整確認使用"}
+      </div>
+
+      <div class="pdf-info">
+        <div><b>寄賣人：</b>${esc(consignor)}</div>
+        <div><b>產出日期：</b>${esc(docDate)}</div>
+        <div><b>本次用途：</b>${isFailNotice ? "流標通知 / 詢問是否調整價格" : "更改價格確認"}</div>
+        <div><b>回覆期限：</b>${esc(due)}</div>
+        <div><b>商品件數：</b>${pdfRows.length} 件</div>
+        <div><b>輪次判斷：</b>依各商品目前流標次數自動判斷</div>
+      </div>
+
+      <p style="font-size:13px;line-height:1.8;margin:0 0 12px;">${esc(mainNote)}</p>
+      ${ruleHtml}
+
+      <table class="pdf-table">
+        <thead>${headerHtml}</thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+
+      <div class="sign-box">
+        <div><b>寄賣人簽名 / 回覆確認：</b><div class="sign-line"></div></div>
+        <div><b>處理人員：</b><div class="sign-line"></div></div>
+      </div>
+    </div>`;
+
+  return true;
+}
 
     function exportExcel(type){
       syncItemsFromDom();
