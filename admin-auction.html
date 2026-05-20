@@ -1367,9 +1367,68 @@ setTimeout(loadConsignors, 0);
 
                 itemBody.addEventListener("input", syncItemsFromDom);
 
+function focusAndSelectInput(input){
+  if (!input) return false;
+  input.focus();
+  setTimeout(() => input.select(), 0);
+  return true;
+}
+
+function focusPriceInputByRow(rowIndex, key){
+  const rows = Array.from(itemBody.querySelectorAll("tr"));
+  const row = rows[rowIndex];
+  if (!row) return false;
+
+  const input = row.querySelector(`[data-k="${key}"]`);
+  return focusAndSelectInput(input);
+}
+
+function focusNextPriceField(input){
+  const tr = input.closest("tr");
+  const rows = Array.from(itemBody.querySelectorAll("tr"));
+  const rowIndex = rows.indexOf(tr);
+  const key = input.dataset.k;
+
+  if (key === "newStartPrice") {
+    return focusAndSelectInput(tr.querySelector('[data-k="newStepPrice"]'));
+  }
+
+  if (key === "newStepPrice") {
+    return focusPriceInputByRow(rowIndex + 1, "newStartPrice");
+  }
+
+  return false;
+}
+
 itemBody.addEventListener("focusin", (e) => {
   if (e.target?.matches?.('[data-k="newStartPrice"], [data-k="newStepPrice"]')) {
     setTimeout(() => e.target.select(), 0);
+  }
+});
+
+itemBody.addEventListener("keydown", (e) => {
+  const input = e.target;
+  if (!input?.matches?.('[data-k="newStartPrice"], [data-k="newStepPrice"]')) return;
+
+  const tr = input.closest("tr");
+  const rows = Array.from(itemBody.querySelectorAll("tr"));
+  const rowIndex = rows.indexOf(tr);
+
+  if (e.key === "Tab") {
+    e.preventDefault();
+
+    if (e.shiftKey) {
+      focusPriceInputByRow(rowIndex - 1, "newStartPrice");
+    } else {
+      focusPriceInputByRow(rowIndex + 1, "newStartPrice");
+    }
+
+    return;
+  }
+
+  if (e.key === "Enter") {
+    e.preventDefault();
+    focusNextPriceField(input);
   }
 });
 
