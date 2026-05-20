@@ -1098,17 +1098,57 @@ function auctionPrintFileName(prefix, lineName, docDate){
   return `${safeFilePart(lineName, "寄賣人")}_${safeFilePart(docDate || todayLocal(), todayLocal())}_${safeFilePart(prefix, "寄賣文件")}`;
 }
 
-function printWithFileName(fileBaseName){
+function sleep(ms){
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitPrintImages(timeoutMs = 8000){
+  const area = $("printArea");
+  const imgs = Array.from(area?.querySelectorAll("img") || []);
+
+  if (!imgs.length) return;
+
+  const waitOne = (img) => new Promise(resolve => {
+    if (img.complete) {
+      resolve();
+      return;
+    }
+
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+
+    img.addEventListener("load", finish, { once:true });
+    img.addEventListener("error", finish, { once:true });
+
+    if (typeof img.decode === "function") {
+      img.decode().then(finish).catch(finish);
+    }
+  });
+
+  await Promise.race([
+    Promise.all(imgs.map(waitOne)),
+    sleep(timeoutMs)
+  ]);
+}
+
+async function printWithFileName(fileBaseName){
   const oldTitle = document.title;
   document.title = safeFilePart(fileBaseName, "寄賣文件");
 
-  setTimeout(() => {
-    window.print();
+  showToast("正在載入商品截圖，請稍等一下再開列印畫面");
 
-    setTimeout(() => {
-      document.title = oldTitle;
-    }, 1500);
-  }, 100);
+  await waitPrintImages(8000);
+  await sleep(500);
+
+  window.print();
+
+  setTimeout(() => {
+    document.title = oldTitle;
+  }, 1500);
 }
 async function buildLedgerPrint(){
   const opKey = $("opKey").value;
@@ -1158,10 +1198,9 @@ async function buildLedgerPrint(){
       </tr>
     `).join("");
 
-    $("printArea").innerHTML = `
+   $("printArea").innerHTML = `
       <div class="pdf-preview">
         <h1 class="pdf-title">目前寄賣商品總表</h1>
-        <div class="pdf-sub">此表為目前 Products 內數量大於 0 的寄賣商品清單</div>
 
         <div class="pdf-info">
           <div><b>寄賣人：</b>${esc(consignor.name || "-")}</div>
@@ -1301,7 +1340,7 @@ setTimeout(loadConsignors, 0);
     $("btnClear").addEventListener("click", () => { if (!confirm("確定要清空商品列嗎？")) return; items = [blankItem(), blankItem(), blankItem()]; render(); showToast("已清空商品列"); });
     $("btnDraft").addEventListener("click", saveDraft);
     $("btnApplyPrice").addEventListener("click", applyPriceUpdate);
-    $("btnPreview").addEventListener("click", () => {
+$("btnPreview").addEventListener("click", async () => {
   if (!buildPrint()) return;
   saveDraft();
 
@@ -1311,7 +1350,7 @@ setTimeout(loadConsignors, 0);
     mode === "owner_price_update" ? "主動改價" :
     "流標後改價";
 
-  printWithFileName(
+  await printWithFileName(
     auctionPrintFileName(prefix, selectedConsignorLineName(), $("docDate").value || todayLocal())
   );
 });
