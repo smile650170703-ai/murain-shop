@@ -468,8 +468,9 @@
 </div>
        <div class="btn-row">
   <button class="blue" type="button" id="btnPreview">產生 PDF / 列印</button>
-  <button class="green" type="button" id="btnLedgerPrint">產生目前寄賣包總表 PDF</button>
-  <button class="orange" type="button" id="btnExportChecked">匯出勾選商品標籤 Excel</button>
+<button class="green" type="button" id="btnLedgerPrint">產生目前寄賣包總表 PDF</button>
+<button class="soft" type="button" id="btnExportImages">產生勾選直播截圖</button>
+<button class="orange" type="button" id="btnExportChecked">匯出勾選商品標籤 Excel</button>
 </div>
 
       </div>
@@ -1180,6 +1181,91 @@ function sleep(ms){
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function imageExtFromMime(type){
+  const t = String(type || "").toLowerCase();
+  if (t.includes("png")) return "png";
+  if (t.includes("webp")) return "webp";
+  if (t.includes("gif")) return "gif";
+  return "jpg";
+}
+
+function imageExtFromUrl(url){
+  const clean = String(url || "").split("?")[0].split("#")[0];
+  const m = clean.match(/\.([a-z0-9]{2,5})$/i);
+  const ext = String(m?.[1] || "").toLowerCase();
+  return ["jpg","jpeg","png","webp","gif"].includes(ext) ? ext : "";
+}
+
+function checkedImageFileBaseName(it){
+  const name = safeFilePart(it.name || it.sku || "商品", "商品");
+  const start = safeFilePart(numberOnly(it.startPrice) || it.startPrice || "0", "0");
+  const step = safeFilePart(numberOnly(it.stepPrice) || it.stepPrice || "0", "0");
+
+  return `${name}_起標價格_${start}_一標_${step}`;
+}
+
+async function downloadImageFile(url, fileBaseName){
+  const imageUrl = String(url || "").trim();
+  if (!imageUrl) throw new Error("missing_image_url");
+
+  const res = await fetch(imageUrl);
+  if (!res.ok) throw new Error(`圖片下載失敗 HTTP ${res.status}`);
+
+  const blob = await res.blob();
+  const ext = imageExtFromUrl(imageUrl) || imageExtFromMime(blob.type);
+  const objectUrl = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = `${fileBaseName}.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+}
+
+async function exportCheckedImages(){
+  const rows = pickedItems();
+
+  if (!rows.length) {
+    showPopup("請先勾選要產生直播截圖的商品");
+    return;
+  }
+
+  const targets = rows
+    .map(it => ({
+      item: it,
+      url: String(it.image || it.media || "").trim()
+    }))
+    .filter(x => x.url);
+
+  if (!targets.length) {
+    showPopup("勾選商品沒有直播截圖 / 商品截圖網址");
+    return;
+  }
+
+  let ok = 0;
+  let fail = 0;
+
+  for (const t of targets) {
+    try{
+      await downloadImageFile(t.url, checkedImageFileBaseName(t.item));
+      ok++;
+      await sleep(250);
+    }catch(err){
+      fail++;
+      console.warn("[exportCheckedImages failed]", t.item, err);
+    }
+  }
+
+  if (fail) {
+    showPopup(`已產生 ${ok} 張，失敗 ${fail} 張。若瀏覽器擋下載，請允許此網站下載多個檔案。`);
+  } else {
+    showPopup(`已產生 ${ok} 張勾選商品直播截圖`);
+  }
+}
+
 async function waitPrintImages(timeoutMs = 8000){
   const area = $("printArea");
   const imgs = Array.from(area?.querySelectorAll("img") || []);
@@ -1529,7 +1615,11 @@ $("btnPreview").addEventListener("click", () => {
     $("btnLedgerPrint").addEventListener("click", () => {
   withButtonLoading($("btnLedgerPrint"), "產生中…", buildLedgerPrint);
 });
-    $("btnExportChecked").addEventListener("click", () => {
+    $("btnExportImages").addEventListener("click", () => {
+  withButtonLoading($("btnExportImages"), "產生中…", exportCheckedImages);
+});
+
+$("btnExportChecked").addEventListener("click", () => {
   withButtonLoading($("btnExportChecked"), "匯出中…", async () => exportExcel("checked"));
 });
   </script>
