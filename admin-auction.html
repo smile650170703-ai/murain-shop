@@ -217,7 +217,20 @@
     .sum-item b{ display:block; color:#0f172a; font-size:22px; line-height:1.2; }
 
     .table-wrap{ overflow:auto; border:1px solid rgba(203,213,225,.9); border-radius:16px; background:#fff; }
-    table{ width:100%; border-collapse:separate; border-spacing:0; min-width:1280px; }
+    table{ width:100%; border-collapse:separate; border-spacing:0; min-width:1100px; }
+
+/* 網頁上隱藏：本次輪次摘要卡 */
+.summary .sum-item:nth-child(5){
+  display:none;
+}
+
+/* 網頁上隱藏：本次輪次、本次流標次數欄位；資料仍保留給 PDF / 更新資料庫使用 */
+.table-wrap table th:nth-child(6),
+.table-wrap table td:nth-child(6),
+.table-wrap table th:nth-child(11),
+.table-wrap table td:nth-child(11){
+  display:none;
+}
 
 .readonly-cell{
   display:block;
@@ -270,7 +283,20 @@
     }
     .num{ text-align:right; }
     .row-warn{ background:#fffbeb; }
-    .row-updated{ background:#f0fdf4; }
+.row-updated{ background:#f0fdf4; }
+
+#itemBody tr{
+  cursor:pointer;
+}
+
+#itemBody tr:hover{
+  background:#eff6ff;
+}
+
+#itemBody input,
+#itemBody button{
+  cursor:auto;
+}
 
     .mini{ font-size:12px; color:var(--muted); line-height:1.6; }
     .danger-note{ border:1px solid rgba(220,38,38,.16); background:var(--red-soft); color:#991b1b; padding:12px 14px; border-radius:14px; font-size:13px; line-height:1.65; margin-top:14px; }
@@ -511,12 +537,36 @@ const API = {
       return Number.isFinite(n) ? n : "";
     }
 
-    function showToast(text){
-      const t = $("toast");
-      t.textContent = text;
-      t.classList.add("show");
-      setTimeout(() => t.classList.remove("show"), 2600);
-    }
+   function showToast(text){
+  const t = $("toast");
+  t.textContent = text;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2600);
+}
+
+function showPopup(text){
+  showToast(text);
+  setTimeout(() => {
+    alert(text);
+  }, 80);
+}
+
+async function withButtonLoading(btn, loadingText, task){
+  if (!btn || btn.disabled) return;
+
+  const oldText = btn.textContent;
+  btn.disabled = true;
+  btn.dataset.oldText = oldText;
+  btn.textContent = loadingText || "執行中…";
+
+  try{
+    return await task();
+  }finally{
+    btn.disabled = false;
+    btn.textContent = btn.dataset.oldText || oldText;
+    delete btn.dataset.oldText;
+  }
+}
 
     function imgHtml(src){
       const url = String(src || "").trim();
@@ -903,7 +953,7 @@ note:""
 
       try{
         const data = await fetchJSON(API.updatePrices, payload);
-        showToast(data.message || `已送出 ${picked.length} 筆價格更新`);
+        showPopup(data.message || `已完成 ${picked.length} 筆價格更新`);
         // 更新畫面上的目前價格
         items = items.map(it => {
   if (!it.checked) return it;
@@ -923,7 +973,7 @@ note:""
         saveDraft();
       }catch(err){
   const msg = String(err?.message || err || "");
-  showToast(`更新失敗：${msg || "請查看 Console / Network 錯誤"}`);
+  showPopup(`更新失敗：${msg || "請查看 Console / Network 錯誤"}`);
   console.warn("[updatePrices failed]", err);
 }
     }
@@ -1266,7 +1316,7 @@ printWithFileName(
 
   }catch(err){
     console.warn("[buildLedgerPrint failed]", err);
-    showToast("目前寄賣包總表產生失敗，請確認 OP_KEY / 寄賣人資料");
+    showPopup("目前寄賣包總表產生失敗，請確認 OP_KEY / 寄賣人資料");
   }
 }
     function exportExcel(type){
@@ -1315,7 +1365,13 @@ $("opKey").addEventListener("change", loadConsignors);
 $("opKey").addEventListener("blur", loadConsignors);
 setTimeout(loadConsignors, 0);
 
-        itemBody.addEventListener("input", syncItemsFromDom);
+                itemBody.addEventListener("input", syncItemsFromDom);
+
+itemBody.addEventListener("focusin", (e) => {
+  if (e.target?.matches?.('[data-k="newStartPrice"], [data-k="newStepPrice"]')) {
+    setTimeout(() => e.target.select(), 0);
+  }
+});
 
     itemBody.addEventListener("change", (e) => {
       syncItemsFromDom();
@@ -1334,19 +1390,43 @@ setTimeout(loadConsignors, 0);
 
       updateSummary();
     });
-    itemBody.addEventListener("click", (e) => {
+     itemBody.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-del]");
-      if (!btn) return;
+      if (btn) {
+        syncItemsFromDom();
+        const idx = Number(btn.dataset.del);
+        items.splice(idx, 1);
+        if (!items.length) items.push(blankItem());
+        render();
+        return;
+      }
+
+      if (e.target.closest("input, button, select, textarea, a")) return;
+
+      const tr = e.target.closest("tr");
+      if (!tr) return;
+
+      const check = tr.querySelector('[data-k="checked"]');
+      if (!check) return;
+
+      check.checked = !check.checked;
+
       syncItemsFromDom();
-      const idx = Number(btn.dataset.del);
-      items.splice(idx, 1);
-      if (!items.length) items.push(blankItem());
+      items = items.map(applyAutoMetaToItem);
+
+      const firstChecked = items.find(x => x.checked);
+      if (firstChecked?.round && $("failRound")) {
+        $("failRound").value = firstChecked.round;
+      }
+
       render();
     });
 
     ["batchNo","actionMode","failRound"].forEach(id => { $(id).addEventListener("change", updateSummary); });
-    $("btnFetch").addEventListener("click", fetchProducts);
-    $("btnCheckAll").addEventListener("click", () => {
+    $$("btnFetch").addEventListener("click", () => {
+  withButtonLoading($("btnFetch"), "查詢中…", fetchProducts);
+});
+    $("btnCheckAll").addEventListener("click", () => {   withButtonLoading($("btnCheckAll"), "處理中…", async () => {
   const checks = Array.from(itemBody.querySelectorAll('[data-k="checked"]'));
   const allChecked = checks.every(c => c.checked);
   checks.forEach(c => c.checked = !allChecked);
@@ -1358,28 +1438,37 @@ setTimeout(loadConsignors, 0);
     $("failRound").value = firstChecked.round;
   }
 
-  render();
+    render();
+  });
 });
     $("btnDemo").addEventListener("click", () => { items = demoItems.map(x => ({...x})); if (!$("consignorName").value) $("consignorName").value = "測試寄賣人"; render(); showToast("已帶入範例列，可以直接修改內容"); });
     $("btnClear").addEventListener("click", () => { if (!confirm("確定要清空商品列嗎？")) return; items = [blankItem(), blankItem(), blankItem()]; render(); showToast("已清空商品列"); });
     $("btnDraft").addEventListener("click", saveDraft);
-    $("btnApplyPrice").addEventListener("click", applyPriceUpdate);
-$("btnPreview").addEventListener("click", async () => {
-  if (!buildPrint()) return;
-  saveDraft();
-
-  const mode = $("actionMode")?.value || "";
-const prefix =
-  mode === "fail_notice" ? "流標通知" :
-  mode === "owner_price_update" ? "主動改價確認" :
-  "流標後改價確認";
-
-  await printWithFileName(
-    auctionPrintFileName(prefix, selectedConsignorLineName(), $("docDate").value || todayLocal())
-  );
+    $("btnApplyPrice").addEventListener("click", () => {
+  withButtonLoading($("btnApplyPrice"), "更新中…", applyPriceUpdate);
 });
-    $("btnLedgerPrint").addEventListener("click", buildLedgerPrint);
-    $("btnExportChecked").addEventListener("click", () => exportExcel("checked"));
+$("btnPreview").addEventListener("click", () => {
+  withButtonLoading($("btnPreview"), "產生中…", async () => {
+    if (!buildPrint()) return;
+    saveDraft();
+
+    const mode = $("actionMode")?.value || "";
+    const prefix =
+      mode === "fail_notice" ? "流標通知" :
+      mode === "owner_price_update" ? "主動改價確認" :
+      "流標後改價確認";
+
+    await printWithFileName(
+      auctionPrintFileName(prefix, selectedConsignorLineName(), $("docDate").value || todayLocal())
+    );
+  });
+});
+    $("btnLedgerPrint").addEventListener("click", () => {
+  withButtonLoading($("btnLedgerPrint"), "產生中…", buildLedgerPrint);
+});
+    $("btnExportChecked").addEventListener("click", () => {
+  withButtonLoading($("btnExportChecked"), "匯出中…", async () => exportExcel("checked"));
+});
   </script>
 </body>
 </html>
