@@ -365,9 +365,10 @@
           <div>
             <label for="actionMode">處理模式</label>
             <select id="actionMode">
-              <option value="price_update">更改價格</option>
-              <option value="fail_notice">流標通知 / 詢問是否調整價格</option>
-            </select>
+  <option value="fail_notice">流標通知 / 詢問是否調整價格</option>
+  <option value="price_update">流標後更改價格</option>
+  <option value="owner_price_update">寄賣人主動更改價格</option>
+</select>
           </div>
           <div>
   <label>流標 / 調整輪次</label>
@@ -625,20 +626,35 @@ const API = {
       return { round: label, failCount: String(next) };
     }
 
-    function applyAutoMetaToItem(it){
-      if (!it.checked) return it;
+function applyAutoMetaToItem(it){
+  if (!it.checked) return it;
 
-      const meta = roundByFailCount(it.baseFailCount ?? it.failCount ?? 0);
-      const batchText = it.batch ? `同批處理：${it.batch}` : `同批處理：${todayLocal()}`;
-      const oldNote = String(it.note || "").trim();
+  const mode = $("actionMode")?.value || "";
+  const oldNote = String(it.note || "").trim();
 
-      return {
-        ...it,
-        round: meta.round,
-        failCount: meta.failCount,
-        note: oldNote || `${batchText}，${meta.round}流標／調價確認`
-      };
-    }
+  // 寄賣人自己主動改價：不增加流標次數
+  if (mode === "owner_price_update") {
+    const keepFailCount = String(it.baseFailCount ?? it.failCount ?? "0");
+
+    return {
+      ...it,
+      round: "主動改價",
+      failCount: keepFailCount,
+      note: oldNote || "寄賣人主動要求調整價格"
+    };
+  }
+
+  // 流標通知 / 流標後改價：才自動累計流標次數
+  const meta = roundByFailCount(it.baseFailCount ?? it.failCount ?? 0);
+  const batchText = it.batch ? `同批處理：${it.batch}` : `同批處理：${todayLocal()}`;
+
+  return {
+    ...it,
+    round: meta.round,
+    failCount: meta.failCount,
+    note: oldNote || `${batchText}，${meta.round}流標／調價確認`
+  };
+}
     function syncItemsFromDom(){
       items = Array.from(itemBody.querySelectorAll("tr")).map(getRowData);
       updateSummary();
@@ -717,14 +733,22 @@ const API = {
       $("sumRows").textContent = String(rows.length);
       $("sumChecked").textContent = String(checked);
       $("sumActive").textContent = String(active);
-      $("sumMode").textContent = $("actionMode").value === "price_update" ? "更改價格" : "流標通知";
+      const actionMode = $("actionMode").value; $("sumMode").textContent =   actionMode === "fail_notice" ? "流標通知" :   actionMode === "owner_price_update" ? "主動改價" :   "流標後改價";
       $("sumRound").textContent = $("failRound").value || "-";
 
       const mode = $("actionMode").value;
-      $("pdfTitle").value = mode === "price_update" ? "寄賣價格調整確認單" : "寄賣商品流標通知與調價確認單";
-      $("pdfNote").value = mode === "price_update"
-        ? "以下為目前寄賣商品價格調整與再次上架前確認內容，請寄賣人確認商品價格、起標價與後續處理方式。"
-        : "以下商品本次競標未售出，請寄賣人確認是否同意調整價格後再次上架。若商品累計流標三次，將安排寄回商品，不再繼續寄賣。";
+
+$("pdfTitle").value =
+  mode === "fail_notice" ? "寄賣商品流標通知與調價確認單" :
+  mode === "owner_price_update" ? "寄賣人主動價格調整確認單" :
+  "寄賣商品流標後價格調整確認單";
+
+$("pdfNote").value =
+  mode === "fail_notice"
+    ? "以下商品本次競標未售出，請寄賣人確認是否同意調整價格後再次上架。若商品累計流標三次，將安排寄回商品，不再繼續寄賣。"
+    : mode === "owner_price_update"
+      ? "以下為寄賣人主動提出的價格調整內容，請確認商品原價格與新價格是否正確。"
+      : "以下為流標後寄賣人同意調整價格的確認內容，請確認商品原價格與新價格是否正確。";
     }
 
     function saveDraft(){
@@ -844,10 +868,17 @@ async function loadConsignors(){
 
     async function applyPriceUpdate(){
       syncItemsFromDom();
-      if ($("actionMode").value !== "price_update") {
-        showToast("目前是流標通知模式，不會更新價格");
-        return;
-      }
+      const mode = $("actionMode").value;
+
+if (mode === "fail_notice") {
+  showToast("目前是流標通知模式，只產生 PDF，不會更新價格");
+  return;
+}
+
+if (mode !== "price_update" && mode !== "owner_price_update") {
+  showToast("目前模式不可更新價格");
+  return;
+}
 
       const picked = pickedItems();
       if (!picked.length) { showToast("請先勾選要更新價格的商品"); return; }
@@ -873,9 +904,9 @@ async function loadConsignors(){
           oldStepPrice:numberOnly(it.stepPrice),
           newStartPrice:numberOnly(it.newStartPrice),
           newStepPrice:numberOnly(it.newStepPrice),
-                    round:it.round,
-          failCount:numberOnly(it.failCount),
-          note:it.note
+                    round: mode === "owner_price_update" ? "主動改價" : it.round,
+failCount: mode === "owner_price_update" ? numberOnly(it.baseFailCount) : numberOnly(it.failCount),
+note:it.note
         }))
       };
 
@@ -910,6 +941,7 @@ function buildPrint(){
 
   const mode = $("actionMode").value;
   const isFailNotice = mode === "fail_notice";
+  const isOwnerPriceUpdate = mode === "owner_price_update";
   const picked = pickedItems();
   const pdfRows = picked;
 
@@ -919,16 +951,20 @@ function buildPrint(){
   }
 
   const title = isFailNotice
-    ? "寄賣商品流標通知與是否調價確認單"
-    : "寄賣商品價格調整確認單";
+  ? "寄賣商品流標通知與是否調價確認單"
+  : isOwnerPriceUpdate
+    ? "寄賣人主動價格調整確認單"
+    : "寄賣商品流標後價格調整確認單";
 
   const consignor = $("consignorName").value || (pdfRows[0]?.consignor || "-");
   const docDate = $("docDate").value || todayLocal();
   const due = $("confirmDue").value || "-";
 
   const mainNote = isFailNotice
-    ? "以下商品本次競標未售出，請寄賣人確認後續處理方式。若同意調整價格，請於下方填寫希望調整後的價格，或直接回覆小幫手協助登記。"
-    : "以下為寄賣人已確認後的價格調整內容，請確認商品原價格與新價格是否正確。";
+  ? "以下商品本次競標未售出，請寄賣人確認後續處理方式。若同意調整價格，請於下方填寫希望調整後的價格，或直接回覆小幫手協助登記。"
+  : isOwnerPriceUpdate
+    ? "以下為寄賣人主動提出的價格調整內容，請確認商品原價格與新價格是否正確。"
+    : "以下為流標後寄賣人已確認的價格調整內容，請確認商品原價格與新價格是否正確。";
 
   const ruleHtml = isFailNotice
     ? `<div class="pdf-rule"><b>流標提醒：</b>商品流標後可選擇維持原價再次上架、調整價格後再次上架、暫停寄賣或安排寄回。若商品累計流標三次，將建議寄回或重新討論寄賣方式。</div>`
@@ -1024,7 +1060,7 @@ function buildPrint(){
         <div><b>本次用途：</b>${isFailNotice ? "流標通知 / 詢問是否調整價格" : "更改價格確認"}</div>
         <div><b>回覆期限：</b>${esc(due)}</div>
         <div><b>商品件數：</b>${pdfRows.length} 件</div>
-        <div><b>輪次判斷：</b>依各商品目前流標次數自動判斷</div>
+        <div><b>輪次判斷：</b>${isOwnerPriceUpdate ? "寄賣人主動改價，不累計流標次數" : "依各商品目前流標次數自動判斷"}</div>
       </div>
 
       <p style="font-size:13px;line-height:1.8;margin:0 0 12px;">${esc(mainNote)}</p>
