@@ -2904,9 +2904,23 @@ async function downloadConsignLedger() {
     const resp = await fetch(apiUrl, { method: 'GET' });
     const data = await resp.json().catch(() => ({}));
 
-    if (!resp.ok || !data.ok) {
+        if (!resp.ok || !data.ok) {
       throw new Error(data.detail || data.error || `讀取清冊失敗：HTTP ${resp.status}`);
     }
+
+    // ✅ 只影響「列印資料」產生的寄賣清冊：
+    // 數量 = 0 代表已售出，不顯示在寄賣人清冊 PDF
+    data.items = (Array.isArray(data.items) ? data.items : []).filter(item => {
+      const qty = Number(
+        item.qty ??
+        item.StockQty ??
+        item.stockQty ??
+        item['數量'] ??
+        0
+      );
+
+      return qty > 0;
+    });
 
     const consignor = data.consignor || {};
 const fileBaseName = [
