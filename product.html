@@ -2128,11 +2128,47 @@ $('shortDesc').textContent = shortLine;
       }catch(e){}
     }
 
+    function getProductPageLineUserId(){
+      try { return String(localStorage.getItem('murain_line_user_id') || '').trim(); }
+      catch(e) { return ''; }
+    }
+
+    function getProductPageCustomerName(){
+      try { return String(localStorage.getItem('murain_line_display_name') || '').trim(); }
+      catch(e) { return ''; }
+    }
+
+    async function getCurrentCartQtyForSku(token, sku){
+      if(!token || !sku || token === 'DEMO') return 0;
+
+      try{
+        const r = await fetch(`${API_BASE}/cart/${encodeURIComponent(token)}`);
+        if(!r.ok) return 0;
+
+        const j = await r.json().catch(() => ({}));
+        const items = Array.isArray(j.items) ? j.items : [];
+
+        return items
+          .filter(it => String(it.sku || it.SKU || '').trim() === String(sku).trim())
+          .reduce((n, it) => n + (Number(it.qty || it.Qty || 0) || 0), 0);
+      }catch(e){
+        return 0;
+      }
+    }
+
     async function ensureCart(){
       if(cartToken) return cartToken;
+      const uid = getProductPageLineUserId();
+      const customerName = getProductPageCustomerName();
+
       const res = await jfetch(API_BASE + '/cart/create', {
         method:'POST',
-        body: JSON.stringify({ streamer_name:'官網', customer_type:'web' })
+        body: JSON.stringify({
+          streamer_name:'官網',
+          customer_type:'web',
+          line_user_id: uid,
+          customer_name: customerName
+        })
       });
       if(res && res.cart_token){
         setCartToken(res.cart_token);
@@ -2151,14 +2187,24 @@ $('shortDesc').textContent = shortLine;
     return;
   }
 
+  showToast(goCheckoutAfter ? '處理中...' : '加入中...');
+  const token = await ensureCart();
+
+  const currentInCart = await getCurrentCartQtyForSku(token, currentProduct.sku);
+  const remaining = Math.max(0, stock - currentInCart);
+
+  if(remaining <= 0){
+    showToast('此商品庫存數量已達購物車上限');
+    $('qtyInput').value = '1';
+    return;
+  }
+
   const qty = Math.max(1, Math.min(
-    stock,
+    remaining,
     Number($('qtyInput').value || 1) || 1
   ));
 
   $('qtyInput').value = String(qty);
-  showToast(goCheckoutAfter ? '處理中...' : '加入中...');
-  const token = await ensureCart();
 
   if(isDemoMode){
     updateCartUI(cartCount + qty);
@@ -2169,7 +2215,14 @@ $('shortDesc').textContent = shortLine;
 
   const res = await jfetch(API_BASE + '/cart/add', {
     method:'POST',
-    body: JSON.stringify({ cart_token: token, sku: currentProduct.sku, qty })
+    body: JSON.stringify({
+      cart_token: token,
+      sku: currentProduct.sku,
+      qty,
+      customer_type: 'web',
+      line_user_id: getProductPageLineUserId(),
+      customer_name: getProductPageCustomerName()
+    })
   });
 
   if(res && res.ok === false && (res.error === 'out_of_stock' || res.error === 'insufficient_stock')){
