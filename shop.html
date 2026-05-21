@@ -3980,6 +3980,25 @@ async function previewAddToCart(){
 
     const token = await previewEnsureCart();
 
+    // 官網商品卡：加入前先檢查同 SKU 已在購物車數量
+    try {
+      const cartRes = await fetch(`https://api.murain.tw/cart/${encodeURIComponent(token)}`);
+      if (cartRes.ok) {
+        const cartJson = await cartRes.json().catch(() => ({}));
+        const items = Array.isArray(cartJson.items) ? cartJson.items : [];
+
+        const currentInCart = items
+          .filter(it => String(it.sku || it.SKU || '').trim() === String(sku).trim())
+          .reduce((n, it) => n + (Number(it.qty || it.Qty || 0) || 0), 0);
+
+        if (currentInCart >= stock) {
+          alert('此商品庫存數量已達購物車上限，無法再加入。');
+          updatePreviewCartButton(previewProduct);
+          return;
+        }
+      }
+    } catch(e) {}
+
     const res = await fetch('https://api.murain.tw/cart/add', {
       method:'POST',
       headers:{ 'content-type':'application/json' },
@@ -4011,8 +4030,11 @@ async function previewAddToCart(){
 
       if(
         json.error === 'out_of_stock' ||
+        json.error === 'insufficient_stock' ||
         json.code === 'out_of_stock' ||
-        String(json.message || '').includes('缺貨')
+        json.code === 'insufficient_stock' ||
+        String(json.message || '').includes('缺貨') ||
+        String(json.message || '').includes('庫存')
       ){
         updatePreviewCartButton({ ...previewProduct, stock: 0 });
       }else{
