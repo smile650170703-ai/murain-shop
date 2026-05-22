@@ -436,7 +436,7 @@
   <th style="width:240px">Name</th>
   <th style="width:120px">寄賣人</th>
   <th style="width:86px">數量</th>
-  <th style="width:120px">本次調整</th>
+ <th style="width:120px">本次確認</th>
   <th style="width:120px">目前起標價格</th>
   <th style="width:110px">目前一標多少</th>
   <th style="width:130px">新起標價格</th>
@@ -694,9 +694,9 @@ function displayRoundLabel(it){
     usedCount === 1 ? "第二次" :
     "第三次";
 
-  return mode === "fail_notice"
+    return mode === "fail_notice"
     ? `${nextRound}流標`
-    : `${nextRound}調整`;
+    : `${nextRound}確認`;
 }
 
 function applyAutoMetaToItem(it){
@@ -815,10 +815,10 @@ $("pdfTitle").value =
 
 $("pdfNote").value =
   mode === "fail_notice"
-    ? "以下商品本次競標未售出，請寄賣人確認是否同意調整價格後再次上架。若商品累計流標三次，將安排寄回商品，不再繼續寄賣。"
+    ? "以下商品本次競標未售出，請寄賣人確認是否維持原價格或調整價格後再次上架。若商品累計流標三次，將安排寄回商品，不再繼續寄賣。"
     : mode === "owner_price_update"
       ? "以下為寄賣人主動提出的價格調整結果，請確認調整後起標價格與調整後一標多少是否正確。"
-      : "以下為流標後寄賣人同意的價格調整結果，請確認調整後起標價格與調整後一標多少是否正確。";
+      : "以下為流標後寄賣人確認再次上架的價格內容，請確認確認後起標價格與確認後一標多少是否正確。";
     }
 
     function saveDraft(){
@@ -1028,9 +1028,18 @@ function buildPrint(){
   const picked = pickedItems();
   const pdfRows = picked;
 
-  if (!pdfRows.length) {
+   if (!pdfRows.length) {
     showToast("請先勾選至少一筆商品");
     return false;
+  }
+
+  if (mode === "price_update") {
+    const overLimit = pdfRows.filter(it => Number(it.baseFailCount || 0) >= 3);
+
+    if (overLimit.length) {
+      showPopup(`有 ${overLimit.length} 筆商品已完成三次流標後價格調整，不可再產生調價確認單，請改安排寄回或另外處理。`);
+      return false;
+    }
   }
 
   const title = isFailNotice
@@ -1043,15 +1052,15 @@ function buildPrint(){
   const docDate = $("docDate").value || todayLocal();
   const due = $("confirmDue").value || "-";
 
-   const mainNote = isFailNotice
-  ? "以下商品本次競標未售出，請寄賣人確認後續處理方式。若同意調整價格，請於下方填寫希望調整後的價格，或直接回覆小幫手協助登記。"
+    const mainNote = isFailNotice
+  ? "以下商品本次競標未售出，請寄賣人確認後續處理方式。可選擇維持原價格再次上架，或填寫希望調整後的價格再次上架。"
   : isOwnerPriceUpdate
     ? "以下為寄賣人主動提出的價格調整結果，請確認調整後起標價格與調整後一標多少是否正確。"
-    : "以下為流標後寄賣人已確認的價格調整結果，請確認調整後起標價格與調整後一標多少是否正確。";
+    : "以下為流標後寄賣人確認再次上架的價格內容；不論維持原價格或更改價格，請確認下方價格是否正確。";
 
   const ruleHtml = isFailNotice
     ? `<div class="pdf-rule"><b>流標提醒：</b>商品流標後可選擇維持原價再次上架、調整價格後再次上架、暫停寄賣或安排寄回。若商品累計流標三次，將建議寄回或重新討論寄賣方式。</div>`
-    : `<div class="pdf-rule"><b>價格調整確認：</b>本確認單用於確認寄賣商品調整後的起標價格與一標加價金額。確認後，系統才會依新價格再次上架或後續處理。</div>`;
+    : `<div class="pdf-rule"><b>再次上架價格確認：</b>本確認單用於確認流標後再次上架的起標價格與一標加價金額；價格可維持原設定或依寄賣人同意內容調整。確認後，系統才會依確認後價格再次上架或後續處理。</div>`;
 
   const headerHtml = isFailNotice
     ? `
@@ -1067,16 +1076,16 @@ function buildPrint(){
         <th>寄賣人選擇</th>
       </tr>
     `
-        : `
+            : `
       <tr>
         <th>序</th>
         <th>截圖</th>
         <th>SKU</th>
         <th>Name</th>
         <th>數量</th>
-        <th>本次調整</th>
-        <th>調整後起標價格</th>
-        <th>調整後一標多少</th>
+        <th>本次確認</th>
+        <th>確認後起標價格</th>
+        <th>確認後一標多少</th>
       </tr>
     `;
 
@@ -1107,9 +1116,9 @@ function buildPrint(){
         </tr>`;
     }
 
-        const adjustmentText = isOwnerPriceUpdate
+       const adjustmentText = isOwnerPriceUpdate
       ? "主動改價"
-      : `${itemRound}調整`;
+      : `${itemRound}確認`;
 
     return `
       <tr>
