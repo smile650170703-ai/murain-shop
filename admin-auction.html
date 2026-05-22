@@ -232,9 +232,7 @@
   display:none;
 }
 
-/* 網頁上隱藏：本次輪次、本次流標次數欄位；資料仍保留給 PDF / 更新資料庫使用 */
-.table-wrap table th:nth-child(6),
-.table-wrap table td:nth-child(6),
+/* 網頁上只隱藏：本次流標次數；第 6 欄顯示本次調整 */
 .table-wrap table th:nth-child(11),
 .table-wrap table td:nth-child(11){
   display:none;
@@ -438,7 +436,7 @@
   <th style="width:240px">Name</th>
   <th style="width:120px">寄賣人</th>
   <th style="width:86px">數量</th>
-  <th style="width:110px">本次輪次</th>
+  <th style="width:120px">本次調整</th>
   <th style="width:120px">目前起標價格</th>
   <th style="width:110px">目前一標多少</th>
   <th style="width:130px">新起標價格</th>
@@ -669,12 +667,37 @@ async function withButtonLoading(btn, loadingText, task){
         note: ""
       };
     }
-    function roundByFailCount(n){
+        function roundByFailCount(n){
       const c = Math.max(0, Number(String(n ?? "0").replace(/[^\d.-]/g, "")) || 0);
       const next = Math.min(c + 1, 3);
       const label = next === 1 ? "第一次" : next === 2 ? "第二次" : "第三次";
       return { round: label, failCount: String(next) };
     }
+
+function displayRoundLabel(it){
+  const mode = $("actionMode")?.value || "";
+  const usedCount = Math.max(
+    0,
+    Number(String(it.baseFailCount ?? it.failCount ?? "0").replace(/[^\d.-]/g, "")) || 0
+  );
+
+  if (mode === "owner_price_update") {
+    return "主動改價";
+  }
+
+  if (usedCount >= 3) {
+    return "已達三次上限";
+  }
+
+  const nextRound =
+    usedCount === 0 ? "第一次" :
+    usedCount === 1 ? "第二次" :
+    "第三次";
+
+  return mode === "fail_notice"
+    ? `${nextRound}流標`
+    : `${nextRound}調整`;
+}
 
 function applyAutoMetaToItem(it){
   if (!it.checked) return it;
@@ -744,7 +767,7 @@ function applyAutoMetaToItem(it){
             </td>
 
             <td>
-              <span class="auto-pill">${esc(it.round || "-")}</span>
+              <span class="auto-pill">${esc(displayRoundLabel(it))}</span>
               <input data-k="round" type="hidden" value="${esc(it.round || "")}">
             </td>
 
@@ -794,8 +817,8 @@ $("pdfNote").value =
   mode === "fail_notice"
     ? "以下商品本次競標未售出，請寄賣人確認是否同意調整價格後再次上架。若商品累計流標三次，將安排寄回商品，不再繼續寄賣。"
     : mode === "owner_price_update"
-      ? "以下為寄賣人主動提出的價格調整內容，請確認商品原價格與新價格是否正確。"
-      : "以下為流標後寄賣人同意調整價格的確認內容，請確認商品原價格與新價格是否正確。";
+      ? "以下為寄賣人主動提出的價格調整結果，請確認調整後起標價格與調整後一標多少是否正確。"
+      : "以下為流標後寄賣人同意的價格調整結果，請確認調整後起標價格與調整後一標多少是否正確。";
     }
 
     function saveDraft(){
@@ -930,8 +953,17 @@ if (mode !== "price_update" && mode !== "owner_price_update") {
   return;
 }
 
-      const picked = pickedItems();
+            const picked = pickedItems();
       if (!picked.length) { showToast("請先勾選要更新價格的商品"); return; }
+
+      if (mode === "price_update") {
+        const overLimit = picked.filter(it => Number(it.baseFailCount || 0) >= 3);
+
+        if (overLimit.length) {
+          showPopup(`有 ${overLimit.length} 筆商品已完成三次流標後價格調整，不可再更新價格，請改安排寄回或另外處理。`);
+          return;
+        }
+      }
 
       const invalid = picked.filter(it => !it.newStartPrice && !it.newStepPrice);
       if (invalid.length) { showToast("勾選商品請至少填新起標價格或新一標多少"); return; }
@@ -1011,11 +1043,11 @@ function buildPrint(){
   const docDate = $("docDate").value || todayLocal();
   const due = $("confirmDue").value || "-";
 
-  const mainNote = isFailNotice
+   const mainNote = isFailNotice
   ? "以下商品本次競標未售出，請寄賣人確認後續處理方式。若同意調整價格，請於下方填寫希望調整後的價格，或直接回覆小幫手協助登記。"
   : isOwnerPriceUpdate
-    ? "以下為寄賣人主動提出的價格調整內容，請確認商品原價格與新價格是否正確。"
-    : "以下為流標後寄賣人已確認的價格調整內容，請確認商品原價格與新價格是否正確。";
+    ? "以下為寄賣人主動提出的價格調整結果，請確認調整後起標價格與調整後一標多少是否正確。"
+    : "以下為流標後寄賣人已確認的價格調整結果，請確認調整後起標價格與調整後一標多少是否正確。";
 
   const ruleHtml = isFailNotice
     ? `<div class="pdf-rule"><b>流標提醒：</b>商品流標後可選擇維持原價再次上架、調整價格後再次上架、暫停寄賣或安排寄回。若商品累計流標三次，將建議寄回或重新討論寄賣方式。</div>`
@@ -1035,18 +1067,16 @@ function buildPrint(){
         <th>寄賣人選擇</th>
       </tr>
     `
-    : `
+        : `
       <tr>
         <th>序</th>
         <th>截圖</th>
         <th>SKU</th>
         <th>Name</th>
         <th>數量</th>
-        <th>本次狀態</th>
-        <th>原起標價格</th>
-        <th>原一標多少</th>
-        <th>新起標價格</th>
-        <th>新一標多少</th>
+        <th>本次調整</th>
+        <th>調整後起標價格</th>
+        <th>調整後一標多少</th>
       </tr>
     `;
 
@@ -1077,6 +1107,10 @@ function buildPrint(){
         </tr>`;
     }
 
+        const adjustmentText = isOwnerPriceUpdate
+      ? "主動改價"
+      : `${itemRound}調整`;
+
     return `
       <tr>
         <td style="text-align:center;">${i + 1}</td>
@@ -1084,11 +1118,9 @@ function buildPrint(){
         <td>${esc(it.sku || "-")}</td>
         <td>${esc(it.name || "-")}</td>
         <td style="text-align:center;">${esc(it.qty || "-")}</td>
-        <td>${esc(itemRound)}調整</td>
-        <td>${money(it.startPrice)}</td>
-        <td>${money(it.stepPrice)}</td>
-       <td>${money(afterStart)}</td>
-<td>${money(afterStep)}</td>
+        <td>${esc(adjustmentText)}</td>
+        <td>${money(afterStart)}</td>
+        <td>${money(afterStep)}</td>
       </tr>`;
   }).join("");
 
@@ -1571,7 +1603,15 @@ itemBody.addEventListener("keydown", (e) => {
       render();
     });
 
-    ["batchNo","actionMode","failRound"].forEach(id => { $(id).addEventListener("change", updateSummary); });
+       ["batchNo","failRound"].forEach(id => {
+      $(id).addEventListener("change", updateSummary);
+    });
+
+    $("actionMode").addEventListener("change", () => {
+      syncItemsFromDom();
+      items = items.map(applyAutoMetaToItem);
+      render();
+    });
    $("btnFetch").addEventListener("click", () => {
   withButtonLoading($("btnFetch"), "查詢中…", fetchProducts);
 });
