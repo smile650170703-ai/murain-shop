@@ -2057,6 +2057,12 @@ body.product-detail-page{
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.86), 0 8px 18px rgba(126,82,58,.055) !important;
 }
 
+.product-detail-page .thumb-btn img{
+  object-fit:cover !important;
+  padding:0 !important;
+  transform:scale(1.12);
+}
+
 .product-detail-page .gallery-arrow{
   width:34px !important;
   height:34px !important;
@@ -2227,6 +2233,23 @@ body.product-detail-page{
   box-shadow:0 12px 24px rgba(79,50,38,.13), inset 0 1px 0 rgba(255,255,255,.14);
 }
 
+.product-detail-page .soldout-cta{
+  width:100%;
+  min-height:54px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:999px;
+  border:1px solid rgba(151,111,70,.22);
+  background:linear-gradient(180deg, rgba(255,255,253,.88), rgba(244,237,230,.82));
+  color:#8f7a71;
+  font-size:13px;
+  font-weight:750;
+  letter-spacing:.16em;
+  cursor:not-allowed;
+  box-shadow:none;
+}
+
 .product-detail-page .share-row{
   gap:9px !important;
 }
@@ -2356,7 +2379,7 @@ body.product-detail-page{
 
 @media (max-width:767px){
   body.product-detail-page{
-    padding-bottom:calc(176px + env(safe-area-inset-bottom)) !important;
+    padding-bottom:calc(96px + env(safe-area-inset-bottom)) !important;
   }
 
   .product-detail-page .page-wrap{
@@ -2390,6 +2413,12 @@ body.product-detail-page{
     width:54px !important;
     height:54px !important;
     border-radius:14px !important;
+  }
+
+  .product-detail-page .thumb-btn img{
+    object-fit:cover !important;
+    padding:0 !important;
+    transform:scale(1.16);
   }
 
   .product-detail-page .info-card{
@@ -2538,6 +2567,11 @@ body.product-detail-page{
   }
 
   .product-detail-page .locked-member-cta{
+    min-height:52px;
+    font-size:12.5px;
+  }
+
+  .product-detail-page .soldout-cta{
     min-height:52px;
     font-size:12.5px;
   }
@@ -2769,6 +2803,7 @@ body.product-detail-page{
                   </div>
 
                   <a class="locked-member-cta" id="lockedMemberCta" href="/member.html" style="display:none;">登入／綁定查看會員價</a>
+                  <button class="soldout-cta" id="soldoutCta" type="button" disabled style="display:none;">已售完</button>
                 </div>
               </div>
 
@@ -2865,6 +2900,7 @@ body.product-detail-page{
 const PRODUCT_API_BASE = API_BASE + '/product/';
 const CART_KEY = 'MURAIN_WEB_CART_TOKEN';
 const LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
+const PRODUCT_BIND_LIFF_ID = '2008430261-kOeNLR9x';
     
     let cartToken = '';
     let cartCount = 0;
@@ -2957,6 +2993,12 @@ const LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
       return `https://murain.tw/product.html?sku=${encodeURIComponent(sku || '')}`;
     }
 
+    function getProductBindUrl(){
+      const returnUrl = getOfficialProductUrl();
+      const pageUrl = `https://murain.tw/line_bind_member.html?return_url=${encodeURIComponent(returnUrl)}`;
+      return `https://liff.line.me/${PRODUCT_BIND_LIFF_ID}?url=${encodeURIComponent(pageUrl)}`;
+    }
+
     function showToast(msg){
       const el = $('toast');
       el.textContent = msg;
@@ -3031,10 +3073,11 @@ function updateMobileBuyBar(product){
 
   const stock = Math.max(0, Number(product.stockQty || 0) || 0);
   const locked = product.memberPriceLocked === true;
-  price.dataset.label = locked ? '登入後查看' : '優惠價';
-  price.textContent = locked ? '會員價' : formatMoney(product.price || 0);
+  const soldOut = stock <= 0;
+  price.dataset.label = soldOut ? '目前狀態' : (locked ? '登入後查看' : '優惠價');
+  price.textContent = soldOut ? '已售完' : (locked ? '會員價' : formatMoney(product.price || 0));
   btn.disabled = locked || stock <= 0;
-  btn.textContent = locked ? '登入查看' : (stock <= 0 ? '已售完' : '直接購買');
+  btn.textContent = soldOut ? '已售完' : (locked ? '登入查看' : '直接購買');
 
   refreshMobileBuyBarVisibility();
 }
@@ -3089,13 +3132,17 @@ function updatePurchaseDisplay(product){
   const qtySection = $('qtySection');
   const actionGrid = document.querySelector('.action-grid');
   const lockedCta = $('lockedMemberCta');
-  if(!qtySection || !actionGrid || !lockedCta || !product) return;
+  const soldoutCta = $('soldoutCta');
+  if(!qtySection || !actionGrid || !lockedCta || !soldoutCta || !product) return;
 
   const stock = Math.max(0, Number(product.stockQty || 0) || 0);
-  const showMemberCta = product.memberPriceLocked === true && stock > 0;
-  qtySection.style.display = showMemberCta ? 'none' : '';
-  actionGrid.style.display = showMemberCta ? 'none' : '';
+  const isSoldOut = stock <= 0;
+  const showMemberCta = !isSoldOut && product.memberPriceLocked === true;
+  qtySection.style.display = (isSoldOut || showMemberCta) ? 'none' : '';
+  actionGrid.style.display = (isSoldOut || showMemberCta) ? 'none' : '';
   lockedCta.style.display = showMemberCta ? 'flex' : 'none';
+  lockedCta.href = getProductBindUrl();
+  soldoutCta.style.display = isSoldOut ? 'flex' : 'none';
 }
 
     function applyStockUI(product){
@@ -3218,14 +3265,16 @@ function buildBreadcrumb(product){
       $('productTitle').textContent = product.title || product.sku || '商品頁';
 
       const locked = product.memberPriceLocked === true;
+      const stock = Math.max(0, Number(product.stockQty || 0) || 0);
+      const soldOut = stock <= 0;
       const hasPrice = product.price != null && product.price > 0;
-      const hasDiscount = !locked && hasPrice && product.listPrice != null && product.listPrice > product.price;
-      $('salePrice').textContent = locked ? '會員專屬價格' : formatMoney(product.price || 0);
+      const hasDiscount = !soldOut && !locked && hasPrice && product.listPrice != null && product.listPrice > product.price;
+      $('salePrice').textContent = soldOut ? '已售完' : (locked ? '會員專屬價格' : formatMoney(product.price || 0));
       $('listPrice').style.display = hasDiscount ? '' : 'none';
       $('listPrice').textContent = hasDiscount ? formatMoney(product.listPrice) : '';
       $('discountTag').style.display = hasDiscount ? '' : 'none';
-      $('priceHint').style.display = locked ? '' : 'none';
-      $('priceHint').textContent = locked ? '登入並完成會員綁定後即可查看' : '';
+      $('priceHint').style.display = (!soldOut && locked) ? '' : 'none';
+      $('priceHint').textContent = (!soldOut && locked) ? '登入並完成會員綁定後即可查看' : '';
       updatePurchaseDisplay(product);
       if(hasDiscount){
         const off = Math.round((1 - product.price / product.listPrice) * 100);
