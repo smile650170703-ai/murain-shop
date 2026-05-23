@@ -1417,6 +1417,51 @@ async function enterMemberCenterWithSharedUid(uid) {
 
   return true;
 }
+
+async function enterMemberCenterWithSession() {
+  try {
+    const res = await fetch(MEMBER_INFO_API, {
+      credentials: "include"
+    });
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok || !json?.ok) return false;
+
+    const uid = String(json.user_id || json.userId || json.line_user_id || "").trim();
+    if (!uid) return false;
+
+    currentUserId = uid;
+    memberInfo = json;
+    setSharedLineUserId(uid);
+
+    const displayName = pickMemberDisplayName(memberInfo);
+    const pictureUrl = pickMemberPictureUrl(memberInfo);
+
+    userName.textContent = displayName || "貴賓";
+
+    if (pictureUrl) {
+      defaultAvatar.style.display = "none";
+      userAvatarImg.style.display = "block";
+      userAvatarImg.src = pictureUrl;
+    } else {
+      defaultAvatar.style.display = "";
+      userAvatarImg.style.display = "none";
+      userAvatarImg.removeAttribute("src");
+    }
+
+    statusText.textContent = "歡迎回來";
+    creditValue.textContent = "讀取中...";
+    showMemberMainSections();
+
+    await loadOrders();
+    await loadCredits();
+
+    return true;
+  } catch (e) {
+    console.log("[member session restore failed]", e);
+    return false;
+  }
+}
 function getBindReturnUrl() {
   // ✅ 綁定完成後也回正常 member.html，不要回 liff.line.me 包住的會員中心
   return buildCleanMemberReturnUrl({ from_bind: "1" });
@@ -3150,7 +3195,12 @@ async function initLiff() {
       return;
     }
 
-    // ✅ 第一優先：吃全站共用登入狀態
+    // ✅ 第一優先：直接用後端 HttpOnly session 還原會員狀態
+    // 商品頁、購物車、結帳都以同一顆 murain_member_session cookie 為準。
+    const sessionOk = await enterMemberCenterWithSession();
+    if (sessionOk) return;
+
+    // ✅ 第二優先：吃全站共用登入狀態
     // 商品頁 / 官網購物車 / 結帳頁已存 murain_line_user_id，就先用它查會員。
     const sharedUid = getSharedLineUserId();
     if (sharedUid) {
