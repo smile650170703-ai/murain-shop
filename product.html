@@ -2909,6 +2909,7 @@ const PRODUCT_BIND_LIFF_ID = '2008430261-kOeNLR9x';
     let currentImages = [];
     let currentIdx = 0;
     let allItems = [];
+    let authReturnRefreshRunning = false;
 
     const $ = (id) => document.getElementById(id);
     const params = new URLSearchParams(location.search);
@@ -3340,6 +3341,7 @@ function buildBreadcrumb(product){
       const related = allItems
         .map(normalizeProduct)
         .filter(x => x.sku && x.sku !== product.sku)
+        .filter(x => Math.max(0, Number(x.stockQty || 0) || 0) > 0)
         .filter(x => (product.category && x.category === product.category) || (product.brand && x.brand === product.brand))
         .slice(0, 8);
 
@@ -3556,7 +3558,10 @@ function buildBreadcrumb(product){
     }
 async function fetchRelatedItems(product){
   try{
-    const res = await fetch(`${API_BASE}/public/products-paged`);
+    const relatedUrl = new URL(`${API_BASE}/public/products-paged`);
+    relatedUrl.searchParams.set('in_stock', '1');
+    relatedUrl.searchParams.set('limit', '24');
+    const res = await fetch(relatedUrl.toString(), { credentials:'include' });
     const json = await res.json();
     allItems = Array.isArray(json.items) ? json.items : [];
     renderRelated(product);
@@ -3607,6 +3612,36 @@ async function fetchProduct(){
   }catch(err){
     $('loading').style.display = 'none';
     $('notFound').style.display = '';
+  }
+}
+
+function hasAuthReturn(){
+  try{
+    return new URL(location.href).searchParams.get('auth_return') === '1';
+  }catch(e){
+    return false;
+  }
+}
+
+function clearAuthReturnParams(){
+  try{
+    const u = new URL(location.href);
+    if(!u.searchParams.has('auth_return') && !u.searchParams.has('t')) return;
+    u.searchParams.delete('auth_return');
+    u.searchParams.delete('t');
+    history.replaceState({}, '', u.toString());
+  }catch(e){}
+}
+
+async function refreshAfterAuthReturn(){
+  if(authReturnRefreshRunning || !hasAuthReturn()) return;
+  authReturnRefreshRunning = true;
+  try{
+    await restoreCart();
+    await fetchProduct();
+    clearAuthReturnParams();
+  }finally{
+    authReturnRefreshRunning = false;
   }
 }
 
@@ -3758,6 +3793,7 @@ async function fetchProduct(){
 
       await restoreCart();
       await fetchProduct();
+      if(hasAuthReturn()) clearAuthReturnParams();
 
       $('cartBtn').addEventListener('click', goCheckout);
       $('addCartBtn').addEventListener('click', () => addToCartAndMaybeCheckout(false));
@@ -3765,7 +3801,16 @@ async function fetchProduct(){
     });
 
     window.addEventListener('focus', async () => {
-      await restoreCart();
+      if(hasAuthReturn()) await refreshAfterAuthReturn();
+      else await restoreCart();
+    });
+
+    window.addEventListener('pageshow', async (event) => {
+      if(event.persisted || hasAuthReturn()) await refreshAfterAuthReturn();
+    });
+
+    document.addEventListener('visibilitychange', async () => {
+      if(!document.hidden && hasAuthReturn()) await refreshAfterAuthReturn();
     });
   </script>
   <button class="back-to-top" id="backToTop" type="button" aria-label="回到最上方">
