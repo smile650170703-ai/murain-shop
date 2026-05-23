@@ -2781,7 +2781,9 @@ async function loadCheckoutMemberByUid(uidForApi, profile = null){
 
   // 1) 會員資料（名字 / 電話 / 地址）用 member-info
   try {
-    const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(uidForApi)}`);
+    const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(uidForApi)}`, {
+      credentials: 'include'
+    });
     const j = await r.json().catch(() => ({}));
     console.log("member-info 回來長這樣:", j);
 
@@ -2803,7 +2805,8 @@ async function loadCheckoutMemberByUid(uidForApi, profile = null){
   // 2) ✅ 購物金餘額：用 credit-balance（唯一真相）
   try {
     const b = await jfetch(
-      `${API}/member/credit-balance?line_user_id=${encodeURIComponent(uidForApi)}&cart_token=${encodeURIComponent(cartToken || '')}`
+      `${API}/member/credit-balance?line_user_id=${encodeURIComponent(uidForApi)}&cart_token=${encodeURIComponent(cartToken || '')}`,
+      { credentials: 'include' }
     );
 
     if (!b || !b.ok) {
@@ -2889,6 +2892,16 @@ async function initLiffAndMember() {
       LINE_PROFILE = profile;
 
       uidForApi = profile.userId || uidForApi;
+
+      const idToken = String(liff.getIDToken?.() || '').trim();
+      if (idToken) {
+        await fetch(`${API}/line/auth/session`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ id_token: idToken })
+        }).catch(e => console.log('line auth session failed', e));
+      }
     }
   } catch (e) {
     console.log('getProfile failed, fallback to user_id/localStorage', e);
@@ -5679,6 +5692,7 @@ shipping_info.cart_source = CART_CUSTOMER_TYPE || '';
     // 呼叫後端 checkout
     const resp = await jfetch(`${API}/checkout`, {
       method: 'POST',
+      credentials: 'include',
       body: JSON.stringify(payload)
     });
 

@@ -1285,6 +1285,21 @@ const LIFF_ID     = "2008430261-EGZPg3Qp";
   // ✅ 會員中心固定回跳正常官網網址，不要回到 liff.line.me 裡
 const MEMBER_NORMAL_URL = "https://murain.tw/member.html";
 
+async function createMemberAuthSessionFromLiff() {
+  if (!window.liff || !liff.isLoggedIn()) return false;
+  const idToken = String(liff.getIDToken?.() || "").trim();
+  if (!idToken) return false;
+
+  const res = await fetch(API_BASE + "/line/auth/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ id_token: idToken })
+  });
+  const json = await res.json().catch(() => ({}));
+  return !!(res.ok && json && json.ok);
+}
+
 function buildCleanMemberReturnUrl(extraParams = {}) {
   const u = new URL(MEMBER_NORMAL_URL);
 
@@ -2902,7 +2917,7 @@ async function loadCredits() {
 
   try {
     const url = CREDITS_API + "?line_user_id=" + encodeURIComponent(currentUserId);
-    const res = await fetch(url);
+    const res = await fetch(url, { credentials: "include" });
 
     const text = await res.text();
     let json = null;
@@ -2962,7 +2977,7 @@ async function loadConsigns() {
 
   try {
     const url = CONSIGN_API + "?line_user_id=" + encodeURIComponent(currentUserId);
-    const res = await fetch(url);
+    const res = await fetch(url, { credentials: "include" });
 
     const text = await res.text();
     let json = null;
@@ -3005,7 +3020,9 @@ async function loadMemberInfo() {
   if (!currentUserId) return false;
 
   try {
-    const res = await fetch(MEMBER_INFO_API + "?user_id=" + encodeURIComponent(currentUserId));
+    const res = await fetch(MEMBER_INFO_API + "?user_id=" + encodeURIComponent(currentUserId), {
+      credentials: "include"
+    });
     const json = await res.json().catch(() => ({}));
 
     if (res.ok && json.ok) {
@@ -3052,7 +3069,7 @@ return true;
 
   try {
     const url = MEMBER_API + "?line_user_id=" + encodeURIComponent(currentUserId);
-    const res = await fetch(url);
+    const res = await fetch(url, { credentials: "include" });
     console.log("[loadOrders] res", res.status, res.ok);
 
     let json = null;
@@ -3151,6 +3168,7 @@ async function initLiff() {
 
     const profile = await liff.getProfile();
     currentUserId = profile.userId;
+    await createMemberAuthSessionFromLiff().catch(e => console.log("[member auth session failed]", e));
 
     setSharedLineUserId(currentUserId);
 
@@ -3319,10 +3337,10 @@ async function initLiff() {
       const r = await fetch(`${HOME_API}/cart/create`, {
         method:'POST',
         headers:{ 'content-type':'application/json' },
+        credentials:'include',
         body: JSON.stringify({
           streamer_name:'官網',
           customer_type:'web',
-          line_user_id: uid,
           customer_name:'',
           restore_only:true
         })
