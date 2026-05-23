@@ -333,11 +333,14 @@ if (memberCheckResult !== "not_found") return;
 setStatusMsg("");
         } catch (e) {
           console.error(e);
-          setStatusMsg("初始化失敗");
           // 預覽模式
           if (!navigator.userAgent.includes("Line")) {
             setLineProfile({ displayName: "預覽用戶", userId: "U123", pictureUrl: "" });
+            setMemberCheckFailed(false);
             setStatusMsg("");
+          } else {
+            setMemberCheckFailed(true);
+            setStatusMsg("目前無法確認會員狀態，請稍後再試");
           }
         }
       }
@@ -396,6 +399,32 @@ setStatusMsg("");
         }
         if (step === 1 && !formData.phone) return alert("請輸入手機號碼");
         setStep((p) => p + 1);
+      }
+
+      function handleRetryLineLogin() {
+        setMemberCheckFailed(false);
+        setStatusMsg("重新確認 LINE 登入狀態...");
+
+        try {
+          if (!window.liff) {
+            window.location.reload();
+            return;
+          }
+
+          if (window.liff.isLoggedIn && window.liff.isLoggedIn()) {
+            const idToken = window.liff.getIDToken?.() || "";
+            if (idToken) {
+              window.location.reload();
+              return;
+            }
+
+            try { window.liff.logout(); } catch (e) {}
+          }
+
+          window.liff.login({ scope: "profile openid email" });
+        } catch (e) {
+          window.location.reload();
+        }
       }
 
       function handleBack() { if (step > 0) setStep((p) => p - 1); }
@@ -527,6 +556,13 @@ setTimeout(goAfterBind, alreadyBound ? 1200 : 1500);
                   <p className="text-white/50 text-xs font-light leading-loose mb-6 tracking-wider">
                     {statusMsg}
                   </p>
+                )}
+
+                {memberCheckFailed && (
+                  <button onClick={handleRetryLineLogin}
+                    className="btn-gold w-full py-4 rounded-sm font-bold text-xs tracking-[0.2em] uppercase mb-3">
+                    重新確認 LINE 登入
+                  </button>
                 )}
 
                 <button onClick={handleNext} disabled={!lineProfile || memberCheckFailed}
