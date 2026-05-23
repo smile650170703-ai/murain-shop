@@ -3411,12 +3411,57 @@ function buildBreadcrumb(product){
       }
     }
 
+    function refreshWishBadge(){
+      const badge = $('wishBadge');
+      if(!badge) return;
+
+      let count = 0;
+      try{
+        const list = JSON.parse(localStorage.getItem('xuyuan_wishlist_v1') || '[]');
+        count = Array.isArray(list) ? list.length : 0;
+      }catch(e){
+        count = 0;
+      }
+
+      badge.textContent = String(count);
+      badge.hidden = count <= 0;
+    }
+
+    async function restoreOpenWebCartToken(){
+      try{
+        const res = await jfetch(API_BASE + '/cart/create', {
+          method:'POST',
+          credentials:'include',
+          body: JSON.stringify({
+            streamer_name:'官網',
+            customer_type:'web',
+            customer_name: getProductPageCustomerName(),
+            restore_only:true
+          })
+        });
+
+        const token = String(res?.cart_token || '').trim();
+        if(token){
+          setCartToken(token);
+          return token;
+        }
+      }catch(e){}
+
+      return '';
+    }
+
     async function restoreCart(){
-      const saved = localStorage.getItem(CART_KEY);
-      if(!saved) return;
+      let saved = '';
+      try { saved = String(localStorage.getItem(CART_KEY) || '').trim(); } catch(e) {}
+      if(!saved) saved = await restoreOpenWebCartToken();
+      if(!saved) {
+        updateCartUI(0);
+        return;
+      }
+
       setCartToken(saved);
       try{
-        const r = await fetch(`${API_BASE}/cart/${encodeURIComponent(saved)}`);
+        const r = await fetch(`${API_BASE}/cart/${encodeURIComponent(saved)}`, { credentials:'include' });
         if(!r.ok) return;
         const j = await r.json();
         let c = 0;
@@ -3604,6 +3649,8 @@ async function fetchProduct(){
       allItems = [];
       renderProductPage(product);
       fetchRelatedItems(product);
+      restoreCart();
+      refreshWishBadge();
     }else{
       $('loading').style.display = 'none';
       $('notFound').style.display = '';
@@ -3783,6 +3830,7 @@ async function refreshAfterAuthReturn(){
       bindGallery();
       bindShare();
       bindMobileBuyBar();
+      refreshWishBadge();
 
       if(!productSku){
         $('loading').style.display = 'none';
@@ -3802,6 +3850,7 @@ async function refreshAfterAuthReturn(){
     window.addEventListener('focus', async () => {
       if(hasAuthReturn()) await refreshAfterAuthReturn();
       else await restoreCart();
+      refreshWishBadge();
     });
 
     window.addEventListener('pageshow', async (event) => {
@@ -3810,6 +3859,11 @@ async function refreshAfterAuthReturn(){
 
     document.addEventListener('visibilitychange', async () => {
       if(!document.hidden && hasAuthReturn()) await refreshAfterAuthReturn();
+      if(!document.hidden) refreshWishBadge();
+    });
+
+    window.addEventListener('storage', (e) => {
+      if(e.key === 'xuyuan_wishlist_v1') refreshWishBadge();
     });
   </script>
   <button class="back-to-top" id="backToTop" type="button" aria-label="回到最上方">

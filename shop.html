@@ -2581,6 +2581,7 @@ const SHOP_MEMBER_LOGIN_PENDING_KEY = 'murain_shop_member_login_pending';
 
 let SHOP_MEMBER_INFO = null;
 let SHOP_MEMBER_CHECKING = null;
+let SHOP_MEMBER_JUST_RESTORED = false;
 
 function shopApiBase(){
   return (typeof HOME_API !== 'undefined' && HOME_API)
@@ -2606,6 +2607,31 @@ function cleanShopLiffLoginUrl(){
     if (u.toString() !== location.href) {
       history.replaceState({}, '', u.toString());
     }
+  } catch(e) {}
+}
+
+function hasShopLiffLoginParams(){
+  try {
+    const qs = new URLSearchParams(location.search || '');
+    return (
+      qs.has('code') ||
+      qs.has('state') ||
+      qs.has('liffClientId') ||
+      qs.has('liff.state') ||
+      qs.has('liffState')
+    );
+  } catch(e) {
+    return false;
+  }
+}
+
+function clearShopProductCache(){
+  try {
+    Object.keys(sessionStorage).forEach(k => {
+      if (k.startsWith('SHOP_LIST_CACHE_V2|')) {
+        sessionStorage.removeItem(k);
+      }
+    });
   } catch(e) {}
 }
 
@@ -2855,10 +2881,14 @@ async function initShopMember(forceLogin){
   if (SHOP_MEMBER_CHECKING) return SHOP_MEMBER_CHECKING;
 
   const shouldFinishLoginReturn = isShopMemberLoginReturn();
+  const hasLoginParams = hasShopLiffLoginParams();
 
   SHOP_MEMBER_CHECKING = (async () => {
     const sessionOk = await checkShopMemberBySession();
     if (sessionOk) {
+      if (shouldFinishLoginReturn || hasLoginParams) {
+        SHOP_MEMBER_JUST_RESTORED = true;
+      }
       clearShopMemberLoginPending();
       cleanShopLiffLoginUrl();
       return true;
@@ -2918,6 +2948,7 @@ async function initShopMember(forceLogin){
 
       if (ok) {
         localStorage.setItem(SHOP_LINE_UID_KEY, uid);
+        SHOP_MEMBER_JUST_RESTORED = true;
         clearShopMemberLoginPending();
         cleanShopLiffLoginUrl();
         return true;
@@ -2960,13 +2991,7 @@ async function refreshShopMemberPriceViewForPreview(){
       typeof previewSku === 'function'
     ) ? String(previewSku(previewProduct) || '').trim() : '';
 
-    try {
-      Object.keys(sessionStorage).forEach(k => {
-        if (k.startsWith('SHOP_LIST_CACHE_V2|public|')) {
-          sessionStorage.removeItem(k);
-        }
-      });
-    } catch(e) {}
+    clearShopProductCache();
 
     if (typeof fetchProducts === 'function') {
       await fetchProducts();
@@ -4255,6 +4280,8 @@ function openPendingPreviewAfterMemberLogin(){
   const savedSku = String(localStorage.getItem(SHOP_RETURN_SKU_KEY) || '').trim();
   const sku = qsSku || savedSku;
 
+  if ((qsSku || u.searchParams.get('after_member_login') === '1') && !SHOP_MEMBER_INFO) return;
+
   if (!sku || !Array.isArray(allItems) || !allItems.length) return;
 
   const found = allItems.find(item => String(previewSku(item) || '').trim() === sku);
@@ -4604,6 +4631,10 @@ async function fetchProducts(){
   const grid = $('productList');
 
   const shopMemberReady = await initShopMember(false);
+  const forceFreshMemberRender = shopMemberReady && SHOP_MEMBER_JUST_RESTORED;
+  if (forceFreshMemberRender) {
+    clearShopProductCache();
+  }
 const shopMemberKey = shopMemberReady ? 'member' : 'public';
 
 const cacheKey = [
@@ -4614,7 +4645,7 @@ const cacheKey = [
   String(selectedSub || 'ALL')
 ].join('|');
 
- const hasCached = !!sessionStorage.getItem(cacheKey);
+ const hasCached = !forceFreshMemberRender && !!sessionStorage.getItem(cacheKey);
 
 if (!hasCached){
   loader.style.display = 'block';
@@ -4687,6 +4718,10 @@ const res = await fetch(u.toString(), { credentials:'include' });
 
     if (!allItems.length){
       $('emptyTip').style.display = 'block';
+    }
+
+    if (forceFreshMemberRender) {
+      SHOP_MEMBER_JUST_RESTORED = false;
     }
 
     try {
