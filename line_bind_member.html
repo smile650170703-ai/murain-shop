@@ -122,6 +122,79 @@ const GEMINI_API_KEY = "";
         else window.location.href = "https://line.me/";
       }
 
+      function rememberLineProfile(profile, memberInfo = {}) {
+        const displayName = String(
+          memberInfo?.lineDisplayName ||
+          memberInfo?.display_name ||
+          profile?.displayName ||
+          ""
+        ).trim();
+
+        try {
+          if (displayName) localStorage.setItem("murain_line_display_name", displayName);
+        } catch (e) {}
+      }
+
+      async function createVerifiedMemberSession(idToken) {
+        if (!idToken) {
+          setMemberCheckFailed(true);
+          setStatusMsg("目前無法確認會員狀態，請稍後再試");
+          return null;
+        }
+
+        try {
+          const res = await fetch(`${API_BASE}/line/auth/session`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ id_token: idToken })
+          });
+          const json = await res.json().catch(() => ({}));
+          if (res.ok && json?.ok) return json;
+          console.warn("line auth session failed:", res.status, json);
+        } catch (e) {
+          console.warn("line auth session error:", e);
+        }
+
+        setMemberCheckFailed(true);
+        setStatusMsg("目前無法確認會員狀態，請稍後再試");
+        return null;
+      }
+
+      async function checkAlreadyBoundMember(profile) {
+        try {
+          const res = await fetch(`${API_BASE}/line/member-info`, {
+            credentials: "include"
+          });
+          const json = await res.json().catch(() => ({}));
+
+          if (res.ok && json?.ok) {
+            setMemberCheckFailed(false);
+            rememberLineProfile(profile, json);
+            setIsAlreadyBound(true);
+            setStep(3);
+            setStatusMsg("您已完成會員綁定，無需重複操作");
+            setTimeout(goAfterBind, 1200);
+            return "bound";
+          }
+
+          if (res.status === 404 || json?.error === "not_found") {
+            setMemberCheckFailed(false);
+            return "not_found";
+          }
+
+          console.warn("member-info check failed:", res.status, json);
+          setMemberCheckFailed(true);
+          setStatusMsg("目前無法確認會員狀態，請稍後再試");
+          return "error";
+        } catch (e) {
+          console.warn("member-info check error:", e);
+          setMemberCheckFailed(true);
+          setStatusMsg("目前無法確認會員狀態，請稍後再試");
+          return "error";
+        }
+      }
+
      function openOfficialLineAddPage() {
   try {
     window.location.href = OFFICIAL_LINE_URL;
@@ -193,6 +266,7 @@ async function ensureXuyuanOfficialFriendBeforeBind() {
       const [statusMsg, setStatusMsg] = useState("");
       const [lineProfile, setLineProfile] = useState(null);
       const [isAlreadyBound, setIsAlreadyBound] = useState(false);
+      const [memberCheckFailed, setMemberCheckFailed] = useState(false);
       const [formData, setFormData] = useState({ phone: "", name: "", email: "" });
       const phoneInputRef = React.useRef(null);
       
@@ -238,14 +312,21 @@ async function ensureXuyuanOfficialFriendBeforeBind() {
 
          const profile = await window.liff.getProfile();
 setLineProfile(profile);
+rememberLineProfile(profile);
 
 let autoEmail = "";
+let idToken = "";
 try {
+  idToken = window.liff.getIDToken?.() || "";
   const token = window.liff.getDecodedIDToken?.();
   if (token && token.email) autoEmail = token.email;
 } catch (e) {}
 
 setFormData((prev) => ({ ...prev, email: autoEmail }));
+const authSession = await createVerifiedMemberSession(idToken);
+if (!authSession) return;
+const memberCheckResult = await checkAlreadyBoundMember(profile);
+if (memberCheckResult !== "not_found") return;
 setStatusMsg("");
         } catch (e) {
           console.error(e);
@@ -307,6 +388,9 @@ setStatusMsg("");
       }
 
       function handleNext() {
+        if (memberCheckFailed) {
+          return alert("目前無法確認會員狀態，請稍後再試");
+        }
         if (step === 1 && !formData.phone) return alert("請輸入手機號碼");
         setStep((p) => p + 1);
       }
@@ -333,7 +417,6 @@ setStatusMsg("");
     setStatusMsg("資料處理中...");
 
     const body = {
-      line_user_id: lineProfile?.userId,
       display_name: lineProfile?.displayName || "",
       picture_url: lineProfile?.pictureUrl || "",
       phone: formData.phone,
@@ -344,6 +427,7 @@ setStatusMsg("");
     const r = await fetch(API_BASE + "/line/bind-member", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify(body)
     });
 
@@ -436,9 +520,15 @@ setTimeout(goAfterBind, alreadyBound ? 1200 : 1500);
                   即刻享有專屬禮遇與積分回饋
                 </p>
 
-                <button onClick={handleNext} disabled={!lineProfile} 
+                {statusMsg && (
+                  <p className="text-white/50 text-xs font-light leading-loose mb-6 tracking-wider">
+                    {statusMsg}
+                  </p>
+                )}
+
+                <button onClick={handleNext} disabled={!lineProfile || memberCheckFailed}
                   className="btn-gold w-full py-4 rounded-sm font-bold text-xs tracking-[0.2em] uppercase">
-                  立即啟用
+                  {memberCheckFailed ? "請稍後再試" : "立即啟用"}
                 </button>
               </div>
             )}
