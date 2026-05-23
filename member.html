@@ -1300,6 +1300,40 @@ async function createMemberAuthSessionFromLiff() {
   return !!(res.ok && json && json.ok);
 }
 
+function hasMemberLoginReturnFlag() {
+  try {
+    const now = new URL(window.location.href);
+    if (now.searchParams.get("line_login") === "1") return true;
+    if (now.searchParams.has("return_url")) return true;
+    return sessionStorage.getItem("MURAIN_MEMBER_LOGIN_PENDING") === "1";
+  } catch (e) {
+    return false;
+  }
+}
+
+function markMemberLoginPending() {
+  try {
+    sessionStorage.setItem("MURAIN_MEMBER_LOGIN_PENDING", "1");
+  } catch (e) {}
+}
+
+function clearMemberLoginPending() {
+  try {
+    sessionStorage.removeItem("MURAIN_MEMBER_LOGIN_PENDING");
+  } catch (e) {}
+}
+
+function cleanMemberLoginUrl() {
+  try {
+    const u = new URL(window.location.href);
+    u.searchParams.delete("line_login");
+    u.searchParams.delete("return_url");
+    if (u.toString() !== window.location.href) {
+      history.replaceState(null, "", u.toString());
+    }
+  } catch (e) {}
+}
+
 function buildCleanMemberReturnUrl(extraParams = {}) {
   const u = new URL(MEMBER_NORMAL_URL);
 
@@ -1462,6 +1496,58 @@ async function enterMemberCenterWithSession() {
     return false;
   }
 }
+
+async function completeMemberLoginFromLiff() {
+  if (!hasMemberLoginReturnFlag()) return false;
+
+  if (!window.liff) {
+    showBindGate("login");
+    return false;
+  }
+
+  try {
+    infoMsg.textContent = "正在確認 LINE 登入狀態...";
+    infoMsg.classList.remove("error");
+    infoMsg.style.display = "block";
+
+    await liff.init({ liffId: LIFF_ID });
+
+    if (!liff.isLoggedIn()) {
+      markMemberLoginPending();
+      liff.login();
+      return true;
+    }
+
+    const ok = await createMemberAuthSessionFromLiff();
+    if (!ok) {
+      console.log("[member auth session failed after liff login]");
+      showBindGate("login");
+      infoMsg.textContent = "目前無法完成 LINE 登入，請再試一次。";
+      infoMsg.classList.add("error");
+      infoMsg.style.display = "block";
+      return true;
+    }
+
+    const restored = await enterMemberCenterWithSession();
+    if (restored) {
+      clearMemberLoginPending();
+      cleanMemberLoginUrl();
+      return true;
+    }
+
+    clearMemberLoginPending();
+    cleanMemberLoginUrl();
+    showBindGate("bind");
+    return true;
+  } catch (e) {
+    console.log("[member liff login complete failed]", e);
+    showBindGate("login");
+    infoMsg.textContent = "目前無法完成 LINE 登入，請再試一次。";
+    infoMsg.classList.add("error");
+    infoMsg.style.display = "block";
+    return true;
+  }
+}
 function getBindReturnUrl() {
   // ✅ 綁定完成後也回正常會員中心，不要回 liff.line.me 包住的會員中心
   return buildCleanMemberReturnUrl({ from_bind: "1" });
@@ -1573,6 +1659,7 @@ function showBindGate(mode = "login") {
     bindGatePrimaryBtn.textContent = "使用 LINE 登入";
     bindGateNote.textContent = "登入後系統會自動檢查是否已完成會員綁定。";
     bindGatePrimaryBtn.onclick = () => {
+      markMemberLoginPending();
       const returnUrl = buildCleanMemberReturnUrl({ line_login: "1" });
       const liffUrl = `https://liff.line.me/${LIFF_ID}?return_url=${encodeURIComponent(returnUrl)}`;
 
@@ -3197,7 +3284,14 @@ async function initLiff() {
     // ✅ 第一優先：直接用後端 HttpOnly session 還原會員狀態
     // 商品頁、購物車、結帳都以同一顆 murain_member_session cookie 為準。
     const sessionOk = await enterMemberCenterWithSession();
-    if (sessionOk) return;
+    if (sessionOk) {
+      clearMemberLoginPending();
+      cleanMemberLoginUrl();
+      return;
+    }
+
+    const liffLoginCompleted = await completeMemberLoginFromLiff();
+    if (liffLoginCompleted) return;
 
     // ✅ 第二優先：吃全站共用登入狀態
     // 商品頁 / 官網購物車 / 結帳頁已存 murain_line_user_id，就先用它查會員。
