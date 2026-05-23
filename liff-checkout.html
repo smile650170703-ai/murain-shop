@@ -2769,6 +2769,54 @@ function canUseSharedUidForCurrentCart(uid){
   return uid === CART_LINE_USER_ID;
 }
 
+function memberInfoLineUserId(info){
+  return String(
+    info?.line_user_id ||
+    info?.lineUserId ||
+    info?.member?.line_user_id ||
+    info?.member?.LineUserId ||
+    info?.member?.lineUserId ||
+    ''
+  ).trim();
+}
+
+async function createCheckoutAuthSessionFromLiff(){
+  if (!window.liff || !liff.isLoggedIn()) return false;
+  const idToken = String(liff.getIDToken?.() || '').trim();
+  if (!idToken) return false;
+
+  const res = await fetch(`${API}/line/auth/session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ id_token: idToken })
+  });
+  const json = await res.json().catch(() => ({}));
+  return !!(res.ok && json && json.ok);
+}
+
+async function loadCheckoutMemberBySession(profile = null){
+  try {
+    const r = await fetch(`${API}/line/member-info`, {
+      credentials: 'include'
+    });
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j?.ok) return false;
+
+    const uid = memberInfoLineUserId(j);
+    if (!uid) return false;
+    if (String(CART_CUSTOMER_TYPE || '').trim().toLowerCase() === 'web' && !canUseSharedUidForCurrentCart(uid)) {
+      return false;
+    }
+
+    return await loadCheckoutMemberByUid(uid, profile);
+  } catch (e) {
+    console.log('session member-info error', e);
+    return false;
+  }
+}
+
 async function loadCheckoutMemberByUid(uidForApi, profile = null){
   uidForApi = String(uidForApi || '').trim();
   if (!uidForApi) return false;
@@ -2860,13 +2908,13 @@ async function initLiffAndMember() {
   const sharedUid = getCheckoutSharedLineUserId();
 
   if (canUseSharedUidForCurrentCart(sharedUid)) {
-    console.log('[checkout] use shared member uid for web cart', {
+    console.log('[checkout] try shared member session for web cart', {
       sharedUid,
       cartOwner: CART_LINE_USER_ID,
       cartType: CART_CUSTOMER_TYPE
     });
 
-    const ok = await loadCheckoutMemberByUid(sharedUid, null);
+    const ok = await loadCheckoutMemberBySession(null);
     if (ok) return;
   }
 
@@ -2892,14 +2940,16 @@ async function initLiffAndMember() {
 
       uidForApi = profile.userId || uidForApi;
 
-      const idToken = String(liff.getIDToken?.() || '').trim();
-      if (idToken) {
-        await fetch(`${API}/line/auth/session`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ id_token: idToken })
-        }).catch(e => console.log('line auth session failed', e));
+      const sessionOk = await createCheckoutAuthSessionFromLiff().catch(e => {
+        console.log('line auth session failed', e);
+        return false;
+      });
+
+      if (sessionOk) {
+        const ok = await loadCheckoutMemberBySession(profile);
+        if (ok) return;
+      } else if (String(CART_CUSTOMER_TYPE || '').trim().toLowerCase() === 'web') {
+        return;
       }
     }
   } catch (e) {

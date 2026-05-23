@@ -1248,7 +1248,7 @@
             <p class="cta-text">了解各項規則後，即可安心選購喜愛的商品。</p>
             <div class="cta-actions">
               <a class="btn btn-primary" href="/shop.html">前往官方商城</a>
-              <a class="btn btn-secondary" href="https://liff.line.me/2008430261-EGZPg3Qp?url=https%3A%2F%2Fmurain.tw%2Fmember-center.html">進入會員中心</a>
+              <a class="btn btn-secondary" href="https://liff.line.me/2008430261-EGZPg3Qp/?line_login=1&return_url=https%3A%2F%2Fmurain.tw%2Fmember">進入會員中心</a>
             </div>
           </div>
         </section>
@@ -1401,11 +1401,15 @@
         cartBadge.hidden = true;
       }
     }
-  function getHomeSharedLineUserId(){
+  async function hasHomeMemberSession(){
     try {
-      return String(localStorage.getItem('murain_line_user_id') || '').trim();
+      const r = await fetch(`${HOME_API}/line/member-info`, {
+        credentials:'include'
+      });
+      const j = await r.json().catch(() => ({}));
+      return !!(r.ok && j && j.ok);
     } catch(e) {
-      return '';
+      return false;
     }
   }
 
@@ -1413,8 +1417,8 @@
     let cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
     if (cartToken) return cartToken;
 
-    const uid = getHomeSharedLineUserId();
-    if (!uid) return '';
+    const hasSession = await hasHomeMemberSession();
+    if (!hasSession) return '';
 
     try {
     const r = await fetch(`${HOME_API}/cart/create`, {
@@ -1424,7 +1428,6 @@
       body: JSON.stringify({
         streamer_name:'官網',
         customer_type:'web',
-          line_user_id: uid,
           customer_name:'',
           restore_only:true
         })
@@ -1450,7 +1453,7 @@ async function refreshCartBadge(){
       return;
     }
 
-    const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`);
+    const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`, { credentials:'include' });
     if (!r.ok){
       localStorage.removeItem(HOME_CART_KEY);
       setCartBadge(0);
@@ -1500,7 +1503,7 @@ async function goCartCheckout(){
       return;
     }
 
-    const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`);
+    const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`, { credentials:'include' });
     if (!r.ok) {
       localStorage.removeItem(HOME_CART_KEY);
       setCartBadge(0);

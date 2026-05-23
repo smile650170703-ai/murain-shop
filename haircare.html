@@ -512,11 +512,15 @@ html, body {
       cartBadge.hidden = true;
     }
   }
-  function getHomeSharedLineUserId(){
+  async function hasHomeMemberSession(){
     try {
-      return String(localStorage.getItem('murain_line_user_id') || '').trim();
+      const r = await fetch(`${HOME_API}/line/member-info`, {
+        credentials:'include'
+      });
+      const j = await r.json().catch(() => ({}));
+      return !!(r.ok && j && j.ok);
     } catch(e) {
-      return '';
+      return false;
     }
   }
 
@@ -524,8 +528,8 @@ html, body {
     let cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
     if (cartToken) return cartToken;
 
-    const uid = getHomeSharedLineUserId();
-    if (!uid) return '';
+    const hasSession = await hasHomeMemberSession();
+    if (!hasSession) return '';
 
     try {
     const r = await fetch(`${HOME_API}/cart/create`, {
@@ -535,7 +539,6 @@ html, body {
       body: JSON.stringify({
         streamer_name:'官網',
         customer_type:'web',
-          line_user_id: uid,
           customer_name:'',
           restore_only:true
         })
@@ -561,7 +564,7 @@ async function refreshCartBadge(){
       return;
     }
 
-    const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`);
+    const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`, { credentials:'include' });
     if (!r.ok){
       localStorage.removeItem(HOME_CART_KEY);
       setCartBadge(0);
@@ -611,7 +614,7 @@ async function goCartCheckout(){
       return;
     }
 
-    const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`);
+    const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`, { credentials:'include' });
     if (!r.ok) {
       localStorage.removeItem(HOME_CART_KEY);
       setCartBadge(0);
