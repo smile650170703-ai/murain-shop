@@ -1300,11 +1300,31 @@ async function createMemberAuthSessionFromLiff() {
   return !!(res.ok && json && json.ok);
 }
 
+function mergeMemberLiffStateParams(qs) {
+  const st = qs.get("liff.state") || qs.get("liffState") || "";
+  if (!st) return qs;
+
+  try {
+    const decoded = decodeURIComponent(st);
+    const query = decoded.startsWith("/?") ? decoded.slice(2) : (decoded.startsWith("?") ? decoded.slice(1) : decoded);
+    const inner = new URLSearchParams(query);
+    inner.forEach((v, k) => {
+      if (!qs.has(k)) qs.set(k, v);
+    });
+  } catch (e) {}
+
+  return qs;
+}
+
+function getMemberSearchParams() {
+  return mergeMemberLiffStateParams(new URLSearchParams(window.location.search || ""));
+}
+
 function hasMemberLoginReturnFlag() {
   try {
-    const now = new URL(window.location.href);
-    if (now.searchParams.get("line_login") === "1") return true;
-    if (now.searchParams.has("return_url")) return true;
+    const params = getMemberSearchParams();
+    if (params.get("line_login") === "1") return true;
+    if (params.has("return_url")) return true;
     return sessionStorage.getItem("MURAIN_MEMBER_LOGIN_PENDING") === "1";
   } catch (e) {
     return false;
@@ -1328,6 +1348,8 @@ function cleanMemberLoginUrl() {
     const u = new URL(window.location.href);
     u.searchParams.delete("line_login");
     u.searchParams.delete("return_url");
+    u.searchParams.delete("liff.state");
+    u.searchParams.delete("liffState");
     if (u.toString() !== window.location.href) {
       history.replaceState(null, "", u.toString());
     }
@@ -1555,7 +1577,7 @@ function getBindReturnUrl() {
 
 function buildMemberBindUrl(returnUrl) {
   const bindLiffId = "2008430261-kOeNLR9x";
-  return `https://liff.line.me/${bindLiffId}?return_url=${encodeURIComponent(returnUrl || MEMBER_NORMAL_URL)}`;
+  return `https://liff.line.me/${bindLiffId}/?return_url=${encodeURIComponent(returnUrl || MEMBER_NORMAL_URL)}`;
 }
 
 function redirectToMemberBind() {
@@ -1576,7 +1598,7 @@ let credits = [];
 let consignItems = [];
 let currentFilter = "history";
 
-const urlParams = new URLSearchParams(window.location.search || "");
+const urlParams = getMemberSearchParams();
 let focusOrderId = urlParams.get("order_id") || "";
   const IS_MEMBER_LOGGED_OUT = urlParams.get("logged_out") === "1";
 let hasScrolledToInitialOrder = false;
@@ -1661,7 +1683,7 @@ function showBindGate(mode = "login") {
     bindGatePrimaryBtn.onclick = () => {
       markMemberLoginPending();
       const returnUrl = buildCleanMemberReturnUrl({ line_login: "1" });
-      const liffUrl = `https://liff.line.me/${LIFF_ID}?return_url=${encodeURIComponent(returnUrl)}`;
+      const liffUrl = `https://liff.line.me/${LIFF_ID}/?line_login=1&return_url=${encodeURIComponent(returnUrl)}`;
 
       try {
         window.location.href = liffUrl;
@@ -3457,7 +3479,7 @@ async function initLiff() {
   <script>
   const HOME_API = 'https://api.murain.tw';
   const HOME_CART_KEY = 'MURAIN_WEB_CART_TOKEN';
-  const HOME_LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
+  const HOME_LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4/';
 
   const cartBtn = document.getElementById('cartBtn');
   const cartBadge = document.getElementById('cartBadge');

@@ -2326,7 +2326,7 @@ window.addEventListener('storage', (e) => {
   <script>
     const HOME_API = 'https://api.murain.tw';
     const HOME_CART_KEY = 'MURAIN_WEB_CART_TOKEN';
-    const HOME_LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
+    const HOME_LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4/';
 
     const cartBtn = document.getElementById('cartBtn');
     const cartBadge = document.getElementById('cartBadge');
@@ -2591,6 +2591,65 @@ function shopApiBase(){
 function getShopLineUserId(){
   return String(localStorage.getItem(SHOP_LINE_UID_KEY) || '').trim();
 }
+
+function cleanShopLiffLoginUrl(){
+  try {
+    const u = new URL(location.href);
+    [
+      'code',
+      'state',
+      'liffClientId',
+      'liff.state',
+      'liffState'
+    ].forEach(k => u.searchParams.delete(k));
+
+    if (u.toString() !== location.href) {
+      history.replaceState({}, '', u.toString());
+    }
+  } catch(e) {}
+}
+
+async function checkShopMemberBySession(){
+  try {
+    const r = await fetch(`${shopApiBase()}/line/member-info`, {
+      credentials: 'include'
+    });
+    const j = await r.json().catch(() => ({}));
+
+    if (r.ok && j && j.ok) {
+      SHOP_MEMBER_INFO = j;
+
+      const uid = String(
+        j.line_user_id ||
+        j.lineUserId ||
+        j.member?.line_user_id ||
+        j.member?.LineUserId ||
+        ''
+      ).trim();
+
+      if (uid) localStorage.setItem(SHOP_LINE_UID_KEY, uid);
+      return true;
+    }
+  } catch(e) {}
+
+  return false;
+}
+
+async function createShopMemberSessionFromLiff(){
+  const idToken = window.liff?.getIDToken?.() || '';
+  if (!idToken) return false;
+
+  const res = await fetch(`${shopApiBase()}/line/auth/session`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ id_token: idToken })
+  });
+  const json = await res.json().catch(() => ({}));
+
+  return !!(res.ok && json && json.ok);
+}
+
 function markShopMemberLoginPending(){
   try {
     localStorage.setItem(SHOP_MEMBER_LOGIN_PENDING_KEY, '1');
@@ -2603,10 +2662,28 @@ function clearShopMemberLoginPending(){
   } catch(e) {}
 }
 
+function getShopSearchParams(){
+  const qs = new URLSearchParams(location.search || '');
+  const st = qs.get('liff.state') || qs.get('liffState') || '';
+
+  if (st) {
+    try {
+      const decoded = decodeURIComponent(st);
+      const query = decoded.startsWith('/?') ? decoded.slice(2) : (decoded.startsWith('?') ? decoded.slice(1) : decoded);
+      const inner = new URLSearchParams(query);
+      inner.forEach((v, k) => {
+        if (!qs.has(k)) qs.set(k, v);
+      });
+    } catch(e) {}
+  }
+
+  return qs;
+}
+
 function isShopMemberLoginReturn(){
   try {
-    const u = new URL(location.href);
-    if (u.searchParams.get('after_member_login') === '1') return true;
+    const qs = getShopSearchParams();
+    if (qs.get('after_member_login') === '1') return true;
   } catch(e) {}
 
   try {
@@ -2723,7 +2800,7 @@ function buildShopMemberReturnUrl(){
   return url;
 }
 function buildShopBindUrl(returnUrl){
-  return `https://liff.line.me/${SHOP_BIND_LIFF_ID}?return_url=${encodeURIComponent(returnUrl || buildShopCleanReturnUrl())}`;
+  return `https://liff.line.me/${SHOP_BIND_LIFF_ID}/?return_url=${encodeURIComponent(returnUrl || buildShopCleanReturnUrl())}`;
 }
 
 function redirectShopMemberBind(returnUrl){
@@ -2780,10 +2857,17 @@ async function initShopMember(forceLogin){
   const shouldFinishLoginReturn = isShopMemberLoginReturn();
 
   SHOP_MEMBER_CHECKING = (async () => {
+    const sessionOk = await checkShopMemberBySession();
+    if (sessionOk) {
+      clearShopMemberLoginPending();
+      cleanShopLiffLoginUrl();
+      return true;
+    }
+
     let uid = getShopLineUserId();
 
     // 先用 localStorage 的 LINE user id 查會員
-    if (uid) {
+    if (!forceLogin && !shouldFinishLoginReturn && uid) {
       const ok = await checkShopMemberByUid(uid);
       if (ok) {
         clearShopMemberLoginPending();
@@ -2824,12 +2908,18 @@ async function initShopMember(forceLogin){
 
       if (!uid) return false;
 
-      localStorage.setItem(SHOP_LINE_UID_KEY, uid);
+      const sessionCreated = await createShopMemberSessionFromLiff();
+      if (!sessionCreated) {
+        SHOP_MEMBER_INFO = null;
+        return false;
+      }
 
-      const ok = await checkShopMemberByUid(uid);
+      const ok = await checkShopMemberBySession();
 
       if (ok) {
+        localStorage.setItem(SHOP_LINE_UID_KEY, uid);
         clearShopMemberLoginPending();
+        cleanShopLiffLoginUrl();
         return true;
       }
 
