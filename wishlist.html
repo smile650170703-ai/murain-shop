@@ -1301,8 +1301,9 @@ body{
 const XUYUAN_RECENT_KEY = 'xuyuan_recent_viewed_v1';
 const PRODUCT_API = 'https://api.murain.tw/public/products-paged';
 
-// ✅ 收藏中心不用登入，但如果有會員登入資料，才允許顯示會員價
+// ✅ 收藏中心不用登入，但會員價要跟官網登入狀態同步
 const WISHLIST_LINE_USER_ID_KEY = 'murain_line_user_id';
+let wishlistMemberOk = false;
 
 function getWishlistLineUserId(){
   try {
@@ -1312,8 +1313,29 @@ function getWishlistLineUserId(){
   }
 }
 
+async function syncWishlistMemberSession(){
+  const uid = getWishlistLineUserId();
+
+  if (!uid) {
+    wishlistMemberOk = false;
+    return false;
+  }
+
+  try {
+    const r = await fetch('https://api.murain.tw/line/member-info', {
+      credentials:'include'
+    });
+    const j = await r.json().catch(() => ({}));
+    wishlistMemberOk = !!(r.ok && j && j.ok);
+    return wishlistMemberOk;
+  } catch(e) {
+    wishlistMemberOk = false;
+    return false;
+  }
+}
+
 function wishlistCanShowMemberPrice(){
-  return !!getWishlistLineUserId();
+  return wishlistMemberOk && !!getWishlistLineUserId();
 }
 
     const $ = (id) => document.getElementById(id);
@@ -1719,76 +1741,173 @@ if (uid) {
       });
     }
 
-    window.addEventListener('DOMContentLoaded', () => {
-      refreshWishBadge();
-      renderWishlist();
-      renderRecentFromLocalOrApi();
-    });
+    window.addEventListener('DOMContentLoaded', async () => {
+  await syncWishlistMemberSession();
+  refreshWishBadge();
+  renderWishlist();
+  renderRecentFromLocalOrApi();
+});
 
-    window.addEventListener('storage', (e) => {
-      if(e.key === XUYUAN_WISHLIST_KEY || e.key === XUYUAN_RECENT_KEY){
-        refreshWishBadge();
-        renderWishlist();
-        renderRecentFromLocalOrApi();
-      }
-    });
+    window.addEventListener('storage', async (e) => {
+  if(
+    e.key === XUYUAN_WISHLIST_KEY ||
+    e.key === XUYUAN_RECENT_KEY ||
+    e.key === WISHLIST_LINE_USER_ID_KEY
+  ){
+    await syncWishlistMemberSession();
+    refreshWishBadge();
+    renderWishlist();
+    renderRecentFromLocalOrApi();
+  }
+});
   </script>
 
-  <!-- ===== 固定：購物車 JS ===== -->
-  <script>
-    const HOME_API = 'https://api.murain.tw';
-    const HOME_CART_KEY = 'MURAIN_WEB_CART_TOKEN';
-    const HOME_LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
+ <!-- ===== 固定：購物車 JS ===== -->
+<script>
+  const HOME_API = 'https://api.murain.tw';
+  const HOME_CART_KEY = 'MURAIN_WEB_CART_TOKEN';
+  const HOME_LIFF_CHECKOUT = 'https://liff.line.me/2008430261-KLwoQjm4';
 
-    const cartBtn = document.getElementById('cartBtn');
-    const cartBadge = document.getElementById('cartBadge');
+  const cartBtn = document.getElementById('cartBtn');
+  const cartBadge = document.getElementById('cartBadge');
 
-    function setCartBadge(count){
-      if (!cartBadge) return;
-      const n = Number(count || 0) || 0;
-      if (n > 0){
-        cartBadge.textContent = String(n);
-        cartBadge.hidden = false;
-      } else {
-        cartBadge.textContent = '0';
-        cartBadge.hidden = true;
-      }
+  function setCartBadge(count){
+    if (!cartBadge) return;
+    const n = Number(count || 0) || 0;
+    if (n > 0){
+      cartBadge.textContent = String(n);
+      cartBadge.hidden = false;
+    } else {
+      cartBadge.textContent = '0';
+      cartBadge.hidden = true;
     }
+  }
 
-    async function refreshCartBadge(){
-      try{
-        const cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
-        if (!cartToken){ setCartBadge(0); return; }
+  function getHomeSharedLineUserId(){
+    try {
+      return String(localStorage.getItem('murain_line_user_id') || '').trim();
+    } catch(e) {
+      return '';
+    }
+  }
 
-        const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`);
-        if (!r.ok){ setCartBadge(0); return; }
+  async function hasHomeMemberSession(){
+    try {
+      const r = await fetch(`${HOME_API}/line/member-info`, {
+        credentials:'include'
+      });
+      const j = await r.json().catch(() => ({}));
+      return !!(r.ok && j && j.ok);
+    } catch(e) {
+      return false;
+    }
+  }
 
-        const j = await r.json().catch(() => ({}));
-        const items = Array.isArray(j.items) ? j.items : [];
-        let count = 0;
-        items.forEach(it => { count += Number(it.qty || 0) || 0; });
-        setCartBadge(count);
-      }catch(e){
+  async function restoreHomeWebCartTokenIfNeeded(){
+    let cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
+    if (cartToken) return cartToken;
+
+    const uid = getHomeSharedLineUserId();
+    const hasSession = uid ? true : await hasHomeMemberSession();
+    if (!hasSession) return '';
+
+    try {
+      const r = await fetch(`${HOME_API}/cart/create`, {
+        method:'POST',
+        headers:{ 'content-type':'application/json' },
+        credentials:'include',
+        body: JSON.stringify({
+          streamer_name:'官網',
+          customer_type:'web',
+          line_user_id: uid,
+          customer_name:'',
+          restore_only:true
+        })
+      });
+
+      const j = await r.json().catch(() => ({}));
+      const token = String(j.cart_token || '').trim();
+
+      if (r.ok && j.ok !== false && token) {
+        localStorage.setItem(HOME_CART_KEY, token);
+        return token;
+      }
+    } catch(e) {}
+
+    return '';
+  }
+
+  async function refreshCartBadge(){
+    try{
+      const cartToken = await restoreHomeWebCartTokenIfNeeded();
+
+      if (!cartToken){
         setCartBadge(0);
+        return;
       }
-    }
 
-    function goCartCheckout(){
-      try{
-        const cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
-        if (!cartToken){ alert('目前購物車是空的'); return; }
-        location.href = `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(cartToken)}`;
-      }catch(e){
-        alert('目前無法開啟購物車');
+      const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`, {
+        credentials:'include'
+      });
+
+      if (!r.ok){
+        localStorage.removeItem(HOME_CART_KEY);
+        setCartBadge(0);
+        return;
       }
-    }
 
-    if (cartBtn){ cartBtn.addEventListener('click', goCartCheckout); }
-    window.addEventListener('DOMContentLoaded', refreshCartBadge);
-    window.addEventListener('focus', refreshCartBadge);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshCartBadge(); });
-    window.addEventListener('storage', (e) => { if (e.key === HOME_CART_KEY) refreshCartBadge(); });
-  </script>
+      const j = await r.json().catch(() => ({}));
+      const status = String(j.cart_status || j.status || '').trim().toLowerCase();
+      const customerType = String(j.customer_type || '').trim().toLowerCase();
+
+      const activeOrder = j.active_order || null;
+      const canContinuePending =
+        customerType === 'web' &&
+        status === 'submitted' &&
+        activeOrder &&
+        activeOrder.can_continue_payment === true;
+
+      if (canContinuePending) {
+        setCartBadge(1);
+        return;
+      }
+
+      if (customerType === 'web' && status && status !== 'open') {
+        localStorage.removeItem(HOME_CART_KEY);
+        setCartBadge(0);
+        return;
+      }
+
+      const items = Array.isArray(j.items) ? j.items : [];
+      let count = 0;
+      items.forEach(it => { count += Number(it.qty || 0) || 0; });
+      setCartBadge(count);
+    }catch(e){
+      setCartBadge(0);
+    }
+  }
+
+  async function goCartCheckout(){
+    try{
+      const cartToken = await restoreHomeWebCartTokenIfNeeded();
+
+      if (!cartToken){
+        alert('目前購物車是空的');
+        return;
+      }
+
+      location.href = `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(cartToken)}`;
+    }catch(e){
+      alert('目前無法開啟購物車');
+    }
+  }
+
+  if (cartBtn){ cartBtn.addEventListener('click', goCartCheckout); }
+  window.addEventListener('DOMContentLoaded', refreshCartBadge);
+  window.addEventListener('focus', refreshCartBadge);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshCartBadge(); });
+  window.addEventListener('storage', (e) => { if (e.key === HOME_CART_KEY || e.key === 'murain_line_user_id') refreshCartBadge(); });
+</script>
 
   <!-- ===== 固定：若某頁有 data-live-group-link / data-tiktok-link，會自動帶入 ===== -->
   <script>
