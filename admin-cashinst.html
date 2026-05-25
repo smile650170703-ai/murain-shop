@@ -2352,187 +2352,75 @@ function setAdminTabBadge(adminFile, n){
 }
 
 async function refreshTopShortcutBadges(){
-  const rows = ALL_ORDERS_CACHE || [];
+  if (!OP_KEY) return;
 
-  const getF = (rec) => rec.fields || rec || {};
+  const fetchRowsByAdminViewKey = async (viewKey) => {
+    const params = new URLSearchParams();
+    params.set('filter', 'all');
+    params.set('op_key', OP_KEY);
+    params.set('view_key', viewKey);
 
-  const hasFee = (f) => {
-    if (!f) return false;
-    const fee1 = f.shipping_fee;
-    const fee2 = f.ship_fee;
-    const filled1 = fee1 !== undefined && fee1 !== null && String(fee1) !== '';
-    const filled2 = fee2 !== undefined && fee2 !== null && String(fee2) !== '';
-    return filled1 || filled2;
-  };
+    const r = await fetch(`${API}/admin/orders?` + params.toString());
+    const j = await r.json().catch(() => ({}));
 
-  const isCancelledLike = (f) => {
-    const st = String(f.status || '').trim().toLowerCase();
-    const ps = String(f.pay_status || '').trim().toLowerCase();
-    return (
-      st === 'cancelled' ||
-      ps === 'cancelled' ||
-      ps === 'failed'
-    );
-  };
-
-  const isCashInstOrder = (f) => {
-    const pm = String(f.payment_method || f.pay_method || '').trim().toLowerCase();
-    const plan = String(f.cash_inst_plan || '').trim();
-    const cs = String(f.cash_inst_status || '').trim();
-    return (
-      pm.startsWith('cash_inst') ||
-      !!plan ||
-      !!cs
-    );
-  };
-
-  const isCashInstUnpaid = (f) => {
-    if (!isCashInstOrder(f)) return false;
-
-    const ps = String(f.pay_status || '').trim().toLowerCase();
-    const st = String(f.status || '').trim().toLowerCase();
-    const cs = String(f.cash_inst_status || '').trim().toLowerCase();
-
-    if (ps === 'paid_ok') return false;
-    if (ps === 'cancelled' || ps === 'failed') return false;
-    if (st === 'cancelled') return false;
-    if (cs === 'all_done' || cs === 'completed' || cs === 'paid_ok') return false;
-
-    return true;
-  };
-
-  const isDepositUnshipped = (rec) => {
-    const f = getF(rec);
-    const ps = String(f.pay_status || '').trim().toLowerCase();
-
-    // 現金分期不要混到「已收定金未出貨」
-    if (isCashInstOrder(f)) return false;
-
-    return ps === 'deposit_ok' && isUnshippedOrder(rec);
-  };
-
-  // 🛒 未結單購物車：用專用 API，不吃 Orders
-  let cartOpenCount = 0;
-  try {
-    if (OP_KEY) {
-      const cartParams = new URLSearchParams();
-      cartParams.set('op_key', OP_KEY);
-      cartParams.set('limit', '80');
-
-      const rCart = await fetch(`${API}/admin/cart/pending-list?` + cartParams.toString());
-      const jCart = await rCart.json().catch(() => ({}));
-
-      if (rCart.ok && jCart.ok) {
-        cartOpenCount = Array.isArray(jCart.carts) ? jCart.carts.length : 0;
-      }
+    if (!r.ok || !j.ok) {
+      console.warn('badge view count failed:', viewKey, j?.error || r.status);
+      return [];
     }
-  } catch (e) {
-    console.warn('cart badge load failed', e);
-  }
 
-  // ⭐ 待出貨訂單：沿用你原本邏輯
-  const quickCount = rows.filter(rec => {
-    const f = getF(rec);
-    return String(f.pay_status || '').toLowerCase() === 'paid_ok' && !hasFee(f);
-  }).length;
+    return j.orders || j.records || [];
+  };
 
-  // 匯款待確認：沿用你原本邏輯
-  const remindCount = rows.filter(rec => {
-    const f = getF(rec);
-    return String(f.pay_status || '').toLowerCase() === 'pending';
-  }).length;
-
-  // 賣貨便登記：沿用你原本邏輯
-  const pickupCount = rows.filter(rec => {
-    const f  = getF(rec);
-    const ps = String(f.pay_status || '').toLowerCase();
-    if (ps === 'failed' || ps === 'cancelled') return false;
-
-    const st = String(f.status || '').toLowerCase();
-    const ss = String(f.ship_status || f.shipping_status || '').toLowerCase();
-    const shipped = (st === 'shipped') || (ss === 'shipped') || (ss === 'arrived') || (ss === 'picked_up');
-
-    const shipInfo = parseShippingInfo(f) || {};
-    const ship = shipInfo.ship || {};
-    const is711 = String(ship.type || '').toLowerCase() === '711';
-
-    const pickReg = String(f['取貨登記'] || '').trim();
-
-    return shipped && is711 && pickReg !== '已取貨';
-  }).length;
-
-  // ✅ 已收定金未出貨
-  const depositCount = rows.filter(rec => {
-    return isDepositUnshipped(rec);
-  }).length;
-
-  // ✅ 現金分期未收齊
-  const cashInstCount = rows.filter(rec => {
-    const f = getF(rec);
-    return isCashInstUnpaid(f);
-  }).length;
-
-  // ✅ 已取消／棄標
-  const cancelledCount = rows.filter(rec => {
-    const f = getF(rec);
-    return isCancelledLike(f);
-  }).length;
-
-  // 寄賣 + 一時貿易：用寄賣專用 API
-  let consignCount = 0;
+  let depositCount = 0;
+  let cashInstCount = 0;
   let tradeCount = 0;
 
   try {
-    if (OP_KEY) {
-      const r = await fetch(`${API}/op/consign/settlement/list`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          op_key: OP_KEY,
-          status: 'all'
-        })
-      });
+    const [depositRows, cashInstRows] = await Promise.all([
+      fetchRowsByAdminViewKey('deposit_unshipped'),
+      fetchRowsByAdminViewKey('cashinst_unpaid')
+    ]);
 
-      const j = await r.json().catch(() => ({}));
-
-      if (r.ok && j.ok) {
-        const items = j.items || [];
-
-        // 寄賣：未完成結算
-        consignCount = items.filter(x => {
-          return String(x.status || '').trim().toLowerCase() !== 'settled';
-        }).length;
-
-        // 一時貿易：已完成匯款／購物金
-        tradeCount = items.filter(x => {
-          const st = String(x.status || '').trim().toLowerCase();
-          const method = String(x.method || '').trim().toLowerCase();
-          return st === 'settled' && (method === 'bank_transfer' || method === 'store_credit');
-        }).length;
-      }
-    }
+    depositCount = depositRows.length;
+    cashInstCount = cashInstRows.length;
   } catch (e) {
-    console.warn('consign/trade badge load failed', e);
+    console.warn('deposit/cashinst badge load failed', e);
   }
 
-  // ✅ 原本就有 id 的小圓圈
-  setCountBadge($('#cartOpenBadge'), cartOpenCount);
-  setCountBadge($('#quickPaidBadge'), quickCount);
-  setCountBadge($('#remindTodayBadge'), remindCount);
-  setCountBadge($('#pickupNeedBadge'), pickupCount);
-  setCountBadge($('#consignBadge'), consignCount);
+  try {
+    const r = await fetch(`${API}/op/consign/settlement/list`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        status: 'all'
+      })
+    });
 
-  // ✅ 原本沒有小圓圈的頁籤，這裡自動補
+    const j = await r.json().catch(() => ({}));
+
+    if (r.ok && j.ok) {
+      const items = j.items || [];
+      tradeCount = items.filter(x => {
+        const st = String(x.status || '').trim().toLowerCase();
+        const method = String(x.method || '').trim().toLowerCase();
+        return st === 'settled' && (method === 'bank_transfer' || method === 'store_credit');
+      }).length;
+    }
+  } catch (e) {
+    console.warn('trade badge load failed', e);
+  }
+
   setAdminTabBadge('admin-deposit.html', depositCount);
   setAdminTabBadge('admin-cashinst.html', cashInstCount);
   setAdminTabBadge('admin-trade.html', tradeCount);
 
-  // ✅ 審核購物金沿用你的專用函式
-  if (typeof refreshBenefitBadge === 'function') {
-    refreshBenefitBadge();
+  const benefitBadge = $('#benefitBadge');
+  if (benefitBadge) {
+    benefitBadge.textContent = '';
+    benefitBadge.style.display = 'none';
   }
 }
-
  async function loadBenefitRequests(){
   await ensureOpKey();
 
