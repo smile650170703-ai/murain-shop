@@ -260,7 +260,55 @@
       color:#8b7470;
       text-align:center;
     }
+.gallery-order-wrap{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  margin-top:8px;
+}
 
+.gallery-order-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:8px 10px;
+  border:1px solid rgba(120,90,86,.10);
+  border-radius:14px;
+  background:#fff;
+  font-size:12px;
+  color:#6a5753;
+}
+
+.gallery-order-name{
+  flex:1;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.gallery-order-actions{
+  display:flex;
+  gap:6px;
+  flex-shrink:0;
+}
+
+.gallery-order-btn{
+  border:1px solid rgba(120,90,86,.12);
+  background:#fffaf7;
+  color:#5a4744;
+  border-radius:999px;
+  padding:5px 9px;
+  font-size:11px;
+  font-weight:800;
+  cursor:pointer;
+}
+
+.gallery-order-btn:disabled{
+  opacity:.35;
+  cursor:not-allowed;
+}
     .pill{
       display:inline-flex;
       align-items:center;
@@ -516,7 +564,8 @@
 <div class="field w6">
   <label for="galleryFiles">多圖上傳</label>
   <input id="galleryFiles" type="file" accept="image/*" multiple>
-  <div class="hint">可一次選多張。封面圖請另外用上方封面欄位指定。</div>
+  <div class="hint">可一次選多張。封面圖請另外用上方封面欄位指定。選完後可在下方調整多圖順序。</div>
+  <div id="galleryOrderWrap" class="gallery-order-wrap"></div>
 </div>
           </div>
 
@@ -552,15 +601,16 @@
       publish: API_BASE + '/op/shop/publish'
     };
 
-    const state = {
-      opKey: '',
-      categories: [],
-      uploadedImages: [],
-      draftRecordId: '',
-      selectedProductRecordId: '',
+   const state = {
+  opKey: '',
+  categories: [],
+  uploadedImages: [],
+  pendingGalleryFiles: [],
+  draftRecordId: '',
+  selectedProductRecordId: '',
 selectedProductData: null,
-      sku: ''
-    };
+  sku: ''
+};
 
     const $ = (id) => document.getElementById(id);
 
@@ -671,9 +721,11 @@ $('material').value = item.material || '';
   if (item.subcategory_code) $('subCode').value = item.subcategory_code;
 
   $('coverFile').value = '';
-  $('galleryFiles').value = '';
+$('galleryFiles').value = '';
+state.pendingGalleryFiles = [];
+renderPendingGalleryOrder();
 
-  state.uploadedImages = [];
+state.uploadedImages = [];
   if (item.image_id || item.thumb_url || item.image_url) {
     state.uploadedImages = [{
       image_id: item.image_id || '',
@@ -756,7 +808,46 @@ $('material').value = item.material || '';
         subSel.appendChild(opt);
       });
     }
+function renderPendingGalleryOrder(){
+  const wrap = $('galleryOrderWrap');
+  if (!wrap) return;
 
+  wrap.innerHTML = '';
+
+  const files = Array.isArray(state.pendingGalleryFiles) ? state.pendingGalleryFiles : [];
+  if (!files.length) return;
+
+  files.forEach((file, idx) => {
+    const row = document.createElement('div');
+    row.className = 'gallery-order-row';
+
+    row.innerHTML = `
+      <div class="gallery-order-name">多圖 ${idx + 1}｜${file.name || '未命名圖片'}</div>
+      <div class="gallery-order-actions">
+        <button type="button" class="gallery-order-btn" data-dir="-1" ${idx === 0 ? 'disabled' : ''}>上移</button>
+        <button type="button" class="gallery-order-btn" data-dir="1" ${idx === files.length - 1 ? 'disabled' : ''}>下移</button>
+      </div>
+    `;
+
+    row.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const dir = Number(btn.dataset.dir || 0);
+        const next = idx + dir;
+        if (next < 0 || next >= state.pendingGalleryFiles.length) return;
+
+        const arr = state.pendingGalleryFiles.slice();
+        const tmp = arr[idx];
+        arr[idx] = arr[next];
+        arr[next] = tmp;
+
+        state.pendingGalleryFiles = arr;
+        renderPendingGalleryOrder();
+      });
+    });
+
+    wrap.appendChild(row);
+  });
+}
     function renderImagePreviews(){
       const wrap = $('previewWrap');
       wrap.innerHTML = '';
@@ -815,7 +906,9 @@ $('material').value = item.material || '';
 
     async function uploadImages(){
       const coverFile = $('coverFile').files[0] || null;
-      const galleryFiles = Array.from($('galleryFiles').files || []);
+const galleryFiles = state.pendingGalleryFiles.length
+  ? state.pendingGalleryFiles
+  : Array.from($('galleryFiles').files || []);
 
       if (!coverFile && !galleryFiles.length) {
         setStatus('saveMsg', '請先選擇圖片', true);
@@ -836,10 +929,16 @@ $('material').value = item.material || '';
         })
       });
 
-      state.uploadedImages = Array.isArray(data.images) ? data.images : [];
-      renderImagePreviews();
-      setStatus('saveMsg', '圖片上傳完成，共 ' + state.uploadedImages.length + ' 張');
-      return state.uploadedImages;
+     state.uploadedImages = Array.isArray(data.images) ? data.images : [];
+
+$('coverFile').value = '';
+$('galleryFiles').value = '';
+state.pendingGalleryFiles = [];
+renderPendingGalleryOrder();
+
+renderImagePreviews();
+setStatus('saveMsg', '圖片上傳完成，共 ' + state.uploadedImages.length + ' 張');
+return state.uploadedImages;
     }
 
 function buildDraftPayload(){
@@ -944,6 +1043,10 @@ async function publishNow(){
 
     $('btnSearchExisting').addEventListener('click', searchExistingProduct);
     $('searchKeyword').addEventListener('keydown', (e) => { if (e.key === 'Enter') searchExistingProduct(); });
+    $('galleryFiles').addEventListener('change', () => {
+  state.pendingGalleryFiles = Array.from($('galleryFiles').files || []);
+  renderPendingGalleryOrder();
+});
     $('btnUploadImages').addEventListener('click', async () => {
       try {
         await uploadImages();
