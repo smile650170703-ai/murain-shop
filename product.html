@@ -3236,23 +3236,47 @@ const PRODUCT_LINE_UID_KEY = 'murain_line_user_id';
     }
 
     function collectProductImageUrls(p){
-      const urls = [];
-      const add = (v) => {
-        if(Array.isArray(v)){
-          v.forEach(add);
-          return;
-        }
-        const url = imageUrlFromValue(v);
-        if(url) urls.push(url);
-      };
-      add(p.thumb_url);
-      add(p.image_url);
-      add(p.image);
-      add(p.images);
-      add(p.image_urls);
-      add(p.gallery);
-      return Array.from(new Set(urls));
+  const urls = [];
+  const seenKeys = new Set();
+
+  const imageKey = (url) => {
+    const s = String(url || '').trim();
+
+    let m = s.match(/imagedelivery\.net\/[^/]+\/([^/?#]+)\//i);
+    if (m) return 'cf:' + decodeURIComponent(m[1]);
+
+    m = s.match(/\/cdn-cgi\/imagedelivery\/[^/]+\/([^/?#]+)\//i);
+    if (m) return 'cf:' + decodeURIComponent(m[1]);
+
+    return s.split('?')[0];
+  };
+
+  const add = (v) => {
+    if(Array.isArray(v)){
+      v.forEach(add);
+      return;
     }
+
+    const url = imageUrlFromValue(v);
+    if(!url) return;
+
+    const key = imageKey(url);
+    if(seenKeys.has(key)) return;
+
+    seenKeys.add(key);
+    urls.push(url);
+  };
+
+  // 商品頁輪播只放正式大圖／多圖，不把 thumb_url 放進輪播
+  // thumb_url 只給商品列表、推薦商品縮圖使用，避免封面重複出現
+  add(p.image_url);
+  add(p.image);
+  add(p.images);
+  add(p.image_urls);
+  add(p.gallery);
+
+  return urls;
+}
 
     function toNumberLike(v){
       if(v == null || v === '') return null;
