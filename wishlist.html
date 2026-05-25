@@ -994,6 +994,139 @@ body{
     scroll-snap-align:start;
   }
 }
+
+    /* ===== Wishlist 會員價顯示同步 ===== */
+.wish-price{
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:center !important;
+  justify-content:center !important;
+  gap:3px !important;
+}
+
+.wish-price-original{
+  color:#b09a91 !important;
+  font-size:11px !important;
+  line-height:1.35 !important;
+  letter-spacing:.08em !important;
+  text-decoration:line-through;
+  text-decoration-thickness:1px;
+  text-decoration-color:rgba(176,154,145,.48);
+}
+
+.wish-price-member{
+  color:#76564e !important;
+  font-size:13px !important;
+  line-height:1.35 !important;
+  letter-spacing:.08em !important;
+}
+
+.wish-price-login{
+  color:#8c6b60 !important;
+  font-size:11px !important;
+  line-height:1.45 !important;
+  letter-spacing:.08em !important;
+  text-decoration:none !important;
+  border-bottom:1px solid rgba(140,107,96,.26);
+  padding-bottom:2px;
+}
+   /* ===== Wishlist 桌機／平板商品圖與按鈕一致化修正版 ===== */
+
+/* 最近瀏覽按鈕也隱藏，手機／桌機一致 */
+.recent-section .wish-card-actions{
+  display:none !important;
+}
+
+/* 圖片維持 cover，不用 contain，避免商品圖底部出現灰白色帶 */
+.wishlist-page .wish-img img{
+  object-fit:cover !important;
+  object-position:center !important;
+}
+
+/* 桌機／平板：收藏區商品卡不要被撐太大 */
+@media (min-width:768px){
+  #wishlistSavedSection .wishlist-grid{
+    display:grid !important;
+    grid-template-columns:repeat(auto-fill, minmax(220px, 260px)) !important;
+    justify-content:start !important;
+    gap:24px !important;
+    row-gap:34px !important;
+  }
+
+  #wishlistSavedSection .wish-card{
+    width:100% !important;
+    max-width:260px !important;
+  }
+
+  #wishlistSavedSection .wish-img{
+    aspect-ratio:.88 / 1 !important;
+  }
+
+  #wishlistSavedSection .wish-info{
+    padding:15px 10px 18px !important;
+  }
+
+  /* 最近瀏覽：桌機精品型錄排列 */
+  .recent-grid{
+    display:grid !important;
+    grid-template-columns:repeat(4, minmax(0,1fr)) !important;
+    gap:26px !important;
+    row-gap:36px !important;
+  }
+
+  .recent-section .wish-img{
+    aspect-ratio:.88 / 1 !important;
+  }
+
+  .recent-section .wish-info{
+    padding:13px 4px 0 !important;
+  }
+
+  .recent-section .wish-title{
+    min-height:42px !important;
+    font-size:13px !important;
+    line-height:1.5 !important;
+  }
+
+  .recent-section .wish-price{
+    font-size:13px !important;
+  }
+}
+
+/* 平板：最近瀏覽不要硬塞 4 欄 */
+@media (min-width:768px) and (max-width:1099px){
+  .recent-grid{
+    grid-template-columns:repeat(3, minmax(0,1fr)) !important;
+  }
+}
+
+/* 手機：維持左右滑動，不顯示按鈕 */
+@media (max-width:767px){
+  .recent-grid{
+    display:flex !important;
+    overflow-x:auto !important;
+    overflow-y:hidden !important;
+    gap:14px !important;
+    padding:2px 2px 8px !important;
+    scroll-snap-type:x proximity;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .recent-grid::-webkit-scrollbar{
+    display:none !important;
+  }
+
+  .recent-grid .wish-card{
+    flex:0 0 45.5% !important;
+    min-width:154px !important;
+    max-width:180px !important;
+    scroll-snap-align:start;
+  }
+
+  .recent-section .wish-card-actions{
+    display:none !important;
+  }
+}
   </style>
 </head>
 
@@ -1301,9 +1434,10 @@ body{
 const XUYUAN_RECENT_KEY = 'xuyuan_recent_viewed_v1';
 const PRODUCT_API = 'https://api.murain.tw/public/products-paged';
 
-// ✅ 收藏中心不用登入，但會員價要跟官網登入狀態同步
+// ✅ 收藏中心不用登入；會員價跟官網 cookie session 同步
 const WISHLIST_LINE_USER_ID_KEY = 'murain_line_user_id';
 let wishlistMemberOk = false;
+let WISHLIST_MEMBER_INFO = null;
 
 function getWishlistLineUserId(){
   try {
@@ -1313,29 +1447,48 @@ function getWishlistLineUserId(){
   }
 }
 
-async function syncWishlistMemberSession(){
-  const uid = getWishlistLineUserId();
+function setWishlistLineUserId(uid){
+  const v = String(uid || '').trim();
+  if (!v) return;
+  try {
+    localStorage.setItem(WISHLIST_LINE_USER_ID_KEY, v);
+  } catch(e) {}
+}
 
-  if (!uid) {
-    wishlistMemberOk = false;
-    return false;
-  }
+async function syncWishlistMemberSession(){
+  wishlistMemberOk = false;
+  WISHLIST_MEMBER_INFO = null;
 
   try {
     const r = await fetch('https://api.murain.tw/line/member-info', {
       credentials:'include'
     });
+
     const j = await r.json().catch(() => ({}));
-    wishlistMemberOk = !!(r.ok && j && j.ok);
-    return wishlistMemberOk;
-  } catch(e) {
-    wishlistMemberOk = false;
-    return false;
-  }
+
+    if (r.ok && j && j.ok) {
+      WISHLIST_MEMBER_INFO = j;
+      wishlistMemberOk = true;
+
+      const uid = String(
+        j.line_user_id ||
+        j.lineUserId ||
+        j.member?.line_user_id ||
+        j.member?.LineUserId ||
+        ''
+      ).trim();
+
+      if (uid) setWishlistLineUserId(uid);
+      return true;
+    }
+  } catch(e) {}
+
+  wishlistMemberOk = false;
+  return false;
 }
 
 function wishlistCanShowMemberPrice(){
-  return wishlistMemberOk && !!getWishlistLineUserId();
+  return wishlistMemberOk === true;
 }
 
     const $ = (id) => document.getElementById(id);
@@ -1555,21 +1708,39 @@ const listPrice = moneyValue(p, [
       return 'NT$ ' + num.toLocaleString();
     }
 
-    function formatWishPriceText(p){
+    function getWishlistLoginUrl(){
+  const returnUrl = location.pathname + location.search;
+  return `/member.html?return_url=${encodeURIComponent(returnUrl)}`;
+}
+
+function formatWishPriceHtml(p){
   const memberPrice = Number(p?.price || 0) || 0;
   const listPrice = Number(p?.list_price || 0) || 0;
+  const canShowMember = wishlistCanShowMemberPrice();
 
-  // ✅ 有登入會員資料，才顯示會員價
-  if (wishlistCanShowMemberPrice() && memberPrice > 0) {
-    return 'NT$ ' + memberPrice.toLocaleString();
+  if (canShowMember && memberPrice > 0) {
+    if (listPrice > 0 && listPrice !== memberPrice) {
+      return `
+        <span class="wish-price-original">原價 NT$ ${listPrice.toLocaleString()}</span>
+        <span class="wish-price-member">會員價 NT$ ${memberPrice.toLocaleString()}</span>
+      `;
+    }
+
+    return `
+      <span class="wish-price-member">會員價 NT$ ${memberPrice.toLocaleString()}</span>
+    `;
   }
 
-  // ✅ 未登入：不顯示之前 localStorage 裡殘留的會員價
   if (listPrice > 0) {
-    return '原價 NT$ ' + listPrice.toLocaleString() + '｜登入會員看會員價';
+    return `
+      <span class="wish-price-original">原價 NT$ ${listPrice.toLocaleString()}</span>
+      <a class="wish-price-login" href="${escapeHtml(getWishlistLoginUrl())}">登入會員查看專屬價</a>
+    `;
   }
 
-  return '登入會員看會員價';
+  return `
+    <a class="wish-price-login" href="${escapeHtml(getWishlistLoginUrl())}">登入會員查看專屬價</a>
+  `;
 }
 
     function productLink(item){
@@ -1600,7 +1771,7 @@ const listPrice = moneyValue(p, [
         </div>
         <div class="wish-info">
           <h3 class="wish-title">${escapeHtml(p.title || '未命名商品')}</h3>
-          <p class="wish-price">${escapeHtml(formatWishPriceText(p))}</p>
+          <div class="wish-price">${formatWishPriceHtml(p)}</div>
         </div>
         ${showActions ? `
           <div class="wish-card-actions">
