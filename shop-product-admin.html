@@ -904,42 +904,58 @@ function renderPendingGalleryOrder(){
       }
     }
 
-    async function uploadImages(){
-      const coverFile = $('coverFile').files[0] || null;
-const galleryFiles = state.pendingGalleryFiles.length
-  ? state.pendingGalleryFiles
-  : Array.from($('galleryFiles').files || []);
+async function uploadImages(){
+  const coverFile = $('coverFile').files[0] || null;
+  const galleryFiles = state.pendingGalleryFiles.length
+    ? state.pendingGalleryFiles
+    : Array.from($('galleryFiles').files || []);
 
-      if (!coverFile && !galleryFiles.length) {
-        setStatus('saveMsg', '請先選擇圖片', true);
-        return [];
-      }
+  const oldCover = state.uploadedImages[0] || null;
 
-      setStatus('saveMsg', '圖片上傳中...');
+  if (!coverFile && !galleryFiles.length) {
+    setStatus('saveMsg', '請先選擇圖片', true);
+    return [];
+  }
 
-      const files = [];
-      if (coverFile) files.push(await fileToPayload(coverFile));
-      for (const f of galleryFiles) files.push(await fileToPayload(f));
+  if (!coverFile && !oldCover) {
+    setStatus('saveMsg', '請先選擇封面圖。多圖不能直接變成主照片。', true);
+    return [];
+  }
 
-      const data = await jfetch(ROUTES.uploadImages, {
-        method: 'POST',
-        body: JSON.stringify({
-          op_key: state.opKey,
-          files
-        })
-      });
+  setStatus('saveMsg', '圖片上傳中...');
 
-     state.uploadedImages = Array.isArray(data.images) ? data.images : [];
+  const files = [];
+  if (coverFile) files.push(await fileToPayload(coverFile));
+  for (const f of galleryFiles) files.push(await fileToPayload(f));
 
-$('coverFile').value = '';
-$('galleryFiles').value = '';
-state.pendingGalleryFiles = [];
-renderPendingGalleryOrder();
+  const data = await jfetch(ROUTES.uploadImages, {
+    method: 'POST',
+    body: JSON.stringify({
+      op_key: state.opKey,
+      files
+    })
+  });
 
-renderImagePreviews();
-setStatus('saveMsg', '圖片上傳完成，共 ' + state.uploadedImages.length + ' 張');
-return state.uploadedImages;
-    }
+  const uploaded = Array.isArray(data.images) ? data.images : [];
+
+  if (coverFile) {
+    state.uploadedImages = uploaded;
+  } else {
+    state.uploadedImages = [
+      oldCover,
+      ...uploaded
+    ].filter(Boolean);
+  }
+
+  $('coverFile').value = '';
+  $('galleryFiles').value = '';
+  state.pendingGalleryFiles = [];
+  renderPendingGalleryOrder();
+
+  renderImagePreviews();
+  setStatus('saveMsg', '圖片上傳完成，共 ' + state.uploadedImages.length + ' 張');
+  return state.uploadedImages;
+}
 
 function buildDraftPayload(){
   const cover = state.uploadedImages[0] || null;
