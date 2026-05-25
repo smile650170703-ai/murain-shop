@@ -695,6 +695,7 @@ let currentConsignAccountingBucket = '';
 
 let currentPanelMode = 'orders';      // orders / consign
 let currentConsignRows = [];
+let currentConsignVisibleRows = [];
 let currentConsignRecord = null;
 let CONSIGN_SELECTED = new Set();
  let currentCartRows = [];
@@ -2840,8 +2841,27 @@ function displayConsignMethod(v){
     default: return v ? v : '未選擇';
   }
 }
+ function getConsignLineSearchText(row){
+  return [
+    row.lineName,
+    row.orderLineName,
+    row.consignorLineName
+  ].map(v => String(v || '').trim()).filter(Boolean).join(' ').toLowerCase();
+}
+
+function getVisibleConsignRows(){
+  const q = String(LINE_SEARCH_TERM || '').trim().toLowerCase();
+  const rows = currentConsignRows || [];
+
+  if (!q) return rows;
+
+  return rows.filter(row => getConsignLineSearchText(row).includes(q));
+}
 function renderConsignList(){
   const listEl = $('#orderList');
+
+  const rows = getVisibleConsignRows();
+  currentConsignVisibleRows = rows;
 
   if (!currentConsignRows.length){
     listEl.innerHTML = '<div class="muted">目前沒有待處理的寄賣售出資料。</div>';
@@ -2849,13 +2869,19 @@ function renderConsignList(){
     return;
   }
 
-  // 清掉已經不在清單裡的勾選
-  const validIds = new Set(currentConsignRows.map(row => String(row.orderItemId || '')));
+  if (!rows.length){
+    listEl.innerHTML = '<div class="muted">查無符合 LINE 名稱搜尋的寄賣資料。</div>';
+    updateConsignBatchButtons();
+    return;
+  }
+
+  // 清掉已經不在目前顯示清單裡的勾選
+  const validIds = new Set(rows.map(row => String(row.orderItemId || '')));
   CONSIGN_SELECTED = new Set(
     Array.from(CONSIGN_SELECTED).filter(id => validIds.has(String(id)))
   );
 
-  listEl.innerHTML = currentConsignRows.map(row => {
+  listEl.innerHTML = rows.map(row => {
     const id = String(row.orderItemId || '');
     const notifyStatus = String(row.notifyStatus || 'pending').trim();
 const isSent = notifyStatus === 'sent';
@@ -2882,6 +2908,9 @@ if (stLower === 'pending_bank') {
           <div>
             <div class="ord-id">${escapeHtml(row.orderId || '')}｜${escapeHtml(row.sku || '')}</div>
             <div class="tag-small">${escapeHtml(row.name || '')}</div>
+${(row.lineName || row.orderLineName || row.consignorLineName) ? `
+  <div class="tag-small">LINE：${escapeHtml(row.lineName || row.orderLineName || row.consignorLineName)}</div>
+` : ``}
           </div>
 
           <div class="ord-right">
@@ -6200,6 +6229,24 @@ const lineSearchEl = $('#line_search');
 if (lineSearchEl){
   lineSearchEl.addEventListener('input', async ()=>{
     LINE_SEARCH_TERM = lineSearchEl.value || '';
+
+    if (currentPanelMode === 'consign') {
+      CONSIGN_SELECTED.clear();
+      renderConsignList();
+
+      const msgEl = $('#msg');
+      if (msgEl) {
+        const total = currentConsignRows.length;
+        const shown = currentConsignVisibleRows.length;
+
+        msgEl.textContent = LINE_SEARCH_TERM.trim()
+          ? `LINE 名稱搜尋：顯示 ${shown} / ${total} 筆。`
+          : `僅顯示寄賣待處理資料，共 ${total} 筆。`;
+      }
+
+      return;
+    }
+
     await reloadCurrentView();
   });
 }
