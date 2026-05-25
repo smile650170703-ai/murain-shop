@@ -3720,6 +3720,35 @@ function collectPreviewImages(product){
   const out = [];
   const seen = new Set();
 
+  function imageKey(url){
+    const s = String(url || '').trim();
+    if(!s) return '';
+
+    let m = s.match(/imagedelivery\.net\/[^/]+\/([^/?#]+)\//i);
+    if(m) return 'cf:' + decodeURIComponent(m[1]);
+
+    m = s.match(/\/cdn-cgi\/imagedelivery\/[^/]+\/([^/?#]+)\//i);
+    if(m) return 'cf:' + decodeURIComponent(m[1]);
+
+    return s.split('?')[0];
+  }
+
+  function addUrl(url){
+    const s = String(url || '').trim();
+    if(!s) return;
+
+    s.split(/\s*,\s*/).forEach(u => {
+      u = String(u || '').trim();
+      if(!/^https?:\/\//i.test(u)) return;
+
+      const key = imageKey(u);
+      if(seen.has(key)) return;
+
+      seen.add(key);
+      out.push(u);
+    });
+  }
+
   function addOne(v){
     if(!v) return;
 
@@ -3739,13 +3768,7 @@ function collectPreviewImages(product){
         }catch(e){}
       }
 
-      s.split(/\s*,\s*/).forEach(url => {
-        if(/^https?:\/\//i.test(url) && !seen.has(url)){
-          seen.add(url);
-          out.push(url);
-        }
-      });
-
+      addUrl(s);
       return;
     }
 
@@ -3753,7 +3776,6 @@ function collectPreviewImages(product){
       const url =
         v.url ||
         v.image_url ||
-        v.thumb_url ||
         v.large_url ||
         v.full_url ||
         v.full ||
@@ -3761,12 +3783,14 @@ function collectPreviewImages(product){
         v.thumbnails?.large?.url ||
         v.thumbnails?.full?.url ||
         v.thumbnails?.small?.url ||
+        v.thumb_url ||
         '';
 
       if(url) addOne(url);
     }
   }
 
+  // 正式輪播圖：先吃後端整理好的多圖
   addOne(product?.images);
   addOne(product?.ProductImages);
   addOne(product?.product_images);
@@ -3775,10 +3799,20 @@ function collectPreviewImages(product){
   addOne(product?.fields?.ProductImages);
   addOne(product?.fields?.product_images);
   addOne(product?.fields?.gallery);
+
+  // 主圖只補正式大圖，不把 thumb_url 當輪播圖
   addOne(product?.image_url);
   addOne(product?.image);
-  addOne(product?.thumb_url);
-  addOne(product?.thumb);
+  addOne(product?.fields?.image_url);
+  addOne(product?.fields?.image);
+
+  // 如果真的完全沒有正式圖，才退回縮圖
+  if(!out.length){
+    addOne(product?.thumb_url);
+    addOne(product?.thumb);
+    addOne(product?.fields?.thumb_url);
+    addOne(product?.fields?.thumb);
+  }
 
   return out;
 }
