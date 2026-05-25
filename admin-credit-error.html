@@ -81,6 +81,76 @@
     border-color:#22d3ee;
     box-shadow:0 8px 20px rgba(34,211,238,.35);
   }
+   .risk-section-title{
+    margin:0 0 8px;
+    font-size:17px;
+    color:#e5e7eb;
+  }
+
+  .risk-grid{
+    display:grid;
+    gap:12px;
+    margin-top:12px;
+  }
+
+  .risk-mini-card{
+    background:rgba(15,23,42,.95);
+    border:1px solid rgba(148,163,184,.30);
+    border-radius:16px;
+    padding:14px;
+  }
+
+  .risk-mini-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:8px;
+  }
+
+  .risk-mini-title{
+    font-size:15px;
+    font-weight:900;
+    color:#e5e7eb;
+  }
+
+  .risk-mini-count{
+    font-size:12px;
+    color:#94a3b8;
+  }
+
+  .risk-readonly-table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:8px;
+    font-size:12px;
+  }
+
+  .risk-readonly-table th,
+  .risk-readonly-table td{
+    border-bottom:1px solid rgba(148,163,184,.22);
+    padding:7px;
+    vertical-align:top;
+  }
+
+  .risk-readonly-table th{
+    color:#cbd5e1;
+    background:rgba(2,6,23,.36);
+    text-align:left;
+  }
+
+  .risk-empty{
+    color:#94a3b8;
+    font-size:13px;
+    padding:8px 0 2px;
+  }
+
+  .risk-note{
+    color:#cbd5e1;
+    font-size:12px;
+    max-width:280px;
+    white-space:pre-wrap;
+  }
 </style>
 </head>
 <body>
@@ -185,6 +255,47 @@
   <div class="card">
     <div id="list"></div>
   </div>
+
+  <div class="card">
+    <h2 class="risk-section-title">其他異常清單｜只讀查看</h2>
+    <div class="muted">
+      下方只顯示資料，不提供處理按鈕。購物金異常仍請使用上方原本清單處理。
+    </div>
+
+    <div class="risk-grid">
+      <div class="risk-mini-card">
+        <div class="risk-mini-head">
+          <div class="risk-mini-title">⚠️ PayUNI pending 超過24小時</div>
+          <div class="risk-mini-count" id="riskCountPayuni">載入中</div>
+        </div>
+        <div id="riskListPayuni"></div>
+      </div>
+
+      <div class="risk-mini-card">
+        <div class="risk-mini-head">
+          <div class="risk-mini-title">⚠️ 分期審核 pending 超過3天</div>
+          <div class="risk-mini-count" id="riskCountInstallment">載入中</div>
+        </div>
+        <div id="riskListInstallment"></div>
+      </div>
+
+      <div class="risk-mini-card">
+        <div class="risk-mini-head">
+          <div class="risk-mini-title">補庫存失敗</div>
+          <div class="risk-mini-count" id="riskCountRestock">載入中</div>
+        </div>
+        <div id="riskListRestock"></div>
+      </div>
+
+      <div class="risk-mini-card">
+        <div class="risk-mini-head">
+          <div class="risk-mini-title">⚠️ 已取消但庫存仍扣住</div>
+          <div class="risk-mini-count" id="riskCountCancelledStock">載入中</div>
+        </div>
+        <div id="riskListCancelledStock"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -194,6 +305,29 @@ const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
 let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
 let ALL_ROWS = [];
 let ERROR_ROWS = [];
+
+const RISK_LISTS = [
+  {
+    key: 'payuni_pending_24h',
+    countId: 'riskCountPayuni',
+    listId: 'riskListPayuni'
+  },
+  {
+    key: 'installment_pending_3d',
+    countId: 'riskCountInstallment',
+    listId: 'riskListInstallment'
+  },
+  {
+    key: 'restock_failed',
+    countId: 'riskCountRestock',
+    listId: 'riskListRestock'
+  },
+  {
+    key: 'cancelled_stock_locked',
+    countId: 'riskCountCancelledStock',
+    listId: 'riskListCancelledStock'
+  }
+];
 
 const $ = (s, r=document) => r.querySelector(s);
  async function ensureOpKey(){
@@ -323,7 +457,85 @@ function isCreditErrorRow(rec){
   const spendDone = normBool(f.credit_spend_done);
   return creditUsed > 0 && isPaidOk(f) && !spendDone;
 }
+function simpleOrderRowsHtml(rows){
+  if (!rows.length) {
+    return '<div class="risk-empty">目前沒有資料。</div>';
+  }
 
+  return `
+    <table class="risk-readonly-table">
+      <thead>
+        <tr>
+          <th>訂單</th>
+          <th>客人</th>
+          <th>付款 / 狀態</th>
+          <th>付款方式</th>
+          <th>商品</th>
+          <th>內部備註</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(rec => {
+          const f = rec.fields || rec || {};
+          const oid = String(f.order_id || '').trim();
+          const pm = String(f.payment_method || '').trim();
+          const note = String(f.internal_note || '').trim();
+          const items = String(f.items_json || '').trim();
+
+          return `
+            <tr>
+              <td><b>${esc(oid || '-')}</b></td>
+              <td>${esc(getLineName(f) || '-')}</td>
+              <td>
+                <span class="badge">${esc(displayPayStatus(f.pay_status))}</span><br>
+                <span class="badge">${esc(displayOrderStatus(f.status))}</span>
+              </td>
+              <td>${esc(pm || '-')}</td>
+              <td><div class="risk-note">${esc(items || '-')}</div></td>
+              <td><div class="risk-note">${esc(note || '-')}</div></td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+async function loadRiskList(cfg){
+  const countEl = document.getElementById(cfg.countId);
+  const listEl = document.getElementById(cfg.listId);
+
+  if (countEl) countEl.textContent = '載入中';
+  if (listEl) listEl.innerHTML = '<div class="risk-empty">載入中...</div>';
+
+  try {
+    const params = new URLSearchParams();
+    params.set('view_key', cfg.key);
+    params.set('op_key', OP_KEY);
+
+    const r = await fetch(`${API}/admin/orders?` + params.toString());
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.error || ('HTTP ' + r.status));
+    }
+
+    const rows = j.orders || j.records || [];
+
+    if (countEl) countEl.textContent = `${rows.length} 筆`;
+    if (listEl) listEl.innerHTML = simpleOrderRowsHtml(rows);
+
+  } catch(e) {
+    if (countEl) countEl.textContent = '載入失敗';
+    if (listEl) {
+      listEl.innerHTML = '<div class="error">載入失敗：' + esc(e.message || e) + '</div>';
+    }
+  }
+}
+
+async function loadRiskLists(){
+  await Promise.all(RISK_LISTS.map(loadRiskList));
+}
 function render(){
   const q = String($('#orderSearch')?.value || '').trim().toLowerCase();
   const rows = (ERROR_ROWS || []).filter(rec => {
@@ -429,6 +641,7 @@ async function loadRows(){
     ERROR_ROWS = ALL_ROWS;
 
     render();
+    await loadRiskLists();
   } catch(e) {
     console.error(e);
     msg.textContent = '';
