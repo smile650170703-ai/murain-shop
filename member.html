@@ -1378,6 +1378,109 @@ function buildCleanMemberReturnUrl(extraParams = {}) {
 
   return u.toString();
 }
+  // ✅ 會員登入完成後，安全導回原本來源頁，例如 wishlist.html
+const MEMBER_POST_LOGIN_RETURN_KEY = "MURAIN_MEMBER_POST_LOGIN_RETURN_URL";
+
+function normalizeMemberPostLoginReturnUrl(raw){
+  const s = String(raw || "").trim();
+  if (!s) return "";
+
+  try {
+    const u = new URL(s, window.location.origin);
+    const host = String(u.hostname || "").toLowerCase();
+
+    const allowedHost =
+      host === "murain.tw" ||
+      host === "www.murain.tw" ||
+      host === String(window.location.hostname || "").toLowerCase();
+
+    if (!allowedHost) return "";
+
+    const path = String(u.pathname || "").toLowerCase();
+
+    // 避免導回會員中心自己造成循環
+    if (
+      path === "/member" ||
+      path === "/member.html" ||
+      path.endsWith("/member.html")
+    ) {
+      return "";
+    }
+
+    // 避免導到後台或操作頁
+    if (
+      path.includes("/admin") ||
+      path === "/op.html" ||
+      path === "/op"
+    ) {
+      return "";
+    }
+
+    u.searchParams.delete("line_login");
+    u.searchParams.delete("logged_out");
+    u.searchParams.delete("liff.state");
+    u.searchParams.delete("liffState");
+
+    return u.toString();
+  } catch(e) {
+    return "";
+  }
+}
+
+function getMemberReturnUrlFromParams(){
+  try {
+    const params = getMemberSearchParams();
+    return normalizeMemberPostLoginReturnUrl(params.get("return_url") || "");
+  } catch(e) {
+    return "";
+  }
+}
+
+function storeMemberPostLoginReturnUrl(raw){
+  const url = normalizeMemberPostLoginReturnUrl(raw);
+  if (!url) return "";
+  try {
+    sessionStorage.setItem(MEMBER_POST_LOGIN_RETURN_KEY, url);
+  } catch(e) {}
+  return url;
+}
+
+function getMemberPostLoginReturnUrl(){
+  const fromParams = getMemberReturnUrlFromParams();
+  if (fromParams) {
+    storeMemberPostLoginReturnUrl(fromParams);
+    return fromParams;
+  }
+
+  try {
+    return normalizeMemberPostLoginReturnUrl(
+      sessionStorage.getItem(MEMBER_POST_LOGIN_RETURN_KEY) || ""
+    );
+  } catch(e) {
+    return "";
+  }
+}
+
+function clearMemberPostLoginReturnUrl(){
+  try {
+    sessionStorage.removeItem(MEMBER_POST_LOGIN_RETURN_KEY);
+  } catch(e) {}
+}
+
+function redirectToMemberPostLoginReturnIfNeeded(targetUrl){
+  const url = normalizeMemberPostLoginReturnUrl(targetUrl);
+  if (!url) return false;
+
+  clearMemberPostLoginReturnUrl();
+
+  try {
+    window.location.replace(url);
+  } catch(e) {
+    window.location.href = url;
+  }
+
+  return true;
+}
 // ✅ 官網會員中心 / 官網購物車共用的 LINE userId
 const SHARED_LINE_USER_ID_KEY = "murain_line_user_id";
 
@@ -1522,6 +1625,8 @@ async function enterMemberCenterWithSession() {
 async function completeMemberLoginFromLiff() {
   if (!hasMemberLoginReturnFlag()) return false;
 
+  const postLoginReturnUrl = getMemberPostLoginReturnUrl();
+
   if (!window.liff) {
     showBindGate("login");
     return false;
@@ -1536,6 +1641,7 @@ async function completeMemberLoginFromLiff() {
 
     if (!liff.isLoggedIn()) {
       markMemberLoginPending();
+      if (postLoginReturnUrl) storeMemberPostLoginReturnUrl(postLoginReturnUrl);
       liff.login();
       return true;
     }
@@ -1554,6 +1660,11 @@ async function completeMemberLoginFromLiff() {
     if (restored) {
       clearMemberLoginPending();
       cleanMemberLoginUrl();
+
+      if (redirectToMemberPostLoginReturnIfNeeded(postLoginReturnUrl)) {
+        return true;
+      }
+
       return true;
     }
 
@@ -1571,7 +1682,11 @@ async function completeMemberLoginFromLiff() {
   }
 }
 function getBindReturnUrl() {
-  // ✅ 綁定完成後也回正常會員中心，不要回 liff.line.me 包住的會員中心
+  // ✅ 如果是從「我的最愛 / 商品頁 / 商城」導來登入或綁定，完成後回原本來源頁
+  const postLoginReturnUrl = getMemberPostLoginReturnUrl();
+  if (postLoginReturnUrl) return postLoginReturnUrl;
+
+  // ✅ 一般從會員中心進來綁定，完成後回會員中心
   return buildCleanMemberReturnUrl({ from_bind: "1" });
 }
 
@@ -1681,16 +1796,25 @@ function showBindGate(mode = "login") {
     bindGatePrimaryBtn.textContent = "使用 LINE 登入";
     bindGateNote.textContent = "登入後系統會自動檢查是否已完成會員綁定。";
     bindGatePrimaryBtn.onclick = () => {
-      markMemberLoginPending();
-      const returnUrl = buildCleanMemberReturnUrl({ line_login: "1" });
-      const liffUrl = `https://liff.line.me/${LIFF_ID}/?line_login=1&return_url=${encodeURIComponent(returnUrl)}`;
+  markMemberLoginPending();
 
-      try {
-        window.location.href = liffUrl;
-      } catch (e) {
-        location.href = MEMBER_NORMAL_URL;
-      }
-    };
+  const postLoginReturnUrl = getMemberPostLoginReturnUrl();
+  if (postLoginReturnUrl) storeMemberPostLoginReturnUrl(postLoginReturnUrl);
+
+  const extraParams = { line_login: "1" };
+  if (postLoginReturnUrl) {
+    extraParams.return_url = postLoginReturnUrl;
+  }
+
+  const returnUrl = buildCleanMemberReturnUrl(extraParams);
+  const liffUrl = `https://liff.line.me/${LIFF_ID}/?line_login=1&return_url=${encodeURIComponent(returnUrl)}`;
+
+  try {
+    window.location.href = liffUrl;
+  } catch (e) {
+    location.href = MEMBER_NORMAL_URL;
+  }
+};
     statusText.textContent = "請先登入";
     creditValue.textContent = "NT$ --";
   }
