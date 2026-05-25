@@ -431,7 +431,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   </a>
 
   <a class="filter-btn btn-badge-wrap" data-admin-file="admin-credit-error.html" id="btnCreditErrorLink" href="admin-credit-error.html">
-    <span>⚠️ 購物金異常</span>
+    <span>⚠️ 異常中心</span>
     <span id="creditErrorBadge" class="count-badge" style="display:none;">0</span>
   </a>
 
@@ -2432,18 +2432,43 @@ function isCreditErrorDashboardRow(rec){
 }
 
 async function fetchCreditErrorCount() {
+  const viewKeys = [
+    'credit_error',
+    'payuni_pending_24h',
+    'installment_pending_3d',
+    'restock_failed',
+    'cancelled_stock_locked'
+  ];
+
   try {
-    const params = new URLSearchParams();
-    params.set('filter', 'all');
-    params.set('op_key', OP_KEY);
+    const results = await Promise.allSettled(
+      viewKeys.map(key => fetchAdminRowsByView(key))
+    );
 
-    const r = await fetch(`${API}/admin/orders?` + params.toString());
-    const j = await r.json().catch(() => ({}));
+    const seen = new Set();
+    let total = 0;
 
-    if (!r.ok || !j.ok) return 0;
+    results.forEach(result => {
+      if (result.status !== 'fulfilled') return;
 
-    const rows = j.orders || j.records || [];
-    return rows.filter(isCreditErrorDashboardRow).length;
+      const rows = Array.isArray(result.value) ? result.value : [];
+
+      rows.forEach(rec => {
+        const f = rec.fields || rec || {};
+        const oid = String(f.order_id || rec.id || '').trim();
+
+        // 避免同一張單同時出現在兩個 View，被重複計算
+        const uniqueKey = oid || String(rec.id || '').trim();
+        if (!uniqueKey) return;
+
+        if (!seen.has(uniqueKey)) {
+          seen.add(uniqueKey);
+          total += 1;
+        }
+      });
+    });
+
+    return total;
 
   } catch (e) {
     console.warn('fetchCreditErrorCount failed', e);
