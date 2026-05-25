@@ -3154,10 +3154,10 @@ const PRODUCT_LINE_UID_KEY = 'murain_line_user_id';
       return `https://murain.tw/product?sku=${encodeURIComponent(sku || '')}`;
     }
 
-    function getProductBindUrl(){
-      const returnUrl = getOfficialProductUrl();
-      return `https://liff.line.me/${PRODUCT_BIND_LIFF_ID}/?return_url=${encodeURIComponent(returnUrl)}`;
-    }
+  function getProductBindUrl(){
+  const returnUrl = getOfficialProductUrl();
+  return `https://murain.tw/member.html?return_url=${encodeURIComponent(returnUrl)}`;
+}
 
     function showToast(msg){
       const el = $('toast');
@@ -3344,23 +3344,29 @@ function updatePurchaseDisplay(product){
     return;
   }
 
-  qtyInput.disabled = false;
-  minusBtn.disabled = false;
-  plusBtn.disabled = false;
-  addBtn.disabled = false;
-  buyBtn.disabled = false;
-  if(mobileBuyBtn) mobileBuyBtn.disabled = false;
+qtyInput.disabled = false;
+addBtn.disabled = false;
+buyBtn.disabled = false;
+if(mobileBuyBtn) mobileBuyBtn.disabled = false;
 
-  qtyInput.min = '1';
-  qtyInput.max = String(stock);
+qtyInput.min = '1';
+qtyInput.max = String(stock);
 
-  let v = Number(qtyInput.value || 1) || 1;
-  if(v < 1) v = 1;
-  if(v > stock) v = stock;
-  qtyInput.value = String(v);
+let v = Number(qtyInput.value || 1) || 1;
+if(v < 1) v = 1;
+if(v > stock) v = stock;
+qtyInput.value = String(v);
 
-  if(hint) hint.textContent = `可直接加入購物車或立即結帳（最多 ${stock} 件）`;
-  updateMobileBuyBar(product);
+/* 數量按鈕狀態：庫存 1 件時不要讓 + 看起來可以按 */
+minusBtn.disabled = v <= 1;
+plusBtn.disabled = v >= stock;
+
+/* 提示文字：庫存 1 件不要顯示一大段系統文 */
+if(hint){
+  hint.textContent = stock === 1 ? '僅剩 1 件' : `最多可選 ${stock} 件`;
+}
+
+updateMobileBuyBar(product);
 }
 
     function formatDetailDesc(text){
@@ -3917,21 +3923,58 @@ async function refreshAfterAuthReturn(){
       });
     }
 
-    function bindQty(){
+function bindQty(){
+  function syncQtyButtons(stock, value){
+    const minusBtn = $('qtyMinus');
+    const plusBtn = $('qtyPlus');
+    const hint = $('qtyHint');
+
+    if(stock <= 0){
+      minusBtn.disabled = true;
+      plusBtn.disabled = true;
+      return;
+    }
+
+    minusBtn.disabled = value <= 1;
+    plusBtn.disabled = value >= stock;
+
+    if(hint){
+      hint.textContent = stock === 1 ? '僅剩 1 件' : `最多可選 ${stock} 件`;
+    }
+  }
+
   $('qtyMinus').addEventListener('click', () => {
     const stock = Math.max(0, Number(currentProduct?.stockQty || 0) || 0);
     let v = Number($('qtyInput').value || 1) || 1;
+
     if(stock <= 0) return;
+
+    if(v <= 1){
+      showToast('已是最低數量');
+      syncQtyButtons(stock, 1);
+      return;
+    }
+
     v = Math.max(1, v - 1);
     $('qtyInput').value = String(v);
+    syncQtyButtons(stock, v);
   });
 
   $('qtyPlus').addEventListener('click', () => {
     const stock = Math.max(0, Number(currentProduct?.stockQty || 0) || 0);
     let v = Number($('qtyInput').value || 1) || 1;
+
     if(stock <= 0) return;
+
+    if(v >= stock){
+      showToast(stock === 1 ? '此商品僅剩 1 件' : `此商品最多可購買 ${stock} 件`);
+      syncQtyButtons(stock, stock);
+      return;
+    }
+
     v = Math.min(stock, v + 1);
     $('qtyInput').value = String(v);
+    syncQtyButtons(stock, v);
   });
 
   $('qtyInput').addEventListener('change', () => {
@@ -3940,12 +3983,18 @@ async function refreshAfterAuthReturn(){
 
     if(stock <= 0){
       $('qtyInput').value = '0';
+      syncQtyButtons(stock, 0);
       return;
     }
 
     if(v < 1) v = 1;
-    if(v > stock) v = stock;
+    if(v > stock){
+      v = stock;
+      showToast(stock === 1 ? '此商品僅剩 1 件' : `此商品最多可購買 ${stock} 件`);
+    }
+
     $('qtyInput').value = String(v);
+    syncQtyButtons(stock, v);
   });
 }
 
