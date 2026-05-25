@@ -3086,8 +3086,19 @@ function updateConsignBatchButtons(){
 
   const btnAll = $('#btnConsignSelectAll');
   if (btnAll) {
-    const allSelected = currentConsignRows.length > 0 && n === currentConsignRows.length;
-    btnAll.textContent = allSelected ? '☐ 取消全選' : '☑ 全選本頁';
+    const visibleRows = currentConsignVisibleRows.length
+      ? currentConsignVisibleRows
+      : getVisibleConsignRows();
+
+    const visibleIds = visibleRows
+      .map(row => String(row.orderItemId || '').trim())
+      .filter(Boolean);
+
+    const allSelected =
+      visibleIds.length > 0 &&
+      visibleIds.every(id => CONSIGN_SELECTED.has(id));
+
+    btnAll.textContent = allSelected ? '☐ 取消全選本頁' : '☑ 全選本頁';
   }
 }
 
@@ -3101,18 +3112,86 @@ async function copyTextToClipboard(txt, okText = '已複製'){
   }
 }
 
+function getConsignRowLineName(row){
+  return String(
+    row.lineName ||
+    row.orderLineName ||
+    row.consignorLineName ||
+    ''
+  ).trim();
+}
+
 function buildConsignBankCopyText(rows){
-  return (rows || []).map(row => {
+  const bankRows = (rows || []).filter(row => {
+    const method = String(row.method || '').trim().toLowerCase();
+    const amount = Number(row.bankAmount || 0) || 0;
+    return method === 'bank_transfer' && amount > 0;
+  });
+
+  if (!bankRows.length) {
+    return '勾選資料中沒有可複製的匯款資料。請確認資料已是「匯款」且有匯款金額。';
+  }
+
+  const groups = new Map();
+
+  bankRows.forEach(row => {
     const bankInfo = row.bankInfo || {};
+    const consignorName = String(row.consignorName || bankInfo.accountName || '').trim();
+    const lineName = getConsignRowLineName(row);
+
+    const key = [
+      consignorName,
+      bankInfo.accountName || '',
+      bankInfo.bankCode || '',
+      bankInfo.bankName || '',
+      bankInfo.accountNo || ''
+    ].join('|');
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        consignorName,
+        lineNames: new Set(),
+        bankInfo,
+        total: 0,
+        rows: []
+      });
+    }
+
+    const group = groups.get(key);
+    if (lineName) group.lineNames.add(lineName);
+
+    const amount = Number(row.bankAmount || 0) || 0;
+    group.total += amount;
+    group.rows.push({
+      orderId: row.orderId || '',
+      sku: row.sku || '',
+      name: row.name || '',
+      amount
+    });
+  });
+
+  return Array.from(groups.values()).map(group => {
+    const bankInfo = group.bankInfo || {};
+    const lineNames = Array.from(group.lineNames).filter(Boolean).join(' / ');
+
+    const detailLines = group.rows.map((item, idx) => {
+      return `${idx + 1}. ${item.orderId || '-'}${item.sku ? `｜${item.sku}` : ''}｜NT$ ${Number(item.amount || 0).toLocaleString('zh-TW')}${item.name ? `｜${item.name}` : ''}`;
+    });
 
     return [
-      `訂單編號：${row.orderId || ''}`,
+      `寄賣人：${group.consignorName || ''}`,
+      lineNames ? `LINE名稱：${lineNames}` : '',
       `銀行代碼：${bankInfo.bankCode || ''}`,
       `銀行名稱：${bankInfo.bankName || ''}`,
+      `匯款戶名：${bankInfo.accountName || group.consignorName || ''}`,
       `匯款帳號：${bankInfo.accountNo || ''}`,
-      `匯款金額：NT$ ${Number(row.bankAmount || 0).toLocaleString('zh-TW')}`
-    ].join('\n');
-  }).join('\n\n--------------------\n\n');
+      '',
+      `明細：`,
+      ...detailLines,
+      '',
+      `匯款總金額：NT$ ${Number(group.total || 0).toLocaleString('zh-TW')}`
+    ].filter(line => line !== '').join('\n');
+  }).join('\n\n====================\n\n');
 }
 
 async function batchCopyConsignBank(){
@@ -3123,8 +3202,25 @@ async function batchCopyConsignBank(){
     return;
   }
 
+const bankRows = rows.filter(row => {
+    const method = String(row.method || '').trim().toLowerCase();
+    const amount = Number(row.bankAmount || 0) || 0;
+    return method === 'bank_transfer' && amount > 0;
+  });
+
+  const groupKeys = new Set(bankRows.map(row => {
+    const bankInfo = row.bankInfo || {};
+    return [
+      row.consignorName || bankInfo.accountName || '',
+      bankInfo.accountName || '',
+      bankInfo.bankCode || '',
+      bankInfo.bankName || '',
+      bankInfo.accountNo || ''
+    ].join('|');
+  }));
+
   const txt = buildConsignBankCopyText(rows);
-  await copyTextToClipboard(txt, `已複製 ${rows.length} 筆匯款資料`);
+  await copyTextToClipboard(txt, `已複製 ${bankRows.length} 筆匯款明細，共 ${groupKeys.size} 組匯款資料`);
 }
 
 async function batchConsignAction(action){
@@ -3238,18 +3334,23 @@ async function runBatchConsignActionRows(rows, action){
 }
 
 function bindConsignBatchButtons(){
-  $('#btnConsignSelectAll')?.addEventListener('click', () => {
+$('#btnConsignSelectAll')?.addEventListener('click', () => {
+    const visibleRows = currentConsignVisibleRows.length
+      ? currentConsignVisibleRows
+      : getVisibleConsignRows();
+
+    const visibleIds = visibleRows
+      .map(row => String(row.orderItemId || '').trim())
+      .filter(Boolean);
+
     const allSelected =
-      currentConsignRows.length > 0 &&
-      getSelectedConsignRows().length === currentConsignRows.length;
+      visibleIds.length > 0 &&
+      visibleIds.every(id => CONSIGN_SELECTED.has(id));
 
     if (allSelected) {
-      CONSIGN_SELECTED.clear();
+      visibleIds.forEach(id => CONSIGN_SELECTED.delete(id));
     } else {
-      currentConsignRows.forEach(row => {
-        const id = String(row.orderItemId || '');
-        if (id) CONSIGN_SELECTED.add(id);
-      });
+      visibleIds.forEach(id => CONSIGN_SELECTED.add(id));
     }
 
     renderConsignList();
