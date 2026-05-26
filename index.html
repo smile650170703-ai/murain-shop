@@ -1131,8 +1131,17 @@ async function goCartCheckout(){
   </script>
 
 <script>
-/* ✅ 全官網會員登入 / 登出同步 */
+/* ✅ 全官網會員登入 / 登出同步｜正式上線保守版
+   放置位置：原本「固定：購物車 JS」結束後
+   重點：
+   1. 不改會員中心 icon 的 return_url
+   2. 會員中心永遠只去 /member.html
+   3. 只同步 session / uid / 購物車 badge
+*/
 (function(){
+  if (window.__XUYUAN_MEMBER_SYNC_INSTALLED__) return;
+  window.__XUYUAN_MEMBER_SYNC_INSTALLED__ = true;
+
   const MEMBER_UID_KEY = 'murain_line_user_id';
 
   const API = (typeof HOME_API !== 'undefined' && HOME_API)
@@ -1144,6 +1153,14 @@ async function goCartCheckout(){
     : 'MURAIN_WEB_CART_TOKEN';
 
   let syncingMember = false;
+
+  function getLocalMemberUid(){
+    try {
+      return String(localStorage.getItem(MEMBER_UID_KEY) || '').trim();
+    } catch(e) {
+      return '';
+    }
+  }
 
   function readUidFromMemberInfo(j){
     return String(
@@ -1160,92 +1177,15 @@ async function goCartCheckout(){
     ).trim();
   }
 
-  function readNameFromMemberInfo(j){
-    return String(
-      j?.display_name ||
-      j?.displayName ||
-      j?.lineDisplayName ||
-      j?.name ||
-      j?.member?.display_name ||
-      j?.member?.displayName ||
-      j?.member?.lineDisplayName ||
-      j?.member?.name ||
-      ''
-    ).trim();
-  }
-
-  function ensureMemberSyncStyle(){
-    if (document.getElementById('xuyuanMemberSyncStyle')) return;
-
-    const style = document.createElement('style');
-    style.id = 'xuyuanMemberSyncStyle';
-    style.textContent = `
-      .nav-member-btn{
-        position:relative;
-      }
-
-      .nav-member-btn.is-member-logged-in::after{
-        content:"";
-        position:absolute;
-        right:3px;
-        top:3px;
-        width:7px;
-        height:7px;
-        border-radius:999px;
-        background:#b79269;
-        box-shadow:0 0 0 2px rgba(255,255,255,.92);
-      }
-
-      .nav-member-btn.is-member-logged-out{
-        opacity:.82;
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  function setMemberNavState(isLoggedIn, memberInfo){
-    ensureMemberSyncStyle();
-
-    const btn = document.querySelector('.nav-member-btn');
-    if (!btn) return;
-
-    btn.classList.toggle('is-member-logged-in', !!isLoggedIn);
-    btn.classList.toggle('is-member-logged-out', !isLoggedIn);
-
-    const name = readNameFromMemberInfo(memberInfo || {});
-    const returnUrl = encodeURIComponent(window.location.href);
-
-    btn.href = `https://murain.tw/member.html?return_url=${returnUrl}`;
-
-    if (isLoggedIn) {
-      btn.setAttribute('aria-label', name ? `會員中心：${name}` : '會員中心：已登入');
-      btn.setAttribute('title', name ? `會員中心：${name}` : '會員中心：已登入');
-    } else {
-      btn.setAttribute('aria-label', '會員中心：登入 / 綁定會員');
-      btn.setAttribute('title', '會員中心：登入 / 綁定會員');
-    }
-
-    const menuMember = document.querySelector('.site-menu-member small');
-    if (menuMember) {
-      menuMember.textContent = isLoggedIn
-        ? '已登入，可查詢訂單與會員專屬服務'
-        : '登入 / 綁定後可查詢訂單與會員服務';
-    }
-  }
-
-  function clearOfficialMemberCache(){
-    try { localStorage.removeItem(MEMBER_UID_KEY); } catch(e) {}
-
+  function keepMemberLinksNormal(){
     /*
-      ✅ 登出同步重點：
-      如果後端 session 已經登出，就不要讓舊官網購物車 token 留在其他頁面。
-      這樣才不會出現「明明登出，右上角購物車還像登入會員的車」。
+      ✅ 重要：
+      上方人形會員中心就是會員中心入口。
+      不要帶 return_url，避免登入後又跳回原頁。
     */
-    try { localStorage.removeItem(WEB_CART_KEY); } catch(e) {}
-
-    try {
-      if (typeof setCartBadge === 'function') setCartBadge(0);
-    } catch(e) {}
+    document.querySelectorAll('.nav-member-btn, .site-menu-member a').forEach(function(a){
+      a.setAttribute('href', '/member.html');
+    });
   }
 
   function isClearlyLoggedOut(r, j){
@@ -1263,9 +1203,35 @@ async function goCartCheckout(){
     );
   }
 
+  function clearLoggedOutMemberCache(){
+    const hadUid = !!getLocalMemberUid();
+
+    try {
+      localStorage.removeItem(MEMBER_UID_KEY);
+    } catch(e) {}
+
+    /*
+      ✅ 只在「原本有會員 uid」時才清購物車 token。
+      這樣可以避免一般未登入訪客被誤清。
+    */
+    if (hadUid) {
+      try {
+        localStorage.removeItem(WEB_CART_KEY);
+      } catch(e) {}
+
+      try {
+        if (typeof setCartBadge === 'function') setCartBadge(0);
+      } catch(e) {}
+    }
+
+    keepMemberLinksNormal();
+  }
+
   async function syncOfficialMemberSession(){
     if (syncingMember) return;
     syncingMember = true;
+
+    keepMemberLinksNormal();
 
     try {
       const r = await fetch(`${API}/line/member-info`, {
@@ -1273,16 +1239,18 @@ async function goCartCheckout(){
         cache:'no-store'
       });
 
-      const j = await r.json().catch(() => ({}));
+      const j = await r.json().catch(function(){ return {}; });
 
       if (r.ok && j && j.ok) {
         const uid = readUidFromMemberInfo(j);
 
         if (uid) {
-          try { localStorage.setItem(MEMBER_UID_KEY, uid); } catch(e) {}
+          try {
+            localStorage.setItem(MEMBER_UID_KEY, uid);
+          } catch(e) {}
         }
 
-        setMemberNavState(true, j);
+        keepMemberLinksNormal();
 
         try {
           if (typeof refreshCartBadge === 'function') refreshCartBadge();
@@ -1292,8 +1260,7 @@ async function goCartCheckout(){
       }
 
       if (isClearlyLoggedOut(r, j)) {
-        clearOfficialMemberCache();
-        setMemberNavState(false, null);
+        clearLoggedOutMemberCache();
 
         try {
           if (typeof refreshCartBadge === 'function') refreshCartBadge();
@@ -1301,15 +1268,10 @@ async function goCartCheckout(){
       }
     } catch(e) {
       /*
-        網路不穩或 API 暫時失敗時，不強制清掉登入狀態，
-        避免只是斷線就把會員資料清空。
+        API 暫時失敗或網路不穩時，不強制清資料。
+        避免只是網路問題就把會員狀態清掉。
       */
-      const localUid = (() => {
-        try { return String(localStorage.getItem(MEMBER_UID_KEY) || '').trim(); }
-        catch(err) { return ''; }
-      })();
-
-      setMemberNavState(!!localUid, null);
+      keepMemberLinksNormal();
     } finally {
       syncingMember = false;
     }
@@ -1317,7 +1279,12 @@ async function goCartCheckout(){
 
   window.syncOfficialMemberSession = syncOfficialMemberSession;
 
-  window.addEventListener('DOMContentLoaded', syncOfficialMemberSession);
+  if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', syncOfficialMemberSession);
+  } else {
+    syncOfficialMemberSession();
+  }
+
   window.addEventListener('pageshow', syncOfficialMemberSession);
   window.addEventListener('focus', syncOfficialMemberSession);
 
@@ -1332,6 +1299,5 @@ async function goCartCheckout(){
   });
 })();
 </script>
-
 </body>
 </html>
