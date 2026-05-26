@@ -3086,6 +3086,7 @@ const SHOP_LINE_UID_KEY = 'murain_line_user_id';
 const SHOP_RETURN_SKU_KEY = 'murain_shop_return_sku';
 const SHOP_RETURN_URL_KEY = 'murain_shop_return_url';
 const SHOP_MEMBER_LOGIN_PENDING_KEY = 'murain_shop_member_login_pending';
+const SHOP_PENDING_ACTION_KEY = 'murain_shop_pending_action';
 
 let SHOP_MEMBER_INFO = null;
 let SHOP_MEMBER_CHECKING = null;
@@ -3181,7 +3182,39 @@ function clearShopMemberLoginPending(){
     localStorage.removeItem(SHOP_MEMBER_LOGIN_PENDING_KEY);
   } catch(e) {}
 }
+function markShopPendingAction(action, sku){
+  try {
+    localStorage.setItem(SHOP_PENDING_ACTION_KEY, JSON.stringify({
+      action: String(action || '').trim(),
+      sku: String(sku || '').trim(),
+      ts: Date.now()
+    }));
+  } catch(e) {}
+}
 
+function consumeShopPendingAction(sku){
+  try {
+    const raw = localStorage.getItem(SHOP_PENDING_ACTION_KEY);
+    if (!raw) return '';
+
+    const data = JSON.parse(raw);
+    const action = String(data?.action || '').trim();
+    const savedSku = String(data?.sku || '').trim();
+    const ts = Number(data?.ts || 0) || 0;
+
+    localStorage.removeItem(SHOP_PENDING_ACTION_KEY);
+
+    // 超過 10 分鐘不要自動補動作，避免舊資料誤觸發
+    if (!ts || Date.now() - ts > 10 * 60 * 1000) return '';
+
+    if (savedSku && sku && savedSku !== sku) return '';
+
+    return action;
+  } catch(e) {
+    try { localStorage.removeItem(SHOP_PENDING_ACTION_KEY); } catch(err) {}
+    return '';
+  }
+}
 function getShopSearchParams(){
   const qs = new URLSearchParams(location.search || '');
   const st = qs.get('liff.state') || qs.get('liffState') || '';
@@ -4217,7 +4250,16 @@ async function loadPreviewImages(product){
     const apiBase = (typeof HOME_API !== 'undefined') ? HOME_API : 'https://api.murain.tw';
     const detailUrl = new URL(`${apiBase}/product/${encodeURIComponent(sku)}`);
 
-const res = await fetch(detailUrl.toString(), { credentials: 'include' });
+    if (SHOP_MEMBER_INFO) {
+      detailUrl.searchParams.set('_member_view', '1');
+      detailUrl.searchParams.set('_t', String(Date.now()));
+    }
+
+    const res = await fetch(detailUrl.toString(), {
+      credentials: 'include',
+      cache: SHOP_MEMBER_INFO ? 'no-store' : 'default'
+    });
+
     const json = await res.json().catch(() => ({}));
 
     const detail =
@@ -4227,6 +4269,38 @@ const res = await fetch(detailUrl.toString(), { credentials: 'include' });
       json;
 
     const merged = Object.assign({}, product, detail);
+
+    // ✅ 如果目前預覽的還是同一個 SKU，就把會員版價格也合併回畫面
+    if (
+      previewProduct &&
+      String(previewSku(previewProduct) || '').trim() === String(sku).trim()
+    ) {
+      previewProduct = merged;
+      updatePreviewCartButton(merged);
+
+      if($('previewPrice')){
+        const price = previewPriceValue(merged);
+        const listPrice = previewListPriceValue(merged);
+        const canSeePrice = productCanSeeMemberPrice(merged) && price > 0;
+
+        if (canSeePrice) {
+          if(listPrice > 0){
+            $('previewPrice').innerHTML = `
+              <span>${previewMoney(price)}</span>
+              <span class="preview-list-price">${previewMoney(listPrice)}</span>
+            `;
+          }else{
+            $('previewPrice').textContent = previewMoney(price);
+          }
+        } else {
+          $('previewPrice').innerHTML = `
+            ${listPrice > 0 ? `<span class="preview-list-price">${previewMoney(listPrice)}</span>` : ``}
+            <span class="member-price-login-text">登入會員看會員價</span>
+          `;
+        }
+      }
+    }
+
     const imgs = collectPreviewImages(merged);
 
     if(imgs.length > previewImages.length){
@@ -4630,8 +4704,14 @@ async function previewAddToCart(){
   }
 
   if (!SHOP_MEMBER_INFO) {
+    // 記住：這次跳會員登入，是因為客人剛剛按了「加入購物籃」
+    markShopPendingAction('add_cart', sku);
+
     const ok = await initShopMember(true);
     if (!ok) return;
+
+    // 如果沒有真的跳走、只是成功補到 session，就清掉 pending，避免之後重複自動加入
+    consumeShopPendingAction(sku);
   }
   const btn = $('previewCartBtn');
 
@@ -4685,11 +4765,13 @@ if (
   err === 'member_required' ||
   err === 'member_login_required'
 ) {
+  markShopPendingAction('add_cart', sku);
   redirectShopMemberLogin(buildShopMemberReturnUrl());
   return;
 }
 
 if (err === 'member_not_bound') {
+  markShopPendingAction('add_cart', sku);
   redirectShopMemberBindForPreview();
   return;
 }
@@ -4750,15 +4832,16 @@ if (
   err === 'member_required' ||
   err === 'member_login_required'
 ) {
+  markShopPendingAction('add_cart', sku);
   redirectShopMemberLogin(buildShopMemberReturnUrl());
   return;
 }
 
 if (err === 'member_not_bound') {
+  markShopPendingAction('add_cart', sku);
   redirectShopMemberBindForPreview();
   return;
 }
-
     alert('加入失敗，請稍後再試');
     updatePreviewCartButton(previewProduct);
   } finally {
@@ -4847,7 +4930,19 @@ function openPendingPreviewAfterMemberLogin(){
   u.searchParams.delete('after_member_login');
   history.replaceState({}, '', u.toString());
 
+  const pendingAction = consumeShopPendingAction(sku);
+
   openProductPreview(found);
+
+  // 如果客人登入前按的是「加入購物籃」，
+  // 登入回來並打開同商品後，自動補跑一次加入購物車。
+  if (pendingAction === 'add_cart') {
+    setTimeout(() => {
+      if (typeof previewAddToCart === 'function') {
+        previewAddToCart();
+      }
+    }, 350);
+  }
 }
   function renderProducts(list){
     const wrap = $('productList');
@@ -5249,8 +5344,18 @@ $('emptyTip').style.display = 'none';
    if (selectedCat !== 'ALL') u.searchParams.set('cat', selectedCat);
 if (selectedSub !== 'ALL') u.searchParams.set('sub', selectedSub);
 
-// 拿掉 no-store
-const res = await fetch(u.toString(), { credentials:'include' });
+// 會員登入後一定不要吃瀏覽器公開版快取，避免已登入仍顯示「登入查看會員價」
+if (shopMemberReady) {
+  u.searchParams.set('_member_view', '1');
+  if (forceFreshMemberRender) {
+    u.searchParams.set('_t', String(Date.now()));
+  }
+}
+
+const res = await fetch(u.toString(), {
+  credentials:'include',
+  cache: shopMemberReady ? 'no-store' : 'default'
+});
     const json = await res.json();
 
     allItems = Array.isArray(json.items) ? json.items : [];
