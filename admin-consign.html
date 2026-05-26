@@ -438,6 +438,86 @@ body.is-consign-page #btnCartRemindTop{
   border-color:#facc15;
   box-shadow:0 8px 20px rgba(250,204,21,.16);
 }
+ /* ===== 寄賣勾選金額統計（LINE 搜尋框下方） ===== */
+.consign-selected-total{
+  margin-top:10px;
+  padding:10px;
+  border-radius:14px;
+  border:1px solid rgba(250,204,21,.35);
+  background:
+    radial-gradient(circle at top right, rgba(250,204,21,.16), transparent 42%),
+    rgba(2,6,23,.55);
+  box-shadow:0 10px 24px rgba(0,0,0,.18);
+}
+
+.consign-selected-total.is-empty{
+  border-color:rgba(148,163,184,.22);
+  background:rgba(2,6,23,.35);
+  box-shadow:none;
+}
+
+.consign-total-empty{
+  font-size:12px;
+  color:#94a3b8;
+  line-height:1.5;
+}
+
+.consign-total-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  font-size:12px;
+  color:#fef3c7;
+  margin-bottom:6px;
+}
+
+.consign-total-head strong{
+  font-size:18px;
+  color:#fde68a;
+  white-space:nowrap;
+}
+
+.consign-total-line{
+  font-size:12px;
+  color:#cbd5e1;
+  margin-bottom:8px;
+}
+
+.consign-total-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:6px;
+}
+
+.consign-total-cell{
+  padding:8px;
+  border-radius:12px;
+  background:rgba(15,23,42,.86);
+  border:1px solid rgba(148,163,184,.22);
+}
+
+.consign-total-cell span,
+.consign-total-cell em{
+  display:block;
+  font-size:11px;
+  color:#94a3b8;
+  font-style:normal;
+}
+
+.consign-total-cell strong{
+  display:block;
+  margin:3px 0;
+  font-size:14px;
+  color:#e2e8f0;
+}
+
+.consign-total-note{
+  margin-top:8px;
+  font-size:11px;
+  line-height:1.5;
+  color:#fef08a;
+}
 </style>
 </head>
 <body>
@@ -524,6 +604,10 @@ body.is-consign-page #btnCartRemindTop{
   <div class="side-box">
     <label>LINE 名稱搜尋</label>
     <input id="line_search" type="text" placeholder="輸入 LINE 名稱" />
+
+    <div id="consign_selected_total" class="consign-selected-total is-empty">
+      <div class="consign-total-empty">尚未勾選寄賣資料</div>
+    </div>
   </div>
 </div>
 
@@ -3062,7 +3146,67 @@ function getSelectedConsignRows(){
     .map(id => currentConsignRows.find(row => String(row.orderItemId || '') === String(id)))
     .filter(Boolean);
 }
+function updateConsignSelectedTotal(rows){
+  const box = $('#consign_selected_total');
+  if (!box) return;
 
+  const list = Array.isArray(rows) ? rows : [];
+  const n = list.length;
+
+  if (!n) {
+    box.classList.add('is-empty');
+    box.innerHTML = '<div class="consign-total-empty">尚未勾選寄賣資料</div>';
+    return;
+  }
+
+  let bankCount = 0;
+  let bankTotal = 0;
+  let creditCount = 0;
+  let creditTotal = 0;
+  let waitingCount = 0;
+
+  list.forEach(row => {
+    const method = String(row.method || '').trim().toLowerCase();
+
+    if (method === 'bank_transfer') {
+      bankCount += 1;
+      bankTotal += Number(row.bankAmount || 0) || 0;
+      return;
+    }
+
+    if (method === 'store_credit') {
+      creditCount += 1;
+      creditTotal += Number(row.creditAmount || 0) || 0;
+      return;
+    }
+
+    waitingCount += 1;
+  });
+
+  const total = bankTotal + creditTotal;
+
+  box.classList.remove('is-empty');
+  box.innerHTML = `
+    <div class="consign-total-head">
+      <span>勾選金額合計</span>
+      <strong>${money(total)}</strong>
+    </div>
+    <div class="consign-total-line">已勾選 ${n} 筆，依目前「選擇方式」加總</div>
+    <div class="consign-total-grid">
+      <div class="consign-total-cell">
+        <span>匯款</span>
+        <strong>${money(bankTotal)}</strong>
+        <em>${bankCount} 筆</em>
+      </div>
+      <div class="consign-total-cell">
+        <span>購物金</span>
+        <strong>${money(creditTotal)}</strong>
+        <em>${creditCount} 筆</em>
+      </div>
+    </div>
+    ${waitingCount ? `<div class="consign-total-note">另有 ${waitingCount} 筆尚未選擇匯款／購物金，未納入金額。</div>` : ''}
+  `;
+}
 function updateConsignBatchButtons(){
   const rows = getSelectedConsignRows();
   const n = rows.length;
@@ -3073,6 +3217,8 @@ function updateConsignBatchButtons(){
       ? `<span>已勾選：${n} 筆</span>`
       : '';
   }
+
+  updateConsignSelectedTotal(rows);
 
   const btnCopy = $('#btnConsignBatchCopyBank');
   const btnBankDone = $('#btnConsignBatchBankDone');
