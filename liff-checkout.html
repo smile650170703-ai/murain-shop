@@ -2940,12 +2940,36 @@ async function initLiffAndMember() {
   // 不再先卡 localStorage 的 murain_line_user_id。
   // loadCheckoutMemberBySession() 內部仍會檢查 session uid 是否等於 cart owner。
   if (isWebCart) {
-    const ok = await loadCheckoutMemberBySession(null);
+    let ok = await loadCheckoutMemberBySession(null);
     if (ok) return;
 
-    // cookie 沒有成功 / session 不屬於這台 cart，才導會員中心重新登入
+    // 官網購物車：不要一失敗就丟會員中心，先在結帳頁自己補 LINE → 後端會員 session
     try { saveCheckoutState(); } catch(e) {}
 
+    if (window.liff) {
+      try {
+        await liff.init({ liffId: LIFF_ID });
+
+        if (!liff.isLoggedIn()) {
+          liff.login({ redirectUri: window.location.href });
+          return;
+        }
+
+        const sessionOk = await createCheckoutAuthSessionFromLiff().catch(e => {
+          console.log('[checkout] create web member session failed', e);
+          return false;
+        });
+
+        if (sessionOk) {
+          ok = await loadCheckoutMemberBySession(null);
+          if (ok) return;
+        }
+      } catch(e) {
+        console.log('[checkout] web cart LIFF/session failed', e);
+      }
+    }
+
+    // 最後才交給會員中心處理，不要一開始就丟回去造成循環
     const returnUrl = window.location.href;
     location.href = `https://murain.tw/member.html?return_url=${encodeURIComponent(returnUrl)}`;
     return;
