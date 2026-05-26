@@ -4013,9 +4013,11 @@ function updateMobileBuyBar(product){
   const stock = Math.max(0, Number(product.stockQty || 0) || 0);
   const locked = isProductMemberLocked(product);
   const soldOut = stock <= 0;
-  price.dataset.label = soldOut ? '目前狀態' : (locked ? '登入後查看' : '限時組合價');
+price.dataset.label = soldOut ? '目前狀態' : (locked ? '登入後查看' : '限時組合價');
 price.textContent = soldOut ? '已售完' : (locked ? '會員價' : formatMoney(product.price || 0));
-btn.disabled = locked || stock <= 0;
+
+btn.disabled = soldOut;
+btn.dataset.locked = locked ? '1' : '0';
 btn.textContent = soldOut ? '已售完' : (locked ? '登入查看' : '立即購買');
 
   refreshMobileBuyBarVisibility();
@@ -4707,9 +4709,8 @@ const res = await fetch(productUrl.toString(), { credentials:'include' });
     if(product && product.sku){
       allItems = [];
       renderProductPage(product);
-      fetchRelatedItems(product);
-      restoreCart();
-      refreshWishBadge();
+  fetchRelatedItems(product);
+refreshWishBadge();
     }else{
       $('loading').style.display = 'none';
       $('notFound').style.display = '';
@@ -4742,9 +4743,9 @@ async function refreshAfterAuthReturn(){
   if(authReturnRefreshRunning || !hasAuthReturn()) return;
   authReturnRefreshRunning = true;
   try{
-    await restoreCart();
-    await fetchProduct();
-    clearAuthReturnParams();
+await fetchProduct();
+restoreCart().catch(() => {});
+clearAuthReturnParams();
   }finally{
     authReturnRefreshRunning = false;
   }
@@ -4883,12 +4884,23 @@ function bindQty(){
         document.body.appendChild(bar);
       }
 
-      if(mobileBtn && buyBtn){
-        mobileBtn.addEventListener('click', () => {
-          if(mobileBtn.disabled || buyBtn.disabled) return;
-          buyBtn.click();
-        });
-      }
+if(mobileBtn){
+  mobileBtn.addEventListener('click', () => {
+    if(mobileBtn.disabled) return;
+
+    if(currentProduct && isProductMemberLocked(currentProduct)){
+      showToast('請先登入或綁定會員');
+      setTimeout(() => {
+        location.href = getProductBindUrl();
+      }, 300);
+      return;
+    }
+
+    if(buyBtn && !buyBtn.disabled){
+      buyBtn.click();
+    }
+  });
+}
 
       if(bar && purchaseAnchor && 'IntersectionObserver' in window){
         const observer = new IntersectionObserver(([entry]) => {
@@ -4940,9 +4952,10 @@ function bindQty(){
         return;
       }
 
-      await restoreCart();
-      await fetchProduct();
-      if(hasAuthReturn()) clearAuthReturnParams();
+await fetchProduct();
+if(hasAuthReturn()) clearAuthReturnParams();
+
+restoreCart().catch(() => {});
 
       $('cartBtn').addEventListener('click', goCheckout);
       $('addCartBtn').addEventListener('click', () => addToCartAndMaybeCheckout(false));
