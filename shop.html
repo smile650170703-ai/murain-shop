@@ -4670,11 +4670,32 @@ function showShopActionToast(product, message, linkText, onLink){
   if(linkText){
     link.hidden = false;
     link.textContent = linkText;
-    link.onclick = (e) => {
-      e.preventDefault();
-      hideShopActionToast();
-      if(typeof onLink === 'function') onLink();
-    };
+    link.onclick = async (e) => {
+  e.preventDefault();
+
+  if (link.dataset.loading === '1') return;
+
+  link.dataset.loading = '1';
+  const oldText = link.textContent;
+
+  link.textContent = '開啟中...';
+  link.disabled = true;
+  link.style.pointerEvents = 'none';
+  link.style.opacity = '.65';
+
+  try {
+    if(typeof onLink === 'function') {
+      await onLink();
+    }
+  } catch(err) {
+    console.log('[toast link action failed]', err);
+    link.dataset.loading = '';
+    link.disabled = false;
+    link.style.pointerEvents = '';
+    link.style.opacity = '';
+    link.textContent = oldText;
+  }
+};
   }else{
     link.hidden = true;
     link.textContent = '';
@@ -4799,8 +4820,20 @@ if (err === 'member_not_bound') {
       return;
     }
 
+showShopActionToast(
+  previewProduct,
+  '已加入購物籃',
+  '前往購物車',
+  () => {
+    if (typeof goCartCheckout === 'function') {
+      return goCartCheckout();
+    }
+  }
+);
+
+// 不要卡住成功提示，購物車數字背景更新即可
 if(typeof refreshCartBadge === 'function'){
-  await refreshCartBadge();
+  refreshCartBadge();
 }
 
 if (
@@ -4809,17 +4842,6 @@ if (
 ) {
   refreshShopMemberPriceViewForList();
 }
-
-showShopActionToast(
-  previewProduct,
-  '已加入購物籃',
-  '前往購物車',
-  () => {
-    if (typeof goCartCheckout === 'function') {
-      goCartCheckout();
-    }
-  }
-);
 
 if(btn){
   btn.classList.remove('is-loading');
