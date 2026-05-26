@@ -3357,7 +3357,22 @@ function buildShopBindUrl(returnUrl){
 function redirectShopMemberBind(returnUrl){
   location.href = buildShopBindUrl(returnUrl || buildShopCleanReturnUrl());
 }
+function redirectShopMemberLogin(returnUrl){
+  let url = '';
 
+  try {
+    url = returnUrl || buildShopMemberReturnUrl();
+  } catch(e) {
+    url = 'https://murain.tw/shop?after_member_login=1';
+  }
+
+  try {
+    markShopMemberLoginPending();
+    localStorage.setItem(SHOP_RETURN_URL_KEY, url);
+  } catch(e) {}
+
+  location.href = `https://liff.line.me/${SHOP_LIFF_ID}?url=${encodeURIComponent(url)}`;
+}
 function redirectShopMemberBindForPreview(){
   const product = (typeof previewProduct !== 'undefined') ? previewProduct : null;
   let sku = '';
@@ -3437,17 +3452,9 @@ async function initShopMember(forceLogin){
       return false;
     }
 
-    if (!window.liff) {
+   if (!window.liff) {
   if (forceLogin) {
-    let returnUrl = '';
-
-    try {
-      returnUrl = buildShopMemberReturnUrl();
-    } catch (e) {
-      returnUrl = 'https://murain.tw/shop?after_member_login=1';
-    }
-
-    location.href = `https://liff.line.me/${SHOP_LIFF_ID}?url=${encodeURIComponent(returnUrl)}`;
+    redirectShopMemberLogin(buildShopMemberReturnUrl());
   }
   return false;
 }
@@ -3455,33 +3462,36 @@ async function initShopMember(forceLogin){
 try {
   await liff.init({ liffId: SHOP_LIFF_ID });
 
-  if (!liff.isLoggedIn()) {
-    if (forceLogin) {
-      let returnUrl = '';
-
-      try {
-        returnUrl = buildShopMemberReturnUrl();
-      } catch (e) {
-        returnUrl = 'https://murain.tw/shop?after_member_login=1';
-      }
-
-      liff.login({ redirectUri: returnUrl });
-    } else {
-      clearShopMemberLoginPending();
-    }
-    return false;
+if (!liff.isLoggedIn()) {
+  if (forceLogin) {
+    redirectShopMemberLogin(buildShopMemberReturnUrl());
+  } else {
+    clearShopMemberLoginPending();
   }
+  return false;
+}
 
       const profile = await liff.getProfile();
       uid = String(profile?.userId || '').trim();
 
       if (!uid) return false;
 
-      const sessionCreated = await createShopMemberSessionFromLiff();
-      if (!sessionCreated) {
-        SHOP_MEMBER_INFO = null;
-        return false;
+     const sessionCreated = await createShopMemberSessionFromLiff();
+if (!sessionCreated) {
+  SHOP_MEMBER_INFO = null;
+
+  if (forceLogin || shouldFinishLoginReturn) {
+    try {
+      if (window.liff && typeof liff.logout === 'function') {
+        liff.logout();
       }
+    } catch(e) {}
+
+    redirectShopMemberLogin(buildShopMemberReturnUrl());
+  }
+
+  return false;
+}
 
       const ok = await checkShopMemberBySession();
 
