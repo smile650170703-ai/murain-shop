@@ -1398,12 +1398,18 @@ function normalizeMemberPostLoginReturnUrl(raw){
 
     const path = String(u.pathname || "").toLowerCase();
 
-    // 避免導回會員中心自己造成循環
+    // ✅ 修正：如果舊流程把 return_url 包成「會員中心裡面再包購物車」
+    // 例如：https://murain.tw/member?line_login=1&return_url=https%3A%2F%2Fmurain.tw%2Fliff-checkout...
+    // 不要直接丟掉，先把真正的內層 return_url 拿出來。
     if (
       path === "/member" ||
       path === "/member.html" ||
       path.endsWith("/member.html")
     ) {
+      const nestedReturnUrl = u.searchParams.get("return_url") || "";
+      if (nestedReturnUrl) {
+        return normalizeMemberPostLoginReturnUrl(nestedReturnUrl);
+      }
       return "";
     }
 
@@ -1420,6 +1426,8 @@ function normalizeMemberPostLoginReturnUrl(raw){
     u.searchParams.delete("logged_out");
     u.searchParams.delete("liff.state");
     u.searchParams.delete("liffState");
+    u.searchParams.delete("code");
+    u.searchParams.delete("state");
 
     return u.toString();
   } catch(e) {
@@ -1803,24 +1811,46 @@ function showBindGate(mode = "login") {
     bindGateText.textContent = "登入後即可進入會員中心，查看歷史訂單、購物金與會員專屬服務。";
     bindGatePrimaryBtn.textContent = "使用 LINE 登入";
     bindGateNote.textContent = "登入後系統會自動檢查是否已完成會員綁定。";
-    bindGatePrimaryBtn.onclick = () => {
+bindGatePrimaryBtn.onclick = async () => {
   markMemberLoginPending();
 
   const postLoginReturnUrl = getMemberPostLoginReturnUrl();
   if (postLoginReturnUrl) storeMemberPostLoginReturnUrl(postLoginReturnUrl);
 
-  const extraParams = { line_login: "1" };
-  if (postLoginReturnUrl) {
-    extraParams.return_url = postLoginReturnUrl;
-  }
-
-  const returnUrl = buildCleanMemberReturnUrl(extraParams);
-  const liffUrl = `https://liff.line.me/${LIFF_ID}/?line_login=1&return_url=${encodeURIComponent(returnUrl)}`;
+  // ✅ 會員中心自己的回跳網址：登入完成後回到 member，再由 member 導回購物車/商品頁
+  const memberRedirectUri = postLoginReturnUrl
+    ? buildCleanMemberReturnUrl({
+        line_login: "1",
+        return_url: postLoginReturnUrl
+      })
+    : buildCleanMemberReturnUrl({ line_login: "1" });
 
   try {
+    if (window.liff) {
+      try {
+        await liff.init({ liffId: LIFF_ID });
+
+        if (!liff.isLoggedIn()) {
+          liff.login({ redirectUri: memberRedirectUri });
+          return;
+        }
+
+        window.location.href = memberRedirectUri;
+        return;
+      } catch (e) {
+        console.log("[member login button liff init failed]", e);
+      }
+    }
+
+    // ✅ 沒有 LIFF SDK 時才用 LIFF URL。
+    // 這裡 return_url 只能放「真正要回去的頁面」，不能再包 memberRedirectUri。
+    const liffUrl = postLoginReturnUrl
+      ? `https://liff.line.me/${LIFF_ID}/?line_login=1&return_url=${encodeURIComponent(postLoginReturnUrl)}`
+      : `https://liff.line.me/${LIFF_ID}/?line_login=1`;
+
     window.location.href = liffUrl;
   } catch (e) {
-    location.href = MEMBER_NORMAL_URL;
+    window.location.href = memberRedirectUri;
   }
 };
     statusText.textContent = "請先登入";
