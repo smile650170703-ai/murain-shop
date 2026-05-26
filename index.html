@@ -1130,5 +1130,208 @@ async function goCartCheckout(){
     })();
   </script>
 
+<script>
+/* ✅ 全官網會員登入 / 登出同步 */
+(function(){
+  const MEMBER_UID_KEY = 'murain_line_user_id';
+
+  const API = (typeof HOME_API !== 'undefined' && HOME_API)
+    ? HOME_API
+    : 'https://api.murain.tw';
+
+  const WEB_CART_KEY = (typeof HOME_CART_KEY !== 'undefined' && HOME_CART_KEY)
+    ? HOME_CART_KEY
+    : 'MURAIN_WEB_CART_TOKEN';
+
+  let syncingMember = false;
+
+  function readUidFromMemberInfo(j){
+    return String(
+      j?.line_user_id ||
+      j?.lineUserId ||
+      j?.user_id ||
+      j?.userId ||
+      j?.member?.line_user_id ||
+      j?.member?.LineUserId ||
+      j?.member?.lineUserId ||
+      j?.member?.user_id ||
+      j?.member?.userId ||
+      ''
+    ).trim();
+  }
+
+  function readNameFromMemberInfo(j){
+    return String(
+      j?.display_name ||
+      j?.displayName ||
+      j?.lineDisplayName ||
+      j?.name ||
+      j?.member?.display_name ||
+      j?.member?.displayName ||
+      j?.member?.lineDisplayName ||
+      j?.member?.name ||
+      ''
+    ).trim();
+  }
+
+  function ensureMemberSyncStyle(){
+    if (document.getElementById('xuyuanMemberSyncStyle')) return;
+
+    const style = document.createElement('style');
+    style.id = 'xuyuanMemberSyncStyle';
+    style.textContent = `
+      .nav-member-btn{
+        position:relative;
+      }
+
+      .nav-member-btn.is-member-logged-in::after{
+        content:"";
+        position:absolute;
+        right:3px;
+        top:3px;
+        width:7px;
+        height:7px;
+        border-radius:999px;
+        background:#b79269;
+        box-shadow:0 0 0 2px rgba(255,255,255,.92);
+      }
+
+      .nav-member-btn.is-member-logged-out{
+        opacity:.82;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function setMemberNavState(isLoggedIn, memberInfo){
+    ensureMemberSyncStyle();
+
+    const btn = document.querySelector('.nav-member-btn');
+    if (!btn) return;
+
+    btn.classList.toggle('is-member-logged-in', !!isLoggedIn);
+    btn.classList.toggle('is-member-logged-out', !isLoggedIn);
+
+    const name = readNameFromMemberInfo(memberInfo || {});
+    const returnUrl = encodeURIComponent(window.location.href);
+
+    btn.href = `https://murain.tw/member.html?return_url=${returnUrl}`;
+
+    if (isLoggedIn) {
+      btn.setAttribute('aria-label', name ? `會員中心：${name}` : '會員中心：已登入');
+      btn.setAttribute('title', name ? `會員中心：${name}` : '會員中心：已登入');
+    } else {
+      btn.setAttribute('aria-label', '會員中心：登入 / 綁定會員');
+      btn.setAttribute('title', '會員中心：登入 / 綁定會員');
+    }
+
+    const menuMember = document.querySelector('.site-menu-member small');
+    if (menuMember) {
+      menuMember.textContent = isLoggedIn
+        ? '已登入，可查詢訂單與會員專屬服務'
+        : '登入 / 綁定後可查詢訂單與會員服務';
+    }
+  }
+
+  function clearOfficialMemberCache(){
+    try { localStorage.removeItem(MEMBER_UID_KEY); } catch(e) {}
+
+    /*
+      ✅ 登出同步重點：
+      如果後端 session 已經登出，就不要讓舊官網購物車 token 留在其他頁面。
+      這樣才不會出現「明明登出，右上角購物車還像登入會員的車」。
+    */
+    try { localStorage.removeItem(WEB_CART_KEY); } catch(e) {}
+
+    try {
+      if (typeof setCartBadge === 'function') setCartBadge(0);
+    } catch(e) {}
+  }
+
+  function isClearlyLoggedOut(r, j){
+    const err = String(j?.error || j?.code || j?.message || '').toLowerCase();
+
+    return (
+      r.status === 401 ||
+      r.status === 403 ||
+      err.includes('not_login') ||
+      err.includes('not logged') ||
+      err.includes('no_session') ||
+      err.includes('unauthorized') ||
+      err.includes('session') ||
+      j?.ok === false
+    );
+  }
+
+  async function syncOfficialMemberSession(){
+    if (syncingMember) return;
+    syncingMember = true;
+
+    try {
+      const r = await fetch(`${API}/line/member-info`, {
+        credentials:'include',
+        cache:'no-store'
+      });
+
+      const j = await r.json().catch(() => ({}));
+
+      if (r.ok && j && j.ok) {
+        const uid = readUidFromMemberInfo(j);
+
+        if (uid) {
+          try { localStorage.setItem(MEMBER_UID_KEY, uid); } catch(e) {}
+        }
+
+        setMemberNavState(true, j);
+
+        try {
+          if (typeof refreshCartBadge === 'function') refreshCartBadge();
+        } catch(e) {}
+
+        return;
+      }
+
+      if (isClearlyLoggedOut(r, j)) {
+        clearOfficialMemberCache();
+        setMemberNavState(false, null);
+
+        try {
+          if (typeof refreshCartBadge === 'function') refreshCartBadge();
+        } catch(e) {}
+      }
+    } catch(e) {
+      /*
+        網路不穩或 API 暫時失敗時，不強制清掉登入狀態，
+        避免只是斷線就把會員資料清空。
+      */
+      const localUid = (() => {
+        try { return String(localStorage.getItem(MEMBER_UID_KEY) || '').trim(); }
+        catch(err) { return ''; }
+      })();
+
+      setMemberNavState(!!localUid, null);
+    } finally {
+      syncingMember = false;
+    }
+  }
+
+  window.syncOfficialMemberSession = syncOfficialMemberSession;
+
+  window.addEventListener('DOMContentLoaded', syncOfficialMemberSession);
+  window.addEventListener('pageshow', syncOfficialMemberSession);
+  window.addEventListener('focus', syncOfficialMemberSession);
+
+  document.addEventListener('visibilitychange', function(){
+    if (!document.hidden) syncOfficialMemberSession();
+  });
+
+  window.addEventListener('storage', function(e){
+    if (e.key === MEMBER_UID_KEY || e.key === WEB_CART_KEY) {
+      syncOfficialMemberSession();
+    }
+  });
+})();
+</script>
+
 </body>
 </html>
