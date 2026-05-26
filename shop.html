@@ -2865,21 +2865,17 @@ async function restoreHomeWebCartTokenIfNeeded(){
   let cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
   if (cartToken) return cartToken;
 
-  const uid = getHomeSharedLineUserId();
-  if (!uid) return '';
-
   try {
     const r = await fetch(`${HOME_API}/cart/create`, {
       method:'POST',
       headers:{ 'content-type':'application/json' },
       credentials:'include',
       body: JSON.stringify({
-  streamer_name:'官網',
-  customer_type:'web',
-  line_user_id: uid,
-  customer_name:'',
-  restore_only:true
-})
+        streamer_name:'官網',
+        customer_type:'web',
+        customer_name:'',
+        restore_only:true
+      })
     });
 
     const j = await r.json().catch(() => ({}));
@@ -3353,9 +3349,11 @@ function buildShopMemberReturnUrl(){
 function buildShopBindUrl(returnUrl){
   return `https://liff.line.me/${SHOP_BIND_LIFF_ID}/?return_url=${encodeURIComponent(returnUrl || buildShopCleanReturnUrl())}`;
 }
+
 function redirectShopMemberBind(returnUrl){
   location.href = buildShopBindUrl(returnUrl || buildShopCleanReturnUrl());
 }
+
 function buildShopMemberLoginUrl(returnUrl){
   return `https://murain.tw/member.html?return_url=${encodeURIComponent(returnUrl || buildShopCleanReturnUrl())}`;
 }
@@ -3369,22 +3367,6 @@ function redirectShopMemberLogin(returnUrl){
   } catch(e) {}
 
   location.href = buildShopMemberLoginUrl(target);
-}
-function redirectShopMemberLogin(returnUrl){
-  let url = '';
-
-  try {
-    url = returnUrl || buildShopMemberReturnUrl();
-  } catch(e) {
-    url = 'https://murain.tw/shop?after_member_login=1';
-  }
-
-  try {
-    markShopMemberLoginPending();
-    localStorage.setItem(SHOP_RETURN_URL_KEY, url);
-  } catch(e) {}
-
-  location.href = `https://liff.line.me/${SHOP_LIFF_ID}?url=${encodeURIComponent(url)}`;
 }
 function redirectShopMemberBindForPreview(){
   const product = (typeof previewProduct !== 'undefined') ? previewProduct : null;
@@ -3437,63 +3419,44 @@ async function initShopMember(forceLogin){
   const hasLoginParams = hasShopLiffLoginParams();
 
   SHOP_MEMBER_CHECKING = (async () => {
-    const sessionOk = await checkShopMemberBySession();
-    if (sessionOk) {
-      if (shouldFinishLoginReturn || hasLoginParams) {
-        SHOP_MEMBER_JUST_RESTORED = true;
-      }
-      clearShopMemberLoginPending();
-      cleanShopLiffLoginUrl();
-      return true;
-    }
+    try {
+      const sessionOk = await checkShopMemberBySession();
 
-    // ✅ 官方商城會員狀態只認後端 cookie session
-    // localStorage 的 murain_line_user_id 只作為顯示/備援，不可當作已登入會員。
-    if (forceLogin) {
-      redirectShopMemberLogin(buildShopMemberReturnUrl());
-      return false;
-    }
+      if (sessionOk) {
+        if (shouldFinishLoginReturn || hasLoginParams) {
+          SHOP_MEMBER_JUST_RESTORED = true;
+        }
 
-    if (shouldFinishLoginReturn || hasLoginParams) {
-      clearShopMemberLoginPending();
-      cleanShopLiffLoginUrl();
-    }
-
-    SHOP_MEMBER_INFO = null;
-    return false;
-
-      const ok = await checkShopMemberBySession();
-
-      if (ok) {
-        localStorage.setItem(SHOP_LINE_UID_KEY, uid);
-        SHOP_MEMBER_JUST_RESTORED = true;
         clearShopMemberLoginPending();
         cleanShopLiffLoginUrl();
         return true;
       }
 
-      if (forceLogin || shouldFinishLoginReturn) {
-        redirectShopMemberBind(buildShopMemberReturnUrl());
+      // 官方商城會員狀態只認後端 cookie session。
+      // 不再用 localStorage 的 murain_line_user_id 當登入成功依據。
+      SHOP_MEMBER_INFO = null;
+
+      if (forceLogin) {
+        redirectShopMemberLogin(buildShopMemberReturnUrl());
+        return false;
+      }
+
+      if (shouldFinishLoginReturn || hasLoginParams) {
+        clearShopMemberLoginPending();
+        cleanShopLiffLoginUrl();
       }
 
       return false;
-   } catch (e) {
-  console.log('shop member init failed', e);
-
-  if (forceLogin) {
-    let returnUrl = '';
-
-    try {
-      returnUrl = buildShopMemberReturnUrl();
     } catch (e) {
-      returnUrl = 'https://murain.tw/shop?after_member_login=1';
+      console.log('shop member init failed', e);
+      SHOP_MEMBER_INFO = null;
+
+      if (forceLogin) {
+        redirectShopMemberLogin(buildShopMemberReturnUrl());
+      }
+
+      return false;
     }
-
-    location.href = `https://liff.line.me/${SHOP_LIFF_ID}?url=${encodeURIComponent(returnUrl)}`;
-  }
-
-  return false;
-}
   })();
 
   try {
