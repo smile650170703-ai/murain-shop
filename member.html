@@ -1642,7 +1642,15 @@ async function completeMemberLoginFromLiff() {
     if (!liff.isLoggedIn()) {
       markMemberLoginPending();
       if (postLoginReturnUrl) storeMemberPostLoginReturnUrl(postLoginReturnUrl);
-      liff.login();
+
+      const redirectUri = postLoginReturnUrl
+        ? buildCleanMemberReturnUrl({
+            line_login: "1",
+            return_url: postLoginReturnUrl
+          })
+        : buildCleanMemberReturnUrl({ line_login: "1" });
+
+      liff.login({ redirectUri });
       return true;
     }
 
@@ -3447,6 +3455,22 @@ if (sessionOk) {
 
     const liffLoginCompleted = await completeMemberLoginFromLiff();
     if (liffLoginCompleted) return;
+
+    // 有 return_url 代表是從商品頁 / 購物車 / 結帳頁被送來補登入。
+    // 這種情況不能只吃 localStorage 的 murain_line_user_id，
+    // 因為結帳後端只認 HttpOnly session，否則會變成「會員中心看似登入，但結帳頁不認」的循環。
+    if (postLoginReturnUrl) {
+      try {
+        markMemberLoginPending();
+        storeMemberPostLoginReturnUrl(postLoginReturnUrl);
+      } catch(e) {}
+
+      showBindGate("login");
+      infoMsg.textContent = "請先完成 LINE 登入，完成後系統會自動回到原本的商品或購物車頁。";
+      infoMsg.classList.remove("error");
+      infoMsg.style.display = "block";
+      return;
+    }
 
     // ✅ 第二優先：吃全站共用登入狀態
     // 商品頁 / 官網購物車 / 結帳頁已存 murain_line_user_id，就先用它查會員。
