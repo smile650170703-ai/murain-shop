@@ -2936,22 +2936,57 @@ async function loadCheckoutMemberByUid(uidForApi, profile = null){
 async function initLiffAndMember() {
   const isWebCart = String(CART_CUSTOMER_TYPE || '').trim().toLowerCase() === 'web';
 
-  // ✅ 官網 web 車：先直接吃全站會員 cookie session
-  // 不再先卡 localStorage 的 murain_line_user_id。
-  // loadCheckoutMemberBySession() 內部仍會檢查 session uid 是否等於 cart owner。
   if (isWebCart) {
-    let ok = await loadCheckoutMemberBySession(null);
-    if (ok) return;
+    const retryKey = 'MURAIN_CHECKOUT_MEMBER_RETRY';
 
-    // 官網購物車：不要一失敗就丟會員中心，先在結帳頁自己補 LINE → 後端會員 session
+    const clearCheckoutRetry = () => {
+      try { sessionStorage.removeItem(retryKey); } catch(e) {}
+    };
+
+    let ok = await loadCheckoutMemberBySession(null);
+    if (ok) {
+      clearCheckoutRetry();
+      return;
+    }
+
+    // ✅ 安全 fallback：
+    // 如果後端 cookie session 一時沒吃到，但本機 uid 與這台購物車 owner 完全一致，
+    // 就允許用 uid 載入會員資料，避免購物車/會員中心來回輪迴。
+    let sharedUid = getCheckoutSharedLineUserId();
+    if (canUseSharedUidForCurrentCart(sharedUid)) {
+      ok = await loadCheckoutMemberByUid(sharedUid, null);
+      if (ok) {
+        clearCheckoutRetry();
+        return;
+      }
+    }
+
     try { saveCheckoutState(); } catch(e) {}
+
+    let returnUrl = window.location.href;
+    let alreadyRetried = false;
+
+    try {
+      const u = new URL(window.location.href);
+      alreadyRetried =
+        u.searchParams.get('member_retry') === '1' ||
+        sessionStorage.getItem(retryKey) === '1';
+
+      u.searchParams.set('member_retry', '1');
+      returnUrl = u.toString();
+    } catch(e) {
+      try {
+        alreadyRetried = sessionStorage.getItem(retryKey) === '1';
+      } catch(err) {}
+    }
 
     if (window.liff) {
       try {
         await liff.init({ liffId: LIFF_ID });
 
         if (!liff.isLoggedIn()) {
-          liff.login({ redirectUri: window.location.href });
+          try { sessionStorage.setItem(retryKey, '1'); } catch(e) {}
+          liff.login({ redirectUri: returnUrl });
           return;
         }
 
@@ -2962,15 +2997,40 @@ async function initLiffAndMember() {
 
         if (sessionOk) {
           ok = await loadCheckoutMemberBySession(null);
-          if (ok) return;
+          if (ok) {
+            clearCheckoutRetry();
+            return;
+          }
+
+          // 補建 session 後還失敗，再用「uid 必須等於 cart owner」的安全 fallback。
+          sharedUid = getCheckoutSharedLineUserId();
+          if (canUseSharedUidForCurrentCart(sharedUid)) {
+            ok = await loadCheckoutMemberByUid(sharedUid, null);
+            if (ok) {
+              clearCheckoutRetry();
+              return;
+            }
+          }
         }
       } catch(e) {
         console.log('[checkout] web cart LIFF/session failed', e);
       }
     }
 
-    // 最後才交給會員中心處理，不要一開始就丟回去造成循環
-    const returnUrl = window.location.href;
+    // ✅ 已經從會員中心回來一次還失敗，就不要再丟回會員中心造成無限輪迴。
+    // 這通常代表：舊購物車 token 的 owner 跟目前會員不一致，或 cookie/session 沒對上。
+    if (alreadyRetried) {
+      clearCheckoutRetry();
+
+      try { localStorage.removeItem('MURAIN_WEB_CART_TOKEN'); } catch(e) {}
+
+      alert('這台購物車與目前登入會員無法對上，系統已停止重複跳轉。請重新加入商品到購物車。');
+      location.href = 'https://murain.tw/shop';
+      return;
+    }
+
+    // 第一次失敗才交給會員中心補登入；回來後若仍失敗，上方會中止輪迴。
+    try { sessionStorage.setItem(retryKey, '1'); } catch(e) {}
     location.href = `https://murain.tw/member.html?return_url=${encodeURIComponent(returnUrl)}`;
     return;
   }
