@@ -2826,7 +2826,18 @@ async function loadCheckoutMemberBySession(profile = null){
 
     const uid = memberInfoLineUserId(j);
     if (!uid) return false;
-    if (String(CART_CUSTOMER_TYPE || '').trim().toLowerCase() === 'web' && !canUseSharedUidForCurrentCart(uid)) {
+
+    const isWebCart = String(CART_CUSTOMER_TYPE || '').trim().toLowerCase() === 'web';
+    const cartOwner = String(CART_LINE_USER_ID || '').trim();
+
+    // ✅ 官網 web 車只要用後端 cookie session 判斷。
+    // 如果 cart 已有 owner，就確認 session uid 必須等於 owner。
+    // 如果是舊 cart 沒 owner，先允許載入；送出訂單時後端會補 owner。
+    if (isWebCart && cartOwner && cartOwner !== uid) {
+      console.warn('[checkout] web cart owner mismatch', {
+        sessionUid: uid,
+        cartOwner
+      });
       return false;
     }
 
