@@ -263,7 +263,46 @@ textarea[readonly]{
   gap:12px;
   flex-wrap:wrap;
 }
+.cart-qty-control{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding:3px 7px;
+  border-radius:999px;
+  background:rgba(255,250,247,.76);
+  border:1px solid rgba(220,196,162,.26);
+}
 
+.cart-qty-btn{
+  width:24px;
+  height:24px;
+  min-width:24px;
+  border-radius:999px;
+  border:1px solid rgba(183,146,105,.32);
+  background:rgba(255,255,255,.82);
+  color:#9a7658;
+  font-size:15px;
+  font-weight:900;
+  line-height:1;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  padding:0;
+}
+
+.cart-qty-btn:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+
+.cart-qty-num{
+  min-width:18px;
+  text-align:center;
+  color:#5f4c49;
+  font-weight:900;
+  font-size:12px;
+}
 .cart-remove-btn{
   flex:0 0 auto;
   border:1px solid rgba(201,109,114,.26);
@@ -4211,21 +4250,31 @@ function renderCartItemList(items){
   }
 
   items.forEach(it => {
-const sku = String(it.sku || it.SKU || '').trim();
-const name = getCartItemDisplayName(it);
-const qty = Number(it.qty || 0) || 0;
-const price = Number(it.price || 0) || 0;
-const lineTotal = qty * price;
+    const sku = String(it.sku || it.SKU || '').trim();
+    const name = getCartItemDisplayName(it);
+    const qty = Number(it.qty || 0) || 0;
+    const price = Number(it.price || 0) || 0;
+    const lineTotal = qty * price;
+
+    const qtyHtml = CART_CAN_SELF_REMOVE
+      ? `
+        <span class="cart-qty-control" aria-label="調整商品數量">
+          <button type="button" class="cart-qty-btn" data-action="minus" data-sku="${escapeHtmlText(sku)}" data-qty="${qty}">−</button>
+          <span class="cart-qty-num">${qty}</span>
+          <button type="button" class="cart-qty-btn" data-action="plus" data-sku="${escapeHtmlText(sku)}" data-qty="${qty}">＋</button>
+        </span>
+      `
+      : `<span>數量：${qty}</span>`;
 
     const row = document.createElement('div');
     row.className = 'cart-item-card';
     row.innerHTML = `
       <div class="cart-item-top">
         <div class="cart-item-name">${escapeHtmlText(name)}</div>
-${CART_CAN_SELF_REMOVE ? `<button type="button" class="cart-remove-btn" data-sku="${escapeHtmlText(sku)}" aria-label="刪除此商品">✕</button>` : ``}
+        ${CART_CAN_SELF_REMOVE ? `<button type="button" class="cart-remove-btn" data-sku="${escapeHtmlText(sku)}" aria-label="刪除此商品">✕</button>` : ``}
       </div>
       <div class="cart-item-meta">
-        <span>數量：${qty}</span>
+        ${qtyHtml}
         <span>單價：NT$ ${price.toLocaleString('zh-TW')}</span>
         <span>小計：NT$ ${lineTotal.toLocaleString('zh-TW')}</span>
       </div>
@@ -4234,6 +4283,29 @@ ${CART_CAN_SELF_REMOVE ? `<button type="button" class="cart-remove-btn" data-sku
   });
 
   if (CART_CAN_SELF_REMOVE) {
+    wrap.querySelectorAll('.cart-qty-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const sku = String(btn.dataset.sku || '').trim();
+        const action = String(btn.dataset.action || '').trim();
+        const nowQty = Number(btn.dataset.qty || 0) || 0;
+        if (!sku || !action || nowQty <= 0) return;
+
+        const nextQty = action === 'plus' ? nowQty + 1 : nowQty - 1;
+
+        if (nextQty <= 0) {
+          await removeCartItemSelf(sku);
+          return;
+        }
+
+        try {
+          btn.disabled = true;
+          await updateCartItemQtySelf(sku, nextQty);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+
     wrap.querySelectorAll('.cart-remove-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const sku = String(btn.dataset.sku || '').trim();
@@ -4412,6 +4484,32 @@ async function cancelPendingOrderForEdit() {
   } catch (e) {
     console.error('cancelPendingOrderForEdit error', e);
     alert(e?.message || '取消失敗，請聯繫客服協助處理。');
+  }
+}
+  async function updateCartItemQtySelf(sku, nextQty){
+  if (!cartToken || !sku) return;
+
+  try {
+    const r = await fetch(`${API}/cart/update-qty-self`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        cart_token: cartToken,
+        sku,
+        qty: nextQty
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j || j.ok === false) {
+      throw new Error(j?.message || j?.error || 'cart_qty_update_failed');
+    }
+
+    await loadCart();
+  } catch (e) {
+    console.error('updateCartItemQtySelf error', e);
+    alert(e?.message || '更新商品數量失敗，請再試一次。');
   }
 }
 async function removeCartItemSelf(sku){
