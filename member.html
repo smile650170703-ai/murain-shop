@@ -3427,14 +3427,23 @@ async function initLiff() {
       return;
     }
 
-    // ✅ 第一優先：直接用後端 HttpOnly session 還原會員狀態
-    // 商品頁、購物車、結帳都以同一顆 murain_member_session cookie 為準。
-    const sessionOk = await enterMemberCenterWithSession();
-    if (sessionOk) {
-      clearMemberLoginPending();
-      cleanMemberLoginUrl();
-      return;
-    }
+ // ✅ 第一優先：直接用後端 HttpOnly session 還原會員狀態
+// 商品頁、購物車、結帳都以同一顆 murain_member_session cookie 為準。
+const postLoginReturnUrl = getMemberPostLoginReturnUrl();
+
+const sessionOk = await enterMemberCenterWithSession();
+if (sessionOk) {
+  clearMemberLoginPending();
+
+  // ✅ 如果是從商城 / 商品頁 / 結帳頁帶 return_url 進來，
+  // 即使本來就已經有 session，也要導回原本頁面。
+  if (redirectToMemberPostLoginReturnIfNeeded(postLoginReturnUrl)) {
+    return;
+  }
+
+  cleanMemberLoginUrl();
+  return;
+}
 
     const liffLoginCompleted = await completeMemberLoginFromLiff();
     if (liffLoginCompleted) return;
