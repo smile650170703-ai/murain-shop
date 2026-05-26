@@ -3170,21 +3170,6 @@ async function checkShopMemberBySession(){
   return false;
 }
 
-async function createShopMemberSessionFromLiff(){
-  const idToken = window.liff?.getIDToken?.() || '';
-  if (!idToken) return false;
-
-  const res = await fetch(`${shopApiBase()}/line/auth/session`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ id_token: idToken })
-  });
-  const json = await res.json().catch(() => ({}));
-
-  return !!(res.ok && json && json.ok);
-}
-
 function markShopMemberLoginPending(){
   try {
     localStorage.setItem(SHOP_MEMBER_LOGIN_PENDING_KEY, '1');
@@ -3383,32 +3368,6 @@ function redirectShopMemberBindForPreview(){
   }
 
   redirectShopMemberBind(buildShopReturnUrlForPreview(product));
-}
-
-async function checkShopMemberByUid(uid){
-  uid = String(uid || '').trim();
-  if (!uid) return false;
-
-  const r = await fetch(`${shopApiBase()}/line/member-info?user_id=${encodeURIComponent(uid)}`, {
-    credentials: 'include'
-  });
-  const j = await r.json().catch(() => ({}));
-
-  if (r.ok && j && j.ok) {
-    SHOP_MEMBER_INFO = {
-      ...j,
-      line_user_id: uid
-    };
-    localStorage.setItem(SHOP_LINE_UID_KEY, uid);
-    return true;
-  }
-
-  if (r.status === 404 || j?.error === 'not_found') {
-    localStorage.removeItem(SHOP_LINE_UID_KEY);
-  }
-
-  SHOP_MEMBER_INFO = null;
-  return false;
 }
 
 async function initShopMember(forceLogin){
@@ -4489,10 +4448,19 @@ function renderPreviewRelatedList(list, activeSku){
 
 async function previewEnsureCart(){
   const member = await requireShopMember();
-  const uid = getShopLineUserId();
+
+  const uid = String(
+    SHOP_MEMBER_INFO?.line_user_id ||
+    SHOP_MEMBER_INFO?.lineUserId ||
+    SHOP_MEMBER_INFO?.member?.line_user_id ||
+    SHOP_MEMBER_INFO?.member?.LineUserId ||
+    getShopLineUserId() ||
+    ''
+  ).trim();
+
   const customerName = getShopCustomerName();
 
-  if (!uid || !member) {
+  if (!member) {
     throw new Error('member_required');
   }
 
@@ -4531,7 +4499,6 @@ async function previewEnsureCart(){
     body: JSON.stringify({
   streamer_name:'官網',
   customer_type:'web',
-  line_user_id: uid,
   customer_name: customerName
 })
   });
