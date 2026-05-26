@@ -2923,23 +2923,24 @@ async function loadCheckoutMemberByUid(uidForApi, profile = null){
 }
 
 async function initLiffAndMember() {
-  // ✅ 官網 web 車：先吃全站共用登入狀態
-  // 條件很嚴格：必須是 web 車，且本機 uid 必須等於後端 cart owner。
-  const sharedUid = getCheckoutSharedLineUserId();
+  const isWebCart = String(CART_CUSTOMER_TYPE || '').trim().toLowerCase() === 'web';
 
-  if (canUseSharedUidForCurrentCart(sharedUid)) {
-    console.log('[checkout] try shared member session for web cart', {
-      sharedUid,
-      cartOwner: CART_LINE_USER_ID,
-      cartType: CART_CUSTOMER_TYPE
-    });
-
+  // ✅ 官網 web 車：先直接吃全站會員 cookie session
+  // 不再先卡 localStorage 的 murain_line_user_id。
+  // loadCheckoutMemberBySession() 內部仍會檢查 session uid 是否等於 cart owner。
+  if (isWebCart) {
     const ok = await loadCheckoutMemberBySession(null);
     if (ok) return;
+
+    // cookie 沒有成功 / session 不屬於這台 cart，才導會員中心重新登入
+    try { saveCheckoutState(); } catch(e) {}
+
+    const returnUrl = window.location.href;
+    location.href = `https://murain.tw/member.html?return_url=${encodeURIComponent(returnUrl)}`;
+    return;
   }
 
-  // ✅ 直播主 live / regular 車，或本機沒有 uid，或 uid 不等於 cart owner
-  // 全部照舊走結帳 LIFF，不改原本直播主流程。
+  // ✅ 直播主 live / regular 車照舊走結帳 LIFF，不改原本直播主流程。
   if (!window.liff) return;
 
   await liff.init({ liffId: LIFF_ID });
