@@ -3353,9 +3353,22 @@ function buildShopMemberReturnUrl(){
 function buildShopBindUrl(returnUrl){
   return `https://liff.line.me/${SHOP_BIND_LIFF_ID}/?return_url=${encodeURIComponent(returnUrl || buildShopCleanReturnUrl())}`;
 }
-
 function redirectShopMemberBind(returnUrl){
   location.href = buildShopBindUrl(returnUrl || buildShopCleanReturnUrl());
+}
+function buildShopMemberLoginUrl(returnUrl){
+  return `https://murain.tw/member.html?return_url=${encodeURIComponent(returnUrl || buildShopCleanReturnUrl())}`;
+}
+
+function redirectShopMemberLogin(returnUrl){
+  const target = returnUrl || buildShopMemberReturnUrl();
+
+  try {
+    markShopMemberLoginPending();
+    localStorage.setItem(SHOP_RETURN_URL_KEY, target);
+  } catch(e) {}
+
+  location.href = buildShopMemberLoginUrl(target);
 }
 function redirectShopMemberLogin(returnUrl){
   let url = '';
@@ -3434,64 +3447,20 @@ async function initShopMember(forceLogin){
       return true;
     }
 
-    let uid = getShopLineUserId();
-
-    // 先用 localStorage 的 LINE user id 查會員
-    if (!forceLogin && !shouldFinishLoginReturn && uid) {
-      const ok = await checkShopMemberByUid(uid);
-      if (ok) {
-        clearShopMemberLoginPending();
-        return true;
-      }
-    }
-
-    // 平常進商城不要自動初始化 LIFF，避免會員中心登出後進商城 400。
-    // 但如果是剛按過「登入查看會員價」回來，就允許補一次 LIFF 初始化取得 userId。
-    if (!forceLogin && !shouldFinishLoginReturn) {
-      SHOP_MEMBER_INFO = null;
+    // ✅ 官方商城會員狀態只認後端 cookie session
+    // localStorage 的 murain_line_user_id 只作為顯示/備援，不可當作已登入會員。
+    if (forceLogin) {
+      redirectShopMemberLogin(buildShopMemberReturnUrl());
       return false;
     }
 
-   if (!window.liff) {
-  if (forceLogin) {
-    redirectShopMemberLogin(buildShopMemberReturnUrl());
-  }
-  return false;
-}
+    if (shouldFinishLoginReturn || hasLoginParams) {
+      clearShopMemberLoginPending();
+      cleanShopLiffLoginUrl();
+    }
 
-try {
-  await liff.init({ liffId: SHOP_LIFF_ID });
-
-if (!liff.isLoggedIn()) {
-  if (forceLogin) {
-    redirectShopMemberLogin(buildShopMemberReturnUrl());
-  } else {
-    clearShopMemberLoginPending();
-  }
-  return false;
-}
-
-      const profile = await liff.getProfile();
-      uid = String(profile?.userId || '').trim();
-
-      if (!uid) return false;
-
-     const sessionCreated = await createShopMemberSessionFromLiff();
-if (!sessionCreated) {
-  SHOP_MEMBER_INFO = null;
-
-  if (forceLogin || shouldFinishLoginReturn) {
-    try {
-      if (window.liff && typeof liff.logout === 'function') {
-        liff.logout();
-      }
-    } catch(e) {}
-
-    redirectShopMemberLogin(buildShopMemberReturnUrl());
-  }
-
-  return false;
-}
+    SHOP_MEMBER_INFO = null;
+    return false;
 
       const ok = await checkShopMemberBySession();
 
@@ -4780,15 +4749,18 @@ async function previewAddToCart(){
 
         if(json && json.ok === false){
       const err = String(json.error || json.code || '').trim();
+if (
+  err === 'member_required' ||
+  err === 'member_login_required'
+) {
+  redirectShopMemberLogin(buildShopMemberReturnUrl());
+  return;
+}
 
-      if (
-        err === 'member_required' ||
-        err === 'member_login_required' ||
-        err === 'member_not_bound'
-      ) {
-        redirectShopMemberBindForPreview();
-        return;
-      }
+if (err === 'member_not_bound') {
+  redirectShopMemberBindForPreview();
+  return;
+}
 
       alert(json.message || '加入失敗，請稍後再試');
 
@@ -4840,10 +4812,20 @@ setTimeout(() => {
 }, 900);
 
   }catch(e){
-    if (String(e?.message || e) === 'member_required') {
-      redirectShopMemberBindForPreview();
-      return;
-    }
+    const err = String(e?.message || e);
+
+if (
+  err === 'member_required' ||
+  err === 'member_login_required'
+) {
+  redirectShopMemberLogin(buildShopMemberReturnUrl());
+  return;
+}
+
+if (err === 'member_not_bound') {
+  redirectShopMemberBindForPreview();
+  return;
+}
 
     alert('加入失敗，請稍後再試');
     updatePreviewCartButton(previewProduct);
