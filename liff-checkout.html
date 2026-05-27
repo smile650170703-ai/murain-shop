@@ -4315,13 +4315,19 @@ if (nextQty <= 0) {
       });
     });
 
-    wrap.querySelectorAll('.cart-remove-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const sku = String(btn.dataset.sku || '').trim();
-        if (!sku) return;
-        await removeCartItemSelf(sku);
-      });
-    });
+   wrap.querySelectorAll('.cart-remove-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const sku = String(btn.dataset.sku || '').trim();
+    if (!sku || btn.disabled) return;
+
+    try {
+      btn.disabled = true;
+      await removeCartItemSelf(sku);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+});
   }
 }
 function isPendingOnlineOrderForEdit() {
@@ -4524,9 +4530,6 @@ async function cancelPendingOrderForEdit() {
 async function removeCartItemSelf(sku){
   if (!cartToken || !sku) return;
 
-  const yes = confirm('確定要刪除此商品嗎？');
-  if (!yes) return;
-
   try {
     const r = await fetch(`${API}/cart/remove-self`, {
       method: 'POST',
@@ -4537,13 +4540,14 @@ async function removeCartItemSelf(sku){
     const j = await r.json().catch(() => ({}));
 
     if (!r.ok || !j || j.ok === false) {
-      throw new Error(j?.error || j?.message || 'cart_remove_failed');
+      throw new Error(j?.message || j?.error || 'cart_remove_failed');
     }
 
     await loadCart();
+    try { updateCreditAndTotal(); } catch(e){}
   } catch (e) {
     console.error('removeCartItemSelf error', e);
-    alert('刪除商品失敗，請再試一次。');
+    alert(e?.message || '刪除商品失敗，請再試一次。');
   }
 }
 
