@@ -1550,7 +1550,43 @@ function pickMemberPictureUrl(info) {
     ""
   ).trim();
 }
+async function checkMemberSessionOnly() {
+  try {
+    const res = await fetch(MEMBER_INFO_API, {
+      credentials: "include"
+    });
 
+    const json = await res.json().catch(() => ({}));
+
+    if (res.ok && json?.ok) {
+      const uid = String(json.user_id || json.userId || json.line_user_id || "").trim();
+      if (uid) setSharedLineUserId(uid);
+
+      return {
+        state: "bound",
+        uid,
+        member: json
+      };
+    }
+
+    if (res.status === 404 || json?.error === "not_found") {
+      return { state: "not_found" };
+    }
+
+    if (res.status === 401 || json?.error === "missing_user_id") {
+      return { state: "no_session" };
+    }
+
+    return {
+      state: "error",
+      status: res.status,
+      error: json?.error || ""
+    };
+  } catch (e) {
+    console.log("[checkMemberSessionOnly failed]", e);
+    return { state: "error" };
+  }
+}
 async function enterMemberCenterWithSharedUid(uid) {
   uid = String(uid || "").trim();
   if (!uid) return false;
@@ -1672,21 +1708,32 @@ async function completeMemberLoginFromLiff() {
       return true;
     }
 
-    const restored = await enterMemberCenterWithSession();
-    if (restored) {
+        const quick = await checkMemberSessionOnly();
+
+    // 已經綁定：不要等歷史訂單/購物金，直接回原本商品或購物車頁
+    if (quick.state === "bound") {
       clearMemberLoginPending();
-      cleanMemberLoginUrl();
 
       if (redirectToMemberPostLoginReturnIfNeeded(postLoginReturnUrl)) {
         return true;
       }
 
+      cleanMemberLoginUrl();
+      await enterMemberCenterWithSession();
       return true;
     }
 
-    clearMemberLoginPending();
-    cleanMemberLoginUrl();
-    showBindGate("bind");
+    // 新客人：已完成 LINE 登入，但還沒綁定會員，直接帶去真正的綁定頁
+    if (quick.state === "not_found") {
+      clearMemberLoginPending();
+      redirectToMemberBind();
+      return true;
+    }
+
+    showBindGate("login");
+    infoMsg.textContent = "目前無法完成 LINE 登入，請再試一次。";
+    infoMsg.classList.add("error");
+    infoMsg.style.display = "block";
     return true;
   } catch (e) {
     console.log("[member liff login complete failed]", e);
@@ -3468,6 +3515,24 @@ async function initLiff() {
  // ✅ 第一優先：直接用後端 HttpOnly session 還原會員狀態
 // 商品頁、購物車、結帳都以同一顆 murain_member_session cookie 為準。
 const postLoginReturnUrl = getMemberPostLoginReturnUrl();
+
+// 從商品頁 / 購物車 / 結帳頁過來時，先快速判斷，不要等歷史訂單與購物金載入
+if (postLoginReturnUrl) {
+  const quick = await checkMemberSessionOnly();
+
+  if (quick.state === "bound") {
+    clearMemberLoginPending();
+
+    if (redirectToMemberPostLoginReturnIfNeeded(postLoginReturnUrl)) {
+      return;
+    }
+  }
+
+  if (quick.state === "not_found") {
+    redirectToMemberBind();
+    return;
+  }
+}
 
 const sessionOk = await enterMemberCenterWithSession();
 if (sessionOk) {
