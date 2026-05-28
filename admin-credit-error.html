@@ -151,6 +151,15 @@
     max-width:280px;
     white-space:pre-wrap;
   }
+   .note-cn,
+  .risk-note-cn{
+    color:#fecaca;
+    font-size:12px;
+    line-height:1.55;
+    max-width:300px;
+    white-space:pre-wrap;
+    font-weight:700;
+  }
 </style>
 </head>
 <body>
@@ -469,6 +478,52 @@ function displayOrderStatus(st){
 function displayCreditSpendDone(v){
   return normBool(v) ? '已完成' : '未完成';
 }
+ function displayInternalNoteChinese(note, f = {}){
+  const raw = String(note || '').trim();
+  const upper = raw.toUpperCase();
+
+  if (!raw) return '-';
+
+  const lines = [];
+  const add = (key, text) => {
+    if (upper.includes(key) && !lines.includes(text)) {
+      lines.push('・' + text);
+    }
+  };
+
+  add('CREDIT_CAPTURE_ERROR', '付款已成功，但購物金正式扣款失敗，需確認後重新扣購物金並放行。');
+
+  add('CHECKOUT_500_AFTER_ORDER_CREATED', '客人結帳最後出現 500，但訂單可能已經成立，需確認訂單、庫存、通知狀態。');
+  add('CHECKOUT_FLEX_SEND_FAILED', 'LINE 結單通知發送失敗，訂單可能已成立，但客人可能沒有收到通知。');
+  add('CART_BIND_FAILED_AFTER_ORDER_CREATED', '訂單已成立，但購物車沒有成功綁定或關閉，需避免客人重複送出。');
+
+  add('CHECKOUT_FLEX_NOT_SENT', '系統還沒走到 LINE 結單通知就發生錯誤，所以 LINE 沒有送出。');
+  add('CHECKOUT_FLEX_ATTEMPTED_BUT_FAILED', '系統有嘗試發 LINE 結單通知，但發送失敗。');
+  add('CHECKOUT_FLEX_SENT_BEFORE_500', 'LINE 結單通知已送出，但後面流程又發生 500。');
+
+  add('STOCK_DEDUCTED', '庫存已經扣掉，處理前不要讓客人重複下單。');
+  add('STOCK_NOT_DEDUCTED', '庫存尚未扣除，可先確認訂單是否真的成立。');
+
+  add('PAYUNI_START_FAILED', 'PayUNI 付款頁啟動失敗，訂單可能停在待付款狀態。');
+  add('PAYUNI_FAIL_ATTEMPT_ONLY', '曾經嘗試 PayUNI 付款但失敗，不能當成已付款訂單。');
+  add('ZERO_CARD_START_FAILED', '中租付款頁啟動失敗，訂單可能停在待付款狀態。');
+  add('ZC_CREDIT_CAPTURE_FAILED_MANUAL_REVIEW', '中租付款成功後，購物金扣款失敗，需要人工確認帳務。');
+
+  add('RESTOCK_FAILED', '補庫存失敗，需人工確認商品庫存是否正確。');
+  add('CANCELLED_STOCK_LOCKED', '訂單已取消，但庫存可能仍被扣住，需要人工確認。');
+
+  add('TAIL_CREDIT_HOLD_FAILED', '尾款單建立後，購物金保留或扣款失敗。');
+  add('TAIL_FLEX_SEND_FAILED', '尾款相關 LINE 通知發送失敗。');
+
+  add('ABNORMAL_RESOLVED', '此異常已被人工標記為已解決。');
+  add('ABNORMAL_REOPENED', '此異常曾被重新打開，需要再次確認。');
+
+  if (!lines.length) {
+    return '目前沒有可翻譯的系統異常標籤，請查看原始內部備註。';
+  }
+
+  return lines.join('\n');
+}
 function isCreditErrorRow(rec){
   const f = rec.fields || rec || {};
   const creditUsed = Math.max(0, Number(f.credit_used || f.CreditUsed || 0) || 0);
@@ -493,8 +548,9 @@ function simpleOrderRowsHtml(rows){
           <th>客人</th>
           <th>付款 / 狀態</th>
           <th>付款方式</th>
-          <th>商品</th>
-          <th>內部備註</th>
+                   <th>商品</th>
+          <th>內部備註中文說明</th>
+          <th>原始內部備註</th>
           <th>異常處理</th>
         </tr>
       </thead>
@@ -504,6 +560,7 @@ function simpleOrderRowsHtml(rows){
           const oid = String(f.order_id || '').trim();
           const pm = String(f.payment_method || '').trim();
           const note = String(f.internal_note || '').trim();
+          const noteCn = displayInternalNoteChinese(note, f);
           const items = String(f.items_json || '').trim();
 
           return `
@@ -516,6 +573,7 @@ function simpleOrderRowsHtml(rows){
               </td>
               <td>${esc(pm || '-')}</td>
               <td><div class="risk-note">${esc(items || '-')}</div></td>
+              <td><div class="risk-note-cn">${esc(noteCn || '-')}</div></td>
               <td><div class="risk-note">${esc(note || '-')}</div></td>
               <td>
                 <label style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
@@ -649,7 +707,8 @@ function render(){
           <th>客人</th>
           <th>金額</th>
           <th>狀態</th>
-          <th>內部備註</th>
+          <th>內部備註中文說明</th>
+          <th>原始內部備註</th>
           <th>處理</th>
         </tr>
       </thead>
@@ -658,6 +717,7 @@ function render(){
           const f = rec.fields || rec || {};
           const oid = String(f.order_id || '').trim();
           const note = String(f.internal_note || '');
+          const noteCn = displayInternalNoteChinese(note, f);
           const hasTag = note.includes('CREDIT_CAPTURE_ERROR');
           const creditUsed = Math.max(0, Number(f.credit_used || 0) || 0);
           const net = Number(f.net_amount ?? f.net ?? 0) || 0;
@@ -688,6 +748,7 @@ function render(){
       : '<span class="badge red">未完成</span>'
   }
 </td>
+              <td><div class="note-cn">${esc(noteCn || '-')}</div></td>
               <td><div class="note">${esc(note || '-')}</div></td>
               <td>
                 <button type="button" onclick="dryRun('${esc(oid)}')">檢查</button><br>
