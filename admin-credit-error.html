@@ -478,6 +478,46 @@ function displayOrderStatus(st){
 function displayCreditSpendDone(v){
   return normBool(v) ? '已完成' : '未完成';
 }
+ function displayPaymentMethod(f = {}){
+  // ✅ 優先使用 Airtable 裡已經做好的中文欄位
+  const dbText = String(
+    f['付款方式'] ||
+    f.payment_method_text ||
+    f.payment_method_label ||
+    ''
+  ).trim();
+
+  if (dbText) return dbText;
+
+  // ✅ 如果中文欄位沒回來，才用代碼翻譯
+  const s = String(f.payment_method || '').trim().toLowerCase();
+
+  const map = {
+    paid_card: '信用卡',
+    paid_card_inst_3: '信用卡分 3 期',
+    paid_card_inst_6: '信用卡分 6 期',
+    paid_card_inst_12: '信用卡分 12 期',
+    payuni_card: '信用卡',
+    payuni_linepay: 'LINE Pay',
+    cod_711: '7-11 取貨付款',
+    cod711: '7-11 取貨付款',
+    atm_full: '匯款全額',
+    atm_deposit: '匯款定金',
+    bank_transfer: '匯款',
+    cash_inst_2: '現金分期 2 期',
+    cash_inst_3: '現金分期 3 期',
+    cash_install_2: '現金分期 2 期',
+    cash_install_3: '現金分期 3 期',
+    meetup_cash: '面交付款',
+    aftee_direct: 'AF 先享後付',
+    paid_aftee_direct: 'AF 先享後付',
+    paid_af: 'AF 先享後付',
+    zero_card: '中租零卡',
+    chailease: '中租零卡'
+  };
+
+  return map[s] || f.payment_method || '-';
+}
  function displayInternalNoteChinese(note, f = {}){
   const raw = String(note || '').trim();
   const upper = raw.toUpperCase();
@@ -558,7 +598,7 @@ function simpleOrderRowsHtml(rows){
         ${visibleRows.map(rec => {
           const f = rec.fields || rec || {};
           const oid = String(f.order_id || '').trim();
-          const pm = String(f.payment_method || '').trim();
+          const pm = displayPaymentMethod(f);
           const note = String(f.internal_note || '').trim();
           const noteCn = displayInternalNoteChinese(note, f);
           const items = String(f.items_json || '').trim();
@@ -572,7 +612,16 @@ function simpleOrderRowsHtml(rows){
                 <span class="badge">${esc(displayOrderStatus(f.status))}</span>
               </td>
               <td>${esc(pm || '-')}</td>
-              <td><div class="risk-note">${esc(items || '-')}</div></td>
+              <td>
+                <details>
+                  <summary style="cursor:pointer;color:#bae6fd;font-weight:800;">
+                    ＋ 查看商品
+                  </summary>
+                  <div class="risk-note" style="margin-top:6px;">
+                    ${esc(items || '-')}
+                  </div>
+                </details>
+              </td>
               <td><div class="risk-note-cn">${esc(noteCn || '-')}</div></td>
               <td><div class="risk-note">${esc(note || '-')}</div></td>
               <td>
