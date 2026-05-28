@@ -259,8 +259,8 @@
   <div class="card">
     <h2 class="risk-section-title">其他異常清單｜只讀查看</h2>
     <div class="muted">
-      下方只顯示資料，不提供處理按鈕。購物金異常仍請使用上方原本清單處理。
-    </div>
+  下方為其他異常清單。確認已人工處理完成後，可勾選「異常問題已解決」並儲存；儲存後該訂單會從其他異常清單隱藏。購物金異常仍請使用上方原本清單處理。
+</div>
 
     <div class="risk-grid">
            <div class="risk-mini-card">
@@ -393,7 +393,13 @@ function money(n){
 function normBool(v){
   return v === true || String(v || '').trim().toLowerCase() === 'true';
 }
-
+function isAbnormalResolved(f){
+  return (
+    f['異常問題已解決'] === true ||
+    f.abnormal_resolved === true ||
+    String(f['異常問題已解決'] || f.abnormal_resolved || '').trim().toLowerCase() === 'true'
+  );
+}
 function parseShip(f){
   try {
     return f.shipping_info ? JSON.parse(f.shipping_info) : {};
@@ -470,7 +476,12 @@ function isCreditErrorRow(rec){
   return creditUsed > 0 && isPaidOk(f) && !spendDone;
 }
 function simpleOrderRowsHtml(rows){
-  if (!rows.length) {
+  const visibleRows = (rows || []).filter(rec => {
+    const f = rec.fields || rec || {};
+    return !isAbnormalResolved(f);
+  });
+
+  if (!visibleRows.length) {
     return '<div class="risk-empty">目前沒有資料。</div>';
   }
 
@@ -484,10 +495,11 @@ function simpleOrderRowsHtml(rows){
           <th>付款方式</th>
           <th>商品</th>
           <th>內部備註</th>
+          <th>異常處理</th>
         </tr>
       </thead>
       <tbody>
-        ${rows.map(rec => {
+        ${visibleRows.map(rec => {
           const f = rec.fields || rec || {};
           const oid = String(f.order_id || '').trim();
           const pm = String(f.payment_method || '').trim();
@@ -505,6 +517,15 @@ function simpleOrderRowsHtml(rows){
               <td>${esc(pm || '-')}</td>
               <td><div class="risk-note">${esc(items || '-')}</div></td>
               <td><div class="risk-note">${esc(note || '-')}</div></td>
+              <td>
+                <label style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+                  <input class="resolve-check" type="checkbox" />
+                  <span>異常問題已解決</span>
+                </label>
+                <button type="button" onclick="saveAbnormalResolved('${esc(oid)}', this)">
+                  儲存
+                </button>
+              </td>
             </tr>
           `;
         }).join('')}
@@ -532,10 +553,13 @@ async function loadRiskList(cfg){
       throw new Error(j.error || ('HTTP ' + r.status));
     }
 
-    const rows = j.orders || j.records || [];
+const rows = (j.orders || j.records || []).filter(rec => {
+  const f = rec.fields || rec || {};
+  return !isAbnormalResolved(f);
+});
 
-    if (countEl) countEl.textContent = `${rows.length} 筆`;
-    if (listEl) listEl.innerHTML = simpleOrderRowsHtml(rows);
+if (countEl) countEl.textContent = `${rows.length} 筆`;
+if (listEl) listEl.innerHTML = simpleOrderRowsHtml(rows);
 
   } catch(e) {
     if (countEl) countEl.textContent = '載入失敗';
@@ -547,6 +571,55 @@ async function loadRiskList(cfg){
 
 async function loadRiskLists(){
   await Promise.all(RISK_LISTS.map(loadRiskList));
+}
+ async function saveAbnormalResolved(orderId, btn){
+  if (!orderId) return;
+
+  const cell = btn?.closest('td');
+  const checked = !!cell?.querySelector('.resolve-check')?.checked;
+
+  if (!checked) {
+    alert('請先勾選「異常問題已解決」再儲存。');
+    return;
+  }
+
+  const ok = confirm(
+    `確定要把訂單 ${orderId} 標記為「異常問題已解決」嗎？\n\n` +
+    `儲存後這筆訂單會從其他異常清單隱藏。`
+  );
+
+  if (!ok) return;
+
+  const oldText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '儲存中...';
+
+  try {
+    const r = await fetch(`${API}/admin/order/abnormal-resolved`, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        order_id: orderId,
+        resolved: true
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+
+    alert(j.message || '已標記為異常問題已解決');
+    await loadRiskLists();
+
+  } catch(e) {
+    alert('儲存失敗：' + (e.message || e));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText || '儲存';
+  }
 }
 function render(){
   const q = String($('#orderSearch')?.value || '').trim().toLowerCase();
