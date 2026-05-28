@@ -4556,7 +4556,28 @@ async function loadCart(){
     console.warn('missing cart_token');
     return;
   }
+
+  let stockSyncMessage = "";
+
   try {
+    // ✅ 官網購物車載入前，先請後端同步庫存
+    // ✅ 後端尚未部署 / 同步失敗時，不阻斷原本購物車讀取
+    try {
+      const sr = await fetch(`${API}/cart/sync-stock`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cart_token: cartToken })
+      });
+
+      const sj = await sr.json().catch(() => ({}));
+
+      if (sr.ok && sj && sj.ok !== false && sj.changed) {
+        stockSyncMessage = String(sj.message || '').trim();
+      }
+    } catch (syncErr) {
+      console.warn('cart sync stock skipped', syncErr);
+    }
+
     const r = await fetch(`${API}/cart/${cartToken}`);
     const j = await r.json();
 
@@ -4601,6 +4622,10 @@ calcZC();
 try { renderPendingOrderPanel(); } catch(e) {}
 
 CART_LOADED = true;
+
+if (stockSyncMessage) {
+  alert(stockSyncMessage);
+}
   } catch (e) {
     console.error('loadCart error', e);
     alert('讀取購物車失敗，請再試一次。');
