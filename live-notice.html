@@ -1471,48 +1471,47 @@ async function refreshCartBadge(){
   }
 }
 
+let homeCartOpening = false;
+
 async function goCartCheckout(){
+  if(homeCartOpening) return;
+  homeCartOpening = true;
+
+  const oldBadgeText = cartBadge ? cartBadge.textContent : '';
+  const oldBadgeHidden = cartBadge ? cartBadge.hidden : true;
+
+  if(cartBtn) cartBtn.disabled = true;
+  if(cartBadge){
+    cartBadge.hidden = false;
+    cartBadge.textContent = '…';
+  }
+
   try{
-    const cartToken = await restoreHomeWebCartTokenIfNeeded();
+    let cartToken = '';
+
+    try {
+      cartToken = String(localStorage.getItem(HOME_CART_KEY) || '').trim();
+    } catch(e) {}
+
+    if (!cartToken) {
+      cartToken = await restoreHomeWebCartTokenIfNeeded();
+    }
 
     if (!cartToken){
-      alert('目前購物車是空的');
-      return;
-    }
-
-    const r = await fetch(`${HOME_API}/cart/${encodeURIComponent(cartToken)}`, { credentials:'include' });
-    if (!r.ok) {
-      localStorage.removeItem(HOME_CART_KEY);
-      setCartBadge(0);
-      alert('目前購物車是空的');
-      return;
-    }
-
-    const j = await r.json().catch(() => ({}));
-    const status = String(j.cart_status || j.status || '').trim().toLowerCase();
-    const customerType = String(j.customer_type || '').trim().toLowerCase();
-
-    if (customerType === 'web' && status && status !== 'open') {
-      const activeOrder = j.active_order || null;
-      const canContinuePending =
-        status === 'submitted' &&
-        activeOrder &&
-        activeOrder.can_continue_payment === true;
-
-      if (canContinuePending) {
-        location.href = `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(cartToken)}`;
-        return;
+      if(cartBadge){
+        cartBadge.textContent = oldBadgeText || '0';
+        cartBadge.hidden = oldBadgeHidden;
       }
-
-      localStorage.removeItem(HOME_CART_KEY);
-      setCartBadge(0);
-      alert('原購物車已成立訂單，若要購買其他商品，請重新加入購物車。');
+      alert('目前購物車是空的');
       return;
     }
 
     location.href = `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(cartToken)}`;
   }catch(e){
     alert('目前無法開啟購物車');
+  }finally{
+    homeCartOpening = false;
+    if(cartBtn) cartBtn.disabled = false;
   }
 }
 
