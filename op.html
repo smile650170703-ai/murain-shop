@@ -565,8 +565,24 @@ button.is-busy {
       placeholder="這裡會自動產生要貼給客人的訊息"
     ></textarea>
 
-    <div class="row" style="margin-top:10px">
+        <div class="row" style="margin-top:10px">
       <button class="ghost" id="btn-clear">🕳️清空購物車🕳️</button>
+    </div>
+
+    <div style="margin-top:14px; padding:12px; border:1px solid #e5e7eb; border-radius:14px; background:#fff;">
+      <div class="muted" style="margin-bottom:8px;">商品條碼 / 商品名稱查詢</div>
+
+      <div class="row">
+        <div style="flex:2">
+          <input id="product_lookup_kw" placeholder="輸入關鍵字，例如品牌、品名、條碼" />
+        </div>
+        <div style="max-width:140px">
+          <button class="ghost" id="btn-product-lookup">查詢</button>
+        </div>
+      </div>
+
+      <div id="product_lookup_msg" class="muted" style="margin-top:8px;"></div>
+      <div id="product_lookup_results" style="margin-top:10px;"></div>
     </div>
   </div>
 <script>
@@ -1469,6 +1485,70 @@ try { rememberCartForUser(CART); } catch(e) {}
 // ✅ 發送完成後，自動清掉本次會員與購物車畫面，只保留直播主名稱
 resetAfterSendSuccess();
   }
+  function renderProductLookupRows(rows) {
+  const box = document.getElementById('product_lookup_results');
+  const msg = document.getElementById('product_lookup_msg');
+
+  if (!box) return;
+
+  const list = Array.isArray(rows) ? rows : [];
+
+  if (!list.length) {
+    box.innerHTML = '';
+    if (msg) msg.textContent = '找不到符合的商品';
+    return;
+  }
+
+  if (msg) msg.textContent = `找到 ${list.length} 筆`;
+
+  box.innerHTML = list.map(it => {
+    const sku = escHtml(it.sku || '');
+    const name = escHtml(it.name || '');
+
+    return `
+      <div style="padding:10px 12px; border:1px solid #eef1f5; border-radius:12px; background:#f9fafb; margin-bottom:8px;">
+        <div class="mono" style="font-weight:800;">${sku || '-'}</div>
+        <div style="margin-top:4px;">${name || '-'}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function searchProductKeyword() {
+  if (!OP) return alert('請先登入 OP Key');
+
+  const kw = (document.getElementById('product_lookup_kw')?.value || '').trim();
+  const msg = document.getElementById('product_lookup_msg');
+  const box = document.getElementById('product_lookup_results');
+
+  if (!kw) {
+    if (msg) msg.textContent = '請先輸入關鍵字';
+    if (box) box.innerHTML = '';
+    return;
+  }
+
+  if (msg) msg.textContent = '查詢中...';
+  if (box) box.innerHTML = '';
+
+  try {
+    const res = await jfetch(API + '/op/products/search-basic', {
+      method:'POST',
+      body: JSON.stringify({
+        op_key: OP,
+        keyword: kw
+      })
+    });
+
+    if (!res || res.ok !== true) {
+      if (msg) msg.textContent = '查詢失敗：' + ((res && (res.message || res.error)) || 'unknown');
+      return;
+    }
+
+    renderProductLookupRows(res.rows || []);
+  } catch (e) {
+    if (msg) msg.textContent = '查詢失敗：' + e.message;
+  }
+}
 async function searchLineMember() {
   if (!OP) {
     alert('請先登入 OP Key');
@@ -2127,6 +2207,21 @@ if (lineNameInput) {
     $('#btn-refresh').addEventListener('click', refreshList);
     $('#btn-clear').addEventListener('click', clearCart);
     $('#btn-link').addEventListener('click', linkCheckout);
+
+    const btnProductLookup = document.getElementById('btn-product-lookup');
+    if (btnProductLookup) {
+      btnProductLookup.addEventListener('click', searchProductKeyword);
+    }
+
+    const productLookupKw = document.getElementById('product_lookup_kw');
+    if (productLookupKw) {
+      productLookupKw.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          searchProductKeyword();
+        }
+      });
+    }
         const btnModeSimple = document.getElementById('btn-mode-simple');
     if (btnModeSimple) {
       btnModeSimple.addEventListener('click', ()=> setMode('simple'));
