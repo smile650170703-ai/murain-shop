@@ -1803,7 +1803,37 @@
   text-decoration-color:rgba(123,95,81,.42);
   cursor:pointer;
 }
+.xy-action-toast-card.is-opening{
+  opacity:.82;
+  pointer-events:none;
+}
 
+.xy-action-toast-link.is-opening,
+.xy-action-toast-link:disabled{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  color:#9a7658;
+  text-decoration:none;
+  cursor:wait;
+  opacity:1;
+}
+
+.xy-action-toast-link.is-opening::before,
+.xy-action-toast-link:disabled::before{
+  content:"";
+  width:12px;
+  height:12px;
+  border-radius:999px;
+  border:1.5px solid rgba(154,118,88,.25);
+  border-top-color:#9a7658;
+  animation:xyToastSpin .75s linear infinite;
+}
+
+@keyframes xyToastSpin{
+  from{ transform:rotate(0deg); }
+  to{ transform:rotate(360deg); }
+}
 .xy-action-toast-close{
   width:42px;
   height:42px;
@@ -4670,18 +4700,26 @@ function showShopActionToast(product, message, linkText, onLink){
   if(linkText){
     link.hidden = false;
     link.textContent = linkText;
-    link.onclick = async (e) => {
+   link.onclick = async (e) => {
   e.preventDefault();
+  e.stopPropagation();
 
   if (link.dataset.loading === '1') return;
 
+  clearTimeout(xyActionToastTimer);
+
   link.dataset.loading = '1';
   const oldText = link.textContent;
+  const card = toast.querySelector('.xy-action-toast-card');
 
-  link.textContent = '開啟中...';
+  if (card) card.classList.add('is-opening');
+
+  text.textContent = '正在開啟購物車...';
+  link.textContent = '開啟中';
+  link.classList.add('is-opening');
   link.disabled = true;
+  link.setAttribute('aria-busy', 'true');
   link.style.pointerEvents = 'none';
-  link.style.opacity = '.65';
 
   try {
     if(typeof onLink === 'function') {
@@ -4689,11 +4727,18 @@ function showShopActionToast(product, message, linkText, onLink){
     }
   } catch(err) {
     console.log('[toast link action failed]', err);
+
+    if (card) card.classList.remove('is-opening');
+
     link.dataset.loading = '';
     link.disabled = false;
+    link.removeAttribute('aria-busy');
+    link.classList.remove('is-opening');
     link.style.pointerEvents = '';
-    link.style.opacity = '';
     link.textContent = oldText;
+
+    text.textContent = message || '';
+    alert('目前無法開啟購物車，請再按一次右上角購物車。');
   }
 };
   }else{
@@ -4811,16 +4856,14 @@ async function previewAddToCart(){
       return;
     }
 
-    showShopActionToast(
-      previewProduct,
-      '已加入購物籃',
-      '前往購物車',
-      () => {
-        if (typeof goCartCheckout === 'function') {
-          return goCartCheckout();
-        }
-      }
-    );
+showShopActionToast(
+  previewProduct,
+  '已加入購物籃',
+  '前往購物車',
+  () => {
+    location.href = `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(token)}`;
+  }
+);
 
     // 不要卡住成功提示，購物車數字背景更新即可
     if(typeof refreshCartBadge === 'function'){
