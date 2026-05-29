@@ -1180,8 +1180,19 @@ function renderSimpleCartList(list) {
     li.innerHTML = `
   <div style="flex:1; min-width:0;">
     <div style="font-weight:700;">${escHtml(name)}</div>
-    <div class="mono muted" style="margin-top:4px;">
+        <div class="mono muted" style="margin-top:4px;">
       ${escHtml(sku)}　/　${qty} × ${money(price)}
+    </div>
+
+    <div class="muted" style="margin-top:6px;">
+      單價
+      <input
+        class="item-price-input"
+        data-sku="${escHtml(sku)}"
+        data-qty="${qty}"
+        value="${price}"
+        inputmode="numeric"
+      />
     </div>
   </div>
 
@@ -1201,6 +1212,13 @@ function renderSimpleCartList(list) {
       data-qty="${qty}"
       style="width:42px; min-width:42px; max-width:42px; padding:8px 0;"
     >＋</button>
+
+      <button
+      class="ghost btn-save-price"
+      data-sku="${escHtml(sku)}"
+      data-qty="${qty}"
+      style="width:76px; min-width:76px; max-width:76px; padding:8px 0;"
+    >改價</button>
 
     <button
       class="ghost btn-del-item"
@@ -1239,7 +1257,43 @@ function renderSimpleCartList(list) {
       await updateSimpleItemQty(sku, currentQty + 1);
     });
   });
+  ul.querySelectorAll('.btn-save-price').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const sku = (btn.dataset.sku || '').trim();
+      const qty = Math.max(1, parseInt(btn.dataset.qty || '1', 10) || 1);
 
+      if (!sku) return;
+      if (!OP) return alert('請先登入 OP Key');
+
+      const priceInput = Array.from(ul.querySelectorAll('.item-price-input'))
+        .find(input => (input.dataset.sku || '').trim() === sku);
+
+      const price = Math.max(0, parseInt((priceInput?.value || '0').trim(), 10) || 0);
+
+      btn.disabled = true;
+      btn.classList.add('is-busy');
+      btn.textContent = '改價中...';
+
+      try {
+        await updateSimpleItemQty(sku, qty, price);
+
+        btn.classList.remove('is-busy');
+        btn.classList.add('is-done');
+        btn.textContent = '已改 ✓';
+
+        setTimeout(() => {
+          btn.classList.remove('is-done');
+          btn.textContent = '改價';
+          btn.disabled = false;
+        }, 650);
+      } catch (e) {
+        btn.classList.remove('is-busy');
+        btn.textContent = '改價';
+        btn.disabled = false;
+        alert('改價失敗：' + (e.message || e));
+      }
+    });
+  });
   ul.querySelectorAll('.btn-del-item').forEach(btn => {
     btn.addEventListener('click', async () => {
       const sku = (btn.dataset.sku || '').trim();
@@ -1253,7 +1307,7 @@ function renderSimpleCartList(list) {
   updateCurrentCustomerInfo();
 }
 
-async function updateSimpleItemQty(sku, nextQty) {
+async function updateSimpleItemQty(sku, nextQty, nextPrice = null) {
   if (!guardCart()) return;
   if (!OP) return alert('請先登入 OP Key');
 
@@ -1268,7 +1322,8 @@ async function updateSimpleItemQty(sku, nextQty) {
       cart_token: CART,
       sku,
       qty: nextQty,
-      op_key: OP
+      op_key: OP,
+      ...(nextPrice !== null ? { price: nextPrice } : {})
     })
   });
 
