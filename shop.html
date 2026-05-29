@@ -4692,6 +4692,36 @@ function getShopToastImage(product){
   ).trim();
 }
 
+function resetShopActionToastState(){
+  const toast = document.getElementById('xyActionToast');
+  if (!toast) return;
+
+  const card = toast.querySelector('.xy-action-toast-card');
+  const text = document.getElementById('xyActionToastText');
+  const link = document.getElementById('xyActionToastLink');
+
+  clearTimeout(xyActionToastTimer);
+
+  toast.classList.remove('show');
+
+  if (card) card.classList.remove('is-opening');
+
+  if (link) {
+    link.dataset.loading = '';
+    link.disabled = false;
+    link.removeAttribute('aria-busy');
+    link.classList.remove('is-opening');
+    link.style.pointerEvents = '';
+    link.style.opacity = '';
+  }
+
+  if (text && String(text.textContent || '').includes('正在開啟購物車')) {
+    text.textContent = '';
+  }
+
+  toast.hidden = true;
+}
+
 function hideShopActionToast(){
   const toast = document.getElementById('xyActionToast');
   if(!toast) return;
@@ -4699,11 +4729,31 @@ function hideShopActionToast(){
   toast.classList.remove('show');
 
   clearTimeout(xyActionToastTimer);
-  xyActionToastTimer = setTimeout(() => {
-    toast.hidden = true;
-  }, 220);
+  xyActionToastTimer = setTimeout(resetShopActionToastState, 220);
 }
+// ✅ 修正：從購物車按返回時，瀏覽器可能用 bfcache 還原舊畫面
+// 必須把「正在開啟購物車」提示卡清掉，避免卡在商城畫面上
+window.addEventListener('pageshow', () => {
+  resetShopActionToastState();
 
+  if (typeof refreshCartBadge === 'function') {
+    setTimeout(refreshCartBadge, 120);
+  }
+});
+
+window.addEventListener('pagehide', () => {
+  resetShopActionToastState();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    resetShopActionToastState();
+
+    if (typeof refreshCartBadge === 'function') {
+      setTimeout(refreshCartBadge, 120);
+    }
+  }
+});
 function showShopActionToast(product, message, linkText, onLink){
   const toast = document.getElementById('xyActionToast');
   const img = document.getElementById('xyActionToastImg');
