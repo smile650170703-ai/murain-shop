@@ -4713,94 +4713,85 @@ function showShopActionToast(product, message, linkText, onLink){
 
   xyActionToastTimer = setTimeout(hideShopActionToast, 3600);
 }
+let PREVIEW_ADD_CART_BUSY = false;
+
 async function previewAddToCart(){
-  if(!previewProduct) return;
+  if (PREVIEW_ADD_CART_BUSY) return;
+  if (!previewProduct) return;
 
-  const stock = previewStockValue(previewProduct);
-  if(stock <= 0){
-    updatePreviewCartButton(previewProduct);
-    return;
-  }
-
-  const sku = previewSku(previewProduct);
-  if(!sku){
-    alert('找不到商品 SKU');
-    updatePreviewCartButton(previewProduct);
-    return;
-  }
-
-  if (!SHOP_MEMBER_INFO) {
-    // 記住：這次跳會員登入，是因為客人剛剛按了「加入購物籃」
-    markShopPendingAction('add_cart', sku);
-
-    const ok = await initShopMember(true);
-    if (!ok) return;
-
-    // 如果沒有真的跳走、只是成功補到 session，就清掉 pending，避免之後重複自動加入
-    consumeShopPendingAction(sku);
-  }
   const btn = $('previewCartBtn');
+  PREVIEW_ADD_CART_BUSY = true;
 
-  try{
-   if(btn){
-  btn.disabled = true;
-  btn.classList.add('is-loading');
-  btn.textContent = '加入中';
-}
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add('is-loading');
+    btn.textContent = '加入中';
+  }
+
+  try {
+    const stock = previewStockValue(previewProduct);
+    if (stock <= 0) {
+      updatePreviewCartButton(previewProduct);
+      return;
+    }
+
+    const sku = previewSku(previewProduct);
+    if (!sku) {
+      alert('找不到商品 SKU');
+      updatePreviewCartButton(previewProduct);
+      return;
+    }
+
+    if (!SHOP_MEMBER_INFO) {
+      if (btn) btn.textContent = '確認會員中';
+
+      // 記住：這次跳會員登入，是因為客人剛剛按了「加入購物籃」
+      markShopPendingAction('add_cart', sku);
+
+      const ok = await initShopMember(true);
+      if (!ok) return;
+
+      // 如果沒有真的跳走、只是成功補到 session，就清掉 pending，避免之後重複自動加入
+      consumeShopPendingAction(sku);
+
+      if (btn) btn.textContent = '加入中';
+    }
 
     const token = await previewEnsureCart();
-
-    // 官網商品卡：加入前先檢查同 SKU 已在購物車數量
-    try {
-      const cartRes = await fetch(`https://api.murain.tw/cart/${encodeURIComponent(token)}`);
-      if (cartRes.ok) {
-        const cartJson = await cartRes.json().catch(() => ({}));
-        const items = Array.isArray(cartJson.items) ? cartJson.items : [];
-
-        const currentInCart = items
-          .filter(it => String(it.sku || it.SKU || '').trim() === String(sku).trim())
-          .reduce((n, it) => n + (Number(it.qty || it.Qty || 0) || 0), 0);
-
-        if (currentInCart >= stock) {
-          alert('此商品庫存數量已達購物車上限，無法再加入。');
-          updatePreviewCartButton(previewProduct);
-          return;
-        }
-      }
-    } catch(e) {}
 
     const res = await fetch('https://api.murain.tw/cart/add', {
       method:'POST',
       headers:{ 'content-type':'application/json' },
       credentials:'include',
       body: JSON.stringify({
-  cart_token: token,
-  sku,
-  qty: 1,
-  customer_type: 'web',
-  line_user_id: getShopLineUserId(),
-  customer_name: getShopCustomerName()
-})
+        cart_token: token,
+        sku,
+        qty: 1,
+        customer_type: 'web',
+        line_user_id: getShopLineUserId(),
+        customer_name: getShopCustomerName()
+      })
     });
 
     const json = await res.json().catch(() => ({}));
 
-        if(json && json.ok === false){
+    if(json && json.ok === false){
       const err = String(json.error || json.code || '').trim();
-if (
-  err === 'member_required' ||
-  err === 'member_login_required'
-) {
-  markShopPendingAction('add_cart', sku);
-  redirectShopMemberLogin(buildShopMemberReturnUrl());
-  return;
-}
 
-if (err === 'member_not_bound') {
-  markShopPendingAction('add_cart', sku);
-  redirectShopMemberBindForPreview();
-  return;
-}
+      if (
+        err === 'member_required' ||
+        err === 'member_login_required'
+      ) {
+        markShopPendingAction('add_cart', sku);
+        redirectShopMemberLogin(buildShopMemberReturnUrl());
+        return;
+      }
+
+      if (err === 'member_not_bound') {
+        markShopPendingAction('add_cart', sku);
+        redirectShopMemberBindForPreview();
+        return;
+      }
 
       alert(json.message || '加入失敗，請稍後再試');
 
@@ -4820,63 +4811,65 @@ if (err === 'member_not_bound') {
       return;
     }
 
-showShopActionToast(
-  previewProduct,
-  '已加入購物籃',
-  '前往購物車',
-  () => {
-    if (typeof goCartCheckout === 'function') {
-      return goCartCheckout();
+    showShopActionToast(
+      previewProduct,
+      '已加入購物籃',
+      '前往購物車',
+      () => {
+        if (typeof goCartCheckout === 'function') {
+          return goCartCheckout();
+        }
+      }
+    );
+
+    // 不要卡住成功提示，購物車數字背景更新即可
+    if(typeof refreshCartBadge === 'function'){
+      refreshCartBadge();
     }
-  }
-);
 
-// 不要卡住成功提示，購物車數字背景更新即可
-if(typeof refreshCartBadge === 'function'){
-  refreshCartBadge();
-}
+    if (
+      SHOP_MEMBER_INFO &&
+      document.querySelector('#productList .member-price-login-text')
+    ) {
+      refreshShopMemberPriceViewForList();
+    }
 
-if (
-  SHOP_MEMBER_INFO &&
-  document.querySelector('#productList .member-price-login-text')
-) {
-  refreshShopMemberPriceViewForList();
-}
+    if(btn){
+      btn.classList.remove('is-loading');
+      btn.textContent = '已加入';
+    }
 
-if(btn){
-  btn.classList.remove('is-loading');
-  btn.textContent = '已加入';
-}
+    setTimeout(() => {
+      updatePreviewCartButton(previewProduct);
+    }, 900);
 
-setTimeout(() => {
-  updatePreviewCartButton(previewProduct);
-}, 900);
-
-  }catch(e){
+  } catch(e) {
     const err = String(e?.message || e);
 
-if (
-  err === 'member_required' ||
-  err === 'member_login_required'
-) {
-  markShopPendingAction('add_cart', sku);
-  redirectShopMemberLogin(buildShopMemberReturnUrl());
-  return;
-}
+    if (
+      err === 'member_required' ||
+      err === 'member_login_required'
+    ) {
+      const sku = previewSku(previewProduct);
+      markShopPendingAction('add_cart', sku);
+      redirectShopMemberLogin(buildShopMemberReturnUrl());
+      return;
+    }
 
-if (err === 'member_not_bound') {
-  markShopPendingAction('add_cart', sku);
-  redirectShopMemberBindForPreview();
-  return;
-}
+    if (err === 'member_not_bound') {
+      markShopPendingAction('add_cart', previewSku(previewProduct));
+      redirectShopMemberBindForPreview();
+      return;
+    }
+
     alert('加入失敗，請稍後再試');
     updatePreviewCartButton(previewProduct);
   } finally {
+    PREVIEW_ADD_CART_BUSY = false;
+
     if (btn) {
       btn.classList.remove('is-loading');
 
-      // 如果剛剛已經被後端判定為完售 / 數量已達上限，
-      // 不要在 finally 又把按鈕打開。
       if (!btn.classList.contains('is-soldout')) {
         const finalStock = previewStockValue(previewProduct);
         if (finalStock > 0) btn.disabled = false;
