@@ -1048,13 +1048,14 @@ async function addItem() {
     cart_token: CART,
     sku,
     qty,
+    op_key: OP,
+    customer_type: $('#customer_type') ? ($('#customer_type').value || 'live') : 'live',
     line_user_id: getLineUserId(),
     customer_name: getCustomerName()
   };
 
-  if(price) {
+   if(price) {
     body.price = parseInt(price,10)||0;
-    body.op_key = OP;
   }
 
   const res = await jfetch(API+'/cart/add', {
@@ -1067,7 +1068,7 @@ async function addItem() {
 $('#sku').value = '';
 $('#override_price').value = '';
 $('#qty').value = '1';
-await refreshList();
+renderSimpleCartList(res.items || []);
 $('#sku')?.focus();
 }
 
@@ -1079,18 +1080,23 @@ $('#sku')?.focus();
     alert('已儲存備註');
   }
 
-  async function refreshList() {
-  if(!guardCart()) return;
+function renderSimpleCartList(list) {
+  list = Array.isArray(list) ? list : [];
 
-  const res = await jfetch(API+'/cart/'+encodeURIComponent(CART));
-  const list = res.items||[];
   const ul = $('#items');
+  if (!ul) return;
+
   ul.innerHTML = '';
 
   let sum = 0;
 
-  list.forEach(it=>{
-    sum += (+it.price||0) * (+it.qty||0);
+  list.forEach(it => {
+    const sku = String(it.sku || it.SKU || '').trim();
+    const name = String(it.name || it.Name || sku || '').trim();
+    const qty = Number(it.qty ?? it.Qty ?? 0) || 0;
+    const price = Number(it.price ?? it.Price ?? 0) || 0;
+
+    sum += price * qty;
 
     const li = document.createElement('li');
     li.style.display = 'flex';
@@ -1100,21 +1106,69 @@ $('#sku')?.focus();
 
     li.innerHTML = `
   <div style="flex:1; min-width:0;">
-    <div style="font-weight:700;">${escHtml(it.name || it.sku || '')}</div>
+    <div style="font-weight:700;">${escHtml(name)}</div>
     <div class="mono muted" style="margin-top:4px;">
-      ${escHtml(it.sku || '')}　/　${it.qty} × ${money(it.price||0)}
+      ${escHtml(sku)}　/　${qty} × ${money(price)}
     </div>
   </div>
-  <div style="display:flex; gap:8px; align-items:center;">
-    <button class="ghost btn-del-item" data-sku="${escHtml(it.sku || '')}" style="max-width:110px;">刪除此商品</button>
+
+  <div style="display:flex; gap:6px; align-items:center; flex:0 0 auto;">
+    <button
+      class="ghost btn-qty-minus"
+      data-sku="${escHtml(sku)}"
+      data-qty="${qty}"
+      style="width:42px; min-width:42px; max-width:42px; padding:8px 0;"
+    >－</button>
+
+    <span class="mono" style="min-width:28px; text-align:center;">${qty}</span>
+
+    <button
+      class="ghost btn-qty-plus"
+      data-sku="${escHtml(sku)}"
+      data-qty="${qty}"
+      style="width:42px; min-width:42px; max-width:42px; padding:8px 0;"
+    >＋</button>
+
+    <button
+      class="ghost btn-del-item"
+      data-sku="${escHtml(sku)}"
+      style="width:76px; min-width:76px; max-width:76px; padding:8px 0;"
+    >刪除</button>
   </div>
 `;
 
     ul.appendChild(li);
   });
 
-  ul.querySelectorAll('.btn-del-item').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
+  ul.querySelectorAll('.btn-qty-minus').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const sku = (btn.dataset.sku || '').trim();
+      const currentQty = Number(btn.dataset.qty || 0) || 0;
+      const nextQty = Math.max(0, currentQty - 1);
+
+      if (!sku) return;
+
+      if (nextQty <= 0 && !confirm(`數量會變 0，確定移除商品：${sku}？`)) {
+        return;
+      }
+
+      await updateSimpleItemQty(sku, nextQty);
+    });
+  });
+
+  ul.querySelectorAll('.btn-qty-plus').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const sku = (btn.dataset.sku || '').trim();
+      const currentQty = Number(btn.dataset.qty || 0) || 0;
+
+      if (!sku) return;
+
+      await updateSimpleItemQty(sku, currentQty + 1);
+    });
+  });
+
+  ul.querySelectorAll('.btn-del-item').forEach(btn => {
+    btn.addEventListener('click', async () => {
       const sku = (btn.dataset.sku || '').trim();
       if (!sku) return;
       await removeItemBySku(sku);
@@ -1126,13 +1180,52 @@ $('#sku')?.focus();
   updateCurrentCustomerInfo();
 }
 
+async function updateSimpleItemQty(sku, nextQty) {
+  if (!guardCart()) return;
+  if (!OP) return alert('請先登入 OP Key');
+
+  sku = String(sku || '').trim();
+  nextQty = Math.max(0, parseInt(nextQty, 10) || 0);
+
+  if (!sku) return alert('缺少 SKU');
+
+  const res = await jfetch(API + '/cart/update-qty-self', {
+    method: 'POST',
+    body: JSON.stringify({
+      cart_token: CART,
+      sku,
+      qty: nextQty,
+      op_key: OP
+    })
+  });
+
+  if (!res || res.ok !== true) {
+    return alert('數量更新失敗：' + ((res && (res.message || res.error)) || 'unknown'));
+  }
+
+  renderSimpleCartList(res.items || []);
+  $('#sku')?.focus();
+}
+
+async function refreshList() {
+  if (!guardCart()) return;
+
+  const res = await jfetch(API + '/cart/' + encodeURIComponent(CART));
+
+  if (!res || res.ok !== true) {
+    return alert('重整購物車失敗：' + ((res && (res.message || res.error)) || 'unknown'));
+  }
+
+  renderSimpleCartList(res.items || []);
+}
+
   async function clearCart() {
     if(!guardCart()) return;
     if(!OP) return alert('需要 OP 才能清空');
     if(!confirm('確定清空整個購物車？')) return;
     const res = await jfetch(API+'/cart/clear', { method:'POST', body: JSON.stringify({cart_token:CART, op_key:OP}) });
     if(!res.ok) return alert('清空失敗：'+(res.error||''));
-    await refreshList();
+       renderSimpleCartList(res.items || []);
   }
   async function removeItemBySku(sku) {
   if (!guardCart()) return;
@@ -1154,7 +1247,7 @@ $('#sku')?.focus();
     return alert('移除失敗：' + ((res && res.error) || 'unknown'));
   }
 
-  await refreshList();
+  renderSimpleCartList(res.items || []);
 }
 
 // 共用：組出這一車的結帳網址
