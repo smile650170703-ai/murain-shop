@@ -3031,10 +3031,41 @@ async function goCartCheckout(){
 }
 
     if (cartBtn){ cartBtn.addEventListener('click', goCartCheckout); }
-    window.addEventListener('DOMContentLoaded', refreshCartBadge);
-    window.addEventListener('focus', refreshCartBadge);
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshCartBadge(); });
-    window.addEventListener('storage', (e) => { if (e.key === HOME_CART_KEY) refreshCartBadge(); });
+
+let HOME_BADGE_REFRESHING = false;
+let HOME_BADGE_REFRESH_TIMER = null;
+
+function scheduleHomeCartBadgeRefresh(delay = 900){
+  clearTimeout(HOME_BADGE_REFRESH_TIMER);
+
+  HOME_BADGE_REFRESH_TIMER = setTimeout(async () => {
+    if (HOME_BADGE_REFRESHING) return;
+
+    HOME_BADGE_REFRESHING = true;
+    try {
+      await refreshCartBadge();
+    } finally {
+      HOME_BADGE_REFRESHING = false;
+    }
+  }, delay);
+}
+
+// ✅ 不要一開商城就跟商品列表搶後端，晚一點再更新購物車數字
+window.addEventListener('DOMContentLoaded', () => {
+  scheduleHomeCartBadgeRefresh(1200);
+});
+
+window.addEventListener('focus', () => {
+  scheduleHomeCartBadgeRefresh(600);
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) scheduleHomeCartBadgeRefresh(600);
+});
+
+window.addEventListener('storage', (e) => {
+  if (e.key === HOME_CART_KEY) scheduleHomeCartBadgeRefresh(200);
+});
   </script>
 
   <!-- ===== 固定：防右鍵 / 防拖曳 / 快捷鍵限制 ===== -->
@@ -5345,80 +5376,121 @@ async function fetchProducts(){
   const loader = $('loading');
   const grid = $('productList');
 
-  const shopMemberReady = await initShopMember(false);
-  const forceFreshMemberRender = shopMemberReady && SHOP_MEMBER_JUST_RESTORED;
-  if (forceFreshMemberRender) {
-    clearShopProductCache();
+  const publicCacheKey = [
+    'SHOP_LIST_CACHE_V2',
+    'public',
+    String(currentPage || 1),
+    String(selectedCat || 'ALL'),
+    String(selectedSub || 'ALL')
+  ].join('|');
+
+  let renderedCacheFirst = false;
+
+  // ✅ 先吃公開版快取，讓畫面先出來，不要一開始就空等會員 session
+  try {
+    const raw = sessionStorage.getItem(publicCacheKey);
+    if (raw) {
+      const cached = JSON.parse(raw);
+      if (cached && Array.isArray(cached.items) && cached.pagination) {
+        allItems = cached.items || [];
+        allCats = cached.categories || [];
+        paginationState = cached.pagination || {
+          page: currentPage,
+          limit: PAGE_SIZE,
+          total: allItems.length,
+          total_pages: 1,
+          has_prev: false,
+          has_next: false
+        };
+
+        loader.style.display = 'none';
+        $('emptyTip').style.display = allItems.length ? 'none' : 'block';
+        renderCategoryBar(allCats);
+        renderSubcatBar(allCats, selectedCat);
+        renderProducts(allItems);
+        renderPagination(paginationState);
+
+        renderedCacheFirst = true;
+      }
+    }
+  } catch(e) {}
+
+  if (!renderedCacheFirst) {
+    loader.style.display = 'block';
+    grid.innerHTML = '';
+    $('emptyTip').style.display = 'none';
   }
-const shopMemberKey = shopMemberReady ? 'member' : 'public';
 
-const cacheKey = [
-  'SHOP_LIST_CACHE_V2',
-  shopMemberKey,
-  String(currentPage || 1),
-  String(selectedCat || 'ALL'),
-  String(selectedSub || 'ALL')
-].join('|');
-
- const hasCached = !forceFreshMemberRender && !!sessionStorage.getItem(cacheKey);
-
-if (!hasCached){
-  loader.style.display = 'block';
-  grid.innerHTML = '';
-}
-
-$('emptyTip').style.display = 'none';
+  let shopMemberReady = false;
+  let forceFreshMemberRender = false;
 
   try {
-    // 先吃 session cache（包含空陣列也要吃）
-    try {
-      const raw = sessionStorage.getItem(cacheKey);
-      if (raw) {
-        const cached = JSON.parse(raw);
-        if (cached && Array.isArray(cached.items) && cached.pagination) {
-          allItems = cached.items || [];
-          allCats = cached.categories || [];
-          paginationState = cached.pagination || {
-            page: currentPage,
-            limit: PAGE_SIZE,
-            total: allItems.length,
-            total_pages: 1,
-            has_prev: false,
-            has_next: false
-          };
+    shopMemberReady = await initShopMember(false);
+    forceFreshMemberRender = shopMemberReady && SHOP_MEMBER_JUST_RESTORED;
 
-          loader.style.display = 'none';
-          renderCategoryBar(allCats);
-          renderSubcatBar(allCats, selectedCat);
-          renderProducts(allItems);
-          renderPagination(paginationState);
+    if (forceFreshMemberRender) {
+      clearShopProductCache();
+    }
 
-          if (!allItems.length){
-            $('emptyTip').style.display = 'block';
+    const shopMemberKey = shopMemberReady ? 'member' : 'public';
+
+    const cacheKey = [
+      'SHOP_LIST_CACHE_V2',
+      shopMemberKey,
+      String(currentPage || 1),
+      String(selectedCat || 'ALL'),
+      String(selectedSub || 'ALL')
+    ].join('|');
+
+    // ✅ 如果剛剛沒有先顯示公開快取，這裡再吃正確身份的快取
+    if (!renderedCacheFirst && !forceFreshMemberRender) {
+      try {
+        const raw = sessionStorage.getItem(cacheKey);
+        if (raw) {
+          const cached = JSON.parse(raw);
+          if (cached && Array.isArray(cached.items) && cached.pagination) {
+            allItems = cached.items || [];
+            allCats = cached.categories || [];
+            paginationState = cached.pagination || {
+              page: currentPage,
+              limit: PAGE_SIZE,
+              total: allItems.length,
+              total_pages: 1,
+              has_prev: false,
+              has_next: false
+            };
+
+            loader.style.display = 'none';
+            $('emptyTip').style.display = allItems.length ? 'none' : 'block';
+            renderCategoryBar(allCats);
+            renderSubcatBar(allCats, selectedCat);
+            renderProducts(allItems);
+            renderPagination(paginationState);
           }
         }
-      }
-    } catch(e){}
+      } catch(e) {}
+    }
 
     const u = new URL(PRODUCT_API);
     u.searchParams.set('page', String(currentPage));
     u.searchParams.set('limit', String(PAGE_SIZE));
 
-   if (selectedCat !== 'ALL') u.searchParams.set('cat', selectedCat);
-if (selectedSub !== 'ALL') u.searchParams.set('sub', selectedSub);
+    if (selectedCat !== 'ALL') u.searchParams.set('cat', selectedCat);
+    if (selectedSub !== 'ALL') u.searchParams.set('sub', selectedSub);
 
-// 會員登入後一定不要吃瀏覽器公開版快取，避免已登入仍顯示「登入查看會員價」
-if (shopMemberReady) {
-  u.searchParams.set('_member_view', '1');
-  if (forceFreshMemberRender) {
-    u.searchParams.set('_t', String(Date.now()));
-  }
-}
+    // 會員登入後一定不要吃瀏覽器公開版快取，避免已登入仍顯示「登入查看會員價」
+    if (shopMemberReady) {
+      u.searchParams.set('_member_view', '1');
+      if (forceFreshMemberRender) {
+        u.searchParams.set('_t', String(Date.now()));
+      }
+    }
 
-const res = await fetch(u.toString(), {
-  credentials:'include',
-  cache: shopMemberReady ? 'no-store' : 'default'
-});
+    const res = await fetch(u.toString(), {
+      credentials:'include',
+      cache: shopMemberReady ? 'no-store' : 'default'
+    });
+
     const json = await res.json();
 
     allItems = Array.isArray(json.items) ? json.items : [];
@@ -5460,6 +5532,12 @@ const res = await fetch(u.toString(), {
 
   } catch(err) {
     console.error('fetchProducts failed', err);
+
+    // ✅ 如果已經有快取畫面，就不要把它清空成失敗
+    if (renderedCacheFirst) {
+      loader.style.display = 'none';
+      return;
+    }
 
     allItems = [];
     allCats = [];
