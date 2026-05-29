@@ -4571,16 +4571,19 @@ async function ensureCart(){
   throw new Error(err || 'cart_create_failed');
 }
 
-  async function addToCartAndMaybeCheckout(goCheckoutAfter){
+let productAddBusy = false;
+
+async function addToCartAndMaybeCheckout(goCheckoutAfter){
+  if(productAddBusy) return;
   if(!currentProduct || !currentProduct.sku) return;
 
-if(isProductMemberLocked(currentProduct)){
-  showToast('請先登入或綁定會員');
-  setTimeout(() => {
-    location.href = getProductBindUrl();
-  }, 500);
-  return;
-}
+  if(isProductMemberLocked(currentProduct)){
+    showToast('請先登入或綁定會員');
+    setTimeout(() => {
+      location.href = getProductBindUrl();
+    }, 500);
+    return;
+  }
 
   const stock = Math.max(0, Number(currentProduct.stockQty || 0) || 0);
   if(stock <= 0){
@@ -4588,72 +4591,118 @@ if(isProductMemberLocked(currentProduct)){
     return;
   }
 
-  showToast(goCheckoutAfter ? '處理中...' : '加入中...');
-  const token = await ensureCart();
+  const addBtn = $('addCartBtn');
+  const buyBtn = $('buyNowBtn');
+  const mobileBtn = $('mobileBuyBtn');
 
-  const currentInCart = await getCurrentCartQtyForSku(token, currentProduct.sku);
-  const remaining = Math.max(0, stock - currentInCart);
+  const oldAddText = addBtn ? addBtn.textContent : '';
+  const oldBuyText = buyBtn ? buyBtn.textContent : '';
+  const oldMobileText = mobileBtn ? mobileBtn.textContent : '';
 
-  if(remaining <= 0){
-    showToast('此商品庫存數量已達購物車上限');
-    $('qtyInput').value = '1';
-    return;
+  productAddBusy = true;
+
+  if(addBtn){
+    addBtn.disabled = true;
+    addBtn.textContent = goCheckoutAfter ? '處理中...' : '加入中...';
+  }
+  if(buyBtn){
+    buyBtn.disabled = true;
+    buyBtn.textContent = goCheckoutAfter ? '處理中...' : '加入中...';
+  }
+  if(mobileBtn){
+    mobileBtn.disabled = true;
+    mobileBtn.textContent = '處理中...';
   }
 
-  const qty = Math.max(1, Math.min(
-    remaining,
-    Number($('qtyInput').value || 1) || 1
-  ));
+  try{
+    showToast(goCheckoutAfter ? '正在前往結帳...' : '正在加入購物車...');
 
-  $('qtyInput').value = String(qty);
+    const token = await ensureCart();
 
-const res = await jfetch(API_BASE + '/cart/add', {
-  method:'POST',
-  credentials:'include',
-  body: JSON.stringify({
-    cart_token: token,
-    sku: currentProduct.sku,
-    qty,
-    customer_type: 'web',
-    customer_name: getProductPageCustomerName()
-  })
-});
-const addErr = String(res?.error || res?.code || '').trim();
-if (
-  res && res.ok === false &&
-  (
-    addErr === 'member_required' ||
-    addErr === 'member_login_required' ||
-    addErr === 'member_not_bound'
-  )
-) {
-  showToast(res.message || '請先登入並完成會員綁定');
-  setTimeout(() => {
-    location.href = getProductBindUrl();
-  }, 500);
-  return;
-}
-  if(res && res.ok === false && (res.error === 'out_of_stock' || res.error === 'insufficient_stock')){
-    showToast(res.message || '庫存不足');
-    if(typeof res.available === 'number' && res.available > 0){
-      $('qtyInput').value = String(res.available);
+    const qty = Math.max(1, Math.min(
+      stock,
+      Number($('qtyInput').value || 1) || 1
+    ));
+
+    $('qtyInput').value = String(qty);
+
+    const res = await jfetch(API_BASE + '/cart/add', {
+      method:'POST',
+      credentials:'include',
+      body: JSON.stringify({
+        cart_token: token,
+        sku: currentProduct.sku,
+        qty,
+        customer_type: 'web',
+        customer_name: getProductPageCustomerName()
+      })
+    });
+
+    const addErr = String(res?.error || res?.code || '').trim();
+
+    if (
+      res && res.ok === false &&
+      (
+        addErr === 'member_required' ||
+        addErr === 'member_login_required' ||
+        addErr === 'member_not_bound'
+      )
+    ) {
+      showToast(res.message || '請先登入並完成會員綁定');
+      setTimeout(() => {
+        location.href = getProductBindUrl();
+      }, 500);
+      return;
     }
-    return;
-  }
 
-  if(res && res.items){
-    let c = 0;
-    res.items.forEach(i => c += Number(i.qty || 0));
-    updateCartUI(c);
-    if(goCheckoutAfter){
-      location.href = `${LIFF_CHECKOUT}?cart_token=${encodeURIComponent(token)}`;
-    }else{
-      showToast('已加入購物車');
+    if(res && res.ok === false && (res.error === 'out_of_stock' || res.error === 'insufficient_stock')){
+      showToast(res.message || '庫存不足');
+      if(typeof res.available === 'number' && res.available > 0){
+        $('qtyInput').value = String(res.available);
+      }
+      return;
     }
-    return;
-  }
 
-  showToast('加入失敗，請稍後再試');
+    if(res && res.items){
+      let c = 0;
+      res.items.forEach(i => c += Number(i.qty || 0));
+      updateCartUI(c);
+
+      if(goCheckoutAfter){
+        location.href = `${LIFF_CHECKOUT}?cart_token=${encodeURIComponent(token)}`;
+      }else{
+        showToast('已加入購物車');
+      }
+      return;
+    }
+
+    showToast(res?.message || '加入失敗，請稍後再試');
+  }catch(e){
+    const err = String(e?.message || '');
+    if (
+      err !== 'member_required' &&
+      err !== 'member_login_required' &&
+      err !== 'member_not_bound'
+    ) {
+      showToast('加入失敗，請稍後再試');
+    }
+  }finally{
+    productAddBusy = false;
+
+    if(addBtn){
+      addBtn.textContent = oldAddText || '加入購物車';
+    }
+    if(buyBtn){
+      buyBtn.textContent = oldBuyText || '直接購買';
+    }
+    if(mobileBtn){
+      mobileBtn.textContent = oldMobileText || '直接購買';
+    }
+
+    if(currentProduct){
+      applyStockUI(currentProduct);
+    }
+  }
 }
 
     async function goCheckout(){
