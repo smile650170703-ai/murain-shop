@@ -5111,6 +5111,27 @@ function openPendingPreviewAfterMemberLogin(){
     }, 350);
   }
 }
+  function isHairSalonBrandProduct(p){
+  const brand = String(previewBrand(p) || '').trim();
+
+  const text = [
+    brand,
+    p?.category,
+    p?.categoryName,
+    p?.cat,
+    p?.sub_category,
+    p?.subcategory,
+    p?.brand,
+    p?.title,
+    p?.name,
+    p?.fields?.category,
+    p?.fields?.sub_category,
+    p?.fields?.brand,
+    p?.fields?.Name
+  ].filter(Boolean).join(' ');
+
+  return brand === '專業髮廊髮品' || /專業髮廊髮品/.test(text);
+}
   function renderProducts(list){
     const wrap = $('productList');
     wrap.innerHTML = '';
@@ -5197,41 +5218,30 @@ const hasDiscount = showListPrice && showMemberPrice && listPrice > price;
   </div>
 
   <div class="img-wrapper${hasImage ? '' : ' no-image'}">
-    <div class="product-brand-badge">
-  ${escapeHtml(previewBrand(p))}
-</div>
+    ${isHairSalonBrandProduct(p) ? `` : `
+  <div class="product-brand-badge">
+    ${escapeHtml(previewBrand(p))}
+  </div>
+`}
     ${isSoldOut ? `<div class="product-soldout-badge">已售完</div>` : ``}
 
     <button class="product-wish-btn" type="button" aria-label="加入收藏">♡</button>
 
-    ${hasImage ? `
-      <div class="product-card-slider" data-card-slider data-count="${cardImages.length}">
-        <div class="product-card-slider-track" data-card-slider-track style="--card-slide-idx:0;">
-          ${cardImages.map((url, imgIdx) => `
-            <img
-              class="product-card-slide"
-              src="${escapeHtml(url)}"
-              loading="${imgIdx === 0 ? eager : 'lazy'}"
-              fetchpriority="${imgIdx === 0 ? priority : 'low'}"
-              decoding="async"
-              width="1000"
-              height="1000"
-              alt="${safeTitle}"
-            >
-          `).join('')}
-        </div>
-
-        ${hasMultiImages ? `
-          <div class="product-card-swipe-line" aria-hidden="true">
-            <span style="width:${100 / cardImages.length}%;"></span>
-          </div>
-        ` : ``}
-      </div>
-    ` : `
-      <div class="img-fallback">
-        <span>XUYUAN SELECT</span>
-      </div>
-    `}
+${hasImage ? `
+  <img
+    src="${escapeHtml(cardImages[0])}"
+    loading="${idx < 4 ? eager : 'lazy'}"
+    fetchpriority="${idx < 2 ? priority : 'low'}"
+    decoding="async"
+    width="1000"
+    height="1000"
+    alt="${safeTitle}"
+  >
+` : `
+  <div class="img-fallback">
+    <span>XUYUAN SELECT</span>
+  </div>
+`}
   </div>
 
   <div class="card-info">
@@ -5274,73 +5284,6 @@ const hasDiscount = showListPrice && showMemberPrice && listPrice > price;
 
   openProductPreview(p);
 };
-const cardSlider = card.querySelector('[data-card-slider]');
-const cardSliderTrack = card.querySelector('[data-card-slider-track]');
-
-if (cardSlider && cardSliderTrack && cardImages.length > 1) {
-  let startX = 0;
-  let startY = 0;
-  let moveX = 0;
-  let tracking = false;
-  let currentSlide = 0;
-
-  function updateCardSlide(nextIdx) {
-    currentSlide = Math.max(0, Math.min(cardImages.length - 1, nextIdx));
-    cardSliderTrack.style.setProperty('--card-slide-idx', String(currentSlide));
-
-    const line = cardSlider.querySelector('.product-card-swipe-line');
-    if (line) {
-      line.style.setProperty('--card-slide-idx', String(currentSlide));
-    }
-  }
-
-  cardSlider.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('button')) return;
-
-    tracking = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    moveX = 0;
-
-    try {
-      cardSlider.setPointerCapture(e.pointerId);
-    } catch(err) {}
-  });
-
-  cardSlider.addEventListener('pointermove', (e) => {
-    if (!tracking) return;
-
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-
-    if (Math.abs(dx) > Math.abs(dy)) {
-      moveX = dx;
-    }
-  });
-
-  function endCardSwipe() {
-    if (!tracking) return;
-    tracking = false;
-
-    if (Math.abs(moveX) < 32) return;
-
-    card.dataset.swipeLocked = '1';
-
-    if (moveX < 0) {
-      updateCardSlide(currentSlide + 1);
-    } else {
-      updateCardSlide(currentSlide - 1);
-    }
-
-    setTimeout(() => {
-      card.dataset.swipeLocked = '';
-    }, 180);
-  }
-
-  cardSlider.addEventListener('pointerup', endCardSwipe);
-  cardSlider.addEventListener('pointercancel', endCardSwipe);
-  cardSlider.addEventListener('pointerleave', endCardSwipe);
-}
       const memberPriceBtn = card.querySelector('.member-price-login-text');
       if (memberPriceBtn) {
         memberPriceBtn.setAttribute('role', 'button');
