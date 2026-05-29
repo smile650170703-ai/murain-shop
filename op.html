@@ -100,7 +100,26 @@
     transform:none;
     box-shadow:none;
   }
+button.is-busy {
+    opacity: .75;
+    cursor: wait;
+    transform: translateY(1px) scale(.98);
+    box-shadow: none;
+  }
 
+  button.is-done {
+    background: #16a34a;
+    color: #fff;
+  }
+
+  .item-price-input {
+    width: 88px;
+    min-width: 88px;
+    padding: 8px 9px;
+    border-radius: 10px;
+    font-size: 14px;
+    text-align: right;
+  }
   button.ghost {
     background:#fff;
     color:#111;
@@ -560,6 +579,38 @@ let CART = '';
 
 let CURRENT_MODE = 'simple';
 let CURRENT_MEMBER_PHONE = '';
+
+let ADD_ITEM_BUSY = false;
+
+function setButtonBusy(btn, busy, busyText) {
+  if (!btn) return;
+
+  if (busy) {
+    btn.dataset.oldText = btn.textContent || '';
+    btn.disabled = true;
+    btn.classList.add('is-busy');
+    btn.textContent = busyText || '處理中...';
+    return;
+  }
+
+  btn.disabled = false;
+  btn.classList.remove('is-busy');
+  btn.textContent = btn.dataset.oldText || '加入';
+}
+
+function flashButtonDone(btn, doneText) {
+  if (!btn) return;
+
+  const oldText = btn.textContent || btn.dataset.oldText || '加入';
+  btn.classList.add('is-done');
+  btn.textContent = doneText || '已加入 ✓';
+
+  setTimeout(() => {
+    btn.classList.remove('is-done');
+    btn.textContent = oldText === '加入中...' ? '加入' : oldText;
+    syncMainButtons();
+  }, 650);
+}
 
 function setMode(mode){
   CURRENT_MODE = mode || 'simple';
@@ -1036,40 +1087,62 @@ $('#sku')?.focus();
 }
 
 async function addItem() {
+  if (ADD_ITEM_BUSY) return;
   if (!guardCart()) return;
 
-  const sku = ($('#sku').value||'').trim();
-  const qty = parseInt($('#qty').value||'1',10)||1;
-  const price = ($('#override_price').value||'').trim();
+  const btn = $('#btn-add');
+  const sku = ($('#sku').value || '').trim();
+  const qty = parseInt($('#qty').value || '1', 10) || 1;
+  const price = ($('#override_price').value || '').trim();
 
   if (!sku) return alert('請先輸入條碼');
 
-  const body = {
-    cart_token: CART,
-    sku,
-    qty,
-    op_key: OP,
-    customer_type: $('#customer_type') ? ($('#customer_type').value || 'live') : 'live',
-    line_user_id: getLineUserId(),
-    customer_name: getCustomerName()
-  };
+  ADD_ITEM_BUSY = true;
+  setButtonBusy(btn, true, '加入中...');
 
-   if(price) {
-    body.price = parseInt(price,10)||0;
+  try {
+    const body = {
+      cart_token: CART,
+      sku,
+      qty,
+      op_key: OP,
+      customer_type: $('#customer_type') ? ($('#customer_type').value || 'live') : 'live',
+      line_user_id: getLineUserId(),
+      customer_name: getCustomerName()
+    };
+
+    if (price !== '') {
+      body.price = Math.max(0, parseInt(price, 10) || 0);
+    }
+
+    const res = await jfetch(API + '/cart/add', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+
+    if (!res || res.ok !== true) {
+      alert('加入失敗：' + ((res && (res.message || res.error)) || 'unknown'));
+      return;
+    }
+
+    $('#sku').value = '';
+    $('#override_price').value = '';
+    $('#qty').value = '1';
+
+    renderSimpleCartList(res.items || []);
+
+    flashButtonDone(btn, '已加入 ✓');
+    $('#sku')?.focus();
+
+  } catch (e) {
+    alert('加入失敗：' + (e.message || e));
+  } finally {
+    ADD_ITEM_BUSY = false;
+    setTimeout(() => {
+      setButtonBusy(btn, false);
+      syncMainButtons();
+    }, 650);
   }
-
-  const res = await jfetch(API+'/cart/add', {
-    method:'POST',
-    body: JSON.stringify(body)
-  });
-
-  if(!res.ok) return alert('加入失敗：'+(res.error||''));
-
-$('#sku').value = '';
-$('#override_price').value = '';
-$('#qty').value = '1';
-renderSimpleCartList(res.items || []);
-$('#sku')?.focus();
 }
 
   async function saveNote() {
