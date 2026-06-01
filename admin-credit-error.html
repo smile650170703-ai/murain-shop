@@ -362,14 +362,14 @@
     </div>
 
   <div class="card">
-    <h2 class="risk-section-title">前端 / 購物車 / 結帳前錯誤｜SystemEvents</h2>
+    <h2 class="risk-section-title">前端／購物車／結帳前錯誤｜系統事件紀錄</h2>
     <div class="muted">
       這裡顯示「訂單尚未成立前」的問題，例如購物車讀不到、LINE 身份取得失敗、更新數量失敗、送出前失敗、前端無聲錯誤等。
     </div>
 
     <div class="system-events-toolbar">
-      <button id="btnReloadSystemEvents" type="button">重新載入 SystemEvents</button>
-      <input id="systemEventSearch" type="text" placeholder="搜尋 event_type / cart_token / LINE userId" />
+      <h2 class="risk-section<button id="btnReloadSystemEvents" type="button">重新載入系統事件</button>-title">前端／購物車／結帳前錯誤｜系統事件紀錄</h2>
+      <input id="systemEventSearch" type="text" placeholder="搜尋事件類型 / 購物車代碼 / LINE 身分碼" />
     </div>
 
     <div id="systemEventsMsg" class="muted">尚未載入</div>
@@ -824,7 +824,7 @@ function systemEventsRowsHtml(rows){
   });
 
   if (!filtered.length) {
-    return '<div class="risk-empty">目前沒有未處理的 SystemEvents。</div>';
+    return '<div class="risk-empty">目前沒有未處理的系統事件紀錄。</div>';
   }
 
   return `
@@ -834,10 +834,10 @@ function systemEventsRowsHtml(rows){
           <th>時間 / 等級</th>
           <th>事件類型</th>
           <th>這是什麼問題</th>
-          <th>怎麼處理</th>
-          <th>cart / LINE</th>
-          <th>頁面</th>
-          <th>原始錯誤</th>
+          <th>建議怎麼處理</th>
+          <th>購物車 / LINE</th>
+          <th>發生頁面</th>
+          <th>技術原始資料</th>
           <th>處理</th>
         </tr>
       </thead>
@@ -846,8 +846,18 @@ function systemEventsRowsHtml(rows){
           const f = rec.fields || {};
           const eventId = rec.id || '';
           const eventType = String(f.event_type || '').trim();
-          const level = String(f.level || '').trim();
-          const levelClass = level === 'error' ? 'red' : (level === 'info' ? 'green' : 'yellow');
+          const level = String(f.level || '').trim().toLowerCase();
+
+          const levelClass =
+            level === 'error' ? 'red' :
+            level === 'info' ? 'green' :
+            'yellow';
+
+          const levelText =
+            level === 'error' ? '錯誤' :
+            level === 'warning' ? '警告' :
+            level === 'info' ? '資訊' :
+            (level || '-');
 
           const typeCn = displaySystemEventTypeChinese(eventType);
           const meaning = String(f.message_cn || '').trim() || displaySystemEventMeaning(eventType);
@@ -857,31 +867,52 @@ function systemEventsRowsHtml(rows){
             <tr>
               <td>
                 ${esc(f.event_time || '-')}<br>
-                <span class="badge ${esc(levelClass)}">${esc(level || '-')}</span>
+                <span class="badge ${esc(levelClass)}">${esc(levelText)}</span>
               </td>
+
               <td>
                 <div class="event-type-cn">${esc(typeCn)}</div>
-                <div class="risk-note" style="margin-top:4px;">${esc(eventType || '-')}</div>
+                <details style="margin-top:6px;">
+                  <summary style="cursor:pointer;color:#94a3b8;font-size:11px;">
+                    查看技術代碼
+                  </summary>
+                  <div class="risk-note" style="margin-top:4px;">
+                    ${esc(eventType || '-')}
+                  </div>
+                </details>
               </td>
+
               <td>
                 <div class="event-message-cn">${esc(meaning)}</div>
               </td>
+
               <td>
                 <div class="event-suggestion-cn">${esc(suggestion)}</div>
               </td>
+
               <td>
                 <div class="risk-note">
-                  cart_token：${esc(f.cart_token || '-')}<br>
-                  line_user_id：${esc(f.line_user_id || '-')}<br>
-                  order_id：${esc(f.order_id || '-')}
+                  購物車代碼：${esc(f.cart_token || '-')}<br>
+                  LINE 身分碼：${esc(f.line_user_id || '-')}<br>
+                  訂單編號：${esc(f.order_id || '-')}
                 </div>
               </td>
+
               <td>
                 <div class="risk-note">${esc(f.page_url || '-')}</div>
               </td>
+
               <td>
-                <div class="event-raw">${esc(f.raw_detail || '-')}</div>
+                <details>
+                  <summary style="cursor:pointer;color:#94a3b8;font-size:11px;">
+                    查看原始資料
+                  </summary>
+                  <div class="event-raw" style="margin-top:6px;">
+                    ${esc(f.raw_detail || '-')}
+                  </div>
+                </details>
               </td>
+
               <td>
                 <button type="button" onclick="resolveSystemEvent('${esc(eventId)}', this)">
                   標記已處理
@@ -894,7 +925,7 @@ function systemEventsRowsHtml(rows){
     </table>
   `;
 }
-function isCreditErrorRow(rec){
+ function isCreditErrorRow(rec){
   const f = rec.fields || rec || {};
   const creditUsed = Math.max(0, Number(f.credit_used || f.CreditUsed || 0) || 0);
   const spendDone = normBool(f.credit_spend_done);
@@ -1039,7 +1070,7 @@ async function loadSystemEvents(){
     SYSTEM_EVENT_ROWS = Array.isArray(j.events) ? j.events : [];
 
     if (msg) {
-      msg.textContent = `目前共 ${SYSTEM_EVENT_ROWS.length} 筆未處理的 SystemEvents。`;
+      msg.textContent = `目前共 ${SYSTEM_EVENT_ROWS.length} 筆未處理的系統事件紀錄。`;
     }
 
     if (list) {
@@ -1049,7 +1080,7 @@ async function loadSystemEvents(){
   } catch(e) {
     if (msg) msg.textContent = '';
     if (list) {
-      list.innerHTML = '<div class="error">SystemEvents 載入失敗：' + esc(e.message || e) + '</div>';
+      list.innerHTML = '<div class="error">系統事件紀錄載入失敗：' + esc(e.message || e) + '</div>';
     }
   }
 }
@@ -1057,7 +1088,7 @@ async function loadSystemEvents(){
 async function resolveSystemEvent(eventId, btn){
   if (!eventId) return;
 
-  const ok = confirm('確定要把這筆 SystemEvents 標記為已處理嗎？');
+  const ok = confirm('確定要把這筆系統事件紀錄標記為已處理嗎？');
   if (!ok) return;
 
   const oldText = btn.textContent;
