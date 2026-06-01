@@ -168,6 +168,50 @@
   white-space:pre-wrap;
   font-weight:700;
 }
+ .system-events-toolbar{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+  margin:10px 0;
+}
+
+.event-type-cn{
+  color:#bae6fd;
+  font-size:12px;
+  line-height:1.55;
+  max-width:260px;
+  white-space:pre-wrap;
+  font-weight:900;
+}
+
+.event-message-cn{
+  color:#fecaca;
+  font-size:12px;
+  line-height:1.55;
+  max-width:300px;
+  white-space:pre-wrap;
+  font-weight:800;
+}
+
+.event-suggestion-cn{
+  color:#bbf7d0;
+  font-size:12px;
+  line-height:1.55;
+  max-width:300px;
+  white-space:pre-wrap;
+  font-weight:800;
+}
+
+.event-raw{
+  color:#cbd5e1;
+  font-size:11px;
+  line-height:1.45;
+  max-width:320px;
+  max-height:120px;
+  overflow:auto;
+  white-space:pre-wrap;
+}
 </style>
 </head>
 <body>
@@ -315,6 +359,21 @@
         <div id="riskListCancelledStock"></div>
       </div>
     </div>
+    </div>
+
+  <div class="card">
+    <h2 class="risk-section-title">前端 / 購物車 / 結帳前錯誤｜SystemEvents</h2>
+    <div class="muted">
+      這裡顯示「訂單尚未成立前」的問題，例如購物車讀不到、LINE 身份取得失敗、更新數量失敗、送出前失敗、前端無聲錯誤等。
+    </div>
+
+    <div class="system-events-toolbar">
+      <button id="btnReloadSystemEvents" type="button">重新載入 SystemEvents</button>
+      <input id="systemEventSearch" type="text" placeholder="搜尋 event_type / cart_token / LINE userId" />
+    </div>
+
+    <div id="systemEventsMsg" class="muted">尚未載入</div>
+    <div id="systemEventsList"></div>
   </div>
 </div>
 
@@ -694,6 +753,147 @@ function displayRiskActionAdvice(note, f = {}){
 
   return '請先看「內部備註中文說明」判斷類型；若已人工確認無問題，可勾選「異常問題已解決」。';
 }
+ function displaySystemEventTypeChinese(eventType){
+  const s = String(eventType || '').trim();
+
+  const map = {
+    manual_system_event_test: '手動測試紀錄',
+    cart_load_failed: '結帳頁讀取購物車失敗',
+    cart_qty_update_failed: '客人更新購物車數量失敗',
+    cart_remove_failed: '客人刪除購物車商品失敗',
+    checkout_missing_line_user_id: '送出結帳前沒有取得 LINE 身份',
+    checkout_insufficient_stock: '送出結帳時庫存不足',
+    checkout_submit_failed_before_order: '送出結帳失敗，可能尚未成立訂單',
+    checkout_frontend_error: '結帳頁 JavaScript 錯誤',
+    checkout_frontend_unhandled_rejection: '結帳頁非同步錯誤未被處理'
+  };
+
+  return map[s] || s || '-';
+}
+
+function displaySystemEventMeaning(eventType){
+  const s = String(eventType || '').trim();
+
+  const map = {
+    manual_system_event_test: '這是手動測試資料，用來確認 SystemEvents 是否可以正常寫入 Airtable。',
+    cart_load_failed: '客人打開結帳頁時，系統讀不到購物車資料，可能是 cart_token 錯、購物車已不存在、API 暫時失敗。',
+    cart_qty_update_failed: '客人在結帳頁按加減數量時失敗，可能是商品已不存在、購物車狀態不同步、庫存不足或 API 失敗。',
+    cart_remove_failed: '客人在結帳頁刪除商品失敗，可能是商品已不存在、購物車狀態不同步或 API 失敗。',
+    checkout_missing_line_user_id: '客人按送出訂單前，系統沒有取得 LINE userId，通常是沒有從官方 LINE / LIFF 正確開啟，或登入狀態異常。',
+    checkout_insufficient_stock: '客人送出訂單時，購物車商品庫存不足，所以訂單沒有正常成立。',
+    checkout_submit_failed_before_order: '客人送出訂單失敗，可能還沒有產生 Orders，需用 cart_token 回查。',
+    checkout_frontend_error: '結帳頁 JavaScript 發生錯誤，可能造成按鈕無反應、畫面卡住或某些功能不能用。',
+    checkout_frontend_unhandled_rejection: '結帳頁有非同步 API 或 LIFF 流程失敗但沒有被原本 catch 處理，可能是無聲錯誤。'
+  };
+
+  return map[s] || '這是前端或結帳流程紀錄，請查看 raw_detail 判斷實際錯誤內容。';
+}
+
+function displaySystemEventSuggestion(eventType, fallbackSuggestion){
+  const s = String(eventType || '').trim();
+
+  const map = {
+    manual_system_event_test: '這是測試資料，確認成功後可以勾選 resolved 或刪除。',
+    cart_load_failed: '請用 cart_token 查 CartToken 是否存在；若不存在或已完成，重新提供客人新的結帳連結。',
+    cart_qty_update_failed: '請確認該購物車商品是否還存在、庫存是否足夠；必要時請客人重新整理或由後台協助調整購物車。',
+    cart_remove_failed: '請確認購物車商品是否還存在；必要時請客人重新整理，或由後台協助清除商品。',
+    checkout_missing_line_user_id: '請客人從官方 LINE 內重新開啟結帳頁；若仍失敗，檢查 LIFF 設定與會員登入流程。',
+    checkout_insufficient_stock: '請確認 Products 庫存與購物車數量；協助客人調整數量後再送出。',
+    checkout_submit_failed_before_order: '先查 Orders 是否有產生訂單；若沒有，再查 CartToken，不要先手動改庫存。',
+    checkout_frontend_error: '請查看 raw_detail 的錯誤行數與訊息；若多人重複發生，回報給工程檢查前端程式。',
+    checkout_frontend_unhandled_rejection: '請查看 raw_detail 的 reason；若與 API 或 LIFF 有關，檢查對應後端或 LIFF 設定。'
+  };
+
+  return map[s] || fallbackSuggestion || '請先確認 cart_token、line_user_id、page_url 與 raw_detail；確認無問題後可標記已處理。';
+}
+
+function systemEventsRowsHtml(rows){
+  const q = String($('#systemEventSearch')?.value || '').trim().toLowerCase();
+
+  const filtered = (rows || []).filter(rec => {
+    const f = rec.fields || {};
+    const hay = [
+      f.event_type,
+      f.message_cn,
+      f.cart_token,
+      f.line_user_id,
+      f.page_url,
+      f.raw_detail
+    ].map(x => String(x || '').toLowerCase()).join(' ');
+    return !q || hay.includes(q);
+  });
+
+  if (!filtered.length) {
+    return '<div class="risk-empty">目前沒有未處理的 SystemEvents。</div>';
+  }
+
+  return `
+    <table class="risk-readonly-table">
+      <thead>
+        <tr>
+          <th>時間 / 等級</th>
+          <th>事件類型</th>
+          <th>這是什麼問題</th>
+          <th>怎麼處理</th>
+          <th>cart / LINE</th>
+          <th>頁面</th>
+          <th>原始錯誤</th>
+          <th>處理</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filtered.map(rec => {
+          const f = rec.fields || {};
+          const eventId = rec.id || '';
+          const eventType = String(f.event_type || '').trim();
+          const level = String(f.level || '').trim();
+          const levelClass = level === 'error' ? 'red' : (level === 'info' ? 'green' : 'yellow');
+
+          const typeCn = displaySystemEventTypeChinese(eventType);
+          const meaning = String(f.message_cn || '').trim() || displaySystemEventMeaning(eventType);
+          const suggestion = displaySystemEventSuggestion(eventType, String(f.suggestion_cn || '').trim());
+
+          return `
+            <tr>
+              <td>
+                ${esc(f.event_time || '-')}<br>
+                <span class="badge ${esc(levelClass)}">${esc(level || '-')}</span>
+              </td>
+              <td>
+                <div class="event-type-cn">${esc(typeCn)}</div>
+                <div class="risk-note" style="margin-top:4px;">${esc(eventType || '-')}</div>
+              </td>
+              <td>
+                <div class="event-message-cn">${esc(meaning)}</div>
+              </td>
+              <td>
+                <div class="event-suggestion-cn">${esc(suggestion)}</div>
+              </td>
+              <td>
+                <div class="risk-note">
+                  cart_token：${esc(f.cart_token || '-')}<br>
+                  line_user_id：${esc(f.line_user_id || '-')}<br>
+                  order_id：${esc(f.order_id || '-')}
+                </div>
+              </td>
+              <td>
+                <div class="risk-note">${esc(f.page_url || '-')}</div>
+              </td>
+              <td>
+                <div class="event-raw">${esc(f.raw_detail || '-')}</div>
+              </td>
+              <td>
+                <button type="button" onclick="resolveSystemEvent('${esc(eventId)}', this)">
+                  標記已處理
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
 function isCreditErrorRow(rec){
   const f = rec.fields || rec || {};
   const creditUsed = Math.max(0, Number(f.credit_used || f.CreditUsed || 0) || 0);
@@ -811,6 +1011,83 @@ if (listEl) listEl.innerHTML = simpleOrderRowsHtml(rows);
 
 async function loadRiskLists(){
   await Promise.all(RISK_LISTS.map(loadRiskList));
+}
+ let SYSTEM_EVENT_ROWS = [];
+
+async function loadSystemEvents(){
+  await ensureOpKey();
+
+  const msg = $('#systemEventsMsg');
+  const list = $('#systemEventsList');
+
+  if (msg) msg.textContent = '載入中…';
+  if (list) list.innerHTML = '';
+
+  try {
+    const params = new URLSearchParams();
+    params.set('op_key', OP_KEY);
+    params.set('resolved', 'false');
+    params.set('limit', '80');
+
+    const r = await fetch(`${API}/admin/system-events?` + params.toString());
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+
+    SYSTEM_EVENT_ROWS = Array.isArray(j.events) ? j.events : [];
+
+    if (msg) {
+      msg.textContent = `目前共 ${SYSTEM_EVENT_ROWS.length} 筆未處理的 SystemEvents。`;
+    }
+
+    if (list) {
+      list.innerHTML = systemEventsRowsHtml(SYSTEM_EVENT_ROWS);
+    }
+
+  } catch(e) {
+    if (msg) msg.textContent = '';
+    if (list) {
+      list.innerHTML = '<div class="error">SystemEvents 載入失敗：' + esc(e.message || e) + '</div>';
+    }
+  }
+}
+
+async function resolveSystemEvent(eventId, btn){
+  if (!eventId) return;
+
+  const ok = confirm('確定要把這筆 SystemEvents 標記為已處理嗎？');
+  if (!ok) return;
+
+  const oldText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '處理中...';
+
+  try {
+    const r = await fetch(`${API}/admin/system-event/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        event_id: eventId
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+
+    await loadSystemEvents();
+
+  } catch(e) {
+    alert('標記失敗：' + (e.message || e));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText || '標記已處理';
+  }
 }
  async function saveAbnormalResolved(orderId, btn){
   if (!orderId) return;
@@ -971,8 +1248,9 @@ async function loadRows(){
        ALL_ROWS = j.orders || j.records || [];
     ERROR_ROWS = ALL_ROWS;
 
-    render();
+       render();
     await loadRiskLists();
+    await loadSystemEvents();
   } catch(e) {
     console.error(e);
     msg.textContent = '';
@@ -1037,6 +1315,12 @@ const ok = confirm(
 
 $('#btnReload')?.addEventListener('click', loadRows);
 $('#orderSearch')?.addEventListener('input', render);
+
+$('#btnReloadSystemEvents')?.addEventListener('click', loadSystemEvents);
+$('#systemEventSearch')?.addEventListener('input', () => {
+  const list = $('#systemEventsList');
+  if (list) list.innerHTML = systemEventsRowsHtml(SYSTEM_EVENT_ROWS);
+});
 
 window.addEventListener('DOMContentLoaded', loadRows);
 </script>
