@@ -417,6 +417,13 @@
             <button id="clearHistoryBtn" class="btn-danger fixed" type="button">清除</button>
           </div>
           <div id="historyList"></div>
+          <div style="margin-top:18px;">
+  <div class="row">
+    <h2 style="margin:0;">正式發送紀錄</h2>
+    <button id="refreshServerLogsBtn" class="btn-soft fixed" type="button">刷新</button>
+  </div>
+  <div id="serverLogList"></div>
+</div>
         </div>
       </section>
     </div>
@@ -566,8 +573,9 @@
         `;
       }
 
-      renderResults(lastRows);
-      updateSendState();
+renderResults(lastRows);
+updateSendState();
+loadServerLogs();
     }
 
     async function searchMembers() {
@@ -662,7 +670,11 @@
           message
         });
 
-        showStatus($("sendStatus"), data.message || "已送出 LINE 訊息。", "ok");
+        showStatus(
+  $("sendStatus"),
+  (data.message || "已送出 LINE 訊息。") + (data.log_id ? "\n紀錄編號：" + data.log_id : ""),
+  "ok"
+);
         addHistory({
           at: new Date().toLocaleString("zh-TW", { hour12: false }),
           member: who,
@@ -683,9 +695,10 @@
         }
 
         showStatus($("sendStatus"), "送出失敗：" + (e.message || e) + extra, "err");
-      } finally {
-        updateSendState();
-      }
+     } finally {
+  updateSendState();
+  loadServerLogs();
+}
     }
 
     function updateSendState() {
@@ -723,7 +736,74 @@
         </div>
       `).join("");
     }
+function renderServerLogs(rows) {
+  const box = $("serverLogList");
+  if (!box) return;
 
+  if (!Array.isArray(rows) || !rows.length) {
+    box.innerHTML = '<div class="empty" style="margin-top:10px;">目前沒有正式發送紀錄</div>';
+    return;
+  }
+
+  box.innerHTML = rows.map(row => {
+    const ok = row.status === "success";
+    const statusText = ok ? "成功" : "失敗";
+    const statusClass = ok ? "ok" : "err";
+
+    const who = row.displayName || row.name || row.phone || row.email || row.lineUserId || "未命名會員";
+    const err = row.errorCode
+      ? `<div class="sub dangerText">錯誤：${escHtml(row.errorCode)} ${row.errorDetail ? "｜" + escHtml(row.errorDetail) : ""}</div>`
+      : "";
+
+    return `
+      <div class="historyItem">
+        <div>
+          <span class="tag ${statusClass}">${statusText}</span>
+          <strong>${escHtml(row.createdAt || "")}</strong>
+          ｜${escHtml(who)}
+        </div>
+        <div class="sub">
+          ${row.phone ? "電話：" + escHtml(row.phone) + "｜" : ""}
+          ${row.email ? "Email：" + escHtml(row.email) + "｜" : ""}
+          ${row.lineStatus ? "LINE狀態：" + escHtml(row.lineStatus) : ""}
+        </div>
+        <div style="margin-top:6px;">${escHtml(String(row.message || "").slice(0, 160))}${String(row.message || "").length > 160 ? "..." : ""}</div>
+        ${err}
+      </div>
+    `;
+  }).join("");
+}
+
+async function loadServerLogs() {
+  const box = $("serverLogList");
+  if (!box) return;
+
+  const opKey = $("opKey").value.trim();
+
+  if (!opKey) {
+    box.innerHTML = '<div class="empty" style="margin-top:10px;">輸入 OP_KEY 後可查看正式紀錄</div>';
+    return;
+  }
+
+  box.innerHTML = '<div class="empty" style="margin-top:10px;">讀取正式紀錄中...</div>';
+
+  try {
+    const payload = {
+      op_key: opKey,
+      limit: 20
+    };
+
+    if (selectedMember) {
+      payload.member_record_id = selectedMember.recordId || "";
+      payload.line_user_id = selectedMember.lineUserId || "";
+    }
+
+    const data = await postJson("/op/line-message/logs", payload);
+    renderServerLogs(data.rows || []);
+  } catch (e) {
+    box.innerHTML = `<div class="status err" style="display:block;margin-top:10px;">讀取正式紀錄失敗：${escHtml(e.message || e)}</div>`;
+  }
+}
     function initFromQuery() {
       const params = new URLSearchParams(location.search);
       const q = params.get("q") || params.get("keyword") || params.get("phone") || "";
@@ -742,7 +822,8 @@
     document.addEventListener("DOMContentLoaded", () => {
       restoreKey();
       renderHistory();
-      initFromQuery();
+initFromQuery();
+loadServerLogs();
 
       $("searchBtn").addEventListener("click", searchMembers);
       $("keyword").addEventListener("keydown", (e) => {
@@ -768,12 +849,19 @@
         updateSendState();
       });
 
-      $("clearHistoryBtn").addEventListener("click", () => {
-        if (!confirm("確定清除本機送出紀錄嗎？")) return;
-        localStorage.removeItem(HISTORY_KEY);
-        renderHistory();
-      });
-    });
+      // 清除本機紀錄按鈕
+$("clearHistoryBtn").addEventListener("click", () => {
+  if (!confirm("確定清除本機送出紀錄嗎？")) return;
+  localStorage.removeItem(HISTORY_KEY);
+  renderHistory();
+});
+
+// 正式發送紀錄刷新按鈕
+const refreshServerLogsBtn = $("refreshServerLogsBtn");
+if (refreshServerLogsBtn) {
+  refreshServerLogsBtn.addEventListener("click", loadServerLogs);
+}
+});
   </script>
 </body>
 </html>
