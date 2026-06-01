@@ -1285,6 +1285,32 @@ function getCurrentDateRange(){
   };
 }
 
+function isAdminAllDateRangeTooLarge(range, maxDays = 31){
+  const from = String(range?.date_from || '').trim();
+  const to = String(range?.date_to || '').trim();
+
+  if (!from || !to) return false;
+
+  const fromDate = new Date(from + 'T00:00:00');
+  const toDate = new Date(to + 'T23:59:59');
+
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) return false;
+
+  const days = Math.floor((toDate.getTime() - fromDate.getTime()) / 86400000) + 1;
+  return days > maxDays;
+}
+
+function validateAdminAllDateRange(range){
+  if (ADMIN_PAGE_FILE !== 'admin-all.html') return true;
+
+  if (isAdminAllDateRangeTooLarge(range, 31)) {
+    alert('全部訂單一次最多查 31 天，請縮小日期範圍。\n\n如果要查兩個月，請分段查或用匯出。');
+    return false;
+  }
+
+  return true;
+}
+
 function monthKeyOfRecord(f){
   let month = String(f['賣貨便月份'] || '').trim();
   if (!month) {
@@ -1396,6 +1422,8 @@ async function applyFullView(mode = 'all', save = true){
   }
 
   const dateRange = getCurrentDateRange();
+  if (!validateAdminAllDateRange(dateRange)) return;
+
   const statusVal = $('#status') ? ($('#status').value || '') : '';
 
   if (save) {
@@ -2755,7 +2783,7 @@ async function loadOrders(filter='all', extra = {}){
     const j = await r.json();
 
     if(!r.ok || !j.ok){
-      throw new Error(j.error || 'load_failed');
+      throw new Error(j.message || j.error || 'load_failed');
     }
 
     const loadedOrders = j.orders || j.records || [];
@@ -2777,6 +2805,8 @@ updateSummary();
     const params = new URLSearchParams();
     params.set('filter', 'all');
     params.set('op_key', OP_KEY);
+    params.set('view_key', 'pickup');
+    params.set('limit', '500');
 
     const r = await fetch(`${API}/admin/orders?` + params.toString());
     const j = await r.json();
