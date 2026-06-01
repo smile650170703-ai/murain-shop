@@ -1118,6 +1118,43 @@ async function goCartCheckout(){
     return s;
   }
 
+  function getPopupMemory(key) {
+    try {
+      const v = localStorage.getItem(key);
+      if (v != null && v !== "") return v;
+    } catch (_) {}
+
+    try {
+      const name = encodeURIComponent(key) + "=";
+      const parts = String(document.cookie || "").split(";");
+
+      for (const part of parts) {
+        const s = part.trim();
+        if (s.startsWith(name)) {
+          return decodeURIComponent(s.slice(name.length));
+        }
+      }
+    } catch (_) {}
+
+    return "";
+  }
+
+  function setPopupMemory(key, value, maxAgeSeconds) {
+    const v = String(value == null ? "" : value);
+
+    try {
+      localStorage.setItem(key, v);
+    } catch (_) {}
+
+    try {
+      document.cookie =
+        encodeURIComponent(key) + "=" + encodeURIComponent(v) +
+        "; Max-Age=" + String(Math.max(60, Number(maxAgeSeconds || 86400))) +
+        "; Path=/" +
+        "; SameSite=Lax";
+    } catch (_) {}
+  }
+
   function closePopup(overlay, restoreOverflow) {
     overlay.remove();
     document.body.style.overflow = restoreOverflow || "";
@@ -1134,9 +1171,9 @@ async function goCartCheckout(){
     const neverKey = "murain_popup_never_" + campaignId;
     const closeUntilKey = "murain_popup_close_until_" + campaignId;
 
-    if (localStorage.getItem(neverKey) === "1") return;
+    if (getPopupMemory(neverKey) === "1") return;
 
-    const closeUntil = Number(localStorage.getItem(closeUntilKey) || 0);
+    const closeUntil = Number(getPopupMemory(closeUntilKey) || 0);
     if (closeUntil && Date.now() < closeUntil) return;
 
     const oldOverflow = document.body.style.overflow;
@@ -1314,19 +1351,19 @@ async function goCartCheckout(){
 
     closeBtn.addEventListener("click", function () {
       const until = Date.now() + hideHours * 60 * 60 * 1000;
-      localStorage.setItem(closeUntilKey, String(until));
+      setPopupMemory(closeUntilKey, String(until), Math.ceil((until - Date.now()) / 1000));
       closePopup(overlay, oldOverflow);
     });
 
     neverBtn.addEventListener("click", function () {
-      localStorage.setItem(neverKey, "1");
+      setPopupMemory(neverKey, "1", 60 * 60 * 24 * 365);
       closePopup(overlay, oldOverflow);
     });
 
     overlay.addEventListener("click", function (e) {
       if (e.target === overlay) {
         const until = Date.now() + hideHours * 60 * 60 * 1000;
-        localStorage.setItem(closeUntilKey, String(until));
+        setPopupMemory(closeUntilKey, String(until), Math.ceil((until - Date.now()) / 1000));
         closePopup(overlay, oldOverflow);
       }
     });
@@ -1334,7 +1371,7 @@ async function goCartCheckout(){
     document.addEventListener("keydown", function escClose(e) {
       if (e.key === "Escape" && document.body.contains(overlay)) {
         const until = Date.now() + hideHours * 60 * 60 * 1000;
-        localStorage.setItem(closeUntilKey, String(until));
+        setPopupMemory(closeUntilKey, String(until), Math.ceil((until - Date.now()) / 1000));
         closePopup(overlay, oldOverflow);
         document.removeEventListener("keydown", escClose);
       }
