@@ -160,11 +160,19 @@
     white-space:pre-wrap;
     font-weight:700;
   }
+ .risk-action-advice{
+  color:#bbf7d0;
+  font-size:12px;
+  line-height:1.55;
+  max-width:300px;
+  white-space:pre-wrap;
+  font-weight:700;
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>⚠️ 購物金異常</h1>
+  <h1>⚠️ 系統異常中心</h1>
 
     <div class="page-tabs">
     <div class="page-tabs-bar">
@@ -238,7 +246,7 @@
   </a>
 
   <a class="filter-btn btn-badge-wrap active" data-admin-file="admin-credit-error.html" href="admin-credit-error.html">
-    <span>⚠️ 購物金異常</span>
+    <span>⚠️ 系統異常中心</span>
   </a>
 
   <a class="filter-btn btn-badge-wrap" data-admin-file="admin-chailease.html" href="admin-chailease.html">
@@ -247,13 +255,11 @@
 </div>
   <div class="card">
     <div class="top-hint">
-      這裡只處理「付款已成功，但購物金正式扣款失敗」的訂單。<br>
-      按下處理後會重新扣購物金，並依照原本訂單開票規則自動判斷是否補開發票，最後發付款成功通知。<br>
-發票金額仍然是訂單的實付金額 net_amount，不會改成商品原價。<br>
-若該訂單原本不是需要開發票的付款方式，系統會自動跳過，不需要手動判斷。
-     <br>
-若標籤是「疑似異常」且沒有 CREDIT_CAPTURE_ERROR，請先確認 CreditsLedger；舊資料已人工處理者，只需補勾 credit_spend_done，不要按重新扣款。
-    </div>
+  這裡是「系統異常中心」，集中查看購物金、付款、通知、庫存、分期審核等異常。<br>
+  上方主要處理「付款已成功，但購物金正式扣款失敗」的訂單；這類訂單才可以按「重新扣購物金並放行」。<br>
+  下方其他異常清單主要是只讀查看與人工確認；確認已處理後，勾選「異常問題已解決」並儲存即可隱藏。<br>
+  若看到「疑似異常」但沒有 CREDIT_CAPTURE_ERROR，請先確認 CreditsLedger；舊資料已人工處理者，只需補勾 credit_spend_done，不要按重新扣款。
+</div>
 
         <div class="toolbar">
       <button id="btnReload" type="button">重新載入</button>
@@ -520,6 +526,75 @@ function displayCreditSpendDone(v){
 
   return map[s] || f.payment_method || '-';
 }
+function displayPaymentMethod(f = {}){
+  // ✅ 優先使用 Airtable 裡已經做好的中文欄位
+  const dbText = String(
+    f['付款方式'] ||
+    f['付款方式_中文'] ||
+    f.payment_method_text ||
+    f.payment_method_label ||
+    ''
+  ).trim();
+
+  if (dbText) return dbText;
+
+  // ✅ 如果中文欄位沒回來，才用代碼翻譯
+  const s = String(f.payment_method || f.pay_channel || '').trim().toLowerCase();
+
+  const map = {
+    paid_card: '信用卡',
+    paid_card_once: '信用卡一次付清',
+    paid_card_inst_3: '信用卡分 3 期',
+    paid_card_inst_6: '信用卡分 6 期',
+    paid_card_inst_12: '信用卡分 12 期',
+    paid_card_inst_24: '信用卡分 24 期',
+
+    payuni_card: 'PayUNI 信用卡',
+    payuni_linepay: 'LINE Pay',
+    paid_linepay: 'LINE Pay',
+    linepay: 'LINE Pay',
+
+    cod_711: '7-11 取貨付款',
+    cod711: '7-11 取貨付款',
+
+    atm_full: '匯款全額',
+    atm_deposit: '匯款定金',
+    bank_transfer: '匯款',
+    deposit_old: '舊制訂金保留',
+    deposit_new: '新制訂金保留',
+    deposit_old_full: '舊制訂金全額',
+    deposit_new_full: '新制訂金全額',
+    deposit_old_full_711: '舊制訂金全額｜7-11',
+    deposit_new_full_711: '新制訂金全額｜7-11',
+    deposit_old_full_post: '舊制訂金全額｜宅配',
+    deposit_new_full_post: '新制訂金全額｜宅配',
+
+    cash_inst_2: '現金分期 2 期',
+    cash_inst_3: '現金分期 3 期',
+    cash_install_2: '現金分期 2 期',
+    cash_install_3: '現金分期 3 期',
+
+    meetup_cash: '面交付款',
+
+    aftee_direct: 'AF 先享後付',
+    paid_aftee_direct: 'AF 先享後付',
+    paid_af: 'AF 先享後付',
+
+    zero_card: '中租零卡',
+    zero_card_3: '中租零卡 3 期',
+    zero_card_6: '中租零卡 6 期',
+    zero_card_12: '中租零卡 12 期',
+    chailease: '中租零卡',
+
+    yufu_inst_3: '裕富分期 3 期',
+    yufu_inst_6: '裕富分期 6 期',
+    yufu_inst_12: '裕富分期 12 期',
+    yufu_inst_24: '裕富分期 24 期'
+  };
+
+  return map[s] || f.payment_method || f.pay_channel || '-';
+}
+
 function displayInternalNoteChinese(note, f = {}){
   const raw = String(note || '').trim();
   const upper = raw.toUpperCase();
@@ -533,33 +608,59 @@ function displayInternalNoteChinese(note, f = {}){
     }
   };
 
-  // ===== 真正需要注意的結帳 / 系統異常 =====
-  add('CREDIT_CAPTURE_ERROR', '付款已成功，但購物金正式扣款失敗，需確認後重新扣購物金並放行。');
-
-  add('CHECKOUT_500_AFTER_ORDER_CREATED', '客人結帳最後出現 500，但訂單可能已經成立，需確認訂單、庫存、通知狀態。');
+  // ===== 官網新訂單通知 / LINE 通知 =====
+  add('ADMIN_NEW_ORDER_NOTIFY_SENT', '官網新訂單通知已成功發送到管理員或群組。');
+  add('ADMIN_NEW_ORDER_NOTIFY_FAILED', '官網新訂單通知發送失敗，請確認 LINE token、群組 ID、官方帳號是否仍在群組內。');
   add('CHECKOUT_FLEX_SEND_FAILED', 'LINE 結單通知發送失敗，訂單可能已成立，但客人可能沒有收到通知。');
-  add('CART_BIND_FAILED_AFTER_ORDER_CREATED', '訂單已成立，但購物車沒有成功綁定或關閉，需避免客人重複送出。');
-
   add('CHECKOUT_FLEX_NOT_SENT', '系統還沒走到 LINE 結單通知就發生錯誤，所以 LINE 沒有送出。');
   add('CHECKOUT_FLEX_ATTEMPTED_BUT_FAILED', '系統有嘗試發 LINE 結單通知，但發送失敗。');
   add('CHECKOUT_FLEX_SENT_BEFORE_500', 'LINE 結單通知已送出，但後面流程又發生 500。');
+  add('FAIL_FLEX_SENT', '已發送付款失敗或重新結帳通知給客人。');
+  add('WEB_CART_RETRY_LINE_SENT', '已發送重新結帳連結給客人。');
+  add('WEB_CART_RETRY_LINE_FAILED', '重新結帳連結通知發送失敗，需確認客人 LINE userId 或手動補傳。');
 
+  // ===== 結帳 / 訂單成立異常 =====
+  add('CREDIT_CAPTURE_ERROR', '付款已成功，但購物金正式扣款失敗，需確認後重新扣購物金並放行。');
+  add('CREDIT_CAPTURE_FIXED', '購物金異常已由後台人工重新扣款並放行。');
+  add('CHECKOUT_500_AFTER_ORDER_CREATED', '客人結帳最後出現 500，但訂單可能已經成立，需確認訂單、庫存、通知狀態。');
+  add('CART_BIND_FAILED_AFTER_ORDER_CREATED', '訂單已成立，但購物車沒有成功綁定或關閉，需避免客人重複送出。');
+  add('ADMIN_RETRY_CHECKOUT', '後台曾協助建立重新結帳流程。');
+
+  // ===== 庫存相關 =====
   add('STOCK_DEDUCTED', '庫存已經扣掉，處理前不要讓客人重複下單。');
   add('STOCK_NOT_DEDUCTED', '庫存尚未扣除，可先確認訂單是否真的成立。');
+  add('RESTOCK_FAILED', '補庫存失敗，需人工確認商品庫存是否正確。');
+  add('RESTOCK_FAILED_PAYUNI_FAIL', 'PayUNI 付款失敗後補庫存失敗，需人工核對庫存。');
+  add('RESTOCK_FAILED_ZC_NOTIFY_FAIL', '中租付款失敗通知後補庫存失敗，需人工核對庫存。');
+  add('RESTOCK_FAILED_TAIL_OVERDUE', '尾款逾期取消後補庫存失敗，需人工核對庫存。');
+  add('RESTOCK_FAILED_CASH_INST_OVERDUE', '現金分期逾期取消後補庫存失敗，需人工核對庫存。');
+  add('RESTOCK_FAILED_ADMIN_FAIL', '後台操作失敗流程時補庫存失敗，需人工核對庫存。');
+  add('CANCELLED_STOCK_LOCKED', '訂單已取消，但庫存可能仍被扣住，需要人工確認。');
 
+  add('AUTO_RESTOCK_PAYUNI_FAIL', 'PayUNI 付款失敗後，系統已自動補回庫存。');
+  add('AUTO_RESTOCK_ZC_NOTIFY_FAIL', '中租／裕富付款失敗通知後，系統曾自動補庫存，需確認庫存與取消狀態是否正確。');
+  add('AUTO_RESTOCK_ADMIN_RETRY_CHECKOUT', '後台重新結帳流程已自動補回原訂單庫存。');
+  add('AUTO_RESTOCK_YUFU_ADMIN_FAIL', '裕富失敗後，系統已自動補回庫存。');
+  add('AUTO_RESTOCK_ZC_ADMIN_FAIL', '中租失敗後，系統已自動補回庫存。');
+  add('AUTO_RESTOCK_CASH_INST_OVERDUE_CANCEL', '現金分期逾期取消後，系統已自動補回庫存。');
+  add('AUTO_RESTOCK_TAIL_OVERDUE_CANCEL', '尾款逾期取消後，系統已自動補回庫存。');
+
+  // ===== PayUNI / 中租 / 裕富 =====
   add('PAYUNI_START_FAILED', 'PayUNI 付款頁啟動失敗，訂單可能停在待付款狀態。');
   add('PAYUNI_FAIL_ATTEMPT_ONLY', '曾經嘗試 PayUNI 付款但失敗，不能當成已付款訂單。');
+  add('PAYUNI_AMOUNT_MISMATCH', 'PayUNI 回傳金額與訂單金額不一致，需人工確認金流。');
   add('ZERO_CARD_START_FAILED', '中租付款頁啟動失敗，訂單可能停在待付款狀態。');
   add('ZC_CREDIT_CAPTURE_FAILED_MANUAL_REVIEW', '中租付款成功後，購物金扣款失敗，需要人工確認帳務。');
 
-  add('RESTOCK_FAILED', '補庫存失敗，需人工確認商品庫存是否正確。');
-  add('AUTO_RESTOCK_ZC_NOTIFY_FAIL', '中租／裕富付款失敗通知後，系統曾自動補庫存，需確認庫存與取消狀態是否正確。');
-  add('CANCELLED_STOCK_LOCKED', '訂單已取消，但庫存可能仍被扣住，需要人工確認。');
+  add('INSTALLMENT_AUDIT_TIMEOUT', '分期審核超過期限未完成，系統已自動取消或標記失敗。');
+  add('INSTALLMENT_SUCCESS_BLOCKED_AFTER_CANCEL', '分期成功通知晚到，但訂單已取消或已補庫存，系統已阻擋自動轉成功，需人工確認。');
+  add('INSTALLMENT_SUCCESS_BLOCKED_STOCK_NOT_DEDUCTED', '分期成功通知晚到，但此單沒有扣庫存，系統已阻擋自動轉成功，需人工確認。');
+  add('YUFU_SUCCESS_NOTIFIED', '裕富分期成功通知已發送給客人。');
+  add('YUFU_REJECT_BLOCKED_AFTER_PAID', '裕富拒絕通知晚到，但訂單已付款或已出貨，系統已阻擋自動改失敗，需人工確認。');
 
   // ===== 取消 / 付款失敗 / 重新結帳相關 =====
-  add('AUTO_CANCEL_ORDER_AS_FAILED', '系統已自動將訂單改為付款失敗／取消狀態。');
+  add('AUTO_CANCEL_ORDER_AS_FAILED', '系統已自動將訂單改為付款失敗或取消狀態。');
   add('WEB_CANCEL_PENDING_FOR_EDIT', '客人或後台曾取消待付款訂單，通常是為了修改後重新結帳。');
-  add('FAIL_FLEX_SENT', '已發送付款失敗或重新結帳通知給客人。');
   add('RETRY_CART', '系統已建立或關聯重新結帳用的購物車。');
   add('AUTO_VOID_ABANDONED', '系統已自動作廢長時間未完成付款的訂單。');
 
@@ -573,17 +674,68 @@ function displayInternalNoteChinese(note, f = {}){
   add('TAIL_FLEX_SEND_FAILED', '尾款相關 LINE 通知發送失敗。');
   add('TAIL_PAID', '尾款單已付款完成。');
   add('TAIL_INV', '尾款單已完成發票或開票紀錄。');
+  add('TAIL_OVERDUE_DEPOSIT_FORFEIT', '主單尾款逾期未完成，系統已取消並保留訂金紀錄。');
+  add('TAIL_CANCEL_REBUILD', '尾款單曾取消並重新建立。');
+  add('TAIL_FAIL_FLEX_SUPPRESSED', '尾款失敗通知已被系統略過，避免重複通知。');
 
   // ===== 人工處理紀錄 =====
   add('ABNORMAL_RESOLVED', '此異常已被人工標記為已解決。');
   add('ABNORMAL_REOPENED', '此異常曾被重新打開，需要再次確認。');
 
   if (!lines.length) {
-    // 如果是純人工備註，例如「6/3寄出」，不要顯示像錯誤一樣的文字
     return '一般內部備註，沒有偵測到系統異常標籤。';
   }
 
   return lines.join('\n');
+}
+
+function displayRiskActionAdvice(note, f = {}){
+  const raw = String(note || '').trim();
+  const upper = raw.toUpperCase();
+
+  if (!raw) return '沒有系統異常標籤。若只是人工備註，通常不需要處理。';
+
+  if (upper.includes('CREDIT_CAPTURE_ERROR')) {
+    return '確認金流真的付款成功後，使用上方「檢查」→「重新扣購物金並放行」。不要直接手動亂改金額。';
+  }
+
+  if (upper.includes('RESTOCK_FAILED') || upper.includes('CANCELLED_STOCK_LOCKED')) {
+    return '請打開訂單商品明細，核對每個 SKU 目前庫存是否正確。確認補正後，再勾選「異常問題已解決」。';
+  }
+
+  if (upper.includes('ADMIN_NEW_ORDER_NOTIFY_FAILED') || upper.includes('CHECKOUT_FLEX_SEND_FAILED') || upper.includes('WEB_CART_RETRY_LINE_FAILED') || upper.includes('TAIL_FLEX_SEND_FAILED')) {
+    return '訂單通常已成立，不代表訂單失敗。請先確認 LINE token、群組 ID、客人 LINE userId；必要時手動補通知。';
+  }
+
+  if (upper.includes('CHECKOUT_500_AFTER_ORDER_CREATED')) {
+    return '先確認 Orders 是否有這筆單、庫存是否已扣、客人是否收到通知。不要先刪單，避免庫存又亂掉。';
+  }
+
+  if (upper.includes('PAYUNI_AMOUNT_MISMATCH')) {
+    return '金流金額與訂單金額不一致，請先核對 PayUNI 後台金額，不要直接放行或出貨。';
+  }
+
+  if (upper.includes('INSTALLMENT_SUCCESS_BLOCKED') || upper.includes('YUFU_REJECT_BLOCKED_AFTER_PAID')) {
+    return '分期回傳時間與訂單狀態衝突。請人工確認是否已出貨、是否已補庫存、是否真的收款成功。';
+  }
+
+  if (upper.includes('AUTO_RESTOCK')) {
+    return '系統已有自動補庫存紀錄。建議抽查該訂單商品庫存，確認正確後勾選已解決。';
+  }
+
+  if (upper.includes('AUTO_CANCEL_ORDER_AS_FAILED') || upper.includes('WEB_CANCEL_PENDING_FOR_EDIT') || upper.includes('RETRY_CART')) {
+    return '通常是付款失敗或重新結帳流程。請確認是否已有新訂單成功，避免重複出貨。';
+  }
+
+  if (upper.includes('BANK_REMIND')) {
+    return '這是匯款提醒紀錄，不一定是異常。若客人已付款，請到匯款待確認頁處理。';
+  }
+
+  if (upper.includes('ADMIN_NEW_ORDER_NOTIFY_SENT') || upper.includes('YUFU_SUCCESS_NOTIFIED')) {
+    return '這是成功通知紀錄，通常不需要處理。';
+  }
+
+  return '請先看「內部備註中文說明」判斷類型；若已人工確認無問題，可勾選「異常問題已解決」。';
 }
 function isCreditErrorRow(rec){
   const f = rec.fields || rec || {};
@@ -609,8 +761,9 @@ function simpleOrderRowsHtml(rows){
           <th>客人</th>
           <th>付款 / 狀態</th>
           <th>付款方式</th>
-                   <th>商品</th>
+          <th>商品</th>
           <th>內部備註中文說明</th>
+          <th>建議處理方式</th>
           <th>原始內部備註</th>
           <th>異常處理</th>
         </tr>
@@ -622,6 +775,7 @@ function simpleOrderRowsHtml(rows){
           const pm = displayPaymentMethod(f);
           const note = String(f.internal_note || '').trim();
           const noteCn = displayInternalNoteChinese(note, f);
+          const advice = displayRiskActionAdvice(note, f);
           const items = String(f.items_json || '').trim();
 
           return `
@@ -644,6 +798,7 @@ function simpleOrderRowsHtml(rows){
                 </details>
               </td>
               <td><div class="risk-note-cn">${esc(noteCn || '-')}</div></td>
+              <td><div class="risk-action-advice">${esc(advice || '-')}</div></td>
               <td><div class="risk-note">${esc(note || '-')}</div></td>
               <td>
                 <label style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
@@ -777,9 +932,10 @@ function render(){
           <th>客人</th>
           <th>金額</th>
           <th>狀態</th>
-          <th>內部備註中文說明</th>
-          <th>原始內部備註</th>
-          <th>處理</th>
+<th>內部備註中文說明</th>
+<th>建議處理方式</th>
+<th>原始內部備註</th>
+<th>處理</th>
         </tr>
       </thead>
       <tbody>
@@ -787,8 +943,9 @@ function render(){
           const f = rec.fields || rec || {};
           const oid = String(f.order_id || '').trim();
           const note = String(f.internal_note || '');
-          const noteCn = displayInternalNoteChinese(note, f);
-          const hasTag = note.includes('CREDIT_CAPTURE_ERROR');
+         const noteCn = displayInternalNoteChinese(note, f);
+const advice = displayRiskActionAdvice(note, f);
+const hasTag = note.includes('CREDIT_CAPTURE_ERROR');
           const creditUsed = Math.max(0, Number(f.credit_used || 0) || 0);
           const net = Number(f.net_amount ?? f.net ?? 0) || 0;
           const total = Number(f.total_amount ?? f.total ?? 0) || 0;
@@ -818,8 +975,9 @@ function render(){
       : '<span class="badge red">未完成</span>'
   }
 </td>
-              <td><div class="note-cn">${esc(noteCn || '-')}</div></td>
-              <td><div class="note">${esc(note || '-')}</div></td>
+<td><div class="note-cn">${esc(noteCn || '-')}</div></td>
+<td><div class="risk-action-advice">${esc(advice || '-')}</div></td>
+<td><div class="note">${esc(note || '-')}</div></td>
               <td>
                 <button type="button" onclick="dryRun('${esc(oid)}')">檢查</button><br>
                 <button class="danger" type="button" onclick="releaseOrder('${esc(oid)}')">重新扣購物金並放行</button>
