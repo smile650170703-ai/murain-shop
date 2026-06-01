@@ -477,7 +477,18 @@ function displayCartStatus(st) {
 
   return st || '-';
 }
+function displayCartClearReason(reason) {
+  const s = String(reason || '').trim();
 
+  if (s === 'UNFINISHED_CART_36H') return '36小時未結單自動清空';
+  if (s === 'UNFINISHED_CART_36H_NO_LINE') return '36小時未結單自動清空（無 LINE ID）';
+
+  // 舊資料保留顯示，避免以前的紀錄看不懂
+  if (s === 'UNFINISHED_CART_72H') return '舊規則：72小時未結單自動清空';
+  if (s === 'UNFINISHED_CART_72H_NO_LINE') return '舊規則：72小時未結單自動清空（無 LINE ID）';
+
+  return s || '-';
+}
 function setButtonBusy(btn, busy, busyText = '處理中…') {
   if (!btn) return;
 
@@ -494,7 +505,19 @@ function setButtonBusy(btn, busy, busyText = '處理中…') {
     btn.style.pointerEvents = '';
   }
 }
+function showDetailMsg(text, type = 'info') {
+  const el = $('#detailMsg');
 
+  if (!el) {
+    if (text) alert(text);
+    return;
+  }
+
+  el.className = type === 'error' ? 'error mt-3' : 'muted mt-3';
+  el.style.whiteSpace = 'pre-wrap';
+  el.style.color = type === 'ok' ? '#bbf7d0' : (type === 'error' ? '#fecaca' : '#94a3b8');
+  el.textContent = text || '';
+}
 function setupCartOpenPageChrome() {
   document.body.classList.add('is-cart-open-page');
   document.title = '未結單購物車｜訂單後台';
@@ -631,9 +654,8 @@ function renderCartList() {
           ${row.streamer_name ? `<span class="badge blue">直播主：${escapeHtml(row.streamer_name)}</span>` : '<span class="badge red">未填直播主</span>'}
           ${row.link_sent_at ? '<span class="badge green">已發購物車卡</span>' : ''}
           ${row.link_copied_at ? '<span class="badge blue">已複製連結</span>' : ''}
-          ${row.cart_remind_1_sent_at ? '<span class="badge yellow">自動提醒1已發</span>' : ''}
-          ${row.cart_remind_2_sent_at ? '<span class="badge yellow">自動提醒2已發</span>' : ''}
-          ${row.cart_auto_cleared_at ? '<span class="badge red">72H已清空</span>' : ''}
+          ${row.cart_remind_1_sent_at ? '<span class="badge yellow">12H提醒已發</span>' : ''}
+          ${row.cart_auto_cleared_at ? '<span class="badge red">36H已清空</span>' : ''}
         </div>
 
         <div class="ord-sub">
@@ -721,23 +743,27 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
 
     <div class="row mt-2">
       <div>
-        <label>自動提醒 1 時間</label>
+        <label>12 小時提醒時間</label>
         <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.cart_remind_1_sent_at) || '-')}</div>
       </div>
       <div>
-        <label>自動提醒 2 時間</label>
-        <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.cart_remind_2_sent_at) || '-')}</div>
+        <label>提醒狀態</label>
+        <div class="ro-field">${escapeHtml(
+          row.cart_remind_1_sent_at
+            ? '✅ 已成功發送'
+            : (row.line_user_id ? '尚未發送' : '⚠️ 無 LINE ID，無法發送')
+        )}</div>
       </div>
     </div>
 
     <div class="row mt-2">
       <div>
-        <label>72 小時清空時間</label>
+        <label>36 小時清空時間</label>
         <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.cart_auto_cleared_at) || '-')}</div>
       </div>
       <div>
         <label>清空原因</label>
-        <div class="ro-field">${escapeHtml(row.cart_auto_clear_reason || '-')}</div>
+        <div class="ro-field">${escapeHtml(displayCartClearReason(row.cart_auto_clear_reason))}</div>
       </div>
     </div>
 
@@ -758,7 +784,7 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
     </div>
 
     <div class="mt-3" style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn-secondary" id="btnCartRemindSingle" type="button">🛒 發送購物車卡</button>
+      <button class="btn-secondary" id="btnCartRemindSingle" type="button">🛒 手動發送購物車卡</button>
       <button class="btn-secondary" id="btnCartClearSingle" type="button">🧹 清空此購物車</button>
     </div>
 
@@ -770,6 +796,7 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
     setButtonBusy(btn, true, '發送中…');
 
     try {
+      showDetailMsg(`正在發送購物車卡給「${row.customer_name || row.cart_token || '此客人'}」…`);
       await remindCartRows([row]);
     } finally {
       setButtonBusy(btn, false);
@@ -792,8 +819,8 @@ async function remindCartRows(rows) {
   const targets = (rows || []).filter(x => x && x.cart_token);
 
   if (!targets.length) {
-    alert('目前沒有可提醒的購物車');
-    return;
+    showDetailMsg('目前沒有可提醒的購物車', 'error');
+    return { ok: 0, skipped: 0, failed: 0 };
   }
 
   let ok = 0;
@@ -804,12 +831,13 @@ async function remindCartRows(rows) {
   for (const row of targets) {
     const token = String(row.cart_token || '').trim();
     const lineId = String(row.line_user_id || '').trim();
+    const title = row.customer_name || token;
 
     if (!token) continue;
 
     if (!lineId) {
       skipped++;
-      failedMsgs.push(`${row.customer_name || token}：沒有 LINE 綁定`);
+      failedMsgs.push(`${title}：沒有 LINE 綁定`);
       continue;
     }
 
@@ -830,23 +858,26 @@ async function remindCartRows(rows) {
 
       if (!r.ok || !j.ok) {
         failed++;
-        failedMsgs.push(`${row.customer_name || token}：${j.error || ('HTTP ' + r.status)}`);
+        failedMsgs.push(`${title}：${j.message || j.error || ('HTTP ' + r.status)}`);
         continue;
       }
 
       ok++;
+      row.link_sent_at = new Date().toISOString();
+
     } catch (e) {
       failed++;
-      failedMsgs.push(`${row.customer_name || token}：${e.message || e}`);
+      failedMsgs.push(`${title}：${e.message || e}`);
     }
   }
 
-  alert(
-    `購物車提醒完成\n成功 ${ok} 筆 / 略過 ${skipped} 筆 / 失敗 ${failed} 筆` +
-    (failedMsgs.length ? `\n\n${failedMsgs.slice(0, 8).join('\n')}` : '')
-  );
+  const msg =
+    `購物車卡發送完成\n成功 ${ok} 筆 / 略過 ${skipped} 筆 / 失敗 ${failed} 筆` +
+    (failedMsgs.length ? `\n\n${failedMsgs.slice(0, 8).join('\n')}` : '');
 
-  await loadOpenCartList();
+  showDetailMsg(msg, failed > 0 || skipped > 0 ? 'error' : 'ok');
+
+  return { ok, skipped, failed, failedMsgs };
 }
 
 async function clearCartRow(row) {
