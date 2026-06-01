@@ -1314,6 +1314,275 @@ async function goCartCheckout(){
   });
 })();
 </script>
-  
+  <script>
+(function () {
+  const API_URL = "https://api.murain.tw/site/popup";
+
+  const BLOCKED_PATHS = [
+    "/liff-checkout",
+    "/liff-checkout.html",
+    "/member",
+    "/member.html",
+    "/line_bind_member",
+    "/line_bind_member.html"
+  ];
+
+  const currentPath = location.pathname || "/";
+
+  if (
+    BLOCKED_PATHS.includes(currentPath) ||
+    currentPath.startsWith("/admin") ||
+    currentPath.includes("checkout")
+  ) {
+    return;
+  }
+
+  function safeText(v) {
+    return String(v == null ? "" : v);
+  }
+
+  function normalizeUrl(u) {
+    const s = safeText(u).trim();
+    if (!s) return "";
+    return s;
+  }
+
+  function closePopup(overlay, restoreOverflow) {
+    overlay.remove();
+    document.body.style.overflow = restoreOverflow || "";
+  }
+
+  function showMurainPopup(popup) {
+    const campaignId = safeText(popup.campaign_id).trim();
+    const imageUrl = normalizeUrl(popup.image_url);
+    const linkUrl = normalizeUrl(popup.link_url || "/shop.html");
+    const hideHours = Math.max(1, Number(popup.close_hide_hours || 24));
+
+    if (!campaignId || !imageUrl) return;
+
+    const neverKey = "murain_popup_never_" + campaignId;
+    const closeUntilKey = "murain_popup_close_until_" + campaignId;
+
+    if (localStorage.getItem(neverKey) === "1") return;
+
+    const closeUntil = Number(localStorage.getItem(closeUntilKey) || 0);
+    if (closeUntil && Date.now() < closeUntil) return;
+
+    const oldOverflow = document.body.style.overflow;
+
+    const overlay = document.createElement("div");
+    overlay.className = "murain-site-popup-overlay";
+
+    const box = document.createElement("div");
+    box.className = "murain-site-popup-box";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "murain-site-popup-close";
+    closeBtn.setAttribute("aria-label", "關閉");
+    closeBtn.textContent = "×";
+
+    const imgLink = document.createElement("a");
+    imgLink.className = "murain-site-popup-image-link";
+    imgLink.href = linkUrl;
+
+    const img = document.createElement("img");
+    img.src = imageUrl;
+    img.alt = "活動優惠";
+    img.loading = "eager";
+
+    const actions = document.createElement("div");
+    actions.className = "murain-site-popup-actions";
+
+    const goBtn = document.createElement("a");
+    goBtn.className = "murain-site-popup-go";
+    goBtn.href = linkUrl;
+    goBtn.textContent = "立即逛逛";
+
+    const neverBtn = document.createElement("button");
+    neverBtn.type = "button";
+    neverBtn.className = "murain-site-popup-never";
+    neverBtn.textContent = "不再跳出";
+
+    imgLink.appendChild(img);
+    actions.appendChild(goBtn);
+    actions.appendChild(neverBtn);
+
+    box.appendChild(closeBtn);
+    box.appendChild(imgLink);
+    box.appendChild(actions);
+    overlay.appendChild(box);
+
+    const style = document.createElement("style");
+    style.textContent = `
+      .murain-site-popup-overlay{
+        position:fixed;
+        inset:0;
+        z-index:999999;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        padding:20px;
+        background:rgba(54,40,38,.48);
+        backdrop-filter:blur(5px);
+        -webkit-backdrop-filter:blur(5px);
+      }
+
+      .murain-site-popup-box{
+        position:relative;
+        width:min(430px, 92vw);
+        max-height:88vh;
+        overflow:hidden;
+        border-radius:28px;
+        background:#fffaf7;
+        box-shadow:0 22px 70px rgba(84,55,50,.28);
+        border:1px solid rgba(219,194,159,.28);
+        animation:murainPopupIn .22s ease-out;
+      }
+
+      @keyframes murainPopupIn{
+        from{opacity:0; transform:translateY(10px) scale(.97);}
+        to{opacity:1; transform:translateY(0) scale(1);}
+      }
+
+      .murain-site-popup-close{
+        position:absolute;
+        top:10px;
+        right:10px;
+        z-index:2;
+        width:36px;
+        height:36px;
+        border:1px solid rgba(120,90,86,.12);
+        border-radius:999px;
+        background:rgba(255,255,255,.92);
+        color:#6d5550;
+        font-size:28px;
+        line-height:30px;
+        cursor:pointer;
+        box-shadow:0 6px 18px rgba(0,0,0,.08);
+      }
+
+      .murain-site-popup-image-link{
+        display:block;
+        color:inherit;
+        text-decoration:none;
+      }
+
+      .murain-site-popup-image-link img{
+        display:block;
+        width:100%;
+        height:auto;
+        max-height:72vh;
+        object-fit:cover;
+      }
+
+      .murain-site-popup-actions{
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        gap:12px;
+        padding:14px 16px 18px;
+        background:linear-gradient(180deg,#fffaf7 0%,#fff4f3 100%);
+      }
+
+      .murain-site-popup-go{
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        min-height:38px;
+        padding:9px 20px;
+        border-radius:999px;
+        background:linear-gradient(135deg,#c9a17e,#b98b72);
+        color:#fff;
+        font-size:14px;
+        font-weight:700;
+        letter-spacing:.04em;
+        text-decoration:none;
+        box-shadow:0 8px 18px rgba(185,139,114,.24);
+      }
+
+      .murain-site-popup-never{
+        border:0;
+        background:transparent;
+        color:#8a6b5f;
+        font-size:13px;
+        cursor:pointer;
+        text-decoration:underline;
+        padding:8px 4px;
+      }
+
+      @media (max-width:480px){
+        .murain-site-popup-overlay{
+          padding:14px;
+        }
+
+        .murain-site-popup-box{
+          width:94vw;
+          border-radius:24px;
+        }
+
+        .murain-site-popup-actions{
+          padding:12px 12px 16px;
+          gap:10px;
+        }
+
+        .murain-site-popup-go{
+          padding:9px 16px;
+          font-size:13px;
+        }
+
+        .murain-site-popup-never{
+          font-size:12px;
+        }
+      }
+    `;
+
+    document.head.appendChild(style);
+    document.body.appendChild(overlay);
+    document.body.style.overflow = "hidden";
+
+    closeBtn.addEventListener("click", function () {
+      const until = Date.now() + hideHours * 60 * 60 * 1000;
+      localStorage.setItem(closeUntilKey, String(until));
+      closePopup(overlay, oldOverflow);
+    });
+
+    neverBtn.addEventListener("click", function () {
+      localStorage.setItem(neverKey, "1");
+      closePopup(overlay, oldOverflow);
+    });
+
+    overlay.addEventListener("click", function (e) {
+      if (e.target === overlay) {
+        const until = Date.now() + hideHours * 60 * 60 * 1000;
+        localStorage.setItem(closeUntilKey, String(until));
+        closePopup(overlay, oldOverflow);
+      }
+    });
+
+    document.addEventListener("keydown", function escClose(e) {
+      if (e.key === "Escape" && document.body.contains(overlay)) {
+        const until = Date.now() + hideHours * 60 * 60 * 1000;
+        localStorage.setItem(closeUntilKey, String(until));
+        closePopup(overlay, oldOverflow);
+        document.removeEventListener("keydown", escClose);
+      }
+    });
+  }
+
+  fetch(API_URL + "?page=" + encodeURIComponent(currentPath), {
+    method: "GET",
+    cache: "no-store"
+  })
+    .then(r => r.json())
+    .then(j => {
+      if (!j || !j.ok || !j.popup) return;
+      showMurainPopup(j.popup);
+    })
+    .catch(() => {
+      // 彈窗讀取失敗不能影響官網使用
+    });
+})();
+</script>
 </body>
 </html>
