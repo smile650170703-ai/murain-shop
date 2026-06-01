@@ -2632,7 +2632,58 @@ const money=n=>'NT$ '+Number(n||0).toLocaleString();
 /* ===== 設定 ===== */
 const API=(window.API_BASE||'https://api.murain.tw').replace(/\/$/,'');
 const RATE_TABLE={3:0,6:4.0,9:5.5,12:6.5,18:9.0,24:11.5};
+// ===== SystemEvents：結帳頁失敗紀錄，不影響結帳流程 =====
+function getCheckoutLogCartToken(){
+  try {
+    return String(cartToken || '').trim();
+  } catch(e) {
+    return '';
+  }
+}
 
+function getCheckoutLogLineUserId(){
+  try {
+    return String(
+      lineUserIdFromPay ||
+      MEMBER_INFO?.line_user_id ||
+      MEMBER_INFO?.lineUserId ||
+      MEMBER_INFO?.user_id ||
+      MEMBER_INFO?.userId ||
+      MEMBER_INFO?.member?.line_user_id ||
+      MEMBER_INFO?.member?.lineUserId ||
+      LINE_PROFILE?.userId ||
+      CART_LINE_USER_ID ||
+      localStorage.getItem('murain_line_user_id') ||
+      ''
+    ).trim();
+  } catch(e) {
+    return '';
+  }
+}
+
+function logCheckoutSystemEvent(eventType, messageCn, suggestionCn, rawDetail = {}, level = 'warning'){
+  try {
+    const payload = {
+      level,
+      event_type: String(eventType || 'checkout_event'),
+      message_cn: String(messageCn || '結帳頁事件紀錄'),
+      suggestion_cn: String(suggestionCn || ''),
+      cart_token: getCheckoutLogCartToken(),
+      line_user_id: getCheckoutLogLineUserId(),
+      page_url: location.href,
+      raw_detail: typeof rawDetail === 'string'
+        ? rawDetail
+        : JSON.stringify(rawDetail || {})
+    };
+
+    fetch(`${API}/system/event`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      keepalive: true
+    }).catch(() => {});
+  } catch(e) {}
+}
 /* ===== 面交（收件資料）設定 ===== */
 const MEETUP_PLACE = '台南市佳里區義民街339號';
 const MEETUP_TIME_RANGE_HINT = '週一～週五 10:00～16:00';
@@ -4590,6 +4641,20 @@ async function updateCartItemQtySelf(sku, nextQty, sourceEl){
     try { updateCreditAndTotal(); } catch(e){}
   } catch (e) {
     console.error('updateCartItemQtySelf error', e);
+
+    logCheckoutSystemEvent(
+      'cart_qty_update_failed',
+      '客人在結帳頁更新購物車商品數量失敗。',
+      '請確認購物車商品是否仍存在、庫存是否足夠；必要時請客人重新整理或重新開啟結帳連結。',
+      {
+        error: String(e?.message || e),
+        cart_token: cartToken || '',
+        sku,
+        next_qty: nextQty
+      },
+      'warning'
+    );
+
     alert(e?.message || '更新商品數量失敗，請再試一次。');
     clearCartRowBusy();
   } finally {
@@ -4630,6 +4695,19 @@ async function removeCartItemSelf(sku, sourceEl){
     try { updateCreditAndTotal(); } catch(e){}
   } catch (e) {
     console.error('removeCartItemSelf error', e);
+
+    logCheckoutSystemEvent(
+      'cart_remove_failed',
+      '客人在結帳頁刪除購物車商品失敗。',
+      '請確認購物車商品是否仍存在；必要時請客人重新整理或由後台協助處理。',
+      {
+        error: String(e?.message || e),
+        cart_token: cartToken || '',
+        sku
+      },
+      'warning'
+    );
+
     alert(e?.message || '刪除商品失敗，請再試一次。');
     clearCartRowBusy();
   } finally {
@@ -4699,6 +4777,18 @@ async function loadCart(options = {}){
     }
   } catch (e) {
     console.error('loadCart error', e);
+
+    logCheckoutSystemEvent(
+      'cart_load_failed',
+      '結帳頁讀取購物車失敗。',
+      '請確認 cart_token 是否正確、購物車是否仍存在；必要時重新提供結帳連結給客人。',
+      {
+        error: String(e?.message || e),
+        cart_token: cartToken || ''
+      },
+      'error'
+    );
+
     alert('讀取購物車失敗，請再試一次。');
   }
 }
@@ -5495,6 +5585,19 @@ try {
     } catch (e) {}
 
     if (!shipping_info.line || !shipping_info.line.user_id) {
+      logCheckoutSystemEvent(
+        'checkout_missing_line_user_id',
+        '客人送出結帳前沒有取得 LINE 身份。',
+        '請客人從官方 LINE 內重新開啟結帳頁，或確認 LIFF / 會員登入狀態是否正常。',
+        {
+          cart_token: cartToken || '',
+          has_member_info: !!MEMBER_INFO,
+          has_line_profile: !!LINE_PROFILE,
+          cart_line_user_id: CART_LINE_USER_ID || ''
+        },
+        'warning'
+      );
+
       alert('請先在 LINE 官方帳號中開啟這個結帳頁（LIFF），完成 LINE 身份取得後再送出');
       return;
     }
@@ -6102,9 +6205,35 @@ shipping_info.cart_source = CART_CUSTOMER_TYPE || '';
       const err = String(resp?.error || resp?.code || '').trim();
 
       if (err === 'insufficient_stock' || err === 'out_of_stock') {
+        logCheckoutSystemEvent(
+          'checkout_insufficient_stock',
+          '客人送出結帳時遇到庫存不足。',
+          '請確認購物車商品庫存；若客人已卡住，請協助調整購物車數量或重新建立結帳連結。',
+          {
+            cart_token: cartToken || '',
+            payment_method,
+            error: err,
+            response: resp || {}
+          },
+          'warning'
+        );
+
         alert('很抱歉，購物車內有商品庫存不足，請返回購物車調整數量或聯繫官方 LINE 協助確認。');
         return;
       }
+
+      logCheckoutSystemEvent(
+        'checkout_submit_failed_before_order',
+        '客人送出結帳失敗，可能尚未成立訂單。',
+        '請先用 cart_token 查購物車，再確認 Orders 是否有產生訂單；不要先手動改庫存。',
+        {
+          cart_token: cartToken || '',
+          payment_method,
+          error: err || String(resp?.message || resp?.error || ''),
+          response: resp || {}
+        },
+        'error'
+      );
 
       alert(resp?.message || resp?.error || '送出失敗，請稍後再試');
       return;
