@@ -212,6 +212,66 @@
   overflow:auto;
   white-space:pre-wrap;
 }
+ .risk-direct-box{
+  border:1px solid rgba(148,163,184,.28);
+  background:rgba(2,6,23,.38);
+  border-radius:12px;
+  padding:8px;
+  font-size:12px;
+  line-height:1.55;
+  white-space:pre-wrap;
+}
+
+.risk-direct-title{
+  display:block;
+  color:#bae6fd;
+  font-weight:900;
+  margin-bottom:4px;
+}
+
+.risk-field-box{
+  color:#e5e7eb;
+  font-size:12px;
+  line-height:1.6;
+  white-space:pre-wrap;
+  min-width:240px;
+}
+
+.risk-action-now{
+  color:#bbf7d0;
+  font-size:12px;
+  line-height:1.6;
+  font-weight:900;
+  white-space:pre-wrap;
+  min-width:260px;
+}
+
+.risk-impact{
+  color:#fde68a;
+  font-size:12px;
+  line-height:1.55;
+  font-weight:900;
+  white-space:pre-wrap;
+  margin-top:6px;
+}
+
+.risk-item-list{
+  color:#cbd5e1;
+  font-size:12px;
+  line-height:1.5;
+  white-space:pre-wrap;
+  max-width:320px;
+}
+
+.risk-code{
+  color:#94a3b8;
+  font-size:11px;
+  line-height:1.45;
+  white-space:pre-wrap;
+  max-width:300px;
+  max-height:130px;
+  overflow:auto;
+}
 </style>
 </head>
 <body>
@@ -367,10 +427,11 @@
       這裡顯示「訂單尚未成立前」的問題，例如購物車讀不到、LINE 身份取得失敗、更新數量失敗、送出前失敗、前端無聲錯誤等。
     </div>
 
-    <div class="system-events-toolbar">
-      <h2 class="risk-section<button id="btnReloadSystemEvents" type="button">重新載入系統事件</button>-title">前端／購物車／結帳前錯誤｜系統事件紀錄</h2>
-      <input id="systemEventSearch" type="text" placeholder="搜尋事件類型 / 購物車代碼 / LINE 身分碼" />
-    </div>
+<div class="system-events-toolbar">
+  <h2 class="risk-section-title">前端／購物車／結帳前錯誤｜系統事件紀錄</h2>
+  <button id="btnReloadSystemEvents" type="button">重新載入系統事件</button>
+  <input id="systemEventSearch" type="text" placeholder="搜尋事件類型 / 購物車代碼 / LINE 身分碼" />
+</div>
 
     <div id="systemEventsMsg" class="muted">尚未載入</div>
     <div id="systemEventsList"></div>
@@ -753,6 +814,292 @@ function displayRiskActionAdvice(note, f = {}){
 
   return '請先看「內部備註中文說明」判斷類型；若已人工確認無問題，可勾選「異常問題已解決」。';
 }
+ function riskText(v, fallback = '-'){
+  const s = String(v == null ? '' : v).trim();
+  return s || fallback;
+}
+
+function riskYesNo(v){
+  if (v === true) return '是';
+  if (v === false) return '否';
+  const s = String(v == null ? '' : v).trim();
+  return s || '-';
+}
+
+function riskLineUserId(f = {}){
+  const si = parseShip(f);
+  const line = si.line || si.line_profile || {};
+  return riskText(
+    f.line_user_id ||
+    f.LineUserId ||
+    f.LINE_USER_ID ||
+    line.user_id ||
+    line.userId ||
+    line.LINE_USER_ID ||
+    ''
+  );
+}
+
+function riskCartToken(f = {}){
+  return riskText(
+    f.cart_token ||
+    f.CartToken ||
+    f.cartToken ||
+    f.checked_out_cart_token ||
+    ''
+  );
+}
+
+function riskItemsText(f = {}){
+  const raw = String(f.items_json || f.items || f.items_text || '').trim();
+
+  if (!raw) return '-';
+
+  try {
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr) && arr.length) {
+      return arr.map(it => {
+        const sku = String(it.sku || it.SKU || '').trim();
+        const name = String(it.name || it.Name || it.title || '商品').trim();
+        const qty = Number(it.qty || it.Qty || it.quantity || 0) || 1;
+        const price = Number(it.price || it.Price || 0) || 0;
+
+        return [
+          `・${sku ? sku + '｜' : ''}${name}`,
+          `數量：${qty}`,
+          price ? `金額：${money(price * qty)}` : ''
+        ].filter(Boolean).join('　');
+      }).join('\n');
+    }
+  } catch (_) {}
+
+  return raw.slice(0, 1200);
+}
+
+function riskBaseFields(f = {}){
+  return [
+    `order_id：${riskText(f.order_id)}`,
+    `status：${riskText(f.status)}（${displayOrderStatus(f.status)}）`,
+    `pay_status：${riskText(f.pay_status)}（${displayPayStatus(f.pay_status)}）`,
+    `payment_method：${riskText(f.payment_method || f.pay_channel)}（${displayPaymentMethod(f)}）`,
+    `net_amount：${money(f.net_amount ?? f.net ?? 0)}`,
+    `total_amount：${money(f.total_amount ?? f.total ?? 0)}`,
+    `credit_used：${money(f.credit_used || 0)}`,
+    `credit_spend_done：${riskYesNo(f.credit_spend_done)}`,
+    `stock_deduct_done：${riskYesNo(f.stock_deduct_done)}`,
+    `CartToken：${riskCartToken(f)}`,
+    `LINE userId：${riskLineUserId(f)}`,
+    `LINE 名稱：${riskText(getLineName(f))}`
+  ].join('\n');
+}
+
+function diagnoseOrderRisk(f = {}){
+  const note = String(f.internal_note || '').trim();
+  const upper = note.toUpperCase();
+  const pm = String(f.payment_method || f.pay_channel || '').trim().toLowerCase();
+  const status = String(f.status || '').trim().toLowerCase();
+  const payStatus = String(f.pay_status || '').trim().toLowerCase();
+
+  const base = {
+    level: '🟢 紀錄',
+    levelClass: 'green',
+    category: '一般紀錄',
+    impact: '通常不影響客人結單。\n確認沒有後續問題後，可勾選已解決。',
+    where: 'Orders.internal_note',
+    mustCheck: riskBaseFields(f),
+    action: displayRiskActionAdvice(note, f),
+    problem: displayInternalNoteChinese(note, f)
+  };
+
+  if (
+    upper.includes('CREDIT_CAPTURE_ERROR') ||
+    upper.includes('ZC_CREDIT_CAPTURE_FAILED_MANUAL_REVIEW') ||
+    upper.includes('TAIL_CREDIT_HOLD_FAILED')
+  ) {
+    return {
+      ...base,
+      level: '🔴 立即處理',
+      levelClass: 'red',
+      category: '購物金 / 金額異常',
+      impact: '可能影響訂單放行、實收金額、發票金額。\n先不要手動亂改金額。',
+      where: 'Orders.credit_used / Orders.credit_spend_done / CreditsLedger / internal_note',
+      mustCheck: [
+        riskBaseFields(f),
+        '必看：credit_used、credit_spend_done、net_amount、pay_status、internal_note',
+        '如果是付款成功後才出現：要先確認金流真的成功'
+      ].join('\n'),
+      action: '1. 先確認金流是否真的付款成功。\n2. 在本頁上方購物金異常區按「檢查」。\n3. 確認無誤後才按「重新扣購物金並放行」。\n4. 不要直接手改購物金或發票金額。'
+    };
+  }
+
+  if (
+    upper.includes('CHECKOUT_500_AFTER_ORDER_CREATED') ||
+    upper.includes('CART_BIND_FAILED_AFTER_ORDER_CREATED')
+  ) {
+    return {
+      ...base,
+      level: '🔴 立即確認',
+      levelClass: 'red',
+      category: '客人結帳後端異常',
+      impact: '客人可能看到失敗，但 Orders 可能已經成立。\n不要叫客人立刻重送，避免重複訂單或重複扣庫存。',
+      where: 'Orders 是否已成立 / CartToken 是否已關閉 / stock_deduct_done / LINE 結單通知',
+      mustCheck: [
+        riskBaseFields(f),
+        '必看：status、pay_status、stock_deduct_done、CartToken、internal_note',
+        '內部備註若有 STOCK_DEDUCTED：代表庫存可能已扣',
+        '內部備註若有 CHECKOUT_FLEX_SENT_BEFORE_500：代表客人可能已收到結單通知'
+      ].join('\n'),
+      action: '1. 先確認這筆 Orders 是否真的成立。\n2. 看 stock_deduct_done 是否已扣庫存。\n3. 看 internal_note 是否有 LINE 通知成功/失敗。\n4. 如果已成立，不要讓客人重複送出；必要時手動補通知給客人。'
+    };
+  }
+
+  if (
+    upper.includes('RESTOCK_FAILED') ||
+    upper.includes('CANCELLED_STOCK_LOCKED')
+  ) {
+    return {
+      ...base,
+      level: '🔴 立即核庫存',
+      levelClass: 'red',
+      category: '庫存補回異常',
+      impact: '不一定卡住這位客人，但會造成庫存不準。\n可能導致下一位客人超賣或買不到。',
+      where: 'Orders.items_json / Products.StockQty / stock_deduct_done / internal_note',
+      mustCheck: [
+        riskBaseFields(f),
+        '必看：items_json 裡每個 SKU、數量 qty、stock_deduct_done、status',
+        '請核對 Products 裡每個 SKU 的 StockQty 是否已補正'
+      ].join('\n'),
+      action: '1. 看本列「商品 / SKU」每個 SKU 與數量。\n2. 到庫存資料核對 StockQty 是否正確。\n3. 補正庫存後，回本頁勾選「異常問題已解決」。'
+    };
+  }
+
+  if (upper.includes('PAYUNI_AMOUNT_MISMATCH')) {
+    return {
+      ...base,
+      level: '🔴 立即查金流',
+      levelClass: 'red',
+      category: 'PayUNI 金額不一致',
+      impact: '不可直接出貨。\n金流回傳金額與訂單金額不一致，需要人工確認。',
+      where: 'Orders.net_amount / pay_notify_status / PayUNI 後台交易金額',
+      mustCheck: [
+        riskBaseFields(f),
+        '必看：net_amount、pay_status、pay_notify_status、payment_method、internal_note'
+      ].join('\n'),
+      action: '1. 先查 PayUNI 後台實際付款金額。\n2. 比對 Orders.net_amount。\n3. 金額不一致前，不要放行、不要出貨。\n4. 確認後再人工改狀態或標記已解決。'
+    };
+  }
+
+  if (
+    upper.includes('PAYUNI_START_FAILED') ||
+    upper.includes('PAYUNI_FAIL_ATTEMPT_ONLY') ||
+    (pm.startsWith('paid_') && status === 'submitted' && payStatus === 'pending')
+  ) {
+    return {
+      ...base,
+      level: '🟠 今日確認',
+      levelClass: 'yellow',
+      category: 'PayUNI 線上付款待確認',
+      impact: '客人可能尚未付款完成。\n通常不要出貨，先確認金流結果。',
+      where: 'Orders.pay_status / payment_method / pay_notify_status / PayUNI 後台',
+      mustCheck: [
+        riskBaseFields(f),
+        '必看：payment_method、pay_status、status、pay_notify_status、internal_note'
+      ].join('\n'),
+      action: '1. 查 PayUNI 是否有付款成功或失敗。\n2. 如果沒有成功，不能當作已付款。\n3. 如果客人要重付，確認是否已有 retry cart，避免重複訂單。'
+    };
+  }
+
+  if (
+    upper.includes('INSTALLMENT_AUDIT_TIMEOUT') ||
+    upper.includes('INSTALLMENT_SUCCESS_BLOCKED') ||
+    upper.includes('YUFU_REJECT_BLOCKED_AFTER_PAID') ||
+    (pm.startsWith('yufu_inst_') && status === 'submitted' && payStatus === 'pending')
+  ) {
+    return {
+      ...base,
+      level: '🟠 今日確認',
+      levelClass: 'yellow',
+      category: '裕富 / 分期審核異常',
+      impact: '分期結果可能和訂單狀態衝突。\n確認前不要直接出貨或直接取消。',
+      where: 'Orders.yufu_status / pay_status / status / stock_deduct_done / internal_note',
+      mustCheck: [
+        riskBaseFields(f),
+        `yufu_status：${riskText(f.yufu_status)}`,
+        `pay_notify_status：${riskText(f.pay_notify_status)}`,
+        '必看：yufu_status、pay_status、status、stock_deduct_done、internal_note'
+      ].join('\n'),
+      action: '1. 確認裕富後台審核結果。\n2. 看訂單是否已取消、已出貨、或已補庫存。\n3. 如果成功/拒絕通知晚到，不要讓系統自動亂改，人工確認後再處理。'
+    };
+  }
+
+  if (
+    upper.includes('CHECKOUT_FLEX_SEND_FAILED') ||
+    upper.includes('CHECKOUT_FLEX_NOT_SENT') ||
+    upper.includes('CHECKOUT_FLEX_ATTEMPTED_BUT_FAILED') ||
+    upper.includes('ADMIN_NEW_ORDER_NOTIFY_FAILED') ||
+    upper.includes('WEB_CART_RETRY_LINE_FAILED') ||
+    upper.includes('TAIL_FLEX_SEND_FAILED')
+  ) {
+    return {
+      ...base,
+      level: '🟡 補通知',
+      levelClass: 'yellow',
+      category: 'LINE 通知失敗',
+      impact: '通常不代表訂單失敗。\n多數情況只是客人或內部群組沒有收到通知。',
+      where: 'LINE userId / LINE token / 群組 ID / internal_note',
+      mustCheck: [
+        riskBaseFields(f),
+        '必看：LINE userId、LINE 名稱、status、pay_status、internal_note'
+      ].join('\n'),
+      action: '1. 先確認 Orders 是否成立。\n2. 已成立就不用叫客人重下單。\n3. 手動補傳訂單資訊或重新結帳連結。\n4. 若是內部群組通知失敗，檢查群組 ID / LINE token。'
+    };
+  }
+
+  if (
+    upper.includes('AUTO_CANCEL_ORDER_AS_FAILED') ||
+    upper.includes('WEB_CANCEL_PENDING_FOR_EDIT') ||
+    upper.includes('RETRY_CART') ||
+    upper.includes('AUTO_VOID_ABANDONED') ||
+    upper.includes('TAIL_OVERDUE_DEPOSIT_FORFEIT') ||
+    upper.includes('TAIL_CANCEL_REBUILD')
+  ) {
+    return {
+      ...base,
+      level: '🟡 確認是否重複',
+      levelClass: 'yellow',
+      category: '取消 / 重新結帳 / 逾期流程',
+      impact: '通常是流程紀錄。\n重點是確認有沒有新訂單成功，避免重複出貨。',
+      where: 'Orders.status / pay_status / retry cart / parent_order_id / internal_note',
+      mustCheck: [
+        riskBaseFields(f),
+        `parent_order_id：${riskText(f.parent_order_id)}`,
+        '必看：status、pay_status、internal_note、是否有 RETRY_CART'
+      ].join('\n'),
+      action: '1. 確認這筆是否已取消或失敗。\n2. 看是否已有新訂單成功。\n3. 如果已有新成功單，舊單不要出貨。\n4. 確認無問題後可標記已解決。'
+    };
+  }
+
+  if (
+    upper.includes('BANK_REMIND_24H') ||
+    upper.includes('BANK_REMIND_48H') ||
+    upper.includes('ADMIN_NEW_ORDER_NOTIFY_SENT') ||
+    upper.includes('YUFU_SUCCESS_NOTIFIED') ||
+    upper.includes('AUTO_RESTOCK')
+  ) {
+    return {
+      ...base,
+      level: '🟢 正常紀錄',
+      levelClass: 'green',
+      category: '系統正常紀錄',
+      impact: '通常不影響客人結單。\n只是提醒、通知成功、或系統已自動補庫存的紀錄。',
+      where: 'Orders.internal_note',
+      mustCheck: riskBaseFields(f),
+      action: '如果沒有其他紅色/黃色異常，只需確認內容正確後勾選「異常問題已解決」。'
+    };
+  }
+
+  return base;
+}
  function displaySystemEventTypeChinese(eventType){
   const s = String(eventType || '').trim();
 
@@ -793,18 +1140,35 @@ function displaySystemEventSuggestion(eventType, fallbackSuggestion){
   const s = String(eventType || '').trim();
 
   const map = {
-    manual_system_event_test: '這是測試資料，確認成功後可以勾選 resolved 或刪除。',
-    cart_load_failed: '請用 cart_token 查 CartToken 是否存在；若不存在或已完成，重新提供客人新的結帳連結。',
-    cart_qty_update_failed: '請確認該購物車商品是否還存在、庫存是否足夠；必要時請客人重新整理或由後台協助調整購物車。',
-    cart_remove_failed: '請確認購物車商品是否還存在；必要時請客人重新整理，或由後台協助清除商品。',
-    checkout_missing_line_user_id: '請客人從官方 LINE 內重新開啟結帳頁；若仍失敗，檢查 LIFF 設定與會員登入流程。',
-    checkout_insufficient_stock: '請確認 Products 庫存與購物車數量；協助客人調整數量後再送出。',
-    checkout_submit_failed_before_order: '先查 Orders 是否有產生訂單；若沒有，再查 CartToken，不要先手動改庫存。',
-    checkout_frontend_error: '請查看 raw_detail 的錯誤行數與訊息；若多人重複發生，回報給工程檢查前端程式。',
-    checkout_frontend_unhandled_rejection: '請查看 raw_detail 的 reason；若與 API 或 LIFF 有關，檢查對應後端或 LIFF 設定。'
+    manual_system_event_test:
+      '這是測試資料。\n必看欄位：event_type、event_time。\n處理：確認測試成功後，按「標記已處理」。',
+
+    cart_load_failed:
+      '客人可能打不開購物車。\n必看欄位：cart_token、page_url、raw_detail。\n處理：用 cart_token 確認 CartToken 是否存在、是否已 checked_out、是否已被清空；若購物車不存在或已完成，重新給客人新的結帳連結。',
+
+    cart_qty_update_failed:
+      '客人可能無法加減數量。\n必看欄位：cart_token、raw_detail、商品 SKU、Products.StockQty。\n處理：確認購物車商品是否還存在、庫存是否足夠；必要時由後台協助調整購物車或請客人重新整理。',
+
+    cart_remove_failed:
+      '客人可能無法刪除商品。\n必看欄位：cart_token、raw_detail、購物車商品。\n處理：確認購物車商品是否還存在；必要時後台協助清除商品，或請客人重新整理再操作。',
+
+    checkout_missing_line_user_id:
+      '客人送出訂單前沒有取得 LINE 身分。\n必看欄位：line_user_id、page_url、raw_detail、cart_token。\n處理：請客人從官方 LINE 內重新開啟結帳頁；若仍失敗，檢查 LIFF 設定與會員登入流程。',
+
+    checkout_insufficient_stock:
+      '客人送出時庫存不足，通常訂單不會成立。\n必看欄位：cart_token、raw_detail、商品 SKU、Products.StockQty。\n處理：確認購物車商品數量與 Products 庫存；協助客人刪掉缺貨商品或調整數量後再送出。',
+
+    checkout_submit_failed_before_order:
+      '客人按送出訂單失敗，可能還沒有成立 Orders。\n必看欄位：cart_token、raw_detail、order_id、page_url。\n處理：先查 Orders 有沒有產生訂單；沒有 Orders 才能讓客人重新送。若已有 Orders，不要叫客人重送。',
+
+    checkout_frontend_error:
+      '結帳頁 JavaScript 錯誤，可能造成按鈕無反應或頁面卡住。\n必看欄位：page_url、raw_detail、cart_token。\n處理：看 raw_detail 的錯誤訊息與行數；若多人重複發生，回頭修 liff-checkout 前端程式。',
+
+    checkout_frontend_unhandled_rejection:
+      '結帳頁非同步流程失敗，可能是 API、LIFF 或付款流程中斷。\n必看欄位：raw_detail.reason、page_url、cart_token、line_user_id。\n處理：先看 reason 是 API 錯、LIFF 錯、還是付款流程錯；若已有 Orders，不要讓客人重複送。'
   };
 
-  return map[s] || fallbackSuggestion || '請先確認 cart_token、line_user_id、page_url 與 raw_detail；確認無問題後可標記已處理。';
+  return map[s] || fallbackSuggestion || '必看欄位：cart_token、line_user_id、page_url、raw_detail。處理：先確認是否已有 Orders；若沒有，再查 CartToken 與前端錯誤內容。';
 }
 
 function systemEventsRowsHtml(rows){
@@ -945,49 +1309,68 @@ function simpleOrderRowsHtml(rows){
     <table class="risk-readonly-table">
       <thead>
         <tr>
-          <th>訂單</th>
-          <th>客人</th>
-          <th>付款 / 狀態</th>
-          <th>付款方式</th>
-          <th>商品</th>
-          <th>內部備註中文說明</th>
-          <th>建議處理方式</th>
-          <th>原始內部備註</th>
-          <th>異常處理</th>
+          <th>緊急 / 影響</th>
+          <th>訂單 / 客人</th>
+          <th>問題在哪</th>
+          <th>必看欄位</th>
+          <th>商品 / SKU</th>
+          <th>馬上怎麼處理</th>
+          <th>原始備註</th>
+          <th>處理</th>
         </tr>
       </thead>
       <tbody>
         ${visibleRows.map(rec => {
           const f = rec.fields || rec || {};
           const oid = String(f.order_id || '').trim();
-          const pm = displayPaymentMethod(f);
           const note = String(f.internal_note || '').trim();
-          const noteCn = displayInternalNoteChinese(note, f);
-          const advice = displayRiskActionAdvice(note, f);
-          const items = String(f.items_json || '').trim();
+          const risk = diagnoseOrderRisk(f);
+          const items = riskItemsText(f);
 
           return `
             <tr>
-              <td><b>${esc(oid || '-')}</b></td>
-              <td>${esc(getLineName(f) || '-')}</td>
               <td>
-                <span class="badge">${esc(displayPayStatus(f.pay_status))}</span><br>
+                <span class="badge ${esc(risk.levelClass)}">${esc(risk.level)}</span>
+                <div class="risk-impact">${esc(risk.impact || '-')}</div>
+              </td>
+
+              <td>
+                <b>${esc(oid || '-')}</b><br>
+                客人：${esc(getLineName(f) || '-')}<br>
+                付款：${esc(displayPaymentMethod(f) || '-')}<br>
+                <span class="badge">${esc(displayPayStatus(f.pay_status))}</span>
                 <span class="badge">${esc(displayOrderStatus(f.status))}</span>
               </td>
-              <td>${esc(pm || '-')}</td>
+
+              <td>
+                <div class="risk-direct-box">
+                  <span class="risk-direct-title">${esc(risk.category || '系統異常')}</span>
+                  ${esc(risk.problem || '-')}
+                  \n\n位置：${esc(risk.where || '-')}
+                </div>
+              </td>
+
+              <td>
+                <div class="risk-field-box">${esc(risk.mustCheck || '-')}</div>
+              </td>
+
+              <td>
+                <div class="risk-item-list">${esc(items || '-')}</div>
+              </td>
+
+              <td>
+                <div class="risk-action-now">${esc(risk.action || '-')}</div>
+              </td>
+
               <td>
                 <details>
-                  <summary style="cursor:pointer;color:#bae6fd;font-weight:800;">
-                    ＋ 查看商品
+                  <summary style="cursor:pointer;color:#94a3b8;font-size:11px;">
+                    查看 internal_note 原文
                   </summary>
-                  <div class="risk-note" style="margin-top:6px;">
-                    ${esc(items || '-')}
-                  </div>
+                  <div class="risk-code" style="margin-top:6px;">${esc(note || '-')}</div>
                 </details>
               </td>
-              <td><div class="risk-note-cn">${esc(noteCn || '-')}</div></td>
-              <td><div class="risk-action-advice">${esc(advice || '-')}</div></td>
-              <td><div class="risk-note">${esc(note || '-')}</div></td>
+
               <td>
                 <label style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
                   <input class="resolve-check" type="checkbox" />
@@ -1004,7 +1387,6 @@ function simpleOrderRowsHtml(rows){
     </table>
   `;
 }
-
 async function loadRiskList(cfg){
   const countEl = document.getElementById(cfg.countId);
   const listEl = document.getElementById(cfg.listId);
