@@ -642,7 +642,8 @@ function displayInternalNoteChinese(note, f = {}){
   add('CHECKOUT_FLEX_SENT_BEFORE_500', 'LINE 結單通知已送出，但後面流程又發生 500。');
   add('FAIL_FLEX_SENT', '已發送付款失敗或重新結帳通知給客人。');
   add('WEB_CART_RETRY_LINE_SENT', '已發送重新結帳連結給客人。');
-  add('WEB_CART_RETRY_LINE_FAILED', '重新結帳連結通知發送失敗，需確認客人 LINE userId 或手動補傳。');
+add('WEB_CART_RETRY_LINE_FAILED', '重新結帳連結通知發送失敗，需確認客人 LINE userId 或手動補傳。');
+add('PAYUNI_RETRY_REMIND_120M_FAILED', 'PayUNI 線上付款超過 2 小時未完成，系統提醒客人重新結帳時發送失敗，需要人工補傳重新結帳連結。');
 
   // ===== 結帳 / 訂單成立異常 =====
   add('CREDIT_CAPTURE_ERROR', '付款已成功，但購物金正式扣款失敗，需確認後重新扣購物金並放行。');
@@ -859,10 +860,24 @@ function diagnoseOrderRisk(f = {}){
     problem: displayInternalNoteChinese(note, f)
   };
 
+  const creditUsedN = Math.max(0, Number(f.credit_used || f.CreditUsed || 0) || 0);
+  const creditSpendDone = normBool(f.credit_spend_done);
+  const paidButCreditNotDone =
+    creditUsedN > 0 &&
+    !creditSpendDone &&
+    (
+      payStatus === 'paid_ok' ||
+      payStatus === 'paid' ||
+      status === 'paid' ||
+      status === 'completed' ||
+      status === 'shipped'
+    );
+
   if (
     upper.includes('CREDIT_CAPTURE_ERROR') ||
     upper.includes('ZC_CREDIT_CAPTURE_FAILED_MANUAL_REVIEW') ||
-    upper.includes('TAIL_CREDIT_HOLD_FAILED')
+    upper.includes('TAIL_CREDIT_HOLD_FAILED') ||
+    paidButCreditNotDone
   ) {
     return {
       ...base,
@@ -982,6 +997,7 @@ function diagnoseOrderRisk(f = {}){
     upper.includes('CHECKOUT_FLEX_ATTEMPTED_BUT_FAILED') ||
     upper.includes('ADMIN_NEW_ORDER_NOTIFY_FAILED') ||
     upper.includes('WEB_CART_RETRY_LINE_FAILED') ||
+    upper.includes('PAYUNI_RETRY_REMIND_120M_FAILED') ||
     upper.includes('TAIL_FLEX_SEND_FAILED')
   ) {
     return {
