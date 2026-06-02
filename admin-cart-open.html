@@ -476,31 +476,126 @@ function displayCartStatus(st) {
 
   return st || '-';
 }
+function isWebCartRow(row) {
+  const type = String(row?.customer_type || '').trim().toLowerCase();
+  return ['web', 'shop', 'official', 'site', '官網'].includes(type);
+}
+
 function displayCartClearReason(reason) {
   const s = String(reason || '').trim();
+
+  if (s === 'WEB_UNFINISHED_CART_36H') return '官網36小時未結單自動清空';
+  if (s === 'WEB_UNFINISHED_CART_36H_NO_LINE') return '官網36小時未結單自動清空（無 LINE ID）';
 
   if (s === 'UNFINISHED_CART_36H') return '36小時未結單自動清空';
   if (s === 'UNFINISHED_CART_36H_NO_LINE') return '36小時未結單自動清空（無 LINE ID）';
 
-  // 舊資料保留顯示，避免以前的紀錄看不懂
   if (s === 'UNFINISHED_CART_72H') return '舊規則：72小時未結單自動清空';
   if (s === 'UNFINISHED_CART_72H_NO_LINE') return '舊規則：72小時未結單自動清空（無 LINE ID）';
 
   return s || '-';
 }
- function displayCartAutoStatus(row) {
+
+function displayCartReminderStatus(row) {
+  const isWeb = isWebCartRow(row);
+  const lastStatus = String(row?.cart_remind_last_status || '').trim();
+  const lastError = String(row?.cart_remind_last_error || '').trim();
+  const autoStatus = String(row?.cart_auto_last_status || '').trim();
+  const autoReason = String(row?.cart_auto_last_reason || '').trim();
+
+  if (lastStatus === 'failed' || autoStatus.includes('failed')) {
+    return `❌ 發送失敗${lastError || autoReason ? `：${lastError || autoReason}` : ''}`;
+  }
+
+  if (row?.cart_remind_2_sent_at) {
+    return '✅ 已發第 2 次提醒（直播36H最後提醒）';
+  }
+
+  if (row?.cart_remind_1_sent_at) {
+    return isWeb
+      ? '✅ 已發第 1 次提醒（官網12H）'
+      : '✅ 已發第 1 次提醒（直播24H）';
+  }
+
+  if (!String(row?.line_user_id || '').trim()) {
+    return isWeb
+      ? '⚠️ 無 LINE ID，官網車無法通知，滿36H會清空'
+      : '⚠️ 無 LINE ID，直播車無法通知，但不會清空';
+  }
+
+  return isWeb
+    ? '尚未發送提醒（官網12H）'
+    : '尚未發送提醒（直播24H）';
+}
+
+function displayCartReminderBadges(row) {
+  const isWeb = isWebCartRow(row);
+  const badges = [];
+
+  const lastStatus = String(row?.cart_remind_last_status || '').trim();
+  const autoStatus = String(row?.cart_auto_last_status || '').trim();
+
+  if (lastStatus === 'failed' || autoStatus.includes('failed')) {
+    badges.push('<span class="badge red">提醒失敗</span>');
+  }
+
+  if (row?.cart_remind_1_sent_at) {
+    badges.push(
+      isWeb
+        ? '<span class="badge yellow">官網12H提醒已發</span>'
+        : '<span class="badge yellow">直播24H第1次已發</span>'
+    );
+  }
+
+  if (row?.cart_remind_2_sent_at) {
+    badges.push('<span class="badge red">直播36H第2次已發</span>');
+  }
+
+  if (row?.cart_auto_cleared_at) {
+    badges.push('<span class="badge red">官網36H已清空</span>');
+  }
+
+  if (!String(row?.line_user_id || '').trim()) {
+    badges.push('<span class="badge red">無 LINE ID</span>');
+  }
+
+  return badges.join('');
+}
+
+function displayCartAutoStatus(row) {
   const status = String(row?.cart_auto_last_status || "").trim();
   const reason = String(row?.cart_auto_last_reason || "").trim();
   const checkedAt = fmtAdminDateTime(row?.cart_auto_last_checked_at) || "";
 
   const labelMap = {
-    waiting_12h: "等待 12 小時",
-    waiting_36h: "等待 36 小時清空",
-    no_line_waiting_36h: "無 LINE ID，等待 36 小時清空",
+    "waiting_12 小時": "等待官網12小時提醒",
+    "waiting_24 小時": "等待直播24小時提醒",
+
+    waiting_12h: "等待12小時提醒",
+    waiting_36h: "等待36小時清空",
+
+    web_no_line_waiting_36h: "官網車無 LINE ID，等待36小時清空",
+    live_no_line_no_clear: "直播車無 LINE ID，不清空",
+
+    web_remind1_success: "官網12小時提醒成功",
+    live_remind1_success: "直播24小時第1次提醒成功",
+
     remind_success: "自動提醒成功",
     remind_failed: "自動提醒失敗",
-    cleared_36h: "36 小時已清空",
-    cleared_36h_no_line: "36 小時已清空（無 LINE ID）",
+    remind1_failed: "第1次提醒失敗",
+    remind2_failed: "第2次提醒失敗",
+
+    web_waiting_36h_clear: "官網已提醒，等待36小時清空",
+    live_waiting_36h_remind2: "直播已發第1次，等待36小時第2次提醒",
+
+    web_cleared_36h: "官網36小時已清空",
+    web_cleared_36h_no_line: "官網36小時已清空（無 LINE ID）",
+    cleared_36h: "36小時已清空",
+    cleared_36h_no_line: "36小時已清空（無 LINE ID）",
+
+    live_remind2_success_no_clear: "直播36小時第2次提醒成功，不清空",
+    live_second_reminded_no_action: "直播已發第2次提醒，不再做後續處理",
+
     skip_not_open: "已非未結單",
     skip_no_base_time: "缺少時間資料",
     skip_before_rule_start: "早於規則開始時間",
@@ -692,8 +787,7 @@ function renderCartList() {
           ${row.streamer_name ? `<span class="badge blue">直播主：${escapeHtml(row.streamer_name)}</span>` : '<span class="badge red">未填直播主</span>'}
           ${row.link_sent_at ? '<span class="badge green">已發購物車卡</span>' : ''}
           ${row.link_copied_at ? '<span class="badge blue">已複製連結</span>' : ''}
-          ${row.cart_remind_1_sent_at ? '<span class="badge yellow">12H提醒已發</span>' : ''}
-          ${row.cart_auto_cleared_at ? '<span class="badge red">36H已清空</span>' : ''}
+      ${displayCartReminderBadges(row)}
         </div>
 
         <div class="ord-sub">
@@ -780,30 +874,7 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
     </div>
 
     <div class="row mt-2">
-      <div>
-        <label>12 小時提醒時間</label>
-        <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.cart_remind_1_sent_at) || '-')}</div>
-      </div>
-      <div>
-        <label>提醒狀態</label>
-        <div class="ro-field">${escapeHtml(
-          row.cart_remind_1_sent_at
-            ? '✅ 已成功發送'
-            : (row.line_user_id ? '尚未發送' : '⚠️ 無 LINE ID，無法發送')
-        )}</div>
-      </div>
-    </div>
 
-    <div class="row mt-2">
-      <div>
-        <label>36 小時清空時間</label>
-        <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.cart_auto_cleared_at) || '-')}</div>
-      </div>
-      <div>
-        <label>清空原因</label>
-        <div class="ro-field">${escapeHtml(displayCartClearReason(row.cart_auto_clear_reason))}</div>
-      </div>
-    </div>
     <div class="mt-2">
       <label>排程檢查結果</label>
       <div class="ro-field" style="height:auto;min-height:60px;align-items:flex-start;padding-top:10px;white-space:pre-wrap;">
