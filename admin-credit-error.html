@@ -842,23 +842,535 @@ function riskBaseFields(f = {}){
   ].join('\n');
 }
 
+function riskHasTag(upper, tag){
+  return String(upper || '').includes(String(tag || '').toUpperCase());
+}
+
+function riskFirstMatchedTag(upper, tags = []){
+  return (tags || []).find(tag => riskHasTag(upper, tag)) || '';
+}
+
+function riskListText(list){
+  if (Array.isArray(list)) return list.filter(Boolean).join('\n');
+  return String(list || '').trim();
+}
+
+function buildSpecificRiskResult(f, ctx, rule){
+  const matchedTag = ctx.matchedTag || rule.id || '-';
+
+  const checkText = typeof rule.mustCheck === 'function'
+    ? rule.mustCheck(f, ctx)
+    : rule.mustCheck;
+
+  const actionText = typeof rule.action === 'function'
+    ? rule.action(f, ctx)
+    : rule.action;
+
+  const problemText = typeof rule.problem === 'function'
+    ? rule.problem(f, ctx)
+    : rule.problem;
+
+  const impactText = typeof rule.impact === 'function'
+    ? rule.impact(f, ctx)
+    : rule.impact;
+
+  const whereText = typeof rule.where === 'function'
+    ? rule.where(f, ctx)
+    : rule.where;
+
+  return {
+    level: rule.level || '🟠 今日確認',
+    levelClass: rule.levelClass || 'yellow',
+    category: rule.category || '系統異常',
+    impact: impactText || '需要人工確認後再處理。',
+    where: whereText || 'Orders.internal_note',
+    problem: [
+      `偵測代碼：${matchedTag}`,
+      problemText || displayInternalNoteChinese(ctx.note, f)
+    ].filter(Boolean).join('\n'),
+    mustCheck: [
+      `偵測代碼：${matchedTag}`,
+      '',
+      '此問題必看：',
+      riskListText(checkText),
+      '',
+      '目前訂單關鍵欄位：',
+      riskBaseFields(f)
+    ].filter(Boolean).join('\n'),
+    action: riskListText(actionText) || displayRiskActionAdvice(ctx.note, f)
+  };
+}
+
+const RISK_RULES = [
+  {
+    id: 'CHECKOUT_500_AFTER_ORDER_CREATED',
+    tags: ['CHECKOUT_500_AFTER_ORDER_CREATED'],
+    level: '🔴 立即確認',
+    levelClass: 'red',
+    category: '結帳送出後 500',
+    impact: '客人可能看到結帳失敗，但 Orders 可能已成立。\n不要先叫客人重送，避免重複訂單或重複扣庫存。',
+    where: 'Orders.internal_note / Orders.status / CartToken / stock_deduct_done / LINE 結單通知紀錄',
+    problem: '客人按送出訂單後，後端最後發生 500。這代表流程中某一步失敗，但訂單可能已經寫進 Orders。',
+    mustCheck: [
+      '1. Orders 是否真的有這筆 order_id',
+      '2. status / pay_status 目前是什麼',
+      '3. stock_deduct_done 是否已扣庫存',
+      '4. internal_note 是否有 STOCK_DEDUCTED 或 STOCK_NOT_DEDUCTED',
+      '5. internal_note 是否有 CHECKOUT_FLEX_SENT_BEFORE_500 / CHECKOUT_FLEX_SEND_FAILED',
+      '6. CartToken 是否 checked_out，checked_out_order_id 是否有綁到這筆單'
+    ],
+    action: [
+      '1. 先查 Orders 是否已成立。',
+      '2. 如果 Orders 已成立，不要叫客人重複送出。',
+      '3. 如果庫存已扣，先不要手動刪單，避免庫存又亂掉。',
+      '4. 如果客人沒有收到通知，手動補傳訂單資訊。',
+      '5. 確認訂單、庫存、通知都正常後，再勾選異常已解決。'
+    ]
+  },
+  {
+    id: 'CART_BIND_FAILED_AFTER_ORDER_CREATED',
+    tags: ['CART_BIND_FAILED_AFTER_ORDER_CREATED'],
+    level: '🔴 立即確認',
+    levelClass: 'red',
+    category: '訂單成立但購物車未綁定',
+    impact: '訂單已成立，但購物車可能沒有正確關閉。\n若客人再送一次，可能產生重複訂單。',
+    where: 'Orders.order_id / CartToken.checked_out / CartToken.checked_out_order_id / internal_note',
+    problem: '後端已建立訂單，但 CartToken 沒有成功綁定或關閉。',
+    mustCheck: [
+      '1. Orders 是否有這筆 order_id',
+      '2. CartToken 是否還是 open / checking_out',
+      '3. CartToken.checked_out_order_id 是否空白',
+      '4. stock_deduct_done 是否已扣庫存',
+      '5. 客人是否已收到結單通知'
+    ],
+    action: [
+      '1. 先確認 Orders 已成立。',
+      '2. 確認 CartToken 是否要手動標記 checked_out。',
+      '3. 不要讓客人用同一個購物車重複送出。',
+      '4. 確認庫存和通知正常後，再標記異常已解決。'
+    ]
+  },
+  {
+    id: 'CREDIT_CAPTURE_ERROR',
+    tags: ['CREDIT_CAPTURE_ERROR'],
+    level: '🔴 立即處理',
+    levelClass: 'red',
+    category: '購物金正式扣款失敗',
+    impact: '付款可能已成功，但購物金沒有正式扣掉。\n會影響實收金額、發票金額、訂單能不能放行。',
+    where: 'Orders.credit_used / Orders.credit_spend_done / CreditsLedger / pay_status / internal_note',
+    problem: '客人已付款或訂單已成立，但系統正式扣購物金時失敗。',
+    mustCheck: [
+      '1. pay_status 是否已付款成功',
+      '2. credit_used 使用多少購物金',
+      '3. credit_spend_done 是否為 true',
+      '4. CreditsLedger 是否已有扣款紀錄',
+      '5. net_amount / total_amount 是否正確'
+    ],
+    action: [
+      '1. 先確認金流真的付款成功。',
+      '2. 在本頁上方購物金異常區按「檢查」。',
+      '3. 確認無誤後才按「重新扣購物金並放行」。',
+      '4. 不要直接手動改金額或亂補 CreditsLedger。'
+    ]
+  },
+  {
+    id: 'PAID_CREDIT_NOT_DONE',
+    tags: [],
+    level: '🔴 立即處理',
+    levelClass: 'red',
+    category: '已付款但購物金未完成扣款',
+    impact: '這是系統用公式抓出來的疑似購物金異常。\n訂單已付款，但 credit_spend_done 還沒完成。',
+    where: 'Orders.credit_used / Orders.credit_spend_done / CreditsLedger / pay_status',
+    problem: '訂單狀態顯示已付款、已完成或已出貨，且有使用購物金，但 credit_spend_done 仍未完成。',
+    mustCheck: [
+      '1. credit_used 是否大於 0',
+      '2. credit_spend_done 是否為 false / 空白',
+      '3. pay_status 是否 paid_ok / paid',
+      '4. status 是否 paid / completed / shipped',
+      '5. CreditsLedger 是否已有扣款紀錄'
+    ],
+    action: [
+      '1. 先確認這筆是否真的已付款。',
+      '2. 檢查 CreditsLedger 是否已扣購物金。',
+      '3. 若確定尚未扣，使用上方購物金異常處理流程。',
+      '4. 若舊資料已人工處理，只需補勾 credit_spend_done。'
+    ]
+  },
+  {
+    id: 'ZC_CREDIT_CAPTURE_FAILED_MANUAL_REVIEW',
+    tags: ['ZC_CREDIT_CAPTURE_FAILED_MANUAL_REVIEW'],
+    level: '🔴 立即處理',
+    levelClass: 'red',
+    category: '分期付款成功但購物金扣款失敗',
+    impact: '分期 / 中租類付款可能成功，但購物金扣款失敗。\n需要人工確認帳務，不能直接放行。',
+    where: 'Orders.pay_status / credit_used / credit_spend_done / CreditsLedger / internal_note',
+    problem: '分期或中租流程付款成功後，購物金正式扣款失敗。',
+    mustCheck: [
+      '1. 分期付款是否真的成功',
+      '2. pay_status 是否已付款',
+      '3. credit_used / credit_spend_done',
+      '4. CreditsLedger 是否扣款',
+      '5. 是否已出貨'
+    ],
+    action: [
+      '1. 先確認分期付款結果。',
+      '2. 查購物金是否已扣。',
+      '3. 沒扣成功就依購物金異常流程處理。',
+      '4. 未確認前不要出貨。'
+    ]
+  },
+  {
+    id: 'TAIL_CREDIT_HOLD_FAILED',
+    tags: ['TAIL_CREDIT_HOLD_FAILED'],
+    level: '🔴 立即處理',
+    levelClass: 'red',
+    category: '尾款購物金保留 / 扣款失敗',
+    impact: '尾款單金額可能不正確，或購物金狀態不同步。\n會影響尾款收款與放行。',
+    where: '尾款單 Orders / parent_order_id / credit_used / credit_spend_done / internal_note',
+    problem: '尾款單建立後，購物金保留或扣款失敗。',
+    mustCheck: [
+      '1. 這筆是否為尾款單',
+      '2. parent_order_id 對應哪張主單',
+      '3. credit_used / credit_spend_done',
+      '4. net_amount 是否正確',
+      '5. 主單尾款狀態是否同步'
+    ],
+    action: [
+      '1. 查尾款單與主單是否對應正確。',
+      '2. 確認尾款金額與購物金折抵。',
+      '3. 未確認前不要標記尾款已完成。',
+      '4. 確認無誤後再人工處理購物金或標記已解決。'
+    ]
+  },
+  {
+    id: 'RESTOCK_FAILED',
+    tags: ['RESTOCK_FAILED'],
+    level: '🔴 立即核庫存',
+    levelClass: 'red',
+    category: '補庫存失敗',
+    impact: '庫存可能不準。\n不一定卡住這位客人，但會造成後面超賣或買不到。',
+    where: 'Orders.items_json / Products.StockQty / stock_deduct_done / internal_note',
+    problem: '訂單取消、付款失敗、尾款逾期或分期逾期後，系統補庫存失敗。',
+    mustCheck: [
+      '1. items_json 每個 SKU',
+      '2. 每個商品 qty 數量',
+      '3. Products.StockQty 現在是否正確',
+      '4. stock_deduct_done 是否為 true',
+      '5. status 是否 cancelled / failed'
+    ],
+    action: [
+      '1. 看本列「商品 / SKU」。',
+      '2. 到 Products 查每個 SKU 的 StockQty。',
+      '3. 人工補正庫存。',
+      '4. 補正後勾選異常已解決。'
+    ]
+  },
+  {
+    id: 'CANCELLED_STOCK_LOCKED',
+    tags: ['CANCELLED_STOCK_LOCKED'],
+    level: '🔴 立即核庫存',
+    levelClass: 'red',
+    category: '已取消但庫存仍扣住',
+    impact: '訂單已取消，但庫存可能仍被扣住。\n會讓庫存少算，後續商品可能被誤判售完。',
+    where: 'Orders.status / stock_deduct_done / items_json / Products.StockQty',
+    problem: '系統明確標記：訂單已取消，但庫存仍可能扣住。',
+    mustCheck: [
+      '1. status 是否 cancelled',
+      '2. stock_deduct_done 是否仍為 true',
+      '3. items_json 裡 SKU 與 qty',
+      '4. Products.StockQty 是否已補回'
+    ],
+    action: [
+      '1. 確認訂單確實取消。',
+      '2. 逐一核對 SKU 是否已補回。',
+      '3. 若沒補回，人工補庫存。',
+      '4. 補完再標記異常已解決。'
+    ]
+  },
+  {
+    id: 'PAYUNI_START_FAILED',
+    tags: ['PAYUNI_START_FAILED'],
+    level: '🟠 今日確認',
+    levelClass: 'yellow',
+    category: 'PayUNI 付款頁啟動失敗',
+    impact: '客人可能沒有成功進入付款頁。\n通常不是已付款，不能直接出貨。',
+    where: 'Orders.payment_method / pay_status / status / internal_note / PayUNI 建立付款頁回應',
+    problem: '系統要啟動 PayUNI 付款頁時失敗。',
+    mustCheck: [
+      '1. payment_method 是否為線上付款',
+      '2. status / pay_status 是否仍 pending',
+      '3. PayUNI 是否有交易紀錄',
+      '4. internal_note 失敗原因',
+      '5. 是否已產生重新結帳連結'
+    ],
+    action: [
+      '1. 查 PayUNI 後台是否有交易。',
+      '2. 沒有成功付款就不能出貨。',
+      '3. 需要時提供重新結帳連結給客人。',
+      '4. 確認後標記已解決。'
+    ]
+  },
+  {
+    id: 'PAYUNI_AMOUNT_MISMATCH',
+    tags: ['PAYUNI_AMOUNT_MISMATCH'],
+    level: '🔴 立即查金流',
+    levelClass: 'red',
+    category: 'PayUNI 金額不一致',
+    impact: '金流金額與訂單金額不一致。\n不可直接放行、不可直接出貨。',
+    where: 'Orders.net_amount / total_amount / pay_status / pay_notify_status / PayUNI 後台金額',
+    problem: 'PayUNI 回傳付款金額與訂單應收金額不一致。',
+    mustCheck: [
+      '1. Orders.net_amount',
+      '2. Orders.total_amount',
+      '3. PayUNI 後台實際付款金額',
+      '4. pay_status / pay_notify_status',
+      '5. 是否有購物金折抵'
+    ],
+    action: [
+      '1. 先查 PayUNI 後台實際金額。',
+      '2. 比對 Orders.net_amount。',
+      '3. 金額不一致前不要出貨。',
+      '4. 確認差異原因後再人工處理。'
+    ]
+  },
+  {
+    id: 'INSTALLMENT_SUCCESS_BLOCKED_AFTER_CANCEL',
+    tags: ['INSTALLMENT_SUCCESS_BLOCKED_AFTER_CANCEL'],
+    level: '🟠 今日確認',
+    levelClass: 'yellow',
+    category: '分期成功通知晚到，但訂單已取消',
+    impact: '分期後來通知成功，但訂單可能已取消或已補庫存。\n不能自動轉成功，需人工確認。',
+    where: 'Orders.status / pay_status / stock_deduct_done / yufu_status / internal_note',
+    problem: '分期成功通知晚到，但系統發現訂單已取消或狀態不適合自動改成功。',
+    mustCheck: [
+      '1. status 是否 cancelled',
+      '2. pay_status 是否仍 pending / failed',
+      '3. stock_deduct_done 是否已補回',
+      '4. 裕富 / 分期後台是否真的成功',
+      '5. 是否已通知客人重結'
+    ],
+    action: [
+      '1. 查分期後台是否真的通過。',
+      '2. 查訂單是否已取消或已補庫存。',
+      '3. 若已取消，不要直接改已付款。',
+      '4. 需人工決定重建訂單或補扣庫存。'
+    ]
+  },
+  {
+    id: 'INSTALLMENT_SUCCESS_BLOCKED_STOCK_NOT_DEDUCTED',
+    tags: ['INSTALLMENT_SUCCESS_BLOCKED_STOCK_NOT_DEDUCTED'],
+    level: '🟠 今日確認',
+    levelClass: 'yellow',
+    category: '分期成功但此單未扣庫存',
+    impact: '分期結果成功，但訂單沒有扣庫存。\n直接放行可能導致庫存錯誤。',
+    where: 'Orders.stock_deduct_done / items_json / Products.StockQty / pay_status / internal_note',
+    problem: '分期成功通知回來時，系統發現這張訂單沒有扣庫存，所以阻擋自動轉成功。',
+    mustCheck: [
+      '1. stock_deduct_done 是否為 false',
+      '2. items_json 商品 SKU / qty',
+      '3. Products.StockQty 是否足夠',
+      '4. 分期後台是否真的成功',
+      '5. 訂單是否應該重新扣庫存'
+    ],
+    action: [
+      '1. 先確認分期真的成功。',
+      '2. 檢查商品庫存是否足夠。',
+      '3. 若要放行，需人工處理扣庫存。',
+      '4. 完成後再標記已解決。'
+    ]
+  },
+  {
+    id: 'YUFU_REJECT_BLOCKED_AFTER_PAID',
+    tags: ['YUFU_REJECT_BLOCKED_AFTER_PAID'],
+    level: '🟠 今日確認',
+    levelClass: 'yellow',
+    category: '裕富拒絕通知晚到，但訂單已付款或出貨',
+    impact: '裕富拒絕通知和訂單狀態衝突。\n需要人工確認，不可自動改失敗。',
+    where: 'Orders.yufu_status / status / pay_status / shipped status / internal_note',
+    problem: '裕富拒絕通知晚到，但系統發現訂單已付款或已出貨，所以阻擋自動改失敗。',
+    mustCheck: [
+      '1. yufu_status 實際狀態',
+      '2. pay_status 是否已付款',
+      '3. status 是否 shipped / completed',
+      '4. 是否已出貨',
+      '5. 裕富後台最終結果'
+    ],
+    action: [
+      '1. 查裕富後台最終審核結果。',
+      '2. 查訂單是否已出貨或已付款。',
+      '3. 若已出貨，不可直接改付款失敗。',
+      '4. 人工確認後再處理訂單狀態。'
+    ]
+  },
+  {
+    id: 'CHECKOUT_FLEX_SEND_FAILED',
+    tags: ['CHECKOUT_FLEX_SEND_FAILED'],
+    level: '🟡 補通知',
+    levelClass: 'yellow',
+    category: '客人結單 LINE 通知失敗',
+    impact: '通常不代表訂單失敗。\n訂單可能已成立，只是客人沒收到 LINE 卡片。',
+    where: 'Orders.line_user_id / internal_note / LINE push response / 客人聊天室',
+    problem: '訂單成立後，系統要發結單 Flex 給客人時失敗。',
+    mustCheck: [
+      '1. Orders 是否已成立',
+      '2. line_user_id 是否存在',
+      '3. 客人是否封鎖官方 LINE',
+      '4. internal_note 裡 LINE API 回應',
+      '5. 客人是否已收到其他通知'
+    ],
+    action: [
+      '1. 先確認訂單已成立。',
+      '2. 已成立就不用叫客人重下單。',
+      '3. 手動補傳訂單資訊給客人。',
+      '4. 若常發生，檢查 LINE token / Flex 格式。'
+    ]
+  },
+  {
+    id: 'CHECKOUT_FLEX_NOT_SENT',
+    tags: ['CHECKOUT_FLEX_NOT_SENT'],
+    level: '🟡 補通知',
+    levelClass: 'yellow',
+    category: '結單通知尚未送出就中斷',
+    impact: '訂單可能已成立，但系統還沒走到 LINE 通知步驟。\n客人可能不知道訂單已成立。',
+    where: 'Orders.status / internal_note / checkout error tag / line_user_id',
+    problem: '後端流程在送出 LINE 結單通知前就中斷。',
+    mustCheck: [
+      '1. Orders 是否已成立',
+      '2. status / pay_status',
+      '3. line_user_id',
+      '4. internal_note 是否同時有 CHECKOUT_500_AFTER_ORDER_CREATED',
+      '5. stock_deduct_done 是否已扣庫存'
+    ],
+    action: [
+      '1. 確認訂單是否成立。',
+      '2. 若已成立，手動補通知給客人。',
+      '3. 若同時有 500，先不要讓客人重送。',
+      '4. 確認後標記已解決。'
+    ]
+  },
+  {
+    id: 'CHECKOUT_FLEX_ATTEMPTED_BUT_FAILED',
+    tags: ['CHECKOUT_FLEX_ATTEMPTED_BUT_FAILED'],
+    level: '🟡 補通知',
+    levelClass: 'yellow',
+    category: '系統嘗試發結單通知但失敗',
+    impact: '訂單可能已成立，但 LINE API 拒絕或送不出去。',
+    where: 'Orders.internal_note / line_user_id / LINE API response',
+    problem: '系統有嘗試發 LINE 結單通知，但 LINE 回應失敗。',
+    mustCheck: [
+      '1. line_user_id 是否正確',
+      '2. LINE API 回應 status / body',
+      '3. 客人是否封鎖官方 LINE',
+      '4. Flex 格式是否有錯',
+      '5. 訂單是否已成立'
+    ],
+    action: [
+      '1. 確認訂單已成立。',
+      '2. 手動補傳訂單資訊。',
+      '3. 若是 Flex 格式錯，需要修程式。',
+      '4. 若是客人封鎖，只能改用人工聯絡。'
+    ]
+  },
+  {
+    id: 'ADMIN_NEW_ORDER_NOTIFY_FAILED',
+    tags: ['ADMIN_NEW_ORDER_NOTIFY_FAILED'],
+    level: '🟡 補內部通知',
+    levelClass: 'yellow',
+    category: '內部群組通知失敗',
+    impact: '不影響客人結單。\n只是你們內部群組沒有收到通知。',
+    where: 'Cloudflare 環境變數 ADMIN_ORDER_NOTIFY_LINE_USER_IDS / LINE token / internal_note',
+    problem: '系統要通知內部群組時失敗。',
+    mustCheck: [
+      '1. ADMIN_ORDER_NOTIFY_LINE_USER_IDS 是否正確',
+      '2. LINE_CHANNEL_ACCESS_TOKEN 是否正確',
+      '3. 官方帳號是否還在群組內',
+      '4. internal_note 的 LINE API 回應',
+      '5. 訂單本身是否已成立'
+    ],
+    action: [
+      '1. 確認訂單本身是否正常。',
+      '2. 檢查群組 ID / LINE token。',
+      '3. 官方帳號被踢出群組時，重新加入群組。',
+      '4. 處理後可標記已解決。'
+    ]
+  },
+  {
+    id: 'WEB_CART_RETRY_LINE_FAILED',
+    tags: ['WEB_CART_RETRY_LINE_FAILED'],
+    level: '🟡 補重新結帳連結',
+    levelClass: 'yellow',
+    category: '重新結帳通知失敗',
+    impact: '客人可能沒有收到重新結帳連結。\n若客人還想付款，需要人工補傳。',
+    where: 'CartToken / line_user_id / retry cart / internal_note / LINE API response',
+    problem: '系統建立或準備重新結帳流程後，LINE 推播重新結帳連結失敗。',
+    mustCheck: [
+      '1. CartToken 是否存在',
+      '2. retry cart 或原 cart_token 是哪一台',
+      '3. line_user_id 是否存在',
+      '4. 客人是否封鎖官方 LINE',
+      '5. 是否有可手動複製的重新結帳連結'
+    ],
+    action: [
+      '1. 找出該訂單對應 cart_token。',
+      '2. 手動複製重新結帳連結。',
+      '3. 用客服訊息或其他方式補傳給客人。',
+      '4. 補傳後標記已解決。'
+    ]
+  },
+  {
+    id: 'PAYUNI_RETRY_REMIND_120M_FAILED',
+    tags: ['PAYUNI_RETRY_REMIND_120M_FAILED'],
+    level: '🟡 補重新付款通知',
+    levelClass: 'yellow',
+    category: 'PayUNI 2 小時重新結帳提醒失敗',
+    impact: '客人線上付款超過 2 小時未完成，但系統提醒失敗。\n客人可能不知道可以重新付款。',
+    where: 'Orders.payment_method / pay_status / CartToken / line_user_id / LINE API response',
+    problem: 'PayUNI 線上付款 pending 超過 2 小時後，系統要提醒客人重新結帳，但 LINE 發送失敗。',
+    mustCheck: [
+      '1. payment_method 是否為線上付款',
+      '2. pay_status 是否仍 pending / unpaid',
+      '3. CartToken 是否存在',
+      '4. line_user_id 是否存在',
+      '5. 是否有重新結帳連結'
+    ],
+    action: [
+      '1. 確認這筆付款尚未成功。',
+      '2. 找出重新結帳連結。',
+      '3. 手動補傳給客人。',
+      '4. 若 line_user_id 缺失，改用電話 / Email / 客服訊息聯絡。'
+    ]
+  },
+  {
+    id: 'TAIL_FLEX_SEND_FAILED',
+    tags: ['TAIL_FLEX_SEND_FAILED'],
+    level: '🟡 補尾款通知',
+    levelClass: 'yellow',
+    category: '尾款 LINE 通知失敗',
+    impact: '尾款流程可能正常，但客人沒有收到尾款通知。',
+    where: '尾款單 Orders / parent_order_id / line_user_id / internal_note / LINE API response',
+    problem: '尾款相關 LINE 通知發送失敗。',
+    mustCheck: [
+      '1. 這筆是否為尾款單',
+      '2. parent_order_id 是哪張主單',
+      '3. line_user_id 是否存在',
+      '4. 尾款金額是否正確',
+      '5. 客人是否已付款'
+    ],
+    action: [
+      '1. 確認尾款單金額和主單。',
+      '2. 手動補傳尾款通知或付款資訊。',
+      '3. 若客人已付款，更新尾款狀態。',
+      '4. 確認後標記已解決。'
+    ]
+  }
+];
+
 function diagnoseOrderRisk(f = {}){
   const note = String(f.internal_note || '').trim();
   const upper = note.toUpperCase();
   const pm = String(f.payment_method || f.pay_channel || '').trim().toLowerCase();
   const status = String(f.status || '').trim().toLowerCase();
   const payStatus = String(f.pay_status || '').trim().toLowerCase();
-
-  const base = {
-    level: '🟢 紀錄',
-    levelClass: 'green',
-    category: '一般紀錄',
-    impact: '通常不影響客人結單。\n確認沒有後續問題後，可勾選已解決。',
-    where: 'Orders.internal_note',
-    mustCheck: riskBaseFields(f),
-    action: displayRiskActionAdvice(note, f),
-    problem: displayInternalNoteChinese(note, f)
-  };
 
   const creditUsedN = Math.max(0, Number(f.credit_used || f.CreditUsed || 0) || 0);
   const creditSpendDone = normBool(f.credit_spend_done);
@@ -873,170 +1385,28 @@ function diagnoseOrderRisk(f = {}){
       status === 'shipped'
     );
 
-  if (
-    upper.includes('CREDIT_CAPTURE_ERROR') ||
-    upper.includes('ZC_CREDIT_CAPTURE_FAILED_MANUAL_REVIEW') ||
-    upper.includes('TAIL_CREDIT_HOLD_FAILED') ||
-    paidButCreditNotDone
-  ) {
-    return {
-      ...base,
-      level: '🔴 立即處理',
-      levelClass: 'red',
-      category: '購物金 / 金額異常',
-      impact: '可能影響訂單放行、實收金額、發票金額。\n先不要手動亂改金額。',
-      where: 'Orders.credit_used / Orders.credit_spend_done / CreditsLedger / internal_note',
-      mustCheck: [
-        riskBaseFields(f),
-        '必看：credit_used、credit_spend_done、net_amount、pay_status、internal_note',
-        '如果是付款成功後才出現：要先確認金流真的成功'
-      ].join('\n'),
-      action: '1. 先確認金流是否真的付款成功。\n2. 在本頁上方購物金異常區按「檢查」。\n3. 確認無誤後才按「重新扣購物金並放行」。\n4. 不要直接手改購物金或發票金額。'
-    };
+  const ctx = {
+    note,
+    upper,
+    pm,
+    status,
+    payStatus,
+    creditUsedN,
+    creditSpendDone,
+    paidButCreditNotDone,
+    matchedTag: ''
+  };
+
+  if (paidButCreditNotDone) {
+    const rule = RISK_RULES.find(r => r.id === 'PAID_CREDIT_NOT_DONE');
+    return buildSpecificRiskResult(f, { ...ctx, matchedTag: 'PAID_CREDIT_NOT_DONE' }, rule);
   }
 
-  if (
-    upper.includes('CHECKOUT_500_AFTER_ORDER_CREATED') ||
-    upper.includes('CART_BIND_FAILED_AFTER_ORDER_CREATED')
-  ) {
-    return {
-      ...base,
-      level: '🔴 立即確認',
-      levelClass: 'red',
-      category: '客人結帳後端異常',
-      impact: '客人可能看到失敗，但 Orders 可能已經成立。\n不要叫客人立刻重送，避免重複訂單或重複扣庫存。',
-      where: 'Orders 是否已成立 / CartToken 是否已關閉 / stock_deduct_done / LINE 結單通知',
-      mustCheck: [
-        riskBaseFields(f),
-        '必看：status、pay_status、stock_deduct_done、CartToken、internal_note',
-        '內部備註若有 STOCK_DEDUCTED：代表庫存可能已扣',
-        '內部備註若有 CHECKOUT_FLEX_SENT_BEFORE_500：代表客人可能已收到結單通知'
-      ].join('\n'),
-      action: '1. 先確認這筆 Orders 是否真的成立。\n2. 看 stock_deduct_done 是否已扣庫存。\n3. 看 internal_note 是否有 LINE 通知成功/失敗。\n4. 如果已成立，不要讓客人重複送出；必要時手動補通知給客人。'
-    };
-  }
-
-  if (
-    upper.includes('RESTOCK_FAILED') ||
-    upper.includes('CANCELLED_STOCK_LOCKED')
-  ) {
-    return {
-      ...base,
-      level: '🔴 立即核庫存',
-      levelClass: 'red',
-      category: '庫存補回異常',
-      impact: '不一定卡住這位客人，但會造成庫存不準。\n可能導致下一位客人超賣或買不到。',
-      where: 'Orders.items_json / Products.StockQty / stock_deduct_done / internal_note',
-      mustCheck: [
-        riskBaseFields(f),
-        '必看：items_json 裡每個 SKU、數量 qty、stock_deduct_done、status',
-        '請核對 Products 裡每個 SKU 的 StockQty 是否已補正'
-      ].join('\n'),
-      action: '1. 看本列「商品 / SKU」每個 SKU 與數量。\n2. 到庫存資料核對 StockQty 是否正確。\n3. 補正庫存後，回本頁勾選「異常問題已解決」。'
-    };
-  }
-
-  if (upper.includes('PAYUNI_AMOUNT_MISMATCH')) {
-    return {
-      ...base,
-      level: '🔴 立即查金流',
-      levelClass: 'red',
-      category: 'PayUNI 金額不一致',
-      impact: '不可直接出貨。\n金流回傳金額與訂單金額不一致，需要人工確認。',
-      where: 'Orders.net_amount / pay_notify_status / PayUNI 後台交易金額',
-      mustCheck: [
-        riskBaseFields(f),
-        '必看：net_amount、pay_status、pay_notify_status、payment_method、internal_note'
-      ].join('\n'),
-      action: '1. 先查 PayUNI 後台實際付款金額。\n2. 比對 Orders.net_amount。\n3. 金額不一致前，不要放行、不要出貨。\n4. 確認後再人工改狀態或標記已解決。'
-    };
-  }
-
-  if (
-    upper.includes('PAYUNI_START_FAILED')
-  ) {
-    return {
-      ...base,
-      level: '🟠 今日確認',
-      levelClass: 'yellow',
-      category: 'PayUNI 線上付款待確認',
-      impact: '客人可能尚未付款完成。\n通常不要出貨，先確認金流結果。',
-      where: 'Orders.pay_status / payment_method / pay_notify_status / PayUNI 後台',
-      mustCheck: [
-        riskBaseFields(f),
-        '必看：payment_method、pay_status、status、pay_notify_status、internal_note'
-      ].join('\n'),
-      action: '1. 查 PayUNI 是否有付款成功或失敗。\n2. 如果沒有成功，不能當作已付款。\n3. 如果客人要重付，確認是否已有 retry cart，避免重複訂單。'
-    };
-  }
-
-  if (
-    upper.includes('INSTALLMENT_SUCCESS_BLOCKED') ||
-    upper.includes('YUFU_REJECT_BLOCKED_AFTER_PAID')
-  ) {
-    return {
-      ...base,
-      level: '🟠 今日確認',
-      levelClass: 'yellow',
-      category: '裕富 / 分期審核異常',
-      impact: '分期結果可能和訂單狀態衝突。\n確認前不要直接出貨或直接取消。',
-      where: 'Orders.yufu_status / pay_status / status / stock_deduct_done / internal_note',
-      mustCheck: [
-        riskBaseFields(f),
-        `yufu_status：${riskText(f.yufu_status)}`,
-        `pay_notify_status：${riskText(f.pay_notify_status)}`,
-        '必看：yufu_status、pay_status、status、stock_deduct_done、internal_note'
-      ].join('\n'),
-      action: '1. 確認裕富後台審核結果。\n2. 看訂單是否已取消、已出貨、或已補庫存。\n3. 如果成功/拒絕通知晚到，不要讓系統自動亂改，人工確認後再處理。'
-    };
-  }
-
-  if (
-    upper.includes('CHECKOUT_FLEX_SEND_FAILED') ||
-    upper.includes('CHECKOUT_FLEX_NOT_SENT') ||
-    upper.includes('CHECKOUT_FLEX_ATTEMPTED_BUT_FAILED') ||
-    upper.includes('ADMIN_NEW_ORDER_NOTIFY_FAILED') ||
-    upper.includes('WEB_CART_RETRY_LINE_FAILED') ||
-    upper.includes('PAYUNI_RETRY_REMIND_120M_FAILED') ||
-    upper.includes('TAIL_FLEX_SEND_FAILED')
-  ) {
-    return {
-      ...base,
-      level: '🟡 補通知',
-      levelClass: 'yellow',
-      category: 'LINE 通知失敗',
-      impact: '通常不代表訂單失敗。\n多數情況只是客人或內部群組沒有收到通知。',
-      where: 'LINE userId / LINE token / 群組 ID / internal_note',
-      mustCheck: [
-        riskBaseFields(f),
-        '必看：LINE userId、LINE 名稱、status、pay_status、internal_note'
-      ].join('\n'),
-      action: '1. 先確認 Orders 是否成立。\n2. 已成立就不用叫客人重下單。\n3. 手動補傳訂單資訊或重新結帳連結。\n4. 若是內部群組通知失敗，檢查群組 ID / LINE token。'
-    };
-  }
-
-  if (
-    upper.includes('AUTO_CANCEL_ORDER_AS_FAILED') ||
-    upper.includes('WEB_CANCEL_PENDING_FOR_EDIT') ||
-    upper.includes('RETRY_CART') ||
-    upper.includes('AUTO_VOID_ABANDONED') ||
-    upper.includes('TAIL_OVERDUE_DEPOSIT_FORFEIT') ||
-    upper.includes('TAIL_CANCEL_REBUILD')
-  ) {
-    return {
-      ...base,
-      level: '🟡 確認是否重複',
-      levelClass: 'yellow',
-      category: '取消 / 重新結帳 / 逾期流程',
-      impact: '通常是流程紀錄。\n重點是確認有沒有新訂單成功，避免重複出貨。',
-      where: 'Orders.status / pay_status / retry cart / parent_order_id / internal_note',
-      mustCheck: [
-        riskBaseFields(f),
-        `parent_order_id：${riskText(f.parent_order_id)}`,
-        '必看：status、pay_status、internal_note、是否有 RETRY_CART'
-      ].join('\n'),
-      action: '1. 確認這筆是否已取消或失敗。\n2. 看是否已有新訂單成功。\n3. 如果已有新成功單，舊單不要出貨。\n4. 確認無問題後可標記已解決。'
-    };
+  for (const rule of RISK_RULES) {
+    const matchedTag = riskFirstMatchedTag(upper, rule.tags || []);
+    if (matchedTag) {
+      return buildSpecificRiskResult(f, { ...ctx, matchedTag }, rule);
+    }
   }
 
   if (
@@ -1051,18 +1421,38 @@ function diagnoseOrderRisk(f = {}){
     upper.includes('AUTO_RESTOCK')
   ) {
     return {
-      ...base,
       level: '🟢 正常紀錄',
       levelClass: 'green',
       category: '系統正常紀錄',
       impact: '通常不影響客人結單。\n只是提醒、通知成功、或系統已自動補庫存的紀錄。',
       where: 'Orders.internal_note',
-      mustCheck: riskBaseFields(f),
+      problem: displayInternalNoteChinese(note, f),
+      mustCheck: [
+        '這筆目前沒有偵測到需要人工處理的異常標籤。',
+        '',
+        '目前訂單關鍵欄位：',
+        riskBaseFields(f)
+      ].join('\n'),
       action: '如果沒有其他紅色/黃色異常，只需確認內容正確後勾選「異常問題已解決」。'
     };
   }
 
-  return base;
+  return {
+    level: '🟢 紀錄',
+    levelClass: 'green',
+    category: '一般紀錄',
+    impact: '目前沒有命中已知異常規則。\n確認沒有後續問題後，可勾選已解決。',
+    where: 'Orders.internal_note',
+    problem: displayInternalNoteChinese(note, f),
+    mustCheck: [
+      '沒有命中 RISK_RULES。',
+      '請先看 internal_note 原文判斷是否需要新增規則。',
+      '',
+      '目前訂單關鍵欄位：',
+      riskBaseFields(f)
+    ].join('\n'),
+    action: '若這是新的異常型態，請把 internal_note 截圖給工程補進 RISK_RULES；若確認無問題，可標記已解決。'
+  };
 }
  function displaySystemEventTypeChinese(eventType){
   const s = String(eventType || '').trim();
