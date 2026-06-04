@@ -1655,8 +1655,8 @@ function renderDetailTable(items, detailKey = "") {
       <table class="modal-table">
         <thead>
           <tr>${finalKeys.map(k => `
-            <th class="${k === "netProfit" ? "net-profit-col" : ""}">
-              ${escHtml(labelForKey(k))}
+            <th class="${k === "netProfit" && detailKey === "monthlyReturnSettlement" ? "net-profit-col" : ""}">
+              ${escHtml(labelForKey(k, detailKey))}
             </th>
           `).join("")}</tr>
         </thead>
@@ -1664,7 +1664,7 @@ function renderDetailTable(items, detailKey = "") {
           ${items.map(it => `
             <tr>
               ${finalKeys.map(k => `
-                <td class="${k === "netProfit" ? "net-profit-col" : ""}">
+                <td class="${k === "netProfit" && detailKey === "monthlyReturnSettlement" ? "net-profit-col" : ""}">
                   ${formatDetailValue(k, it?.[k], detailKey)}
                 </td>
               `).join("")}
@@ -1676,7 +1676,12 @@ function renderDetailTable(items, detailKey = "") {
   `;
 }
 
-function labelForKey(k) {
+function labelForKey(k, detailKey = "") {
+    if (k === "netProfit") {
+    if (detailKey === "monthlyProfit") return "本單淨利";
+    if (detailKey === "monthlyReturnSettlement") return "取消淨利";
+    return "淨利";
+  }
   const map = {
     // 現金支出類
     date:"日期",
@@ -1691,7 +1696,7 @@ function labelForKey(k) {
     orderId:"單號",
     createdAt:"建單時間",
     cancelDate:"取消日期",
-    netProfit:"取消進利",
+    netProfit:"淨利",
     productDetail:"商品明細",
    lineName:"Line名稱",
 type:"類型",
@@ -1775,9 +1780,19 @@ function formatDetailValue(k, v, detailKey = "") {
     `;
   }
 
- // 公司2：取消進利，維持紅色
+// 淨利欄位：本月淨利用正負判斷；取消訂單淨利維持紅色
 if (k === "netProfit") {
-  return `<strong class="amount-red">${money(v)}</strong>`;
+  if (detailKey === "monthlyProfit") {
+    const cls = num(v) >= 0 ? "amount-green" : "amount-red";
+    return `<strong class="${cls}">${money(v)}</strong>`;
+  }
+
+  if (detailKey === "monthlyReturnSettlement") {
+    return `<strong class="amount-red">${money(v)}</strong>`;
+  }
+
+  const cls = num(v) >= 0 ? "amount-green" : "amount-red";
+  return `<strong class="${cls}">${money(v)}</strong>`;
 }
 
 // 公司3：支出購物金金額
