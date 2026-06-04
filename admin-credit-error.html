@@ -247,6 +247,87 @@
   color:#fecaca;
   font-weight:900;
 }
+ .system-event-card-list{
+  display:grid;
+  gap:12px;
+  margin-top:12px;
+}
+
+.system-event-card{
+  border:1px solid rgba(148,163,184,.28);
+  background:rgba(2,6,23,.38);
+  border-radius:16px;
+  padding:12px;
+}
+
+.system-event-head{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:8px;
+}
+
+.system-event-time{
+  color:#94a3b8;
+  font-size:12px;
+}
+
+.system-event-title{
+  color:#bae6fd;
+  font-size:15px;
+  font-weight:900;
+  margin-bottom:6px;
+}
+
+.system-event-meaning{
+  color:#e5e7eb;
+  font-size:13px;
+  line-height:1.6;
+  white-space:pre-wrap;
+}
+
+.system-event-meta{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:8px;
+  color:#cbd5e1;
+  font-size:12px;
+}
+
+.system-event-meta span{
+  border:1px solid rgba(148,163,184,.25);
+  border-radius:999px;
+  padding:4px 8px;
+  background:rgba(15,23,42,.65);
+}
+
+.system-event-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+  margin-top:10px;
+}
+
+.system-event-tech{
+  margin-top:8px;
+  color:#94a3b8;
+  font-size:11px;
+}
+
+.system-event-tech pre{
+  max-height:120px;
+  overflow:auto;
+  white-space:pre-wrap;
+  color:#cbd5e1;
+  background:rgba(15,23,42,.7);
+  border:1px solid rgba(148,163,184,.22);
+  border-radius:10px;
+  padding:8px;
+}
  .risk-direct-box{
   border:1px solid rgba(148,163,184,.28);
   background:rgba(2,6,23,.38);
@@ -1679,6 +1760,19 @@ async function diagnoseSystemEvent(eventId, cartToken, lineUserId, eventType, bt
 function systemEventsRowsHtml(rows){
   const q = String($('#systemEventSearch')?.value || '').trim().toLowerCase();
 
+  const shortText = (v, len = 18) => {
+    const s = String(v || '').trim();
+    if (!s) return '-';
+    return s.length > len ? s.slice(0, len) + '…' : s;
+  };
+
+  const jsArg = (v) => {
+    return JSON.stringify(String(v == null ? '' : v))
+      .replace(/</g, '\\u003C')
+      .replace(/>/g, '\\u003E')
+      .replace(/&/g, '\\u0026');
+  };
+
   const filtered = (rows || []).filter(rec => {
     const f = rec.fields || {};
     const hay = [
@@ -1697,114 +1791,71 @@ function systemEventsRowsHtml(rows){
   }
 
   return `
-    <table class="risk-readonly-table">
-      <thead>
-        <tr>
-        <th>時間 / 等級</th>
-<th>事件類型</th>
-<th>這是什麼問題</th>
-<th>必看欄位值</th>
-<th>建議怎麼處理</th>
-<th>發生頁面</th>
-<th>一鍵檢查</th>
-<th>技術原始資料</th>
-<th>處理</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${filtered.map(rec => {
-          const f = rec.fields || {};
-          const eventId = rec.id || '';
-          const eventType = String(f.event_type || '').trim();
-          const level = String(f.level || '').trim().toLowerCase();
+    <div class="system-event-card-list">
+      ${filtered.map(rec => {
+        const f = rec.fields || {};
+        const eventId = rec.id || '';
+        const eventType = String(f.event_type || '').trim();
+        const level = String(f.level || '').trim().toLowerCase();
 
-          const levelClass =
-            level === 'error' ? 'red' :
-            level === 'info' ? 'green' :
-            'yellow';
+        const levelClass =
+          level === 'error' ? 'red' :
+          level === 'info' ? 'green' :
+          'yellow';
 
-          const levelText =
-            level === 'error' ? '錯誤' :
-            level === 'warning' ? '警告' :
-            level === 'info' ? '資訊' :
-            (level || '-');
+        const levelText =
+          level === 'error' ? '錯誤' :
+          level === 'warning' ? '警告' :
+          level === 'info' ? '資訊' :
+          (level || '-');
 
-          const typeCn = displaySystemEventTypeChinese(eventType);
-          const meaning = String(f.message_cn || '').trim() || displaySystemEventMeaning(eventType);
-          const suggestion = displaySystemEventSuggestion(eventType, String(f.suggestion_cn || '').trim());
-         const mustCheckFields = [
-  `event_type：${eventType || '-'}`,
-  `event_time：${f.event_time || '-'}`,
-  `level：${level || '-'}`,
-  `cart_token：${f.cart_token || '-'}`,
-  `line_user_id：${f.line_user_id || '-'}`,
-  `order_id：${f.order_id || '-'}`,
-  `page_url：${f.page_url || '-'}`
-].join('\n');
+        const typeCn = displaySystemEventTypeChinese(eventType);
+        const meaning = String(f.message_cn || '').trim() || displaySystemEventMeaning(eventType);
 
-          return `
-            <tr>
-              <td>
-                ${esc(f.event_time || '-')}<br>
+        return `
+          <div class="system-event-card">
+            <div class="system-event-head">
+              <div>
                 <span class="badge ${esc(levelClass)}">${esc(levelText)}</span>
-              </td>
+                <span class="system-event-time">${esc(f.event_time || '-')}</span>
+              </div>
 
-              <td>
-                <div class="event-type-cn">${esc(typeCn)}</div>
-                <details style="margin-top:6px;">
-                  <summary style="cursor:pointer;color:#94a3b8;font-size:11px;">
-                    查看技術代碼
-                  </summary>
-                  <div class="risk-note" style="margin-top:4px;">
-                    ${esc(eventType || '-')}
-                  </div>
-                </details>
-              </td>
+              <button type="button" class="primary" onclick="diagnoseSystemEvent(${jsArg(eventId)}, ${jsArg(f.cart_token || '')}, ${jsArg(f.line_user_id || '')}, ${jsArg(eventType)}, this)">
+                檢查問題
+              </button>
+            </div>
 
-              <td>
-                <div class="event-message-cn">${esc(meaning)}</div>
-              </td>
+            <div class="system-event-title">${esc(typeCn)}</div>
+            <div class="system-event-meaning">${esc(meaning)}</div>
 
-              <td>
-  <div class="event-suggestion-cn">${esc(mustCheckFields)}</div>
-</td>
+            <div id="diagnose-${esc(eventId)}"></div>
 
-<td>
-  <div class="event-suggestion-cn">${esc(suggestion)}</div>
-</td>
+            <div class="system-event-meta">
+              <span>購物車：${esc(shortText(f.cart_token, 22))}</span>
+              <span>訂單：${esc(f.order_id || '-')}</span>
+              <span>LINE：${esc(shortText(f.line_user_id, 18))}</span>
+            </div>
 
-              <td>
-                <div class="risk-note">${esc(f.page_url || '-')}</div>
-              </td>
+            <div class="system-event-actions">
+              <button type="button" onclick="resolveSystemEvent('${esc(eventId)}', this)">
+                標記已處理
+              </button>
 
-              <td>
-                <button type="button" class="primary" onclick="diagnoseSystemEvent(${esc(systemEventJsArg(eventId))}, ${esc(systemEventJsArg(f.cart_token || ''))}, ${esc(systemEventJsArg(f.line_user_id || ''))}, ${esc(systemEventJsArg(eventType))}, this)">
-                  檢查問題
-                </button>
-                <div id="diagnose-${esc(eventId)}"></div>
-              </td>
+              <details class="system-event-tech">
+                <summary style="cursor:pointer;">查看技術資料</summary>
+                <pre>event_type：${esc(eventType || '-')}
+cart_token：${esc(f.cart_token || '-')}
+line_user_id：${esc(f.line_user_id || '-')}
+page_url：${esc(f.page_url || '-')}
 
-              <td>
-                <details>
-                  <summary style="cursor:pointer;color:#94a3b8;font-size:11px;">
-                    查看原始資料
-                  </summary>
-                  <div class="event-raw" style="margin-top:6px;">
-                    ${esc(f.raw_detail || '-')}
-                  </div>
-                </details>
-              </td>
-
-              <td>
-                <button type="button" onclick="resolveSystemEvent('${esc(eventId)}', this)">
-                  標記已處理
-                </button>
-              </td>
-            </tr>
-          `;
-        }).join('')}
-      </tbody>
-    </table>
+raw_detail：
+${esc(f.raw_detail || '-')}</pre>
+              </details>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
   `;
 }
  function isCreditErrorRow(rec){
