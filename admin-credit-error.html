@@ -212,6 +212,41 @@
   overflow:auto;
   white-space:pre-wrap;
 }
+ .event-diagnose-box{
+  border:1px solid rgba(148,163,184,.35);
+  background:rgba(2,6,23,.55);
+  border-radius:12px;
+  padding:8px;
+  margin-top:8px;
+  min-width:260px;
+  max-width:340px;
+  color:#e5e7eb;
+  font-size:12px;
+  line-height:1.55;
+  white-space:pre-wrap;
+}
+
+.event-diagnose-title{
+  font-weight:900;
+  color:#bae6fd;
+  margin-bottom:4px;
+}
+
+.event-diagnose-action{
+  color:#bbf7d0;
+  font-weight:900;
+  margin-top:6px;
+}
+
+.event-diagnose-checks{
+  color:#cbd5e1;
+  margin-top:6px;
+}
+
+.event-diagnose-error{
+  color:#fecaca;
+  font-weight:900;
+}
  .risk-direct-box{
   border:1px solid rgba(148,163,184,.28);
   background:rgba(2,6,23,.38);
@@ -1524,7 +1559,123 @@ function displaySystemEventSuggestion(eventType, fallbackSuggestion){
 
   return map[s] || fallbackSuggestion || '必看欄位：cart_token、line_user_id、page_url、raw_detail。處理：先確認是否已有 Orders；若沒有，再查 CartToken 與前端錯誤內容。';
 }
+function systemEventJsArg(v){
+  return JSON.stringify(String(v == null ? '' : v))
+    .replace(/</g, '\\u003C')
+    .replace(/>/g, '\\u003E')
+    .replace(/&/g, '\\u0026');
+}
 
+function diagnoseLevelClass(level){
+  const s = String(level || '').trim().toLowerCase();
+  if (s === 'error' || s === 'critical') return 'red';
+  if (s === 'info') return 'green';
+  return 'yellow';
+}
+
+function diagnoseResultHtml(d){
+  if (!d) return '<div class="event-diagnose-box event-diagnose-error">沒有收到檢查結果。</div>';
+
+  const orders = Array.isArray(d.orders) ? d.orders : [];
+  const items = Array.isArray(d.items) ? d.items : [];
+  const checks = Array.isArray(d.checks) ? d.checks : [];
+
+  const orderText = orders.length
+    ? orders.slice(0, 5).map(o => {
+        return `${o.order_id || '(無訂單編號)'}｜${o.status || '-'}｜付款：${o.pay_status || '-'}`;
+      }).join('\n')
+    : '查無 Orders';
+
+  const itemText = items.length
+    ? items.slice(0, 8).map(it => {
+        return `${it.sku || '-'}｜${it.name || '-'} × ${it.qty || 0}`;
+      }).join('\n')
+    : '目前 CartItems 沒有商品';
+
+  const cart = d.cart || null;
+  const cartText = cart
+    ? [
+        `狀態：${cart.status || '-'}`,
+        `checked_out：${cart.checked_out ? 'true' : 'false'}`,
+        `綁定訂單：${cart.checked_out_order_id || '-'}`,
+        `商品數量：${cart.item_count || 0}`,
+        `客人：${cart.customer_name || '-'}`,
+        `類型：${cart.customer_type || '-'}`
+      ].join('\n')
+    : '查不到 CartToken';
+
+  return `
+    <div class="event-diagnose-box">
+      <div class="event-diagnose-title">
+        <span class="badge ${esc(diagnoseLevelClass(d.result_level))}">${esc(d.result_level_cn || '檢查結果')}</span>
+      </div>
+      <div>${esc(d.summary || '-')}</div>
+      <div class="event-diagnose-action">下一步：${esc(d.action || '-')}</div>
+      <details style="margin-top:6px;">
+        <summary style="cursor:pointer;color:#94a3b8;font-size:11px;">查看查到的資料</summary>
+        <div class="event-diagnose-checks">
+購物車：
+${esc(cartText)}
+
+訂單：
+${esc(orderText)}
+
+商品：
+${esc(itemText)}
+
+檢查項目：
+${esc(checks.join('\n') || '-')}
+        </div>
+      </details>
+    </div>
+  `;
+}
+
+async function diagnoseSystemEvent(eventId, cartToken, lineUserId, eventType, btn){
+  await ensureOpKey();
+
+  const target = $('#diagnose-' + eventId);
+  const oldText = btn?.textContent || '檢查問題';
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '檢查中...';
+  }
+  if (target) {
+    target.innerHTML = '<div class="event-diagnose-box">正在檢查 Orders / CartToken / CartItems…</div>';
+  }
+
+  try {
+    const params = new URLSearchParams();
+    params.set('op_key', OP_KEY);
+    if (eventId) params.set('event_id', eventId);
+    if (cartToken) params.set('cart_token', cartToken);
+    if (lineUserId) params.set('line_user_id', lineUserId);
+    if (eventType) params.set('event_type', eventType);
+
+    const r = await fetch(`${API}/admin/system-event/diagnose?` + params.toString());
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+
+    if (target) {
+      target.innerHTML = diagnoseResultHtml(j.diagnosis || null);
+    }
+  } catch(e) {
+    if (target) {
+      target.innerHTML = '<div class="event-diagnose-box event-diagnose-error">檢查失敗：' + esc(e.message || e) + '</div>';
+    } else {
+      alert('檢查失敗：' + (e.message || e));
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
+}
 function systemEventsRowsHtml(rows){
   const q = String($('#systemEventSearch')?.value || '').trim().toLowerCase();
 
@@ -1555,6 +1706,7 @@ function systemEventsRowsHtml(rows){
 <th>必看欄位值</th>
 <th>建議怎麼處理</th>
 <th>發生頁面</th>
+<th>一鍵檢查</th>
 <th>技術原始資料</th>
 <th>處理</th>
         </tr>
@@ -1623,6 +1775,13 @@ function systemEventsRowsHtml(rows){
 
               <td>
                 <div class="risk-note">${esc(f.page_url || '-')}</div>
+              </td>
+
+              <td>
+                <button type="button" class="primary" onclick="diagnoseSystemEvent(${esc(systemEventJsArg(eventId))}, ${esc(systemEventJsArg(f.cart_token || ''))}, ${esc(systemEventJsArg(f.line_user_id || ''))}, ${esc(systemEventJsArg(eventType))}, this)">
+                  檢查問題
+                </button>
+                <div id="diagnose-${esc(eventId)}"></div>
               </td>
 
               <td>
