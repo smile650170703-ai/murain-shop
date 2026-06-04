@@ -31,6 +31,65 @@
   .badge.red{border-color:#fca5a5;background:rgba(239,68,68,.14);color:#fecaca}
   .badge.yellow{border-color:#facc15;background:rgba(234,179,8,.14);color:#fde68a}
   .badge.green{border-color:#22c55e;background:rgba(34,197,94,.14);color:#bbf7d0}
+  .badge.gray{border-color:#94a3b8;background:rgba(148,163,184,.12);color:#cbd5e1}
+
+  .risk-level-help{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:8px;
+    margin-top:10px;
+  }
+
+  .risk-help-card{
+    border:1px solid rgba(148,163,184,.25);
+    border-radius:12px;
+    padding:10px;
+    background:rgba(2,6,23,.35);
+    font-size:12px;
+    line-height:1.6;
+    color:#cbd5e1;
+  }
+
+  .risk-help-card b{
+    display:block;
+    color:#e5e7eb;
+    margin-bottom:4px;
+  }
+
+  .risk-summary-grid{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:8px;
+    margin:12px 0 4px;
+  }
+
+  .risk-summary-card{
+    border:1px solid rgba(148,163,184,.25);
+    border-radius:14px;
+    padding:10px;
+    background:rgba(2,6,23,.36);
+  }
+
+  .risk-summary-num{
+    font-size:24px;
+    font-weight:900;
+    margin-top:6px;
+    color:#e5e7eb;
+  }
+
+  .risk-summary-label{
+    color:#94a3b8;
+    font-size:12px;
+    line-height:1.5;
+    margin-top:4px;
+  }
+
+  @media(max-width:760px){
+    .risk-level-help,
+    .risk-summary-grid{
+      grid-template-columns:1fr;
+    }
+  }
   .money{font-weight:800;color:#fca5a5}
   .note{max-width:320px;white-space:pre-wrap;color:#cbd5e1;font-size:12px}
   .top-hint{line-height:1.7;color:#cbd5e1;font-size:13px}
@@ -478,6 +537,21 @@
   若看到「疑似異常」但沒有 CREDIT_CAPTURE_ERROR，請先確認 CreditsLedger；舊資料已人工處理者，只需補勾 credit_spend_done，不要按重新扣款。
 </div>
 
+<div class="risk-level-help">
+  <div class="risk-help-card">
+    <b><span class="badge red">🔴 紅色</span> 立即處理</b>
+    可能影響付款、庫存、重複訂單、購物金或出貨。看到紅色先不要出貨、不要叫客人重下單，先照「馬上怎麼處理」核對。
+  </div>
+  <div class="risk-help-card">
+    <b><span class="badge yellow">🟡 黃色</span> 今日確認</b>
+    通常不是訂單整筆失敗，常見是通知失敗、分期狀態晚到、重新付款提醒失敗。今天內確認後補通知或標記處理。
+  </div>
+  <div class="risk-help-card">
+    <b><span class="badge gray">⚪ 灰色</span> 紀錄 / 低風險</b>
+    多半是系統正常紀錄、已自動處理、或沒有命中嚴重規則。確認沒有紅黃問題後，可標記已處理。
+  </div>
+</div>
+
         <div class="toolbar">
       <button id="btnReload" type="button">重新載入</button>
       <input id="orderSearch" type="text" placeholder="搜尋訂單編號 / LINE名稱" />
@@ -494,6 +568,24 @@
     <h2 class="risk-section-title">其他異常清單｜只讀查看</h2>
     <div class="muted">
   下方為其他異常清單。確認已人工處理完成後，可勾選「異常問題已解決」並儲存；儲存後該訂單會從其他異常清單隱藏。購物金異常仍請使用上方原本清單處理。
+</div>
+
+<div class="risk-summary-grid">
+  <div class="risk-summary-card">
+    <span class="badge red">🔴 紅色</span>
+    <div id="riskRedCount" class="risk-summary-num">0</div>
+    <div class="risk-summary-label">立即處理：付款 / 庫存 / 重複訂單 / 購物金</div>
+  </div>
+  <div class="risk-summary-card">
+    <span class="badge yellow">🟡 黃色</span>
+    <div id="riskYellowCount" class="risk-summary-num">0</div>
+    <div class="risk-summary-label">今日確認：通知失敗 / 狀態衝突 / 重新付款提醒</div>
+  </div>
+  <div class="risk-summary-card">
+    <span class="badge gray">⚪ 灰色</span>
+    <div id="riskGrayCount" class="risk-summary-num">0</div>
+    <div class="risk-summary-label">低風險紀錄：正常紀錄 / 已自動處理 / 待人工判斷</div>
+  </div>
 </div>
 
     <div class="risk-grid">
@@ -1538,8 +1630,8 @@ function diagnoseOrderRisk(f = {}){
     upper.includes('AUTO_RESTOCK')
   ) {
     return {
-      level: '🟢 正常紀錄',
-      levelClass: 'green',
+      level: '⚪ 灰色紀錄',
+      levelClass: 'gray',
       category: '系統正常紀錄',
       impact: '通常不影響客人結單。\n只是提醒、通知成功、或系統已自動補庫存的紀錄。',
       where: 'Orders.internal_note',
@@ -1555,8 +1647,8 @@ function diagnoseOrderRisk(f = {}){
   }
 
   return {
-    level: '🟢 紀錄',
-    levelClass: 'green',
+    level: '⚪ 一般紀錄',
+    levelClass: 'gray',
     category: '一般紀錄',
     impact: '目前沒有命中已知異常規則。\n確認沒有後續問題後，可勾選已解決。',
     where: 'Orders.internal_note',
@@ -1651,7 +1743,7 @@ function systemEventJsArg(v){
 function diagnoseLevelClass(level){
   const s = String(level || '').trim().toLowerCase();
   if (s === 'error' || s === 'critical') return 'red';
-  if (s === 'info') return 'green';
+  if (s === 'info') return 'gray';
   return 'yellow';
 }
 
@@ -1801,13 +1893,13 @@ function systemEventsRowsHtml(rows){
 
         const levelClass =
           level === 'error' ? 'red' :
-          level === 'info' ? 'green' :
+          level === 'info' ? 'gray' :
           'yellow';
 
         const levelText =
           level === 'error' ? '錯誤' :
           level === 'warning' ? '警告' :
-          level === 'info' ? '資訊' :
+          level === 'info' ? '灰色紀錄' :
           (level || '-');
 
         const typeCn = displaySystemEventTypeChinese(eventType);
@@ -1957,6 +2049,58 @@ function simpleOrderRowsHtml(rows){
     </table>
   `;
 }
+ function riskSortValue(levelClass){
+  const s = String(levelClass || '').trim();
+
+  if (s === 'red') return 1;
+  if (s === 'yellow') return 2;
+  if (s === 'gray') return 3;
+  if (s === 'green') return 4;
+
+  return 9;
+}
+
+function riskSummaryClass(levelClass){
+  const s = String(levelClass || '').trim();
+
+  if (s === 'red') return 'red';
+  if (s === 'yellow') return 'yellow';
+
+  return 'gray';
+}
+
+function riskRowSort(a, b){
+  const af = a.fields || a || {};
+  const bf = b.fields || b || {};
+  const ar = diagnoseOrderRisk(af);
+  const br = diagnoseOrderRisk(bf);
+
+  return riskSortValue(ar.levelClass) - riskSortValue(br.levelClass);
+}
+
+function updateRiskSummary(rows = []){
+  const count = {
+    red: 0,
+    yellow: 0,
+    gray: 0
+  };
+
+  (rows || []).forEach(rec => {
+    const f = rec.fields || rec || {};
+    const risk = diagnoseOrderRisk(f);
+    const key = riskSummaryClass(risk.levelClass);
+    count[key] += 1;
+  });
+
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = String(value);
+  };
+
+  setText('riskRedCount', count.red);
+  setText('riskYellowCount', count.yellow);
+  setText('riskGrayCount', count.gray);
+}
 async function loadRiskList(cfg){
   const countEl = document.getElementById(cfg.countId);
   const listEl = document.getElementById(cfg.listId);
@@ -1976,10 +2120,14 @@ async function loadRiskList(cfg){
       throw new Error(j.error || ('HTTP ' + r.status));
     }
 
-const rows = (j.orders || j.records || []).filter(rec => {
-  const f = rec.fields || rec || {};
-  return !isAbnormalResolved(f);
-});
+const rows = (j.orders || j.records || [])
+  .filter(rec => {
+    const f = rec.fields || rec || {};
+    return !isAbnormalResolved(f);
+  })
+  .sort(riskRowSort);
+
+updateRiskSummary(rows);
 
 if (countEl) countEl.textContent = `${rows.length} 筆`;
 if (listEl) listEl.innerHTML = simpleOrderRowsHtml(rows);
