@@ -93,8 +93,9 @@
 
     function App() {
       // ===== 設定 =====
-      const LIFF_ID = "2008430261-kOeNLR9x";
-const API_BASE = "https://api.murain.tw";
+  const LIFF_ID = String(window.LIFF_BIND_MEMBER_ID || "2008430261-kOeNLR9x").trim();
+const API_BASE = String(window.API_BASE || "https://api.murain.tw").replace(/\/$/,'');
+const SITE_ORIGIN = String(window.MURAIN_SITE_ORIGIN || "https://murain.tw").replace(/\/$/,'');
 const OFFICIAL_LINE_URL = "https://line.me/R/ti/p/@cc0857";
 const GEMINI_API_KEY = "";
 
@@ -122,25 +123,41 @@ const GEMINI_API_KEY = "";
           return "";
         }
       }
+function getSafeReturnUrl() {
+  const raw = String(getReturnUrl() || "").trim();
 
-      function goAfterBind() {
-        const returnUrl = getReturnUrl();
+  if (raw) {
+    try {
+      const url = new URL(raw, SITE_ORIGIN);
+      const host = String(url.hostname || "").toLowerCase();
+      const currentHost = String(location.hostname || "").toLowerCase();
 
-        if (returnUrl) {
-          try {
-            const url = new URL(returnUrl, window.location.origin);
-            url.searchParams.set("auth_return", "1");
-            url.searchParams.set("t", String(Date.now()));
-            window.location.replace(url.toString());
-          } catch (e) {
-            window.location.href = returnUrl;
-          }
-          return;
-        }
+      const allowed =
+        host === currentHost ||
+        host === "staging.murain.tw" ||
+        host === "murain.tw" ||
+        host === "www.murain.tw";
 
-        if (window.liff?.isInClient()) window.liff.closeWindow();
-        else window.location.href = "https://line.me/";
-      }
+      if (allowed) return url.toString();
+    } catch (e) {
+      return raw;
+    }
+  }
+
+  return `${SITE_ORIGIN}/member.html`;
+}
+function goAfterBind() {
+  const returnUrl = getSafeReturnUrl();
+
+  try {
+    const url = new URL(returnUrl, SITE_ORIGIN);
+    url.searchParams.set("auth_return", "1");
+    url.searchParams.set("t", String(Date.now()));
+    window.location.replace(url.toString());
+  } catch (e) {
+    window.location.href = returnUrl || `${SITE_ORIGIN}/member.html`;
+  }
+}
 
       function rememberLineProfile(profile, memberInfo = {}) {
         const displayName = String(
@@ -330,10 +347,17 @@ async function ensureXuyuanOfficialFriendBeforeBind() {
           setStatusMsg("系統載入中...");
           await window.liff.init({ liffId: LIFF_ID });
           
-          if (!window.liff.isLoggedIn()) {
-            window.liff.login({ scope: "profile openid email" });
-            return;
-          }
+     if (!window.liff.isLoggedIn()) {
+  const redirectUrl = new URL(window.location.href);
+  redirectUrl.searchParams.delete("code");
+  redirectUrl.searchParams.delete("state");
+
+  window.liff.login({
+    scope: "profile openid email",
+    redirectUri: redirectUrl.toString()
+  });
+  return;
+}
 
          const profile = await window.liff.getProfile();
 setLineProfile(profile);
@@ -435,10 +459,14 @@ setStatusMsg("");
 
           try { window.liff.logout(); } catch (e) {}
 
-          window.liff.login({
-            scope: "profile openid email",
-            redirectUri: window.location.href
-          });
+const redirectUrl = new URL(window.location.href);
+redirectUrl.searchParams.delete("code");
+redirectUrl.searchParams.delete("state");
+
+window.liff.login({
+  scope: "profile openid email",
+  redirectUri: redirectUrl.toString()
+});
         } catch (e) {
           window.location.reload();
         }
