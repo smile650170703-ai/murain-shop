@@ -4603,14 +4603,33 @@ function lockCheckoutForPendingOrder(locked) {
     credit.classList.toggle('is-disabled', !!locked);
   }
 
-  // 商品 X 由後端 can_self_remove 控制；這裡再保險一次
-  if (locked) {
-    document.querySelectorAll('.cart-remove-btn').forEach(btn => {
-      btn.style.display = 'none';
-    });
-  }
-}
+  const submitBtn = document.getElementById('submitBtn');
+  if (submitBtn) {
+    if (locked) {
+      if (!submitBtn.dataset.pendingOriginalText) {
+        submitBtn.dataset.pendingOriginalText = submitBtn.textContent || '確認送出訂單';
+      }
 
+      submitBtn.dataset.pendingLocked = '1';
+      submitBtn.disabled = true;
+      submitBtn.style.opacity = '0.55';
+      submitBtn.style.pointerEvents = 'none';
+      submitBtn.textContent = '請先完成付款或取消修改';
+    } else if (submitBtn.dataset.pendingLocked === '1') {
+      submitBtn.disabled = false;
+      submitBtn.style.opacity = '';
+      submitBtn.style.pointerEvents = '';
+      submitBtn.textContent = submitBtn.dataset.pendingOriginalText || '確認送出訂單';
+      delete submitBtn.dataset.pendingLocked;
+      delete submitBtn.dataset.pendingOriginalText;
+    }
+  }
+
+  // 商品 X 由後端 can_self_remove 控制；這裡再保險一次
+  document.querySelectorAll('.cart-remove-btn').forEach(btn => {
+    btn.style.display = locked ? 'none' : '';
+  });
+}
 function renderPendingOrderPanel() {
   const el = ensurePendingOrderPanelEl();
   const o = CART_ACTIVE_ORDER || {};
@@ -5592,6 +5611,13 @@ if (__btn) {
 
   try {
     if (!cartToken) { alert('缺少 cart_token，請由正確結帳連結進入'); return; }
+
+    if (isPendingOnlineOrderForEdit()) {
+      try { renderPendingOrderPanel(); } catch(e) {}
+      alert('這筆訂單尚未完成線上付款。請先選擇「繼續付款」，或「取消訂單並返回購物車修改」，不要直接重新送出。');
+      return;
+    }
+
     if (!CART_TOTAL_RAW || Number(CART_TOTAL_RAW) <= 0) { alert('金額為 0，請確認購物車內容'); return; }
 
    // ✅ 只有「客人真的要使用購物金」時，才需要等購物金資料 ready
