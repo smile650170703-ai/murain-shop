@@ -31,6 +31,9 @@
   window.LIFF_BIND_MEMBER_ID = isStaging
     ? '2010297761-LEbOo1Qv'
     : '2008430261-kOeNLR9x';
+  window.OFFICIAL_LINE_URL = isStaging
+  ? 'https://line.me/R/ti/p/@523fqjkm'
+  : 'https://line.me/R/ti/p/@cc0857';
 
   console.log('[MURAIN_ENV]', window.MURAIN_ENV, window.API_BASE);
 })();
