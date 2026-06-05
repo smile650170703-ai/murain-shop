@@ -1618,13 +1618,84 @@ function diagnoseOrderRisk(f = {}){
     }
   }
 
-  if (
+// ✅ PayUNI 重新付款提醒：不能只看到 PAYUNI_RETRY_REMIND_120M 就當成功
+if (
+  upper.includes('PAYUNI_RETRY_REMIND_120M_FAILED') ||
+  upper.includes('WEB_CART_RETRY_LINE_FAILED')
+) {
+  return {
+    level: '🟡 補重新付款通知',
+    levelClass: 'yellow',
+    category: '重新付款提醒發送失敗',
+    impact: '客人線上付款未完成，但系統提醒可能沒有成功送到。\n客人可能不知道可以回來重新付款。',
+    where: 'Orders.internal_note / LINE API 回應 / CartToken',
+    problem: displayInternalNoteChinese(note, f),
+    mustCheck: [
+      '1. 付款是否仍未完成',
+      '2. 是否有 cart_token 或 retry cart',
+      '3. line_user_id 是否存在',
+      '4. 客人是否封鎖官方 LINE',
+      '5. 是否需要人工補傳重新結帳連結',
+      '',
+      '目前訂單關鍵欄位：',
+      riskBaseFields(f)
+    ].join('\n'),
+    action: '請人工確認付款是否尚未完成；若仍未付款，手動補傳重新結帳連結給客人。補傳後再勾選「異常問題已解決」。'
+  };
+}
+
+if (
+  upper.includes('PAYUNI_RETRY_REMIND_120M') &&
+  !upper.includes('WEB_CART_RETRY_LINE_SENT')
+) {
+  return {
+    level: '🟡 今日確認',
+    levelClass: 'yellow',
+    category: 'PayUNI 重新付款提醒待確認',
+    impact: '這筆有 PayUNI 重新付款提醒紀錄，但沒有看到 WEB_CART_RETRY_LINE_SENT。\n可能是舊資料、人工備註，或提醒成功紀錄沒有寫完整。',
+    where: 'Orders.internal_note',
+    problem: displayInternalNoteChinese(note, f),
+    mustCheck: [
+      '1. internal_note 是否有 WEB_CART_RETRY_LINE_SENT',
+      '2. 若沒有，確認客人是否真的收到重新結帳連結',
+      '3. 若沒收到，人工補傳',
+      '4. 若已確認有收到，再標記已解決',
+      '',
+      '目前訂單關鍵欄位：',
+      riskBaseFields(f)
+    ].join('\n'),
+    action: '請確認這筆是否真的有發出 LINE 重新結帳提醒。沒有 WEB_CART_RETRY_LINE_SENT 時，不要直接當成已提醒成功。'
+  };
+}
+
+if (
+  upper.includes('PAYUNI_RETRY_REMIND_120M') &&
+  upper.includes('WEB_CART_RETRY_LINE_SENT')
+) {
+  return {
+    level: '⚪ 灰色紀錄',
+    levelClass: 'gray',
+    category: 'PayUNI 重新付款提醒已成功',
+    impact: '系統已提醒客人回來重新付款，通常不需要立即處理。',
+    where: 'Orders.internal_note',
+    problem: displayInternalNoteChinese(note, f),
+    mustCheck: [
+      '這筆已同時有 PAYUNI_RETRY_REMIND_120M 與 WEB_CART_RETRY_LINE_SENT。',
+      '代表系統有成功送出重新結帳提醒。',
+      '',
+      '目前訂單關鍵欄位：',
+      riskBaseFields(f)
+    ].join('\n'),
+    action: '若沒有其他紅色 / 黃色異常，可確認後標記「異常問題已解決」。'
+  };
+}
+
+if (
     upper.includes('BANK_REMIND_24H') ||
     upper.includes('BANK_REMIND_48H') ||
     upper.includes('ADMIN_NEW_ORDER_NOTIFY_SENT') ||
     upper.includes('YUFU_SUCCESS_NOTIFIED') ||
     upper.includes('PAYUNI_FAIL_ATTEMPT_ONLY') ||
-    upper.includes('PAYUNI_RETRY_REMIND_120M') ||
     upper.includes('WEB_CART_RETRY_LINE_SENT') ||
     upper.includes('INSTALLMENT_AUDIT_TIMEOUT') ||
     upper.includes('AUTO_RESTOCK')
@@ -2345,7 +2416,14 @@ const hasTag = note.includes('CREDIT_CAPTURE_ERROR');
 <td><div class="note">${esc(note || '-')}</div></td>
               <td>
                 <button type="button" onclick="dryRun('${esc(oid)}')">檢查</button><br>
-                <button class="danger" type="button" onclick="releaseOrder('${esc(oid)}')">重新扣購物金並放行</button>
+                ${
+                  hasTag
+                    ? `<button class="danger" type="button" onclick="releaseOrder('${esc(oid)}')">重新扣購物金並放行</button>`
+                    : `<div class="muted" style="margin-top:8px;line-height:1.6;">
+                        未命中 CREDIT_CAPTURE_ERROR。<br>
+                        只能檢查 CreditsLedger，不可直接放行。
+                      </div>`
+                }
               </td>
             </tr>
           `;
