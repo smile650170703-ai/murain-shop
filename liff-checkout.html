@@ -3070,7 +3070,7 @@ async function loadCheckoutMemberBySession(profile = null){
     const uid = memberInfoLineUserId(j);
     if (!uid) return false;
 
-    const isWebCart = String(CART_CUSTOMER_TYPE || '').trim().toLowerCase() === 'web';
+    const isWebCart = isWebCartType(CART_CUSTOMER_TYPE);
     const cartOwner = String(CART_LINE_USER_ID || '').trim();
 
     // ✅ 官網 web 車只要用後端 cookie session 判斷。
@@ -3177,7 +3177,7 @@ async function loadCheckoutMemberByUid(uidForApi, profile = null){
 }
 
 async function initLiffAndMember() {
-  const isWebCart = String(CART_CUSTOMER_TYPE || '').trim().toLowerCase() === 'web';
+ const isWebCart = isWebCartType(CART_CUSTOMER_TYPE);
 
   if (isWebCart) {
     const retryKey = 'MURAIN_CHECKOUT_MEMBER_RETRY';
@@ -3309,9 +3309,9 @@ location.href = `${memberOrigin}/member.html?v=${Date.now()}&return_url=${encode
       if (sessionOk) {
         const ok = await loadCheckoutMemberBySession(profile);
         if (ok) return;
-      } else if (String(CART_CUSTOMER_TYPE || '').trim().toLowerCase() === 'web') {
-        return;
-      }
+      } else if (isWebCartType(CART_CUSTOMER_TYPE)) {
+  return;
+}
     }
   } catch (e) {
     console.log('getProfile failed, fallback to user_id/localStorage', e);
@@ -4298,7 +4298,17 @@ let CART_LINE_USER_ID = '';
 // ✅ 官網購物車專用：上一頁返回鍵
 // 直播主購物車 customer_type=live 不顯示。
 const SHOP_BACK_FALLBACK_URL = `${String(window.MURAIN_SITE_ORIGIN || "https://murain.tw").replace(/\/$/,'')}/shop.html`;
+function normalizeCartType(v) {
+  return String(v || '').trim().toLowerCase();
+}
 
+function isWebCartType(v) {
+  return ['web', 'shop', 'official', 'site', '官網'].includes(normalizeCartType(v));
+}
+
+function isLiveCartType(v) {
+  return ['live', 'regular'].includes(normalizeCartType(v));
+}
 function goBackFromShopCart() {
   try {
     // 有上一頁就回上一頁
@@ -4323,7 +4333,7 @@ function goBackFromShopCart() {
 }
 
 function updateShopCartBack() {
-  const isWebCart = String(CART_CUSTOMER_TYPE || '').trim().toLowerCase() === 'web';
+const isWebCart = isWebCartType(CART_CUSTOMER_TYPE);
 
   const box = document.getElementById('shopCartBack');
   const btn = document.getElementById('shopCartBackBtn');
@@ -4555,7 +4565,7 @@ wrap.querySelectorAll('.cart-remove-btn').forEach(btn => {
 function isPendingOnlineOrderForEdit() {
   const o = CART_ACTIVE_ORDER || {};
   return (
-    CART_CUSTOMER_TYPE === 'web' &&
+    isWebCartType(CART_CUSTOMER_TYPE) &&
     CART_STATUS === 'submitted' &&
     o &&
     o.can_continue_payment === true
@@ -4867,7 +4877,7 @@ async function loadCart(options = {}){
     const total = Number(j.total_amount || 0);
     CART_TOTAL_RAW = total;
 
-    CART_CUSTOMER_TYPE = String(j.customer_type || '').trim().toLowerCase();
+    CART_CUSTOMER_TYPE = normalizeCartType(j.customer_type || '');
     CART_CAN_SELF_REMOVE = !!j.can_self_remove;
 
     CART_STATUS = String(j.cart_status || j.status || '').trim().toLowerCase();
