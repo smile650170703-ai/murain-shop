@@ -29,7 +29,7 @@
     : '2008430261-KLwoQjm4';
 
   window.LIFF_BIND_MEMBER_ID = isStaging
-    ? '剛剛新增的 staging-bind-member LIFF ID'
+    ? '2010297761-LEbOo1Qv'
     : '2008430261-kOeNLR9x';
 
   console.log('[MURAIN_ENV]', window.MURAIN_ENV, window.API_BASE);
