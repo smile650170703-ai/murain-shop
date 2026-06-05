@@ -596,6 +596,17 @@
         </div>
         <div id="riskListAll"></div>
       </div>
+
+      <div class="risk-mini-card">
+        <div class="risk-mini-head">
+          <div class="risk-mini-title">🧪 只讀一致性問題</div>
+          <div class="risk-mini-count" id="riskReadonlyCount">載入中</div>
+        </div>
+        <div class="muted" style="margin-bottom:8px;">
+          這裡只顯示只讀一致性檢查器抓到的高風險資料矛盾，不會自動修改資料。
+        </div>
+        <div id="riskReadonlyList"></div>
+      </div>
     </div>
   </div>
 
@@ -622,6 +633,12 @@ const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
 let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
 let ALL_ROWS = [];
 let ERROR_ROWS = [];
+
+// 其他異常清單資料來源：
+// 1. ORDER_RISK_ROWS：原本 all_risk_orders
+// 2. READONLY_ISSUES：只讀一致性檢查器 issues
+let ORDER_RISK_ROWS = [];
+let READONLY_ISSUES = [];
 
 const RISK_LISTS = [
   {
@@ -2120,6 +2137,141 @@ function simpleOrderRowsHtml(rows){
     </table>
   `;
 }
+ const READONLY_RISK_TYPES = new Set([
+  'cart_stuck_checking_out_no_order',
+  'cancelled_or_failed_but_stock_deducted'
+]);
+
+function readonlyIssueLevelClass(issue = {}){
+  const type = String(issue.type || '').trim();
+
+  if (type === 'cancelled_or_failed_but_stock_deducted') return 'red';
+  if (type === 'cart_stuck_checking_out_no_order') return 'yellow';
+
+  if (issue.severity === 'high') return 'red';
+  if (issue.severity === 'medium') return 'yellow';
+
+  return 'gray';
+}
+
+function readonlyIssueLevelText(issue = {}){
+  const type = String(issue.type || '').trim();
+
+  if (type === 'cancelled_or_failed_but_stock_deducted') return '🔴 立即核庫存';
+  if (type === 'cart_stuck_checking_out_no_order') return '🟡 交給 checking_out 修復';
+
+  if (issue.severity === 'high') return '🔴 高風險';
+  if (issue.severity === 'medium') return '🟡 中風險';
+
+  return '⚪ 低風險';
+}
+
+function readonlyIssueImpact(issue = {}){
+  const type = String(issue.type || '').trim();
+
+  if (type === 'cancelled_or_failed_but_stock_deducted') {
+    return '訂單已取消或付款失敗，但仍標記庫存已扣。\n庫存可能少算，未確認前不要自動補，避免重複補庫存。';
+  }
+
+  if (type === 'cart_stuck_checking_out_no_order') {
+    return '購物車卡在 checking_out 超過 5 分鐘，且找不到有效訂單。\n客人可能無法重新送出，需要交給 checking_out 修復流程處理。';
+  }
+
+  return issue.message || '只讀一致性檢查器偵測到資料矛盾。';
+}
+
+function readonlyIssueAction(issue = {}){
+  const type = String(issue.type || '').trim();
+
+  if (type === 'cancelled_or_failed_but_stock_deducted') {
+    return [
+      '1. 先打開 Orders 商品明細。',
+      '2. 逐一核對 SKU 與數量。',
+      '3. 到 Products 確認 StockQty 是否已補回。',
+      '4. 未確認前不要自動補庫存。',
+      '5. 確認需要修正後，之後交給 StockLedger / 人工核庫存流程處理。'
+    ].join('\n');
+  }
+
+  if (type === 'cart_stuck_checking_out_no_order') {
+    return [
+      '1. 先確認 CartToken 是否仍為 checking_out。',
+      '2. 確認 Orders 是否真的沒有對應訂單。',
+      '3. 不要叫客人重複下單。',
+      '4. 後續交給 checking_out 自動修復：',
+      '   - 有訂單 → 補 submitted',
+      '   - 沒訂單 → 解鎖回 open'
+    ].join('\n');
+  }
+
+  return issue.suggestion || '請人工確認資料矛盾；這個區塊只讀，不會自動修改資料。';
+}
+
+function readonlyIssueRowsHtml(issues = []){
+  const rows = (issues || []).filter(issue => READONLY_RISK_TYPES.has(String(issue.type || '').trim()));
+
+  if (!rows.length) {
+    return '<div class="risk-empty">目前沒有只讀一致性高風險問題。</div>';
+  }
+
+  return `
+    <table class="risk-readonly-table">
+      <thead>
+        <tr>
+          <th>緊急 / 影響</th>
+          <th>訂單 / 購物車</th>
+          <th>問題</th>
+          <th>說明</th>
+          <th>建議處理</th>
+          <th>來源</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map(issue => {
+          const levelClass = readonlyIssueLevelClass(issue);
+          const levelText = readonlyIssueLevelText(issue);
+
+          return `
+            <tr>
+              <td>
+                <span class="badge ${esc(levelClass)}">${esc(levelText)}</span>
+                <div class="risk-impact">${esc(readonlyIssueImpact(issue))}</div>
+              </td>
+
+              <td>
+                <b>訂單：${esc(issue.orderNo || '—')}</b><br>
+                <div class="small">cart_token：${esc(issue.cartToken || '—')}</div>
+              </td>
+
+              <td>
+                <div class="risk-direct-box">
+                  <span class="risk-direct-title">${esc(issue.title || issue.type || '資料一致性問題')}</span>
+                  偵測代碼：${esc(issue.type || '-')}
+                </div>
+              </td>
+
+              <td>
+                <div class="risk-field-box">${esc(issue.message || '-')}</div>
+              </td>
+
+              <td>
+                <div class="risk-action-now">${esc(readonlyIssueAction(issue))}</div>
+              </td>
+
+              <td>
+                <div class="risk-code">
+                  source：${esc(issue.source || '-')}
+                  \nrecordId：${esc(issue.recordId || '-')}
+                  \n${esc(issue.evidence ? JSON.stringify(issue.evidence, null, 2) : '')}
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
  function riskSortValue(levelClass){
   const s = String(levelClass || '').trim();
 
@@ -2149,17 +2301,22 @@ function riskRowSort(a, b){
   return riskSortValue(ar.levelClass) - riskSortValue(br.levelClass);
 }
 
-function updateRiskSummary(rows = []){
+function updateRiskSummary(){
   const count = {
     red: 0,
     yellow: 0,
     gray: 0
   };
 
-  (rows || []).forEach(rec => {
+  (ORDER_RISK_ROWS || []).forEach(rec => {
     const f = rec.fields || rec || {};
     const risk = diagnoseOrderRisk(f);
     const key = riskSummaryClass(risk.levelClass);
+    count[key] += 1;
+  });
+
+  (READONLY_ISSUES || []).forEach(issue => {
+    const key = riskSummaryClass(readonlyIssueLevelClass(issue));
     count[key] += 1;
   });
 
@@ -2191,17 +2348,18 @@ async function loadRiskList(cfg){
       throw new Error(j.error || ('HTTP ' + r.status));
     }
 
-const rows = (j.orders || j.records || [])
-  .filter(rec => {
-    const f = rec.fields || rec || {};
-    return !isAbnormalResolved(f);
-  })
-  .sort(riskRowSort);
+    const rows = (j.orders || j.records || [])
+      .filter(rec => {
+        const f = rec.fields || rec || {};
+        return !isAbnormalResolved(f);
+      })
+      .sort(riskRowSort);
 
-updateRiskSummary(rows);
+    ORDER_RISK_ROWS = rows;
+    updateRiskSummary();
 
-if (countEl) countEl.textContent = `${rows.length} 筆`;
-if (listEl) listEl.innerHTML = simpleOrderRowsHtml(rows);
+    if (countEl) countEl.textContent = `${rows.length} 筆`;
+    if (listEl) listEl.innerHTML = simpleOrderRowsHtml(rows);
 
   } catch(e) {
     if (countEl) countEl.textContent = '載入失敗';
@@ -2210,9 +2368,54 @@ if (listEl) listEl.innerHTML = simpleOrderRowsHtml(rows);
     }
   }
 }
+async function loadReadonlyConsistencyIssues(){
+  const countEl = document.getElementById('riskReadonlyCount');
+  const listEl = document.getElementById('riskReadonlyList');
 
+  if (countEl) countEl.textContent = '載入中';
+  if (listEl) listEl.innerHTML = '<div class="risk-empty">載入中...</div>';
+
+  try {
+    const params = new URLSearchParams();
+    params.set('op_key', OP_KEY);
+    params.set('days', '7');
+    params.set('limit', '300');
+
+    const r = await fetch(`${API}/admin/readonly-consistency-check?` + params.toString(), {
+      method: 'GET',
+      headers: { 'accept': 'application/json' },
+      cache: 'no-store'
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+
+    READONLY_ISSUES = (Array.isArray(j.issues) ? j.issues : [])
+      .filter(issue => READONLY_RISK_TYPES.has(String(issue.type || '').trim()));
+
+    updateRiskSummary();
+
+    if (countEl) countEl.textContent = `${READONLY_ISSUES.length} 筆`;
+    if (listEl) listEl.innerHTML = readonlyIssueRowsHtml(READONLY_ISSUES);
+
+  } catch(e) {
+    READONLY_ISSUES = [];
+    updateRiskSummary();
+
+    if (countEl) countEl.textContent = '載入失敗';
+    if (listEl) {
+      listEl.innerHTML = '<div class="error">載入只讀一致性問題失敗：' + esc(e.message || e) + '</div>';
+    }
+  }
+}
 async function loadRiskLists(){
-  await Promise.all(RISK_LISTS.map(loadRiskList));
+  await Promise.all([
+    ...RISK_LISTS.map(loadRiskList),
+    loadReadonlyConsistencyIssues()
+  ]);
 }
  let SYSTEM_EVENT_ROWS = [];
 
