@@ -1651,22 +1651,10 @@ textarea[readonly]{
     font-size:27px;
   }
 }
-    /* ✅ 中租付款暫停開放：只影響銀角零卡分期按鈕 */
-#payTabs .tab.is-disabled,
-#payTabs .tab:disabled{
-  opacity:.45;
-  cursor:not-allowed;
-  filter:grayscale(.35);
-  background:rgba(255,255,255,.42);
-  color:#b6a4a0;
-  box-shadow:none;
-}
-
-#payTabs .tab.is-disabled span:nth-child(2){
-  font-size:11px;
-  color:#c96d72;
-  font-weight:900;
-  letter-spacing:.06em;
+/* ✅ 8.5 舊中租付款已下架：前台完全不顯示中租付款入口 */
+#payTabs .tab[data-pay="ZEROCARD"],
+#paneZEROCARD{
+  display:none !important;
 }
     /* =========================================================
    現金分期｜桌機版排版修正
@@ -1825,9 +1813,7 @@ textarea[readonly]{
   <span>匯款全額</span>
   <span>定金保留</span>
 </button>
-<button type="button" class="tab tab-two-line is-disabled" data-pay="ZEROCARD" disabled aria-disabled="true">
-  <span>暫未開放</span>
-</button>
+<!-- ✅ 8.5 舊中租付款已下架：不再顯示付款按鈕 -->
       <button type="button" class="tab" data-pay="CASHINST">現金分期</button>
 <button type="button" class="tab" data-pay="YUFU">裕富分期</button>
     </div>
@@ -4654,9 +4640,15 @@ function renderPendingOrderPanel() {
       若要繼續完成付款，商品、金額與購物金折抵會維持原訂單內容，不能在此階段修改。
     </div>
 
-    <button type="button" class="btn" id="btnContinuePendingPay">
-      ${isZeroCard ? '繼續完成中租申請' : '繼續付款'}
-    </button>
+  ${isZeroCard ? `
+  <div class="warning-text">
+    中租付款已停用，請點「取消訂單並返回購物車修改」，再改選其他付款方式。
+  </div>
+` : `
+  <button type="button" class="btn" id="btnContinuePendingPay">
+    繼續付款
+  </button>
+`}
 
     <button type="button" class="btn-secondary" id="btnCancelPendingForEdit">
       取消訂單並返回購物車修改
@@ -4693,18 +4685,9 @@ async function continuePendingOrderPayment() {
 
   try {
     if (pm.startsWith('zero_card_')) {
-      const r2 = await jfetch(`${API}/zero-card/start`, {
-        method: 'POST',
-        body: JSON.stringify({ order_id: orderId })
-      });
-
-      redirect =
-        r2?.payment_url || r2?.paymentUrl ||
-        r2?.next_url || r2?.nextUrl ||
-        r2?.redirect_url || r2?.redirectUrl ||
-        r2?.pay_url || r2?.payUrl ||
-        r2?.url || '';
-    }
+  alert('中租付款已停用，請取消原訂單後改選其他付款方式。');
+  return;
+}
 
     if (!redirect && (pm.startsWith('paid_') || pm === 'aftee_direct' || pm === 'paid_aftee_direct' || pm === 'paid_af')) {
       redirect = `${API}/payuni/start?order_id=${encodeURIComponent(orderId)}`;
