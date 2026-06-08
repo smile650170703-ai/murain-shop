@@ -448,6 +448,162 @@
   max-height:130px;
   overflow:auto;
 }
+ /* ===== 4.5 異常中心卡片化：降低橫向捲動、把處理動作放前面 ===== */
+.risk-card-list{
+  display:grid;
+  gap:12px;
+  margin-top:10px;
+}
+
+.risk-order-card{
+  border:1px solid rgba(148,163,184,.28);
+  background:rgba(2,6,23,.38);
+  border-radius:16px;
+  padding:12px;
+}
+
+.risk-order-card.red{
+  border-color:rgba(248,113,113,.62);
+  box-shadow:0 0 0 1px rgba(239,68,68,.10) inset;
+}
+
+.risk-order-card.yellow{
+  border-color:rgba(250,204,21,.55);
+  box-shadow:0 0 0 1px rgba(234,179,8,.08) inset;
+}
+
+.risk-order-card.gray{
+  border-color:rgba(148,163,184,.32);
+}
+
+.risk-card-head{
+  display:flex;
+  flex-wrap:wrap;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:10px;
+  padding-bottom:10px;
+  border-bottom:1px solid rgba(148,163,184,.18);
+}
+
+.risk-card-title{
+  font-size:14px;
+  font-weight:900;
+  color:#e5e7eb;
+  margin-top:6px;
+}
+
+.risk-card-meta{
+  color:#cbd5e1;
+  font-size:12px;
+  line-height:1.65;
+  margin-top:4px;
+}
+
+.risk-card-actions{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+}
+
+.risk-card-actions label{
+  display:inline-flex;
+  gap:6px;
+  align-items:center;
+  color:#cbd5e1;
+  font-size:12px;
+}
+
+.risk-card-main{
+  display:grid;
+  grid-template-columns:minmax(240px,1.15fr) minmax(240px,1fr);
+  gap:10px;
+  margin-top:10px;
+}
+
+.risk-card-section{
+  border:1px solid rgba(148,163,184,.20);
+  border-radius:14px;
+  background:rgba(15,23,42,.48);
+  padding:10px;
+  min-width:0;
+}
+
+.risk-card-section.full{
+  grid-column:1 / -1;
+}
+
+.risk-card-label{
+  color:#94a3b8;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:.03em;
+  margin-bottom:6px;
+}
+
+.risk-card-text{
+  color:#e5e7eb;
+  font-size:13px;
+  line-height:1.65;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
+
+.risk-card-text.strong{
+  color:#bbf7d0;
+  font-weight:900;
+}
+
+.risk-card-text.warn{
+  color:#fde68a;
+  font-weight:900;
+}
+
+.risk-card-text.danger{
+  color:#fecaca;
+  font-weight:900;
+}
+
+.risk-card-tech{
+  margin-top:8px;
+  color:#94a3b8;
+  font-size:11px;
+}
+
+.risk-card-tech summary{
+  cursor:pointer;
+}
+
+.risk-card-tech pre,
+.risk-card-tech .risk-code{
+  max-height:160px;
+  overflow:auto;
+  white-space:pre-wrap;
+  color:#cbd5e1;
+  background:rgba(15,23,42,.7);
+  border:1px solid rgba(148,163,184,.20);
+  border-radius:10px;
+  padding:8px;
+  margin-top:6px;
+}
+
+.risk-release-warning{
+  color:#fde68a;
+  font-size:12px;
+  line-height:1.55;
+  max-width:260px;
+}
+
+@media(max-width:900px){
+  .risk-card-main{
+    grid-template-columns:1fr;
+  }
+  .risk-card-actions{
+    justify-content:flex-start;
+  }
+}
 </style>
 </head>
 <body>
@@ -2107,85 +2263,83 @@ function simpleOrderRowsHtml(rows){
   }
 
   return `
-    <table class="risk-readonly-table">
-      <thead>
-        <tr>
-          <th>緊急 / 影響</th>
-          <th>訂單 / 客人</th>
-          <th>問題在哪</th>
-          <th>必看欄位</th>
-          <th>商品 / SKU</th>
-          <th>馬上怎麼處理</th>
-          <th>原始備註</th>
-          <th>處理</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${visibleRows.map(rec => {
-          const f = rec.fields || rec || {};
-          const oid = String(f.order_id || '').trim();
-          const note = String(f.internal_note || '').trim();
-          const risk = diagnoseOrderRisk(f);
-          const items = riskItemsText(f);
+    <div class="risk-card-list">
+      ${visibleRows.map(rec => {
+        const f = rec.fields || rec || {};
+        const oid = String(f.order_id || '').trim();
+        const note = String(f.internal_note || '').trim();
+        const risk = diagnoseOrderRisk(f);
+        const items = riskItemsText(f);
+        const levelClass = riskSummaryClass(risk.levelClass);
 
-          return `
-            <tr>
-              <td>
+        return `
+          <div class="risk-order-card ${esc(levelClass)}">
+            <div class="risk-card-head">
+              <div>
                 <span class="badge ${esc(risk.levelClass)}">${esc(risk.level)}</span>
-                <div class="risk-impact">${esc(risk.impact || '-')}</div>
-              </td>
-
-              <td>
-                <b>${esc(oid || '-')}</b><br>
-                客人：${esc(getLineName(f) || '-')}<br>
-                付款：${esc(displayPaymentMethod(f) || '-')}<br>
-                <span class="badge">${esc(displayPayStatus(f.pay_status))}</span>
-                <span class="badge">${esc(displayOrderStatus(f.status))}</span>
-              </td>
-
-              <td>
-                <div class="risk-direct-box">
-                  <span class="risk-direct-title">${esc(risk.category || '系統異常')}</span>
-                  ${esc(risk.problem || '-')}
-                  \n\n位置：${esc(risk.where || '-')}
+                <div class="risk-card-title">${esc(oid || '-')}</div>
+                <div class="risk-card-meta">
+                  客人：${esc(getLineName(f) || '-')}<br>
+                  付款方式：${esc(displayPaymentMethod(f) || '-')}<br>
+                  <span class="badge">${esc(displayPayStatus(f.pay_status))}</span>
+                  <span class="badge">${esc(displayOrderStatus(f.status))}</span>
                 </div>
-              </td>
+              </div>
 
-              <td>
-                <div class="risk-field-box">${esc(risk.mustCheck || '-')}</div>
-              </td>
-
-              <td>
-                <div class="risk-item-list">${esc(items || '-')}</div>
-              </td>
-
-              <td>
-                <div class="risk-action-now">${esc(risk.action || '-')}</div>
-              </td>
-
-              <td>
-                <details>
-                  <summary style="cursor:pointer;color:#94a3b8;font-size:11px;">
-                    查看 internal_note 原文
-                  </summary>
-                  <div class="risk-code" style="margin-top:6px;">${esc(note || '-')}</div>
-                </details>
-              </td>
-
-              <td>
-                <label style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+              <div class="risk-card-actions">
+                <label>
                   <input class="resolve-check" type="checkbox" />
                   <span>異常問題已解決</span>
                 </label>
                 <button type="button" onclick="saveAbnormalResolved('${esc(oid)}', this)">
                   儲存
                 </button>
-              </td>
-            </tr>
-          `;
-        }).join('')}
-      </tbody>
-    </table>
+              </div>
+            </div>
+
+            <div class="risk-card-main">
+              <div class="risk-card-section">
+                <div class="risk-card-label">問題在哪</div>
+                <div class="risk-card-text danger">
+${esc(risk.category || '系統異常')}
+
+${esc(risk.problem || '-')}
+
+位置：${esc(risk.where || '-')}
+                </div>
+              </div>
+
+              <div class="risk-card-section">
+                <div class="risk-card-label">馬上怎麼處理</div>
+                <div class="risk-card-text strong">${esc(risk.action || '-')}</div>
+              </div>
+
+              <div class="risk-card-section">
+                <div class="risk-card-label">緊急 / 影響</div>
+                <div class="risk-card-text warn">${esc(risk.impact || '-')}</div>
+              </div>
+
+              <div class="risk-card-section">
+                <div class="risk-card-label">商品 / SKU</div>
+                <div class="risk-card-text">${esc(items || '-')}</div>
+              </div>
+
+              <div class="risk-card-section full">
+                <details>
+                  <summary style="cursor:pointer;color:#bae6fd;font-weight:900;">展開必看欄位</summary>
+                  <div class="risk-card-text" style="margin-top:8px;">${esc(risk.mustCheck || '-')}</div>
+                </details>
+
+                <details class="risk-card-tech">
+                  <summary>查看 internal_note 原文</summary>
+                  <div class="risk-code">${esc(note || '-')}</div>
+                </details>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
   `;
 }
  const READONLY_RISK_TYPES = new Set([
@@ -2266,61 +2420,59 @@ function readonlyIssueRowsHtml(issues = []){
   }
 
   return `
-    <table class="risk-readonly-table">
-      <thead>
-        <tr>
-          <th>緊急 / 影響</th>
-          <th>訂單 / 購物車</th>
-          <th>問題</th>
-          <th>說明</th>
-          <th>建議處理</th>
-          <th>來源</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows.map(issue => {
-          const levelClass = readonlyIssueLevelClass(issue);
-          const levelText = readonlyIssueLevelText(issue);
+    <div class="risk-card-list">
+      ${rows.map(issue => {
+        const levelClass = readonlyIssueLevelClass(issue);
+        const levelText = readonlyIssueLevelText(issue);
+        const safeClass = riskSummaryClass(levelClass);
 
-          return `
-            <tr>
-              <td>
+        return `
+          <div class="risk-order-card ${esc(safeClass)}">
+            <div class="risk-card-head">
+              <div>
                 <span class="badge ${esc(levelClass)}">${esc(levelText)}</span>
-                <div class="risk-impact">${esc(readonlyIssueImpact(issue))}</div>
-              </td>
-
-              <td>
-                <b>訂單：${esc(issue.orderNo || '—')}</b><br>
-                <div class="small">cart_token：${esc(issue.cartToken || '—')}</div>
-              </td>
-
-              <td>
-                <div class="risk-direct-box">
-                  <span class="risk-direct-title">${esc(issue.title || issue.type || '資料一致性問題')}</span>
-                  偵測代碼：${esc(issue.type || '-')}
+                <div class="risk-card-title">${esc(issue.title || issue.type || '資料一致性問題')}</div>
+                <div class="risk-card-meta">
+                  訂單：${esc(issue.orderNo || '—')}<br>
+                  cart_token：${esc(issue.cartToken || '—')}
                 </div>
-              </td>
+              </div>
+            </div>
 
-              <td>
-                <div class="risk-field-box">${esc(issue.message || '-')}</div>
-              </td>
+            <div class="risk-card-main">
+              <div class="risk-card-section">
+                <div class="risk-card-label">問題</div>
+                <div class="risk-card-text danger">
+偵測代碼：${esc(issue.type || '-')}
 
-              <td>
-                <div class="risk-action-now">${esc(readonlyIssueAction(issue))}</div>
-              </td>
-
-              <td>
-                <div class="risk-code">
-                  source：${esc(issue.source || '-')}
-                  \nrecordId：${esc(issue.recordId || '-')}
-                  \n${esc(issue.evidence ? JSON.stringify(issue.evidence, null, 2) : '')}
+${esc(issue.message || '-')}
                 </div>
-              </td>
-            </tr>
-          `;
-        }).join('')}
-      </tbody>
-    </table>
+              </div>
+
+              <div class="risk-card-section">
+                <div class="risk-card-label">建議處理</div>
+                <div class="risk-card-text strong">${esc(readonlyIssueAction(issue))}</div>
+              </div>
+
+              <div class="risk-card-section">
+                <div class="risk-card-label">緊急 / 影響</div>
+                <div class="risk-card-text warn">${esc(readonlyIssueImpact(issue))}</div>
+              </div>
+
+              <div class="risk-card-section">
+                <div class="risk-card-label">來源</div>
+                <details class="risk-card-tech" open>
+                  <summary>查看來源資料</summary>
+                  <pre>source：${esc(issue.source || '-')}
+recordId：${esc(issue.recordId || '-')}
+${esc(issue.evidence ? JSON.stringify(issue.evidence, null, 2) : '')}</pre>
+                </details>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
   `;
 }
  function riskSortValue(levelClass){
@@ -2545,11 +2697,15 @@ async function resolveSystemEvent(eventId, btn){
     btn.textContent = oldText || '標記已處理';
   }
 }
- async function saveAbnormalResolved(orderId, btn){
+async function saveAbnormalResolved(orderId, btn){
   if (!orderId) return;
 
-  const cell = btn?.closest('td');
-  const checked = !!cell?.querySelector('.resolve-check')?.checked;
+  const scope =
+    btn?.closest('td') ||
+    btn?.closest('.risk-card-actions') ||
+    btn?.closest('.risk-order-card');
+
+  const checked = !!scope?.querySelector('.resolve-check')?.checked;
 
   if (!checked) {
     alert('請先勾選「異常問題已解決」再儲存。');
@@ -2615,75 +2771,76 @@ function render(){
   }
 
   list.innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>訂單</th>
-          <th>客人</th>
-          <th>金額</th>
-          <th>狀態</th>
-<th>內部備註中文說明</th>
-<th>建議處理方式</th>
-<th>原始內部備註</th>
-<th>處理</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows.map(rec => {
-          const f = rec.fields || rec || {};
-          const oid = String(f.order_id || '').trim();
-          const note = String(f.internal_note || '');
-         const noteCn = displayInternalNoteChinese(note, f);
-const advice = displayRiskActionAdvice(note, f);
-const hasTag = note.includes('CREDIT_CAPTURE_ERROR');
-          const creditUsed = Math.max(0, Number(f.credit_used || 0) || 0);
-          const net = Number(f.net_amount ?? f.net ?? 0) || 0;
-          const total = Number(f.total_amount ?? f.total ?? 0) || 0;
+    <div class="risk-card-list">
+      ${rows.map(rec => {
+        const f = rec.fields || rec || {};
+        const oid = String(f.order_id || '').trim();
+        const note = String(f.internal_note || '');
+        const noteCn = displayInternalNoteChinese(note, f);
+        const advice = displayRiskActionAdvice(note, f);
+        const hasTag = note.toUpperCase().includes('CREDIT_CAPTURE_ERROR');
+        const creditUsed = Math.max(0, Number(f.credit_used || 0) || 0);
+        const net = Number(f.net_amount ?? f.net ?? 0) || 0;
+        const total = Number(f.total_amount ?? f.total ?? 0) || 0;
 
-          return `
-            <tr>
-              <td>
-                <b>${esc(oid || '-')}</b><br>
+        return `
+          <div class="risk-order-card ${hasTag ? 'red' : 'yellow'}">
+            <div class="risk-card-head">
+              <div>
                 ${hasTag
                   ? '<span class="badge red">CREDIT_CAPTURE_ERROR</span>'
                   : '<span class="badge yellow">疑似異常</span>'
                 }
-              </td>
-              <td>${esc(getLineName(f) || '-')}</td>
-              <td>
-                商品總額：${money(total)}<br>
-                <span class="money">購物金：${money(creditUsed)}</span><br>
-                實付 / 發票：${money(net)}
-              </td>
-              <td>
-  <span class="badge green">${esc(displayPayStatus(f.pay_status))}</span>
-  <span class="badge">${esc(displayOrderStatus(f.status))}</span><br>
-  購物金扣款：
-  ${
-    normBool(f.credit_spend_done)
-      ? '<span class="badge green">已完成</span>'
-      : '<span class="badge red">未完成</span>'
-  }
-</td>
-<td><div class="note-cn">${esc(noteCn || '-')}</div></td>
-<td><div class="risk-action-advice">${esc(advice || '-')}</div></td>
-<td><div class="note">${esc(note || '-')}</div></td>
-              <td>
-                <button type="button" onclick="dryRun('${esc(oid)}')">檢查</button><br>
-                ${
-                  hasTag
-                    ? `<button class="danger" type="button" onclick="releaseOrder('${esc(oid)}')">重新扣購物金並放行</button>`
-                    : `<div class="muted" style="margin-top:8px;line-height:1.6;">
-                        未命中 CREDIT_CAPTURE_ERROR。<br>
-                        只能檢查 CreditsLedger，不可直接放行。
-                      </div>`
+                <div class="risk-card-title">${esc(oid || '-')}</div>
+                <div class="risk-card-meta">
+                  客人：${esc(getLineName(f) || '-')}<br>
+                  <span class="badge green">${esc(displayPayStatus(f.pay_status))}</span>
+                  <span class="badge">${esc(displayOrderStatus(f.status))}</span>
+                  ${normBool(f.credit_spend_done)
+                    ? '<span class="badge green">購物金已完成</span>'
+                    : '<span class="badge red">購物金未完成</span>'
+                  }
+                </div>
+              </div>
+
+              <div class="risk-card-actions">
+                <button type="button" onclick="dryRun('${esc(oid)}')">檢查</button>
+                ${hasTag
+                  ? `<button class="danger" type="button" onclick="releaseOrder('${esc(oid)}')">重新扣購物金並放行</button>`
+                  : `<div class="risk-release-warning">未命中 CREDIT_CAPTURE_ERROR，只能檢查 CreditsLedger，不可直接放行。</div>`
                 }
-              </td>
-            </tr>
-          `;
-        }).join('')}
-      </tbody>
-    </table>
+              </div>
+            </div>
+
+            <div class="risk-card-main">
+              <div class="risk-card-section">
+                <div class="risk-card-label">金額</div>
+                <div class="risk-card-text">
+商品總額：${money(total)}
+購物金：${money(creditUsed)}
+實付 / 發票：${money(net)}
+                </div>
+              </div>
+
+              <div class="risk-card-section">
+                <div class="risk-card-label">建議處理方式</div>
+                <div class="risk-card-text strong">${esc(advice || '-')}</div>
+              </div>
+
+              <div class="risk-card-section full">
+                <div class="risk-card-label">內部備註中文說明</div>
+                <div class="risk-card-text danger">${esc(noteCn || '-')}</div>
+
+                <details class="risk-card-tech">
+                  <summary>查看原始 internal_note</summary>
+                  <div class="risk-code">${esc(note || '-')}</div>
+                </details>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
   `;
 }
 
