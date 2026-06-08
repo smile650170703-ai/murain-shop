@@ -3280,16 +3280,34 @@ location.href = `${memberOrigin}/member.html?v=${Date.now()}&return_url=${encode
     return;
   }
 
-  // ✅ 直播主 live / regular 車照舊走結帳 LIFF，不改原本直播主流程。
-  if (!window.liff) return;
+ // ✅ 直播主 live / regular 車照舊走結帳 LIFF，不改原本直播主流程。
+if (!window.liff) return;
 
-  await liff.init({ liffId: LIFF_ID });
+await liff.init({ liffId: LIFF_ID });
 
-  if (!liff.isLoggedIn()) {
-    try { saveCheckoutState(); } catch (e) {}
-    liff.login();
-    return;
-  }
+if (!liff.isLoggedIn()) {
+  try { saveLastCheckoutCartToken(cartToken); } catch (e) {}
+  try { saveCheckoutState(); } catch (e) {}
+
+  let redirectUri = location.href;
+  try {
+    const u = new URL(location.href);
+
+    if (cartToken) {
+      u.searchParams.set("cart_token", cartToken);
+    }
+
+    u.searchParams.delete("state");
+    u.searchParams.delete("code");
+    u.searchParams.delete("liff.state");
+    u.searchParams.delete("liffState");
+
+    redirectUri = u.toString();
+  } catch (e) {}
+
+  liff.login({ redirectUri });
+  return;
+}
 
   let profile = null;
   let uidForApi = (typeof lineUserIdFromPay === 'string' && lineUserIdFromPay) ? lineUserIdFromPay : '';
@@ -3637,24 +3655,33 @@ function _extractCartTokenFromWrappedURL() {
 
   return "";
 }
-
-// 1) 先從 LINE 包裝/網址取 token
+// 1) 先從 LINE 包裝 / URL 取 cart_token
 let cartToken = _extractCartTokenFromWrappedURL();
 
-// 2) 再 fallback：localStorage（只當網址沒有時）
-if (!cartToken) {
-  try { cartToken = (localStorage.getItem("murain_cart_token") || "").trim(); } catch (e) {}
+// 2) 有 cart_token 就立刻保存，避免 FB / LINE Login 回來後 URL 丟掉 token
+if (cartToken) {
+  saveLastCheckoutCartToken(cartToken);
 }
 
-// 3) 有 token 就存起來 & 正規化 URL（刪 url / liff.state）
-if (cartToken) {
-  try { localStorage.setItem("murain_cart_token", cartToken); } catch (e) {}
+// 3) 如果 URL 沒有 cart_token，就從暫存找回
+if (!cartToken) {
+  cartToken = getLastCheckoutCartToken();
+}
 
+// 4) 如果從暫存找回 token，把網址補回 cart_token，讓後面 loadCart 正常
+if (cartToken) {
   try {
     const u = new URL(location.href);
-    u.searchParams.set("cart_token", cartToken);
+    if (!u.searchParams.get("cart_token")) {
+      u.searchParams.set("cart_token", cartToken);
+    }
+
     u.searchParams.delete("url");
+    u.searchParams.delete("state");
+    u.searchParams.delete("code");
     u.searchParams.delete("liff.state");
+    u.searchParams.delete("liffState");
+
     history.replaceState(null, "", u.toString());
   } catch (e) {}
 }
