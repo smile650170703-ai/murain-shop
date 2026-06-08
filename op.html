@@ -551,10 +551,11 @@ button.is-busy {
       <div class="right mono" id="total">NT$ 0</div>
     </div>
 
-    <div class="row" style="margin-top:10px">
-      <button id="btn-link" class="ghost">複製結帳連結</button>
-      <button id="btn-send-link" class="ghost">從官方 LINE 發結帳卡片</button>
-    </div>
+   <div class="row" style="margin-top:10px">
+  <button id="btn-link" class="ghost">複製網頁結帳連結</button>
+  <button id="btn-link-line" class="ghost">複製 LINE 結帳連結</button>
+  <button id="btn-send-link" class="ghost">從官方 LINE 發結帳卡片</button>
+</div>
 
     <input id="link_out" class="mono" readonly style="margin-top:10px" />
 
@@ -601,6 +602,7 @@ let CURRENT_MODE = 'simple';
 let CURRENT_MEMBER_PHONE = '';
 
 let ADD_ITEM_BUSY = false;
+let CREATE_CART_BUSY = false;
 
 function setButtonBusy(btn, busy, busyText) {
   if (!btn) return;
@@ -1003,9 +1005,10 @@ function syncMainButtons(){
 
   if ($('#btn-create')) $('#btn-create').disabled = !hasStreamer;
   if ($('#btn-add')) $('#btn-add').disabled = !hasCart;
-  if ($('#btn-link')) $('#btn-link').disabled = !hasCart;
-  if ($('#btn-send-link')) $('#btn-send-link').disabled = !(hasCustomer && hasCart);
-  if ($('#btn-clear')) $('#btn-clear').disabled = !hasCart;
+if ($('#btn-link')) $('#btn-link').disabled = !hasCart;
+if ($('#btn-link-line')) $('#btn-link-line').disabled = !hasCart;
+if ($('#btn-send-link')) $('#btn-send-link').disabled = !(hasCustomer && hasCart);
+if ($('#btn-clear')) $('#btn-clear').disabled = !hasCart;
 
   const canSubmitBenefit = !!OP && !!getLineUserId() && hasBenefitApplicant;
   if ($('#btn-submit-benefit-request')) {
@@ -1078,32 +1081,58 @@ function syncMainButtons(){
     setLoginUI(true);
   }
 
-  async function createCart() {
-  const streamer = ($('#streamer').value||'').trim();
+async function createCart() {
+  if (CREATE_CART_BUSY) return;
+
+  const btn = $('#btn-create');
+  const streamer = ($('#streamer').value || '').trim();
+
   if (!streamer) return alert('請先輸入直播主名稱');
 
-const customer_type = $('#customer_type').value || 'live';
+  CREATE_CART_BUSY = true;
+  setButtonBusy(btn, true, '建立中...');
 
-const payload = {
-  streamer_name: streamer,
-  customer_type,
-  line_user_id: getLineUserId(),
-  customer_name: getCustomerName()
-};
+  try {
+    const customer_type = $('#customer_type').value || 'live';
 
-  const res = await jfetch(API+'/cart/create', {
-    method:'POST',
-    body: JSON.stringify(payload)
-  });
+    const payload = {
+      streamer_name: streamer,
+      customer_type,
+      line_user_id: getLineUserId(),
+      customer_name: getCustomerName()
+    };
 
-  if(!res.ok) return alert('建立失敗：'+(res.error||''));
+    const res = await jfetch(API + '/cart/create', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
 
-setCartToken(res.cart_token);
-try { showCartHintIfExists(); } catch(e) {}
-$('#override_price').value = '';
-$('#qty').value = '1';
-await refreshList();
-$('#sku')?.focus();
+    if (!res || res.ok !== true) {
+      alert('建立失敗：' + ((res && (res.message || res.error)) || 'unknown'));
+      return;
+    }
+
+    setCartToken(res.cart_token);
+    try { showCartHintIfExists(); } catch(e) {}
+
+    $('#override_price').value = '';
+    $('#qty').value = '1';
+
+    await refreshList();
+
+    flashButtonDone(btn, '已建立 ✓');
+    $('#sku')?.focus();
+
+  } catch (e) {
+    alert('建立失敗：' + (e.message || e));
+  } finally {
+    CREATE_CART_BUSY = false;
+
+    setTimeout(() => {
+      setButtonBusy(btn, false);
+      syncMainButtons();
+    }, 650);
+  }
 }
 
 async function addItem() {
@@ -1406,6 +1435,18 @@ function buildCheckoutUrl() {
 
   return `${origin}/liff-checkout?cart_token=${encodeURIComponent(cartToken)}&v=${Date.now()}`;
 }
+  function buildCheckoutLineUrl() {
+  const cartToken = String(CART || '').trim();
+  if (!cartToken) return '';
+
+  const liffId = String(window.LIFF_CHECKOUT_ID || LIFF_CHECKOUT_ID || '').trim();
+
+  if (!liffId) {
+    return buildCheckoutUrl();
+  }
+
+  return `https://liff.line.me/${liffId}?cart_token=${encodeURIComponent(cartToken)}&v=${Date.now()}`;
+}
 async function markCartCopied() {
   if (!OP || !CART) return;
 
@@ -1455,7 +1496,37 @@ async function linkCheckout() {
     alert('複製失敗，請手動長按複製連結');
   }
 }
+async function linkCheckoutLine() {
+  if (!guardCart()) return;
 
+  const url = buildCheckoutLineUrl();
+  const out = $('#link_out');
+  if (out) out.value = url;
+
+  // ✅ 優先用 clipboard
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(url);
+      await markCartCopied();
+      alert('已複製 LINE 結帳連結');
+      return;
+    }
+  } catch (e) {}
+
+  // fallback：選取 + execCommand
+  try {
+    if (out) {
+      out.focus();
+      out.select();
+      out.setSelectionRange(0, out.value.length);
+    }
+    document.execCommand('copy');
+    await markCartCopied();
+    alert('已複製 LINE 結帳連結');
+  } catch (e) {
+    alert('複製失敗，請手動長按複製 LINE 結帳連結');
+  }
+}
 
   // ★ 新增：呼叫後端，請官方 LINE 幫你發 Flex 卡片
   async function sendCheckoutLinkByLine() {
@@ -2216,6 +2287,11 @@ if (lineNameInput) {
     $('#btn-refresh').addEventListener('click', refreshList);
     $('#btn-clear').addEventListener('click', clearCart);
     $('#btn-link').addEventListener('click', linkCheckout);
+
+const btnLinkLine = $('#btn-link-line');
+if (btnLinkLine) {
+  btnLinkLine.addEventListener('click', linkCheckoutLine);
+}
 
     const btnProductLookup = document.getElementById('btn-product-lookup');
     if (btnProductLookup) {
