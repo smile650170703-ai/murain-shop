@@ -111,7 +111,9 @@ const OFFICIAL_LINE_URL = String(
   (IS_STAGING_SITE ? "https://line.me/R/ti/p/@523fqjkm" : "https://line.me/R/ti/p/@cc0857")
 ).trim();
 
-const SKIP_OFFICIAL_FRIEND_CHECK = IS_STAGING_SITE;
+// 1.5.2：測試版也要測官方 LINE 好友 / 封鎖防呆。
+// 若之後確認 staging LIFF 綁錯官方帳號，再暫時改回 true。
+const SKIP_OFFICIAL_FRIEND_CHECK = false;
 const GEMINI_API_KEY = "";
 
       function mergeLiffStateParams(qs) {
@@ -235,15 +237,27 @@ function goAfterBind() {
           });
           const json = await res.json().catch(() => ({}));
 
-          if (res.ok && json?.ok) {
-            setMemberCheckFailed(false);
-            rememberLineProfile(profile, json);
-            setIsAlreadyBound(true);
-            setStep(3);
-            setStatusMsg("您已完成會員綁定，無需重複操作");
-            setTimeout(goAfterBind, 1200);
-            return "bound";
-          }
+   if (res.ok && json?.ok) {
+  setMemberCheckFailed(false);
+  rememberLineProfile(profile, json);
+
+  // 1.5.2：已綁定會員也要確認是否仍是官方 LINE 好友。
+  // 避免客人已封鎖官方 LINE，卻以為可以收到結帳卡片 / 通知。
+  const okFriend = await ensureXuyuanOfficialFriendBeforeBind();
+
+  if (!okFriend) {
+    setIsAlreadyBound(true);
+    setStep(3);
+    setStatusMsg("請先加入或解除封鎖官方 LINE，完成後再回來繼續結帳。");
+    return "blocked_or_not_friend";
+  }
+
+  setIsAlreadyBound(true);
+  setStep(3);
+  setStatusMsg("您已完成會員綁定，無需重複操作");
+  setTimeout(goAfterBind, 1200);
+  return "bound";
+}
 
           if (res.status === 404 || json?.error === "not_found") {
             setMemberCheckFailed(false);
@@ -283,10 +297,11 @@ async function ensureXuyuanOfficialFriendBeforeBind() {
   }
 
   if (!window.liff.isInClient || !window.liff.isInClient()) {
-    const goAdd = window.confirm(
-      "請先加入官方 LINE，才能完成會員綁定。\n\n" +
-      "點選「確定」前往加入官方 LINE，加入後請回來重新按一次綁定。"
-    );
+const goAdd = window.confirm(
+  "請先加入官方 LINE，或解除封鎖官方 LINE，才能完成會員綁定與接收結帳通知。\n\n" +
+  "點選「確定」前往官方 LINE。\n\n" +
+  "加入或解除封鎖後，請回來重新按一次完成綁定。"
+);
 
     if (goAdd) openOfficialLineAddPage();
     return false;
@@ -322,11 +337,11 @@ async function ensureXuyuanOfficialFriendBeforeBind() {
     console.warn("requestFriendship failed:", e);
   }
 
-  const goAdd = window.confirm(
-    "請先加入官方 LINE，才能完成會員綁定。\n\n" +
-    "如果沒有自動跳出加好友視窗，請點選「確定」前往加入官方 LINE。\n\n" +
-    "加入後請回到此頁，再按一次完成綁定。"
-  );
+ const goAdd = window.confirm(
+  "請先加入官方 LINE，或解除封鎖官方 LINE，才能完成會員綁定與接收結帳通知。\n\n" +
+  "如果沒有自動跳出加好友視窗，請點選「確定」前往官方 LINE。\n\n" +
+  "加入或解除封鎖後，請回到此頁，再按一次完成綁定。"
+);
 
   if (goAdd) openOfficialLineAddPage();
 
