@@ -5130,13 +5130,11 @@ function updateCreditAndTotal() {
     document.querySelector('input[name="depType"]:checked')?.value ||
     'new_full';
 
-  const isCashInst = activeTab === 'CASHINST';
-const isDepositOld = activeTab === 'DEPOSIT' && depType === 'old';
-const isZeroCard = activeTab === 'ZEROCARD';
-const isYufu = activeTab === 'YUFU';
+  const isZeroCard = activeTab === 'ZEROCARD';
 
-// ✅ 現金分期 / 匯款定金 / 中租零卡 / 裕富分期：不可使用購物金
-if (isCashInst || isDepositOld || isZeroCard || isYufu) {
+// ✅ 9.4-E：目前啟用付款方式都支援購物金。
+// 只有已停用的中租 / zero_card 不支援新訂單購物金。
+if (isZeroCard) {
     CREDIT_USED = 0;
 
     if (input) {
@@ -5146,12 +5144,7 @@ if (isCashInst || isDepositOld || isZeroCard || isYufu) {
     }
 
     if (msgEl) {
-      msgEl.textContent =
-  isCashInst ? '現金分期不可使用購物金折抵。' :
-  isDepositOld ? '匯款定金不可使用購物金折抵。' :
-  isZeroCard ? '銀角零卡分期不可使用購物金折抵。' :
-  isYufu ? '裕富分期不可使用購物金折抵。' :
-  '此付款方式不可使用購物金折抵。';
+      msgEl.textContent = '中租付款已停用，請改選其他付款方式。';
       msgEl.classList.add('is-warning');
     }
 
@@ -5690,10 +5683,7 @@ const depTypeForCreditReady =
   'new_full';
 
 const creditBlockedByPayment =
-  activeTabForCreditReady === 'CASHINST' ||
-  activeTabForCreditReady === 'ZEROCARD' ||
-  activeTabForCreditReady === 'YUFU' ||
-  (activeTabForCreditReady === 'DEPOSIT' && depTypeForCreditReady === 'old');
+  activeTabForCreditReady === 'ZEROCARD';
 
 if (
   !creditBlockedByPayment &&
@@ -5721,19 +5711,16 @@ try {
     'new_full';
 
   const blockCredit =
-  currentTab === 'CASHINST' ||
-  currentTab === 'ZEROCARD' ||
-  currentTab === 'YUFU' ||
-  (currentTab === 'DEPOSIT' && depTypeNow === 'old');
+  currentTab === 'ZEROCARD';
 
-  // ✅ 現金分期 / 匯款定金 / 中租零卡 / 裕富分期：送出時也強制不帶購物金
-  if (blockCredit) {
+// ✅ 9.4-E：目前啟用付款方式都支援購物金。
+// 只有已停用的中租 / zero_card 不帶購物金。
+if (blockCredit) {
   CREDIT_USED = 0;
 
   const ci = document.getElementById('credit_input');
   if (ci) ci.value = '0';
 
-  // ✅ 明確告訴後端：這次不能用購物金，所以是 0
   shipping_info.credit_used = 0;
 } else {
   const cu = Math.max(0, Math.floor(Number(CREDIT_USED || 0) || 0));
@@ -5972,7 +5959,15 @@ shipping_info.deposit = { ...(shipping_info.deposit || {}), agree: true };
             return;
           }
         }
+        const actualPayAfterCredit = Math.max(
+          0,
+          Math.round((CART_TOTAL_RAW || 0) - (CREDIT_USED || 0))
+        );
 
+        if (depAmount > 0 && depAmount > actualPayAfterCredit) {
+          alert('購物金折抵後的應付金額不可低於定金金額，請調整購物金或定金金額。');
+          return;
+        }
         const shipMethod = String(document.getElementById('dep_old_method')?.value || '').trim();
         if (!shipMethod) { alert('請選擇取貨方式'); return; }
 
