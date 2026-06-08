@@ -153,8 +153,28 @@ function goAfterBind() {
     return;
   }
 
-  // 沒有 return_url 時，不要再跳 LINE 官網。
-  // 直接回測試版 / 正式版自己的會員中心。
+  // 沒有 return_url 時，先嘗試回到剛剛保存的結帳購物車。
+  let savedCartToken = "";
+  try {
+    savedCartToken =
+      sessionStorage.getItem("MURAIN_CHECKOUT_LAST_CART_TOKEN") ||
+      localStorage.getItem("MURAIN_CHECKOUT_LAST_CART_TOKEN") ||
+      localStorage.getItem("murain_cart_token") ||
+      "";
+    savedCartToken = String(savedCartToken || "").trim();
+  } catch (e) {}
+
+  if (savedCartToken) {
+    const checkoutUrl = `${SITE_ORIGIN}/liff-checkout?cart_token=${encodeURIComponent(savedCartToken)}&auth_return=1&t=${Date.now()}`;
+    try {
+      window.location.replace(checkoutUrl);
+    } catch (e) {
+      window.location.href = checkoutUrl;
+    }
+    return;
+  }
+
+  // 真的沒有購物車 token，才回會員中心。
   const fallbackUrl = `${SITE_ORIGIN}/member.html?auth_return=1&t=${Date.now()}`;
 
   try {
