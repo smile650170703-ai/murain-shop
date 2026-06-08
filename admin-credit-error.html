@@ -1248,7 +1248,80 @@ function riskListText(list){
   if (Array.isArray(list)) return list.filter(Boolean).join('\n');
   return String(list || '').trim();
 }
+function riskCodeZh(code){
+  const s = String(code || '').trim().toUpperCase();
 
+  const map = {
+    // 結帳 / 訂單成立
+    CHECKOUT_500_AFTER_ORDER_CREATED: '結帳送出後發生錯誤，但訂單可能已成立',
+    CART_BIND_FAILED_AFTER_ORDER_CREATED: '訂單已成立，但購物車沒有成功關閉',
+
+    // 購物金
+    CREDIT_CAPTURE_ERROR: '付款成功，但購物金正式扣款失敗',
+    CREDIT_CAPTURE_FIXED: '購物金異常已人工修復完成',
+    PAID_CREDIT_NOT_DONE: '已付款，但購物金扣款未完成',
+    ZC_CREDIT_CAPTURE_FAILED_MANUAL_REVIEW: '分期付款後購物金扣款失敗，需人工確認',
+    TAIL_CREDIT_HOLD_FAILED: '尾款單購物金保留 / 扣款失敗',
+
+    // 庫存
+    STOCK_DEDUCTED: '庫存已扣除',
+    STOCK_NOT_DEDUCTED: '庫存尚未扣除',
+    RESTOCK_FAILED: '補庫存失敗',
+    RESTOCK_FAILED_PAYUNI_FAIL: '線上付款失敗後補庫存失敗',
+    RESTOCK_FAILED_ZC_NOTIFY_FAIL: '分期付款失敗通知後補庫存失敗',
+    RESTOCK_FAILED_TAIL_OVERDUE: '尾款逾期取消後補庫存失敗',
+    RESTOCK_FAILED_CASH_INST_OVERDUE: '現金分期逾期取消後補庫存失敗',
+    RESTOCK_FAILED_ADMIN_FAIL: '後台操作失敗流程時補庫存失敗',
+    CANCELLED_STOCK_LOCKED: '訂單已取消，但庫存可能仍被扣住',
+
+    // PayUNI / 金流
+    PAYUNI_START_FAILED: 'PayUNI 付款頁啟動失敗',
+    PAYUNI_AMOUNT_MISMATCH: 'PayUNI 回傳金額與訂單金額不一致',
+    PAYUNI_RETRY_REMIND_120M_FAILED: '線上付款重新付款提醒發送失敗',
+    PAYUNI_RETRY_REMIND_120M: '線上付款重新付款提醒紀錄',
+    PAYUNI_FAIL_ATTEMPT_ONLY: 'PayUNI 付款失敗嘗試紀錄',
+
+    // 裕富 / 分期
+    INSTALLMENT_SUCCESS_BLOCKED_AFTER_CANCEL: '分期成功回傳，但訂單已取消或已釋放庫存',
+    INSTALLMENT_SUCCESS_BLOCKED_STOCK_NOT_DEDUCTED: '分期成功回傳，但庫存扣除狀態異常',
+    YUFU_REJECT_BLOCKED_AFTER_PAID: '裕富拒絕回傳，但訂單已付款，需人工確認',
+    YUFU_SUCCESS_NOTIFIED: '裕富成功通知已發送',
+    INSTALLMENT_AUDIT_TIMEOUT: '分期審核逾時處理紀錄',
+
+    // LINE / 通知
+    CHECKOUT_FLEX_SEND_FAILED: '結帳完成 LINE 通知發送失敗',
+    CHECKOUT_FLEX_NOT_SENT: '結帳完成 LINE 通知未成功送出',
+    CHECKOUT_FLEX_ATTEMPTED_BUT_FAILED: '結帳通知曾嘗試發送但失敗',
+    ADMIN_NEW_ORDER_NOTIFY_FAILED: '後台新訂單通知發送失敗',
+    ADMIN_NEW_ORDER_NOTIFY_SENT: '後台新訂單通知已發送',
+    WEB_CART_RETRY_LINE_FAILED: '重新付款 LINE 提醒發送失敗',
+    WEB_CART_RETRY_LINE_SENT: '重新付款 LINE 提醒已發送',
+    TAIL_FLEX_SEND_FAILED: '尾款相關 LINE 通知發送失敗',
+    BANK_REMIND_24H_FAILED: '匯款 24 小時提醒發送失敗',
+    BANK_REMIND_48H_FAILED: '匯款 48 小時提醒發送失敗',
+    BANK_REMIND_24H: '匯款 24 小時提醒紀錄',
+    BANK_REMIND_48H: '匯款 48 小時提醒紀錄',
+    CASH_INST_DUE_TOMORROW_FAILED: '現金分期明日到期提醒發送失敗',
+    CASH_INST_DUE_TODAY_FAILED: '現金分期今日到期提醒發送失敗',
+
+    // 尾款
+    TAIL_PAID: '尾款單已付款完成',
+    TAIL_INV: '尾款單已完成發票或開票紀錄',
+    TAIL_OVERDUE_DEPOSIT_FORFEIT: '尾款逾期未完成，系統已取消並保留訂金紀錄',
+    TAIL_CANCEL_REBUILD: '尾款單曾取消並重新建立',
+    TAIL_FAIL_FLEX_SUPPRESSED: '尾款失敗通知已略過，避免重複通知',
+
+    // 人工處理
+    ABNORMAL_RESOLVED: '此異常已被人工標記為已解決',
+    ABNORMAL_REOPENED: '此異常曾被重新打開，需要再次確認',
+
+    // 只讀一致性
+    CANCELLED_OR_FAILED_BUT_STOCK_DEDUCTED: '訂單取消 / 失敗，但庫存仍標記已扣',
+    CART_STUCK_CHECKING_OUT_NO_ORDER: '購物車卡在送出中，但找不到有效訂單'
+  };
+
+  return map[s] || s || '-';
+}
 function buildSpecificRiskResult(f, ctx, rule){
   const matchedTag = ctx.matchedTag || rule.id || '-';
 
@@ -1278,19 +1351,20 @@ function buildSpecificRiskResult(f, ctx, rule){
     category: rule.category || '系統異常',
     impact: impactText || '需要人工確認後再處理。',
     where: whereText || 'Orders.internal_note',
-    problem: [
-      `偵測代碼：${matchedTag}`,
-      problemText || displayInternalNoteChinese(ctx.note, f)
-    ].filter(Boolean).join('\n'),
-    mustCheck: [
-      `偵測代碼：${matchedTag}`,
-      '',
-      '此問題必看：',
-      riskListText(checkText),
-      '',
-      '目前訂單關鍵欄位：',
-      riskBaseFields(f)
-    ].filter(Boolean).join('\n'),
+problem: [
+  `異常類型：${riskCodeZh(matchedTag)}`,
+  problemText || displayInternalNoteChinese(ctx.note, f)
+].filter(Boolean).join('\n'),
+   mustCheck: [
+  `異常類型：${riskCodeZh(matchedTag)}`,
+  `系統代碼：${matchedTag}`,
+  '',
+  '此問題必看：',
+  riskListText(checkText),
+  '',
+  '目前訂單關鍵欄位：',
+  riskBaseFields(f)
+].filter(Boolean).join('\n'),
     action: riskListText(actionText) || displayRiskActionAdvice(ctx.note, f)
   };
 }
@@ -2443,7 +2517,9 @@ function readonlyIssueRowsHtml(issues = []){
               <div class="risk-card-section">
                 <div class="risk-card-label">問題</div>
                 <div class="risk-card-text danger">
-偵測代碼：${esc(issue.type || '-')}
+異常類型：${esc(riskCodeZh(issue.type || '-'))}
+
+系統代碼：${esc(issue.type || '-')}
 
 ${esc(issue.message || '-')}
                 </div>
@@ -2788,8 +2864,8 @@ function render(){
             <div class="risk-card-head">
               <div>
                 ${hasTag
-                  ? '<span class="badge red">CREDIT_CAPTURE_ERROR</span>'
-                  : '<span class="badge yellow">疑似異常</span>'
+                 ? `<span class="badge red">${esc(riskCodeZh('CREDIT_CAPTURE_ERROR'))}</span>`
+: '<span class="badge yellow">疑似購物金異常</span>'
                 }
                 <div class="risk-card-title">${esc(oid || '-')}</div>
                 <div class="risk-card-meta">
