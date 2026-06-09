@@ -3238,42 +3238,13 @@ async function initLiffAndMember() {
       } catch(err) {}
     }
 
-    if (window.liff) {
-      try {
-        await liff.init({ liffId: LIFF_ID });
-
-        if (!liff.isLoggedIn()) {
-          try { sessionStorage.setItem(retryKey, '1'); } catch(e) {}
-          liff.login({ redirectUri: returnUrl });
-          return;
-        }
-
-        const sessionOk = await createCheckoutAuthSessionFromLiff().catch(e => {
-          console.log('[checkout] create web member session failed', e);
-          return false;
-        });
-
-        if (sessionOk) {
-          ok = await loadCheckoutMemberBySession(null);
-          if (ok) {
-            clearCheckoutRetry();
-            return;
-          }
-
-          // 補建 session 後還失敗，再用「uid 必須等於 cart owner」的安全 fallback。
-          sharedUid = getCheckoutSharedLineUserId();
-          if (canUseSharedUidForCurrentCart(sharedUid)) {
-            ok = await loadCheckoutMemberByUid(sharedUid, null);
-            if (ok) {
-              clearCheckoutRetry();
-              return;
-            }
-          }
-        }
-      } catch(e) {
-        console.log('[checkout] web cart LIFF/session failed', e);
-      }
-    }
+     // ✅ 官網 web 購物車不要在 checkout 頁直接呼叫 LIFF login。
+    // 原因：外部瀏覽器 / Chrome / IG / FB 進來時，
+    // LINE SDK 會把網址轉成 liffClientId / liffRedirectUri，
+    // 容易造成 /liff-checkout 舊路徑或 400。
+    //
+    // web cart 沒有會員 session 時，
+    // 統一交給下方 member.html return_url 流程補登入 / 綁定。
 
     // ✅ 已經從會員中心回來一次還失敗，就不要再丟回會員中心造成無限輪迴。
     // 這通常代表：舊購物車 token 的 owner 跟目前會員不一致，或 cookie/session 沒對上。
