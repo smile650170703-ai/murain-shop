@@ -2428,7 +2428,7 @@ nav.page-breadcrumb .current,
       </a>
 
   <div class="nav-right nav-icons-lux">
-  <a class="nav-btn nav-icon-btn nav-wishlist-btn" href="https://murain.tw/wishlist.html" aria-label="我的收藏">
+  <a class="nav-btn nav-icon-btn nav-wishlist-btn" href="/wishlist.html" aria-label="我的收藏">
     <span class="nav-icon-slot nav-icon-slot-wish" aria-hidden="true">
       <svg class="nav-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 20.35C11.72 20.35 11.45 20.24 11.25 20.04L5.15 13.98C3.23 12.07 3.05 9.08 4.73 7.2C6.48 5.24 9.42 5.23 11.22 7.04L12 7.83L12.78 7.04C14.58 5.23 17.52 5.24 19.27 7.2C20.95 9.08 20.77 12.07 18.85 13.98L12.75 20.04C12.55 20.24 12.28 20.35 12 20.35Z"/>
@@ -3073,7 +3073,14 @@ function shopApiBase(){
     ? HOME_API
     : 'https://api.murain.tw';
 }
+function shopSiteOrigin(){
+  return String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+}
 
+function shopUrl(path){
+  const p = String(path || '').trim();
+  return shopSiteOrigin() + (p.startsWith('/') ? p : '/' + p);
+}
 function getShopLineUserId(){
   return String(localStorage.getItem(SHOP_LINE_UID_KEY) || '').trim();
 }
@@ -3232,7 +3239,6 @@ function getShopCustomerName(){
     ''
   ).trim();
 }
-
 function buildShopCleanReturnUrl(){
   let u;
 
@@ -3240,16 +3246,20 @@ function buildShopCleanReturnUrl(){
     u = new URL(location.href);
   } catch(e) {
     const saved = String(localStorage.getItem(SHOP_RETURN_URL_KEY) || '').trim();
-    return saved || 'https://murain.tw/shop';
+    return saved || shopUrl('/shop.html');
   }
 
+  const siteHost = String(new URL(shopSiteOrigin()).hostname || '').toLowerCase();
+  const currentHost = String(u.hostname || '').toLowerCase();
+
   const isMurainSite =
-    u.hostname === 'murain.tw' ||
-    u.hostname === 'www.murain.tw';
+    currentHost === siteHost ||
+    currentHost === 'murain.tw' ||
+    currentHost === 'www.murain.tw' ||
+    currentHost === 'staging.murain.tw';
 
   const path = String(u.pathname || '').toLowerCase();
 
-  // 首頁不能當商品會員登入回跳，避免 LIFF Endpoint 把回跳洗成首頁
   const isHomePage =
     path === '/' ||
     path === '/index.html' ||
@@ -3266,13 +3276,18 @@ function buildShopCleanReturnUrl(){
         saved.includes('/product.html') ||
         saved.includes('/haircare.html') ||
         saved.includes('/member') ||
-        saved.includes('/member.html')
+        saved.includes('/member.html') ||
+        saved.includes('/wishlist') ||
+        saved.includes('/wishlist.html')
       )
     ) {
-      return saved;
+      try {
+        const su = new URL(saved, shopSiteOrigin());
+        if (su.hostname === siteHost) return su.toString();
+      } catch(e) {}
     }
 
-    return 'https://murain.tw/shop';
+    return shopUrl('/shop.html');
   }
 
   u.searchParams.delete('logged_out');
@@ -3288,7 +3303,7 @@ function buildShopCleanReturnUrl(){
 
 function buildShopReturnUrlForPreview(productArg){
   // 商品預覽一定回商城頁，不要拿首頁當底
-  const u = new URL('https://murain.tw/shop');
+  const u = new URL(shopUrl('/shop.html'));
   const product = productArg || ((typeof previewProduct !== 'undefined') ? previewProduct : null);
 
   let sku = '';
@@ -3334,7 +3349,7 @@ function buildShopMemberReturnUrl(){
     u.searchParams.set('after_member_login', '1');
     url = u.toString();
   } catch(e) {
-    url = 'https://murain.tw/shop?after_member_login=1';
+    url = shopUrl('/shop.html?after_member_login=1');
   }
 
   localStorage.setItem(SHOP_RETURN_URL_KEY, url);
@@ -3349,7 +3364,7 @@ function redirectShopMemberBind(returnUrl){
 }
 
 function buildShopMemberLoginUrl(returnUrl){
-  return `https://murain.tw/member.html?v=${Date.now()}&return_url=${encodeURIComponent(returnUrl || buildShopCleanReturnUrl())}`;
+  return `${shopUrl('/member.html')}?v=${Date.now()}&return_url=${encodeURIComponent(returnUrl || buildShopCleanReturnUrl())}`;
 }
 
 function redirectShopMemberLogin(returnUrl){
@@ -4539,7 +4554,7 @@ async function previewEnsureCart(){
   // ✅ 有舊 token 時，先確認它是不是還是 open 官網購物車
   if (token) {
     try {
-      const r0 = await fetch(`https://api.murain.tw/cart/${encodeURIComponent(token)}`);
+      const r0 = await fetch(`${shopApiBase()}/cart/${encodeURIComponent(token)}`);
       if (r0.ok) {
         const j0 = await r0.json().catch(() => ({}));
         const status = String(j0.cart_status || j0.status || '').trim().toLowerCase();
@@ -4561,7 +4576,7 @@ async function previewEnsureCart(){
     token = '';
   }
 
-  const res = await fetch('https://api.murain.tw/cart/create', {
+  const res = await fetch(`${shopApiBase()}/cart/create`, {
     method:'POST',
     headers:{ 'content-type':'application/json' },
     credentials:'include',
@@ -4808,7 +4823,7 @@ updatePreviewCartButton(previewProduct, '加入中');
 
     const token = await previewEnsureCart();
 
-    const res = await fetch('https://api.murain.tw/cart/add', {
+    const res = await fetch(`${shopApiBase()}/cart/add`, {
       method:'POST',
       headers:{ 'content-type':'application/json' },
       credentials:'include',
@@ -4940,7 +4955,7 @@ document.addEventListener('DOMContentLoaded', () => {
   active ? '已加入願望錄' : '已從願望錄移除',
   '瀏覽願望錄',
   () => {
-    location.href = 'https://murain.tw/wishlist.html';
+    location.href = shopUrl('/wishlist.html');
   }
 );
 });
@@ -5216,7 +5231,7 @@ if(heartBtn){
   active ? '已加入願望錄' : '已從願望錄移除',
   '瀏覽願望錄',
   () => {
-    location.href = 'https://murain.tw/wishlist.html';
+    location.href = shopUrl('/wishlist.html');
   }
 );
   });
