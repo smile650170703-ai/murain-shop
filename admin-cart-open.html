@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>未結單購物車｜訂單後台</title>
+<title>購物車管理｜訂單後台</title>
  <script src="/config.js?v=20260604-1"></script>
 <style>
   *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
@@ -374,7 +374,7 @@ body.is-cart-open-page #orderList {
 </head>
 <body>
 <div class="wrap">
- <h1>未結單購物車</h1>
+ <h1>購物車管理</h1>
 
 <div class="page-tabs">
   <div class="page-tabs-bar">
@@ -399,7 +399,7 @@ body.is-cart-open-page #orderList {
       <a class="filter-btn" data-admin-file="admin-all.html" href="admin-all.html">全部訂單</a>
 
       <a class="filter-btn active" data-admin-file="admin-cart-open.html" id="btnCartOpenTop" href="admin-cart-open.html">
-        🛒 未結單購物車
+        🛒 購物車管理
       </a>
 
       <a class="filter-btn" data-admin-file="admin-ship.html" href="admin-ship.html">⭐待出貨訂單</a>
@@ -415,6 +415,11 @@ body.is-cart-open-page #orderList {
 </a>
     </div>
   </div>
+</div>
+
+<div class="filter-group" id="cartModeTabs" style="margin:0 0 12px;">
+  <button class="filter-btn active" type="button" data-cart-mode="editable">可修改購物車</button>
+  <button class="filter-btn" type="button" data-cart-mode="issue">結帳 / 付款未完成</button>
 </div>
 
   <div class="layout">
@@ -436,7 +441,8 @@ const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
 let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
 let currentCartRows = [];
 let currentCartRecord = null;
- let CART_EDITING_SKU = '';
+let CART_EDITING_SKU = '';
+let CART_MODE = 'editable'; // editable 可修改 / issue 結帳付款未完成
 
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -650,7 +656,87 @@ function canEditCart(row = {}) {
 
   return st === 'open' && !checkedOut;
 }
+function isPaymentIssueCart(row = {}) {
+  const st = rawCartStatus(row);
 
+  const checkedOut =
+    row.checked_out === true ||
+    String(row.checked_out || '').trim().toLowerCase() === 'true' ||
+    String(row.checked_out_order_id || '').trim();
+
+  const payStatus = String(
+    row.pay_status ||
+    row.payment_status ||
+    row.active_order_pay_status ||
+    ''
+  ).trim().toLowerCase();
+
+  const orderStatus = String(
+    row.order_status ||
+    row.active_order_status ||
+    ''
+  ).trim().toLowerCase();
+
+  // 結帳卡住
+  if (st === 'checking_out') return true;
+
+  // 已送出，但付款沒有完成
+  if (
+    ['submitted', 'pending', 'checked_out'].includes(st) &&
+    ['pending', 'unpaid', 'failed', 'pay_failed', 'failed_pay'].includes(payStatus)
+  ) {
+    return true;
+  }
+
+  // 已經有訂單，但訂單付款未完成
+  if (
+    checkedOut &&
+    ['pending', 'unpaid', 'failed', 'pay_failed', 'failed_pay'].includes(payStatus)
+  ) {
+    return true;
+  }
+
+  // 訂單狀態本身是 pending / submitted，也當作待追蹤
+  if (
+    checkedOut &&
+    ['pending', 'submitted'].includes(orderStatus) &&
+    !['paid', 'paid_ok', 'completed', 'shipped'].includes(payStatus)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function getVisibleCartRows() {
+  return currentCartRows
+    .map((row, idx) => ({ row, idx }))
+    .filter(x => {
+      if (CART_MODE === 'editable') return canEditCart(x.row);
+      if (CART_MODE === 'issue') return isPaymentIssueCart(x.row);
+      return true;
+    });
+}
+
+function setupCartModeTabs() {
+  document.querySelectorAll('#cartModeTabs [data-cart-mode]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      CART_MODE = btn.dataset.cartMode || 'editable';
+
+      document.querySelectorAll('#cartModeTabs [data-cart-mode]').forEach(x => {
+        x.classList.toggle('active', x === btn);
+      });
+
+      currentCartRecord = null;
+      renderCartList();
+
+      const detailEl = document.getElementById('orderDetail');
+      if (detailEl) {
+        detailEl.innerHTML = '<div class="muted">請從左邊點選一台購物車</div>';
+      }
+    });
+  });
+}
 function money(n) {
   return 'NT$ ' + (Number(n || 0) || 0).toLocaleString('zh-TW');
 }
@@ -839,10 +925,10 @@ async function adminRemoveCartItemBySku(sku) {
 }
 function setupCartOpenPageChrome() {
   document.body.classList.add('is-cart-open-page');
-  document.title = '未結單購物車｜訂單後台';
+  document.title = '購物車管理｜訂單後台';
 
   const h1 = document.querySelector('h1');
-  if (h1) h1.textContent = '未結單購物車';
+  if (h1) h1.textContent = '購物車管理';
 
   document.querySelectorAll('.admin-sub-tabs [data-admin-file]').forEach(a => {
     a.classList.toggle('active', a.dataset.adminFile === 'admin-cart-open.html');
@@ -962,17 +1048,21 @@ function renderCartList() {
 
   if (!listEl) return;
 
-  if (!currentCartRows.length) {
-    listEl.innerHTML = '<div class="muted">目前沒有未完成結單購物車。</div>';
+const visibleRows = getVisibleCartRows();
 
-    if (detailEl) {
-      detailEl.innerHTML = '<div class="muted">目前沒有資料</div>';
-    }
+if (!visibleRows.length) {
+  listEl.innerHTML = CART_MODE === 'editable'
+    ? '<div class="muted">目前沒有可修改的 open 購物車。</div>'
+    : '<div class="muted">目前沒有結帳 / 付款未完成的購物車。</div>';
 
-    return;
+  if (detailEl) {
+    detailEl.innerHTML = '<div class="muted">目前沒有資料</div>';
   }
 
-  listEl.innerHTML = currentCartRows.map((row, idx) => {
+  return;
+}
+
+listEl.innerHTML = visibleRows.map(({ row, idx }) => {
     const title = row.customer_name || '未命名購物車';
 
     return `
@@ -984,7 +1074,9 @@ function renderCartList() {
         ${row.items_text ? `<div class="ord-sub">${escapeHtml(row.items_text)}</div>` : ''}
 
         <div class="badges">
-          <span class="badge">${escapeHtml(displayCartStatus(row.status || 'open'))}</span>
+      <span class="badge ${canEditCart(row) ? 'green' : (isPaymentIssueCart(row) ? 'yellow' : '')}">
+  ${canEditCart(row) ? '可修改' : (isPaymentIssueCart(row) ? '結帳 / 付款未完成' : escapeHtml(displayCartStatus(row.status || 'open')))}
+</span>
           ${row.streamer_name ? `<span class="badge blue">直播主：${escapeHtml(row.streamer_name)}</span>` : '<span class="badge red">未填直播主</span>'}
           ${row.link_sent_at ? '<span class="badge green">已發購物車卡</span>' : ''}
           ${row.link_copied_at ? '<span class="badge blue">已複製連結</span>' : ''}
@@ -1286,6 +1378,7 @@ async function clearCartRow(row) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   setupCartOpenPageChrome();
+  setupCartModeTabs();
   await loadOpenCartList();
 });
 </script>
