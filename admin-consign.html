@@ -3590,7 +3590,16 @@ async function consignAction(orderItemId, action, opts = {}){
     const j = await r.json().catch(() => ({}));
 
     if (!r.ok || !j.ok) {
-      if (!silent) alert('操作失敗：' + (j.error || j.reason || 'unknown'));
+      const reasonText = String(j.reason || j.error || 'unknown');
+
+      const msg =
+        reasonText.startsWith('cod_not_picked:')
+          ? '這筆是 7-11 取貨付款 / COD，但取貨登記不是「已取貨」，禁止寄賣撥款或轉購物金。'
+          : reasonText.startsWith('bad_status:') || reasonText.startsWith('bad_pay_status:')
+            ? '這筆訂單已取消、失敗或作廢，禁止寄賣撥款。'
+            : (j.message || reasonText);
+
+      if (!silent) alert('操作失敗：' + msg);
       return { ok:false, error:j.error || 'request_failed', reason:j.reason || '' };
     }
 
