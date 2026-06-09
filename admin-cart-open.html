@@ -274,7 +274,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 
  /* ★ 隱藏：0 元包裹匯出按鈕（不動其他邏輯） */
   #btnExportZero{display:none !important;}
-/* ===== 未結單購物車頁：隱藏訂單處理用功能 ===== */
+/* ===== 購物車管理頁：隱藏訂單處理用功能 ===== */
 body.is-cart-open-page #btnPrintSlipsRange,
 body.is-cart-open-page #btnExportShip,
 body.is-cart-open-page #btnExportZero,
@@ -374,7 +374,10 @@ body.is-cart-open-page #orderList {
 </head>
 <body>
 <div class="wrap">
- <h1>購物車管理</h1>
+<h1>購物車管理</h1>
+<div class="muted" style="margin:0 0 12px;">
+  只顯示尚未送出結帳、可修改的 open 購物車。
+</div>
 
 <div class="page-tabs">
   <div class="page-tabs-bar">
@@ -417,11 +420,6 @@ body.is-cart-open-page #orderList {
   </div>
 </div>
 
-<div class="filter-group" id="cartModeTabs" style="margin:0 0 12px;">
-  <button class="filter-btn active" type="button" data-cart-mode="editable">可修改購物車</button>
-  <button class="filter-btn" type="button" data-cart-mode="issue">結帳 / 付款未完成</button>
-</div>
-
   <div class="layout">
     <div class="card" id="orderList">
       <div class="muted">載入中…</div>
@@ -442,7 +440,7 @@ let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
 let currentCartRows = [];
 let currentCartRecord = null;
 let CART_EDITING_SKU = '';
-let CART_MODE = 'editable'; // editable 可修改 / issue 結帳付款未完成
+ 
 
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -656,87 +654,7 @@ function canEditCart(row = {}) {
 
   return st === 'open' && !checkedOut;
 }
-function isPaymentIssueCart(row = {}) {
-  const st = rawCartStatus(row);
 
-  const checkedOut =
-    row.checked_out === true ||
-    String(row.checked_out || '').trim().toLowerCase() === 'true' ||
-    String(row.checked_out_order_id || '').trim();
-
-  const payStatus = String(
-    row.pay_status ||
-    row.payment_status ||
-    row.active_order_pay_status ||
-    ''
-  ).trim().toLowerCase();
-
-  const orderStatus = String(
-    row.order_status ||
-    row.active_order_status ||
-    ''
-  ).trim().toLowerCase();
-
-  // 結帳卡住
-  if (st === 'checking_out') return true;
-
-  // 已送出，但付款沒有完成
-  if (
-    ['submitted', 'pending', 'checked_out'].includes(st) &&
-    ['pending', 'unpaid', 'failed', 'pay_failed', 'failed_pay'].includes(payStatus)
-  ) {
-    return true;
-  }
-
-  // 已經有訂單，但訂單付款未完成
-  if (
-    checkedOut &&
-    ['pending', 'unpaid', 'failed', 'pay_failed', 'failed_pay'].includes(payStatus)
-  ) {
-    return true;
-  }
-
-  // 訂單狀態本身是 pending / submitted，也當作待追蹤
-  if (
-    checkedOut &&
-    ['pending', 'submitted'].includes(orderStatus) &&
-    !['paid', 'paid_ok', 'completed', 'shipped'].includes(payStatus)
-  ) {
-    return true;
-  }
-
-  return false;
-}
-
-function getVisibleCartRows() {
-  return currentCartRows
-    .map((row, idx) => ({ row, idx }))
-    .filter(x => {
-      if (CART_MODE === 'editable') return canEditCart(x.row);
-      if (CART_MODE === 'issue') return isPaymentIssueCart(x.row);
-      return true;
-    });
-}
-
-function setupCartModeTabs() {
-  document.querySelectorAll('#cartModeTabs [data-cart-mode]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      CART_MODE = btn.dataset.cartMode || 'editable';
-
-      document.querySelectorAll('#cartModeTabs [data-cart-mode]').forEach(x => {
-        x.classList.toggle('active', x === btn);
-      });
-
-      currentCartRecord = null;
-      renderCartList();
-
-      const detailEl = document.getElementById('orderDetail');
-      if (detailEl) {
-        detailEl.innerHTML = '<div class="muted">請從左邊點選一台購物車</div>';
-      }
-    });
-  });
-}
 function money(n) {
   return 'NT$ ' + (Number(n || 0) || 0).toLocaleString('zh-TW');
 }
@@ -992,7 +910,7 @@ async function loadOpenCartList() {
   const listEl = $('#orderList');
   const detailEl = $('#orderDetail');
 
-  if (listEl) listEl.innerHTML = '<div class="muted">未結單購物車載入中…</div>';
+   if (listEl) listEl.innerHTML = '<div class="muted">購物車管理載入中…</div>';
   if (detailEl) detailEl.innerHTML = '<div class="muted">請從左邊點選一台購物車</div>';
 
   try {
@@ -1033,7 +951,7 @@ renderCartList();
     currentCartRows = [];
 
     if (listEl) {
-      listEl.innerHTML = '<div class="error">未結單購物車載入失敗：' + escapeHtml(e.message || e) + '</div>';
+      listEl.innerHTML = '<div class="error">購物車管理載入失敗：' + escapeHtml(e.message || e) + '</div>';
     }
 
     if (detailEl) {
@@ -1048,12 +966,8 @@ function renderCartList() {
 
   if (!listEl) return;
 
-const visibleRows = getVisibleCartRows();
-
-if (!visibleRows.length) {
-  listEl.innerHTML = CART_MODE === 'editable'
-    ? '<div class="muted">目前沒有可修改的 open 購物車。</div>'
-    : '<div class="muted">目前沒有結帳 / 付款未完成的購物車。</div>';
+if (!currentCartRows.length) {
+  listEl.innerHTML = '<div class="muted">目前沒有可修改的 open 購物車。</div>';
 
   if (detailEl) {
     detailEl.innerHTML = '<div class="muted">目前沒有資料</div>';
@@ -1062,7 +976,7 @@ if (!visibleRows.length) {
   return;
 }
 
-listEl.innerHTML = visibleRows.map(({ row, idx }) => {
+listEl.innerHTML = currentCartRows.map((row, idx) => {
     const title = row.customer_name || '未命名購物車';
 
     return `
@@ -1074,8 +988,8 @@ listEl.innerHTML = visibleRows.map(({ row, idx }) => {
         ${row.items_text ? `<div class="ord-sub">${escapeHtml(row.items_text)}</div>` : ''}
 
         <div class="badges">
-      <span class="badge ${canEditCart(row) ? 'green' : (isPaymentIssueCart(row) ? 'yellow' : '')}">
-  ${canEditCart(row) ? '可修改' : (isPaymentIssueCart(row) ? '結帳 / 付款未完成' : escapeHtml(displayCartStatus(row.status || 'open')))}
+<span class="badge ${canEditCart(row) ? 'green' : 'red'}">
+  ${canEditCart(row) ? '可修改' : escapeHtml(displayCartStatus(row.status || 'open'))}
 </span>
           ${row.streamer_name ? `<span class="badge blue">直播主：${escapeHtml(row.streamer_name)}</span>` : '<span class="badge red">未填直播主</span>'}
           ${row.link_sent_at ? '<span class="badge green">已發購物車卡</span>' : ''}
@@ -1147,7 +1061,7 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
   }
 
   dEl.innerHTML = `
-    <div class="section-title">未結單購物車</div>
+    <div class="section-title">購物車明細</div>
 
     <div class="row mt-2">
       <div>
@@ -1378,7 +1292,6 @@ async function clearCartRow(row) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   setupCartOpenPageChrome();
-  setupCartModeTabs();
   await loadOpenCartList();
 });
 </script>
