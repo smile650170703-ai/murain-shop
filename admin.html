@@ -353,10 +353,81 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   border-color:#22d3ee;
   box-shadow:0 8px 20px rgba(34,211,238,.35);
 }
+/* ===== 9.4-H-6 後台入口權限防呆 ===== */
+#adminEntryLock{
+  max-width:420px;
+  margin:90px auto;
+  padding:24px;
+  border-radius:18px;
+  border:1px solid rgba(148,163,184,.35);
+  background:rgba(15,23,42,.96);
+  box-shadow:0 16px 40px rgba(0,0,0,.35);
+  color:#e2e8f0;
+}
 
+#adminEntryLock h2{
+  margin:0 0 8px;
+  font-size:22px;
+}
+
+#adminEntryLock .hint{
+  margin:0 0 14px;
+  color:#94a3b8;
+  font-size:13px;
+  line-height:1.6;
+}
+
+#adminEntryLock input{
+  width:100%;
+  padding:12px;
+  border-radius:12px;
+  border:1px solid rgba(148,163,184,.65);
+  background:#020617;
+  color:#e2e8f0;
+  font-size:16px;
+}
+
+#adminEntryLock button{
+  width:100%;
+  margin-top:12px;
+  padding:12px;
+  border:0;
+  border-radius:12px;
+  background:#22d3ee;
+  color:#0f172a;
+  font-size:16px;
+  font-weight:800;
+  cursor:pointer;
+}
+
+#adminEntryLock button:disabled{
+  opacity:.65;
+  cursor:not-allowed;
+}
+
+#adminEntryMsg{
+  margin-top:10px;
+  min-height:18px;
+  color:#fecaca;
+  font-size:13px;
+}
+
+#adminProtectedRoot[hidden]{
+  display:none !important;
+}
 </style>
 </head>
 <body>
+
+<div id="adminEntryLock">
+  <h2>後台入口驗證</h2>
+  <p class="hint">請先輸入後台管理密碼，通過後才會顯示後台按鈕、清單數量與訂單資料。</p>
+  <input id="adminEntryPassword" type="password" placeholder="請輸入後台密碼" autocomplete="off">
+  <button id="adminEntryUnlockBtn" type="button">進入後台</button>
+  <div id="adminEntryMsg"></div>
+</div>
+
+<div id="adminProtectedRoot" hidden>
 <div class="wrap">
   <h1>訂單後台</h1>
 
@@ -578,6 +649,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     </div>
   </div>
 </div>
+</div>
 
 <script>
 const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
@@ -764,6 +836,89 @@ function shouldUseAdminLinkNav(el){
 }
 
 let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
+
+const ADMIN_ENTRY_UNLOCK_KEY = 'MURAIN_ADMIN_ENTRY_UNLOCKED';
+
+function setupAdminEntryGate(){
+  return new Promise((resolve) => {
+    const lockBox = document.getElementById('adminEntryLock');
+    const protectedRoot = document.getElementById('adminProtectedRoot');
+    const passInput = document.getElementById('adminEntryPassword');
+    const btn = document.getElementById('adminEntryUnlockBtn');
+    const msg = document.getElementById('adminEntryMsg');
+
+    if (!lockBox || !protectedRoot) {
+      resolve(true);
+      return;
+    }
+
+    function showAdmin(){
+      sessionStorage.setItem(ADMIN_ENTRY_UNLOCK_KEY, '1');
+      lockBox.style.display = 'none';
+      protectedRoot.hidden = false;
+      resolve(true);
+    }
+
+    // 同一個分頁已驗證過，就不用重打；換分頁 / 重開瀏覽器會再要求輸入
+    if (sessionStorage.getItem(ADMIN_ENTRY_UNLOCK_KEY) === '1' && OP_KEY) {
+      showAdmin();
+      return;
+    }
+
+    protectedRoot.hidden = true;
+    lockBox.style.display = 'block';
+
+    async function checkPassword(){
+      const k = String(passInput?.value || '').trim();
+
+      if (!k) {
+        if (msg) msg.textContent = '請輸入後台密碼';
+        return;
+      }
+
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '驗證中...';
+      }
+
+      if (msg) msg.textContent = '';
+
+      try {
+        const r = await fetch(`${API}/op/auth`, {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ op_key: k })
+        });
+
+        const j = await r.json().catch(() => ({}));
+
+        if (!r.ok || !j.ok) {
+          if (msg) msg.textContent = '密碼錯誤，請重新輸入';
+          return;
+        }
+
+        OP_KEY = k;
+        localStorage.setItem(STORAGE_KEY, OP_KEY);
+        showAdmin();
+
+      } catch (e) {
+        console.error(e);
+        if (msg) msg.textContent = '驗證失敗，請稍後再試';
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '進入後台';
+        }
+      }
+    }
+
+    btn?.addEventListener('click', checkPassword);
+    passInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') checkPassword();
+    });
+  });
+}
+
 let currentFilter = 'all';
 let currentOrders = [];
 let currentRecord = null;
@@ -5659,6 +5814,8 @@ async function loadAdminDefaultPage(){
 
 
 document.addEventListener('DOMContentLoaded', async () => {
+
+  await setupAdminEntryGate();
 
   // OP_KEY 重設（如果你已經拿掉更改密碼那顆，可以保留這段但加保護）
   const btnChangeKey = $('#btnChangeKey');
