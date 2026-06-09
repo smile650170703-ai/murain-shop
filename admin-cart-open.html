@@ -436,6 +436,7 @@ const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
 let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
 let currentCartRows = [];
 let currentCartRecord = null;
+ let CART_EDITING_SKU = '';
 
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -636,6 +637,36 @@ function showDetailMsg(text, type = 'info') {
   el.style.color = type === 'ok' ? '#bbf7d0' : (type === 'error' ? '#fecaca' : '#94a3b8');
   el.textContent = text || '';
 }
+ function rawCartStatus(row = {}) {
+  return String(row.status || row.cart_status || 'open').trim().toLowerCase();
+}
+
+function canEditCart(row = {}) {
+  const st = rawCartStatus(row);
+  const checkedOut =
+    row.checked_out === true ||
+    String(row.checked_out || '').trim().toLowerCase() === 'true' ||
+    String(row.checked_out_order_id || '').trim();
+
+  return st === 'open' && !checkedOut;
+}
+
+function money(n) {
+  return 'NT$ ' + (Number(n || 0) || 0).toLocaleString('zh-TW');
+}
+
+function normalizeAdminCartItem(it = {}) {
+  const qty = Number(it.qty ?? it.Qty ?? it.quantity ?? 0) || 0;
+  const price = Number(it.price ?? it.Price ?? 0) || 0;
+
+  return {
+    sku: String(it.sku || it.SKU || '').trim(),
+    name: String(it.name || it.Name || it.title || it.sku || it.SKU || '').trim(),
+    qty,
+    price,
+    subtotal: Number(it.subtotal ?? it.Subtotal ?? qty * price) || 0
+  };
+}
 function setupCartOpenPageChrome() {
   document.body.classList.add('is-cart-open-page');
   document.title = '未結單購物車｜訂單後台';
@@ -822,6 +853,7 @@ async function renderCartDetail(row) {
   if (!dEl) return;
 
   let itemText = row.items_text || '';
+ let detailItems = [];
 
   dEl.innerHTML = '<div class="muted">購物車明細載入中…</div>';
 
@@ -833,14 +865,18 @@ async function renderCartDetail(row) {
 params.set('op_key', OP_KEY);
 params.set('cart_token', token);
 
-const r = await fetch(`${API}/admin/cart/items?${params.toString()}`);
+const r = await fetch(`${API}/cart/${encodeURIComponent(token)}`);
 const j = await r.json().catch(() => ({}));
 
 if (r.ok && j.ok && Array.isArray(j.items)) {
-  itemText = j.items.map(it => {
-    const name = String(it.name || it.Name || it.title || it.sku || '').trim();
-    const qty = Number(it.qty || it.quantity || 0) || 0;
-    return `${name}${qty > 0 ? ` × ${qty}` : ''}`;
+  row.status = j.cart_status || row.status || 'open';
+  row.checked_out = j.checked_out === true;
+  row.checked_out_order_id = j.checked_out_order_id || '';
+
+  detailItems = j.items.map(normalizeAdminCartItem);
+
+  itemText = detailItems.map(it => {
+    return `${it.name || it.sku}${it.qty > 0 ? ` × ${it.qty}` : ''}`;
   }).filter(Boolean).join('\n');
 }
     }
@@ -896,7 +932,39 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
     <div class="ro-field" style="height:auto;min-height:88px;align-items:flex-start;padding-top:10px;white-space:pre-wrap;">
       ${escapeHtml(itemText || '-')}
     </div>
+    ${canEditCart(row) ? `
+      <div class="mt-3" style="padding:10px;border:1px solid rgba(148,163,184,.35);border-radius:14px;background:rgba(2,6,23,.55);">
+        <div class="section-title">購物車商品管理</div>
+        <div class="muted">只有 open 購物車可以修改。submitted / paid / cancelled 不可修改。</div>
 
+        <div class="row mt-2">
+          <div>
+            <label>條碼 / SKU</label>
+            <input id="editSku" class="mono" placeholder="輸入條碼 / SKU" />
+          </div>
+          <div>
+            <label>數量</label>
+            <input id="editQty" type="number" min="1" value="1" />
+          </div>
+        </div>
+
+        <div class="row mt-2">
+          <div>
+            <label>改價格</label>
+            <input id="editPrice" type="number" min="0" placeholder="不改價可留空" />
+          </div>
+          <div style="align-self:end;">
+            <button class="btn-primary" id="btnCartAddOrUpdate" type="button">新增 / 儲存修改</button>
+          </div>
+        </div>
+
+        <div class="mt-3" id="cartEditItemsPanel"></div>
+      </div>
+    ` : `
+      <div class="mt-3" style="padding:10px;border:1px solid rgba(248,113,113,.45);border-radius:14px;background:rgba(127,29,29,.18);color:#fecaca;">
+        此購物車狀態不是 open，只能查看，不能新增、刪除或改價。
+      </div>
+    `}
     <div class="mt-3" style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="btn-secondary" id="btnCartRemindSingle" type="button">🛒 手動發送購物車卡</button>
       <button class="btn-secondary" id="btnCartClearSingle" type="button">🧹 清空此購物車</button>
