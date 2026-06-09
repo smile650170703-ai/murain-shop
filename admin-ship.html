@@ -686,8 +686,8 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 
 <div class="toolbar-side">
   <span id="opLabel" class="tag-small"></span>
-  <button id="btnCancelOrderTop" class="small-btn" type="button">
-    🚫 棄標(請勿亂按)
+<button id="btnCancelOrderTop" class="small-btn" type="button">
+    🚫 棄標／沒收定金
   </button>
 
   <div class="side-box" id="vendorMonthBox">
@@ -5895,25 +5895,88 @@ if (btnExport) btnExport.addEventListener('click', exportCSV);
 
 const btnPrintSlips = $('#btnPrintSlipsRange');
 if (btnPrintSlips) btnPrintSlips.addEventListener('click', printShipSlipsRange);
-  // ★ 上方「取消訂單（補回庫存）」按鈕：直接走 cancelCurrentOrder()
+  // ✅ 上方「棄標／沒收定金」按鈕：走專用 forfeit API，不走一般取消
   const btnCancelTop = $('#btnCancelOrderTop');
 if (btnCancelTop) {
-  btnCancelTop.addEventListener('click', () => {
-    if (!currentRecord) {
-      alert('請先在左邊選一筆訂單');
-      return;
-    }
-
-    const f = currentRecord.fields || currentRecord || {};
-    if (isDepositForfeitOrder(f)) {
-      alert('這筆訂單已經是棄標／訂金沒收狀態，不需要再按棄標。');
-      return;
-    }
-
-    cancelCurrentOrder();
+  btnCancelTop.addEventListener('click', async () => {
+    await forfeitCurrentOrder();
   });
 }
+async function forfeitCurrentOrder() {
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
 
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = String(f.order_id || f['訂單編號'] || '').trim();
+
+  if (!orderId) {
+    alert('這筆訂單沒有 order_id，無法執行棄標／沒收定金。');
+    return;
+  }
+
+  if (isDepositForfeitOrder(f)) {
+    alert('這筆訂單已經是棄標／訂金沒收狀態，不需要再按。');
+    return;
+  }
+
+  const warning = [
+    '這會執行：棄標／沒收定金',
+    '',
+    '系統會：',
+    '1. 訂單改為取消／棄標',
+    '2. 補回庫存',
+    '3. 購物金不退回',
+    '4. 不可再收款、出貨、發尾款或重新結帳',
+    '',
+    '若只是客人要改付款或重新結帳，請改按「取消原單＋發重新結帳」。',
+    '',
+    '請輸入：沒收定金'
+  ].join('\n');
+
+  const confirmText = prompt(warning, '');
+
+  if (confirmText !== '沒收定金') {
+    alert('未輸入正確文字，已取消操作。');
+    return;
+  }
+
+  const reasonInput = prompt(
+    '請輸入棄標原因',
+    '棄標／訂金沒收／未取退回'
+  );
+
+  const reason = String(reasonInput || '').trim() || '棄標／訂金沒收／未取退回';
+
+  const r = await fetch(`${API}/admin/order/forfeit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      op_key: OP_KEY,
+      order_id: orderId,
+      confirm_text: '沒收定金',
+      reason
+    })
+  });
+
+  const j = await r.json().catch(() => ({}));
+
+  if (!r.ok || !j.ok) {
+    alert('棄標／沒收定金失敗：' + (j.message || j.error || r.status));
+    return;
+  }
+
+  if (j.already === 'forfeited') {
+    alert('這筆訂單已經是棄標／沒收定金狀態。');
+  } else if (j.already === 'cancelled') {
+    alert('這筆訂單已取消，未再次執行棄標。');
+  } else {
+    alert(j.message || '已標記棄標／沒收定金。');
+  }
+
+  await reloadCurrentView();
+}
 function proxyButton(topId, originalId){
   const top = $('#' + topId);
   if (!top) return;
