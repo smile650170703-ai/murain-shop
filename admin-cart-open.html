@@ -667,6 +667,176 @@ function normalizeAdminCartItem(it = {}) {
     subtotal: Number(it.subtotal ?? it.Subtotal ?? qty * price) || 0
   };
 }
+ function renderAdminCartEditPanel(items = [], editable = false) {
+  const root = document.getElementById('cartEditItemsPanel');
+  if (!root) return;
+
+  const list = Array.isArray(items) ? items.map(normalizeAdminCartItem) : [];
+
+  if (!list.length) {
+    root.innerHTML = '<div class="muted">目前購物車沒有商品</div>';
+    return;
+  }
+
+  root.innerHTML = list.map(it => `
+    <div style="padding:10px;border:1px solid rgba(148,163,184,.35);border-radius:12px;margin-bottom:8px;background:rgba(15,23,42,.9);">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div style="min-width:220px;flex:1;">
+          <div style="font-weight:700;">${escapeHtml(it.name || it.sku || '-')}</div>
+          <div class="muted mono" style="margin-top:4px;">
+            ${escapeHtml(it.sku)} ｜ 數量 ${it.qty} ｜ 單價 ${money(it.price)} ｜ 小計 ${money(it.subtotal)}
+          </div>
+        </div>
+
+        ${editable ? `
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn-secondary btnCartEditItem"
+              type="button"
+              data-sku="${escapeHtml(it.sku)}"
+              data-name="${escapeHtml(it.name)}"
+              data-qty="${escapeHtml(it.qty)}"
+              data-price="${escapeHtml(it.price)}">修改</button>
+
+            <button class="btn-secondary btnCartRemoveItem"
+              type="button"
+              data-sku="${escapeHtml(it.sku)}">刪除</button>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function setCartEditForm(item = {}) {
+  CART_EDITING_SKU = String(item.sku || '').trim();
+
+  const skuEl = document.getElementById('editSku');
+  const qtyEl = document.getElementById('editQty');
+  const priceEl = document.getElementById('editPrice');
+
+  if (skuEl) skuEl.value = CART_EDITING_SKU;
+  if (qtyEl) qtyEl.value = String(item.qty || 1);
+  if (priceEl) priceEl.value = item.price != null ? String(item.price) : '';
+
+  showDetailMsg(
+    CART_EDITING_SKU
+      ? `目前修改：${item.name || CART_EDITING_SKU}。只改數量/價格；如果要換條碼，請先刪除再新增。`
+      : ''
+  );
+}
+
+async function postCartEdit(path, payload) {
+  const r = await fetch(`${API}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {})
+  });
+
+  const j = await r.json().catch(() => ({}));
+
+  if (!r.ok || !j.ok) {
+    throw new Error(j.message || j.error || ('HTTP ' + r.status));
+  }
+
+  return j;
+}
+
+async function adminAddOrUpdateCartItem() {
+  if (!currentCartRecord || !currentCartRecord.cart_token) {
+    showDetailMsg('請先選一台購物車', 'error');
+    return;
+  }
+
+  if (!canEditCart(currentCartRecord)) {
+    showDetailMsg('此購物車不是 open，不能修改商品。', 'error');
+    return;
+  }
+
+  const token = String(currentCartRecord.cart_token || '').trim();
+  const sku = String(document.getElementById('editSku')?.value || '').trim();
+  const qty = Math.max(1, parseInt(document.getElementById('editQty')?.value || '1', 10) || 1);
+  const priceRaw = String(document.getElementById('editPrice')?.value || '').trim();
+
+  if (!sku) {
+    showDetailMsg('請輸入條碼 / SKU', 'error');
+    return;
+  }
+
+  try {
+    if (CART_EDITING_SKU) {
+      const payload = {
+        cart_token: token,
+        sku: CART_EDITING_SKU,
+        qty,
+        op_key: OP_KEY
+      };
+
+      if (priceRaw !== '') {
+        payload.price = Math.max(0, parseInt(priceRaw, 10) || 0);
+      }
+
+      await postCartEdit('/cart/update-qty-self', payload);
+    } else {
+      const payload = {
+        cart_token: token,
+        sku,
+        qty,
+        op_key: OP_KEY,
+        customer_type: 'live'
+      };
+
+      if (priceRaw !== '') {
+        payload.price = Math.max(0, parseInt(priceRaw, 10) || 0);
+      }
+
+      await postCartEdit('/cart/add', payload);
+    }
+
+    CART_EDITING_SKU = '';
+    showDetailMsg('已更新購物車商品', 'ok');
+    await renderCartDetail(currentCartRecord);
+
+  } catch (e) {
+    showDetailMsg('更新失敗：' + (e.message || e), 'error');
+  }
+}
+
+async function adminRemoveCartItemBySku(sku) {
+  if (!currentCartRecord || !currentCartRecord.cart_token) {
+    showDetailMsg('請先選一台購物車', 'error');
+    return;
+  }
+
+  if (!canEditCart(currentCartRecord)) {
+    showDetailMsg('此購物車不是 open，不能刪除商品。', 'error');
+    return;
+  }
+
+  const token = String(currentCartRecord.cart_token || '').trim();
+  const targetSku = String(sku || '').trim();
+
+  if (!targetSku) {
+    showDetailMsg('缺少要移除的條碼 / SKU', 'error');
+    return;
+  }
+
+  if (!confirm(`確定移除此商品？\n${targetSku}`)) return;
+
+  try {
+    await postCartEdit('/cart/remove', {
+      cart_token: token,
+      sku: targetSku,
+      op_key: OP_KEY
+    });
+
+    CART_EDITING_SKU = '';
+    showDetailMsg('已移除商品', 'ok');
+    await renderCartDetail(currentCartRecord);
+
+  } catch (e) {
+    showDetailMsg('移除失敗：' + (e.message || e), 'error');
+  }
+}
 function setupCartOpenPageChrome() {
   document.body.classList.add('is-cart-open-page');
   document.title = '未結單購物車｜訂單後台';
@@ -964,15 +1134,35 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
       <div class="mt-3" style="padding:10px;border:1px solid rgba(248,113,113,.45);border-radius:14px;background:rgba(127,29,29,.18);color:#fecaca;">
         此購物車狀態不是 open，只能查看，不能新增、刪除或改價。
       </div>
+      <div class="mt-3" id="cartEditItemsPanel"></div>
     `}
     <div class="mt-3" style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="btn-secondary" id="btnCartRemindSingle" type="button">🛒 手動發送購物車卡</button>
-      <button class="btn-secondary" id="btnCartClearSingle" type="button">🧹 清空此購物車</button>
+      ${canEditCart(row) ? `<button class="btn-secondary" id="btnCartClearSingle" type="button">🧹 清空此購物車</button>` : ''}
     </div>
 
     <div class="muted mt-3" id="detailMsg"></div>
   `;
+  renderAdminCartEditPanel(detailItems, canEditCart(row));
 
+  $('#btnCartAddOrUpdate')?.addEventListener('click', adminAddOrUpdateCartItem);
+
+  $$('.btnCartEditItem', dEl).forEach(btn => {
+    btn.addEventListener('click', () => {
+      setCartEditForm({
+        sku: btn.dataset.sku || '',
+        name: btn.dataset.name || '',
+        qty: Number(btn.dataset.qty || 1),
+        price: Number(btn.dataset.price || 0)
+      });
+    });
+  });
+
+  $$('.btnCartRemoveItem', dEl).forEach(btn => {
+    btn.addEventListener('click', () => {
+      adminRemoveCartItemBySku(btn.dataset.sku || '');
+    });
+  });
   $('#btnCartRemindSingle')?.addEventListener('click', async e => {
     const btn = e.currentTarget;
     setButtonBusy(btn, true, '發送中…');
