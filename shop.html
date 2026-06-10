@@ -4321,20 +4321,45 @@ async function loadPreviewImages(product){
 
 function bindPreviewImageSwipe(){
   const main = document.querySelector('.shop-preview-image-wrap');
-  if(!main) return;
+  if(!main || main.dataset.swipeBound === '1') return;
+  main.dataset.swipeBound = '1';
 
   let startX = 0;
   let startY = 0;
   let moveX = 0;
   let tracking = false;
 
+  function beginSwipe(x, y){
+    tracking = true;
+    startX = x;
+    startY = y;
+    moveX = 0;
+  }
+
+  function moveSwipe(x, y){
+    if(!tracking) return;
+
+    const dx = x - startX;
+    const dy = y - startY;
+
+    if(Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 8){
+      moveX = dx;
+    }
+  }
+
+  function endSwipe(){
+    if(!tracking) return;
+    tracking = false;
+
+    if(Math.abs(moveX) < 38) return;
+
+    previewStepImage(moveX > 0 ? -1 : 1);
+  }
+
+  // 桌機 / Android / 新版瀏覽器
   main.addEventListener('pointerdown', (e) => {
     if(e.target.closest('button')) return;
-
-    tracking = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    moveX = 0;
+    beginSwipe(e.clientX, e.clientY);
 
     try{
       main.setPointerCapture(e.pointerId);
@@ -4342,28 +4367,29 @@ function bindPreviewImageSwipe(){
   });
 
   main.addEventListener('pointermove', (e) => {
-    if(!tracking) return;
-
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-
-    if(Math.abs(dx) > Math.abs(dy)){
-      moveX = dx;
-    }
+    moveSwipe(e.clientX, e.clientY);
   });
-
-  function endSwipe(){
-    if(!tracking) return;
-    tracking = false;
-
-    if(Math.abs(moveX) < 42) return;
-
-    previewStepImage(moveX > 0 ? -1 : 1);
-  }
 
   main.addEventListener('pointerup', endSwipe);
   main.addEventListener('pointercancel', endSwipe);
   main.addEventListener('pointerleave', endSwipe);
+
+  // ✅ iPhone / Safari / Meta 內建瀏覽器保險
+  main.addEventListener('touchstart', (e) => {
+    if(e.target.closest('button')) return;
+    const t = e.touches && e.touches[0];
+    if(!t) return;
+    beginSwipe(t.clientX, t.clientY);
+  }, { passive:true });
+
+  main.addEventListener('touchmove', (e) => {
+    const t = e.touches && e.touches[0];
+    if(!t) return;
+    moveSwipe(t.clientX, t.clientY);
+  }, { passive:true });
+
+  main.addEventListener('touchend', endSwipe, { passive:true });
+  main.addEventListener('touchcancel', endSwipe, { passive:true });
 }
 function updatePreviewWishBtn(p){
   const btn = document.getElementById('previewWishBtn');
@@ -4787,36 +4813,38 @@ async function previewAddToCart(){
   if (PREVIEW_ADD_CART_BUSY) return;
   if (!previewProduct) return;
 
+  // ✅ 鎖住「按下當下」的商品，避免還沒加入完成時切到別的商品造成錯亂
+  const productAtClick = previewProduct;
+  const skuAtClick = previewSku(productAtClick);
+  const titleAtClick = previewTitle(productAtClick);
+
   const btn = $('previewCartBtn');
   PREVIEW_ADD_CART_BUSY = true;
 
-updatePreviewCartButton(previewProduct, '加入中');
+  updatePreviewCartButton(productAtClick, '加入中');
 
   try {
-    const stock = previewStockValue(previewProduct);
+    const stock = previewStockValue(productAtClick);
     if (stock <= 0) {
-      updatePreviewCartButton(previewProduct);
+      updatePreviewCartButton(productAtClick);
       return;
     }
 
-    const sku = previewSku(previewProduct);
-    if (!sku) {
+    if (!skuAtClick) {
       alert('找不到商品 SKU');
-      updatePreviewCartButton(previewProduct);
+      updatePreviewCartButton(productAtClick);
       return;
     }
 
     if (!SHOP_MEMBER_INFO) {
       if (btn) btn.textContent = '確認會員中';
 
-      // 記住：這次跳會員登入，是因為客人剛剛按了「加入購物籃」
-      markShopPendingAction('add_cart', sku);
+      markShopPendingAction('add_cart', skuAtClick);
 
       const ok = await initShopMember(true);
       if (!ok) return;
 
-      // 如果沒有真的跳走、只是成功補到 session，就清掉 pending，避免之後重複自動加入
-      consumeShopPendingAction(sku);
+      consumeShopPendingAction(skuAtClick);
 
       if (btn) btn.textContent = '加入中';
     }
@@ -4829,7 +4857,7 @@ updatePreviewCartButton(previewProduct, '加入中');
       credentials:'include',
       body: JSON.stringify({
         cart_token: token,
-        sku,
+        sku: skuAtClick,
         qty: 1,
         customer_type: 'web',
         line_user_id: getShopLineUserId(),
@@ -4846,13 +4874,13 @@ updatePreviewCartButton(previewProduct, '加入中');
         err === 'member_required' ||
         err === 'member_login_required'
       ) {
-        markShopPendingAction('add_cart', sku);
-        redirectShopMemberLogin(buildShopMemberReturnUrl());
+        markShopPendingAction('add_cart', skuAtClick);
+        redirectShopMemberLogin(buildShopMemberReturnUrl(productAtClick));
         return;
       }
 
       if (err === 'member_not_bound') {
-        markShopPendingAction('add_cart', sku);
+        markShopPendingAction('add_cart', skuAtClick);
         redirectShopMemberBindForPreview();
         return;
       }
@@ -4867,24 +4895,27 @@ updatePreviewCartButton(previewProduct, '加入中');
         String(json.message || '').includes('缺貨') ||
         String(json.message || '').includes('庫存')
       ){
-        updatePreviewCartButton({ ...previewProduct, stock: 0 });
+        if (previewSku(previewProduct) === skuAtClick) {
+          updatePreviewCartButton({ ...productAtClick, stock: 0 });
+        }
       }else{
-        updatePreviewCartButton(previewProduct);
+        if (previewSku(previewProduct) === skuAtClick) {
+          updatePreviewCartButton(productAtClick);
+        }
       }
 
       return;
     }
 
-showShopActionToast(
-  previewProduct,
-  '已加入購物籃',
-  '前往購物車',
-  () => {
-    location.href = `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(token)}`;
-  }
-);
+    showShopActionToast(
+      productAtClick,
+      `已加入購物籃：${titleAtClick || '商品'}`,
+      '前往購物車',
+      () => {
+        location.href = `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(token)}`;
+      }
+    );
 
-    // 不要卡住成功提示，購物車數字背景更新即可
     if(typeof refreshCartBadge === 'function'){
       refreshCartBadge();
     }
@@ -4896,13 +4927,16 @@ showShopActionToast(
       refreshShopMemberPriceViewForList();
     }
 
-    if(btn){
+    // ✅ 只有目前還停在同一個商品，才改目前按鈕文字
+    if(btn && previewSku(previewProduct) === skuAtClick){
       btn.classList.remove('is-loading');
       btn.textContent = '已加入';
     }
 
     setTimeout(() => {
-      updatePreviewCartButton(previewProduct);
+      if (previewSku(previewProduct) === skuAtClick) {
+        updatePreviewCartButton(productAtClick);
+      }
     }, 900);
 
   } catch(e) {
@@ -4912,28 +4946,30 @@ showShopActionToast(
       err === 'member_required' ||
       err === 'member_login_required'
     ) {
-      const sku = previewSku(previewProduct);
-      markShopPendingAction('add_cart', sku);
-      redirectShopMemberLogin(buildShopMemberReturnUrl());
+      markShopPendingAction('add_cart', skuAtClick);
+      redirectShopMemberLogin(buildShopMemberReturnUrl(productAtClick));
       return;
     }
 
     if (err === 'member_not_bound') {
-      markShopPendingAction('add_cart', previewSku(previewProduct));
+      markShopPendingAction('add_cart', skuAtClick);
       redirectShopMemberBindForPreview();
       return;
     }
 
     alert('加入失敗，請稍後再試');
-    updatePreviewCartButton(previewProduct);
+
+    if (previewSku(previewProduct) === skuAtClick) {
+      updatePreviewCartButton(productAtClick);
+    }
   } finally {
     PREVIEW_ADD_CART_BUSY = false;
 
-    if (btn) {
+    if (btn && previewSku(previewProduct) === skuAtClick) {
       btn.classList.remove('is-loading');
 
       if (!btn.classList.contains('is-soldout')) {
-        const finalStock = previewStockValue(previewProduct);
+        const finalStock = previewStockValue(productAtClick);
         if (finalStock > 0) btn.disabled = false;
       }
     }
