@@ -3061,7 +3061,90 @@ window.addEventListener('storage', (e) => {
 ).replace(/\/$/,'');
 
 const PRODUCT_API = `${SHOP_API_BASE}/public/products-paged`;
+const PRODUCT_FALLBACK_API = `${SHOP_API_BASE}/public/products`;
 
+async function fetchJsonWithTimeout(url, options = {}, ms = 8000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: ctrl.signal
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchShopProductsJson(u, shopMemberReady) {
+  try {
+    const res = await fetchJsonWithTimeout(u.toString(), {
+      credentials: 'include',
+      cache: shopMemberReady ? 'no-store' : 'no-store'
+    }, 8000);
+
+    const json = await res.json().catch(() => ({}));
+
+    if (!res.ok || json?.ok === false) {
+      throw new Error(json?.detail || json?.error || `products_paged_failed_${res.status}`);
+    }
+
+    return json;
+  } catch (e) {
+    console.warn('products-paged failed, fallback to public/products', e);
+
+    const fallbackUrl = new URL(PRODUCT_FALLBACK_API);
+    fallbackUrl.searchParams.set('_t', String(Date.now()));
+
+    const res2 = await fetchJsonWithTimeout(fallbackUrl.toString(), {
+      credentials: 'include',
+      cache: 'no-store'
+    }, 8000);
+
+    const json2 = await res2.json().catch(() => ({}));
+
+    if (!res2.ok || json2?.ok === false) {
+      throw new Error(json2?.detail || json2?.error || `products_fallback_failed_${res2.status}`);
+    }
+
+    let items = Array.isArray(json2.items)
+      ? json2.items
+      : (Array.isArray(json2.products) ? json2.products : []);
+
+    const cat = String(u.searchParams.get('cat') || '').trim();
+    const sub = String(u.searchParams.get('sub') || '').trim();
+
+    if (cat) {
+      items = items.filter(x => String(x.category_code || x.category || '').trim() === cat);
+    }
+
+    if (sub) {
+      items = items.filter(x => String(x.subcategory_code || x.subcategory || '').trim() === sub);
+    }
+
+    const page = Math.max(1, Number(u.searchParams.get('page') || 1) || 1);
+    const limit = Math.max(1, Number(u.searchParams.get('limit') || PAGE_SIZE) || PAGE_SIZE);
+    const total = items.length;
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+    const safePage = Math.min(page, totalPages);
+    const start = (safePage - 1) * limit;
+
+    return {
+      ok: true,
+      items: items.slice(start, start + limit),
+      categories: Array.isArray(json2.categories) ? json2.categories : [],
+      pagination: {
+        page: safePage,
+        limit,
+        total,
+        total_pages: totalPages,
+        has_prev: safePage > 1,
+        has_next: safePage < totalPages
+      }
+    };
+  }
+}
 const SHOP_LIFF_ID = String(window.LIFF_MEMBER_ID || '').trim();
 const SHOP_BIND_LIFF_ID = String(window.LIFF_BIND_MEMBER_ID || '').trim();
 const SHOP_LINE_UID_KEY = 'murain_line_user_id';
@@ -5460,12 +5543,7 @@ async function fetchProducts(){
       }
     }
 
-    const res = await fetch(u.toString(), {
-      credentials:'include',
-      cache: shopMemberReady ? 'no-store' : 'default'
-    });
-
-    const json = await res.json();
+   const json = await fetchShopProductsJson(u, shopMemberReady);
 
     allItems = Array.isArray(json.items) ? json.items : [];
     allCats = Array.isArray(json.categories) ? json.categories : [];
