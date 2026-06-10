@@ -1886,37 +1886,46 @@ if (uid) {
       }
     }
 
-    async function renderRecentFromLocalOrApi(){
-      const loading = $('recentLoading');
-      const grid = $('recentGrid');
-      const empty = $('recentEmpty');
-      if (!grid) return;
+   async function renderRecentFromLocalOrApi(){
+  const loading = $('recentLoading');
+  const grid = $('recentGrid');
+  const empty = $('recentEmpty');
+  if (!grid) return;
 
-      grid.innerHTML = '';
-      if (loading) loading.style.display = 'block';
-      if (empty) empty.style.display = 'none';
+  grid.innerHTML = '';
+  if (loading) loading.style.display = 'block';
+  if (empty) empty.style.display = 'none';
 
-      let recent = readJson(XUYUAN_RECENT_KEY, []);
-      if (!Array.isArray(recent)) recent = [];
+  let recent = readJson(XUYUAN_RECENT_KEY, []);
+  if (!Array.isArray(recent)) recent = [];
 
-      recent = recent.map(normalizeWishProduct).filter(x => x.sku).slice(0, 4);
+  recent = recent.map(normalizeWishProduct).filter(x => x.sku).slice(0, 4);
 
-      // 目前 shop.html 若還沒寫入最近瀏覽，這裡會抓最新商品補位，避免區塊空白。
-      if (!recent.length){
-        recent = await fetchLatestProducts();
-      }
-
-      if (loading) loading.style.display = 'none';
-
-      if (!recent.length){
-        if (empty) empty.style.display = 'block';
-        return;
-      }
-
-      recent.slice(0,4).forEach(item => {
-        grid.appendChild(renderCard(item, { inWishlistPage:false }));
-      });
+  // ✅ 已登入會員時，推薦商品要重新抓 API，避免吃到未登入時存在 localStorage 的舊價格。
+  // 這樣下方推薦商品才會同步會員價。
+  if (wishlistCanShowMemberPrice()) {
+    const fresh = await fetchLatestProducts();
+    if (fresh.length) {
+      recent = fresh.slice(0, 4);
     }
+  }
+
+  // 沒登入或 API 沒資料時，才用最近瀏覽；最近瀏覽也沒有就抓最新商品補位。
+  if (!recent.length){
+    recent = await fetchLatestProducts();
+  }
+
+  if (loading) loading.style.display = 'none';
+
+  if (!recent.length){
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+
+  recent.slice(0,4).forEach(item => {
+    grid.appendChild(renderCard(item, { inWishlistPage:false }));
+  });
+}
 
     window.addEventListener('DOMContentLoaded', async () => {
   await syncWishlistMemberSession();
