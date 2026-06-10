@@ -2933,18 +2933,7 @@ function getBindReturnUrl() {
     try { token = String(getLastCheckoutCartToken() || "").trim(); } catch (e) {}
   }
 
-  const isWebBackup = (() => {
-    try {
-      const q = getQS();
-      return q.get("web_backup") === "1";
-    } catch (e) {
-      try {
-        return new URLSearchParams(location.search).get("web_backup") === "1";
-      } catch (err) {
-        return false;
-      }
-    }
-  })();
+  const isWebBackup = isCheckoutWebBackup(token);
 
   const backupParam = isWebBackup ? "&web_backup=1" : "";
 
@@ -3280,21 +3269,7 @@ location.href = `${shopOrigin}/shop.html`;
 location.href = `${memberOrigin}/member.html?v=${Date.now()}&return_url=${encodeURIComponent(returnUrl)}`;
     return;
   }
-  // ✅ OP「網頁備用結帳連結」專用流程
-  // 來源：FB / IG / Safari / Chrome 等外部瀏覽器
-  // 重點：web_backup=1 時，完全不要呼叫 liff.init / liff.login，避免 access.line.me 400。
-  const isWebBackupCheckout = (() => {
-    try {
-      const q = getQS();
-      return q.get("web_backup") === "1";
-    } catch (e) {
-      try {
-        return new URLSearchParams(location.search).get("web_backup") === "1";
-      } catch (err) {
-        return false;
-      }
-    }
-  })();
+  const isWebBackupCheckout = isCheckoutWebBackup(cartToken);
 
   if (isWebBackupCheckout) {
     const retryKey = "MURAIN_WEB_BACKUP_MEMBER_RETRY";
@@ -3739,6 +3714,45 @@ function getLastCheckoutCartToken() {
   try { t = String(localStorage.getItem("murain_cart_token") || "").trim(); } catch (e) {}
   return t;
 }
+
+const CHECKOUT_WEB_BACKUP_KEY_PREFIX = "MURAIN_CHECKOUT_WEB_BACKUP:";
+
+function checkoutWebBackupKey(token) {
+  return CHECKOUT_WEB_BACKUP_KEY_PREFIX + String(token || "").trim();
+}
+
+function markCheckoutWebBackup(token) {
+  const t = String(token || "").trim();
+  if (!t) return;
+
+  try { sessionStorage.setItem(checkoutWebBackupKey(t), "1"); } catch (e) {}
+  try { localStorage.setItem(checkoutWebBackupKey(t), "1"); } catch (e) {}
+}
+
+function isCheckoutWebBackup(token) {
+  try {
+    const q = getQS();
+    if (q.get("web_backup") === "1") return true;
+  } catch (e) {
+    try {
+      if (new URLSearchParams(location.search).get("web_backup") === "1") return true;
+    } catch (err) {}
+  }
+
+  const t = String(token || "").trim();
+  if (!t) return false;
+
+  try {
+    if (sessionStorage.getItem(checkoutWebBackupKey(t)) === "1") return true;
+  } catch (e) {}
+
+  try {
+    if (localStorage.getItem(checkoutWebBackupKey(t)) === "1") return true;
+  } catch (e) {}
+
+  return false;
+}
+
 function _extractCartTokenFromWrappedURL() {
   const q = new URLSearchParams(location.search);
 
@@ -3780,9 +3794,14 @@ function _extractCartTokenFromWrappedURL() {
 // 1) 先從 LINE 包裝 / URL 取 cart_token
 let cartToken = _extractCartTokenFromWrappedURL();
 
-// 2) 有 cart_token 就立刻保存，避免 FB / LINE Login 回來後 URL 丟掉 token
 if (cartToken) {
   saveLastCheckoutCartToken(cartToken);
+
+  // ✅ 網頁備用結帳連結第一次進來有 web_backup=1 時，先記住。
+  // 後面 LINE Login / 綁定回來即使網址被吃掉 web_backup，也能恢復。
+  if (isCheckoutWebBackup(cartToken)) {
+    markCheckoutWebBackup(cartToken);
+  }
 }
 
 // 3) 如果 URL 沒有 cart_token，就從暫存找回
@@ -3790,12 +3809,17 @@ if (!cartToken) {
   cartToken = getLastCheckoutCartToken();
 }
 
-// 4) 如果從暫存找回 token，把網址補回 cart_token，讓後面 loadCart 正常
 if (cartToken) {
   try {
     const u = new URL(location.href);
     if (!u.searchParams.get("cart_token")) {
       u.searchParams.set("cart_token", cartToken);
+    }
+
+    // ✅ 如果這台 cart 曾經是「網頁備用連結」，回來時把 web_backup=1 補回網址
+    if (isCheckoutWebBackup(cartToken)) {
+      markCheckoutWebBackup(cartToken);
+      u.searchParams.set("web_backup", "1");
     }
 
     u.searchParams.delete("url");
@@ -3807,7 +3831,6 @@ if (cartToken) {
     history.replaceState(null, "", u.toString());
   } catch (e) {}
 }
-
 function creditKey(cartToken){
   return `murain_credit_used:${String(cartToken || "").trim()}`;
 }
