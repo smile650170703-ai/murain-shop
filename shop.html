@@ -2965,10 +2965,55 @@ function scheduleHomeCartBadgeRefresh(delay = 900){
   }, delay);
 }
 
-// ✅ 不要一開商城就跟商品列表搶後端，晚一點再更新購物車數字
-window.addEventListener('DOMContentLoaded', () => {
-  scheduleHomeCartBadgeRefresh(1200);
+function startShopProductsOnce(){
+  if (window.__SHOP_PRODUCTS_STARTED__) return;
+  window.__SHOP_PRODUCTS_STARTED__ = true;
+
+  Promise.resolve()
+    .then(() => fetchProducts())
+    .catch(err => {
+      console.error('start fetchProducts failed', err);
+
+      const loader = $('loading');
+      const grid = $('productList');
+      const empty = $('emptyTip');
+
+      if (loader) loader.style.display = 'none';
+      if (grid) grid.innerHTML = '';
+
+      if (empty) {
+        empty.style.display = 'block';
+        empty.textContent = '商品載入失敗，請稍後再試';
+      }
+    });
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', startShopProductsOnce, { once: true });
+} else {
+  startShopProductsOnce();
+}
+
+window.addEventListener('pageshow', () => {
+  if (!window.__SHOP_PRODUCTS_STARTED__) {
+    startShopProductsOnce();
+  }
 });
+
+setTimeout(() => {
+  const loader = $('loading');
+  const grid = $('productList');
+
+  if (
+    loader &&
+    grid &&
+    getComputedStyle(loader).display !== 'none' &&
+    !grid.children.length
+  ) {
+    window.__SHOP_PRODUCTS_STARTED__ = false;
+    startShopProductsOnce();
+  }
+}, 1500);
 
 window.addEventListener('focus', () => {
   scheduleHomeCartBadgeRefresh(600);
