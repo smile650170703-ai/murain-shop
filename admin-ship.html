@@ -4160,7 +4160,7 @@ if (btnZcFail) {
     confirmPay('retry_checkout');
   });
 }
- // ✅ 已棄標／訂金沒收：上方危險按鈕全部隱藏，只保留「儲存資料」
+// ✅ 上方快捷按鈕：依訂單類型顯示，避免員工誤按
 const isForfeitOrder = isDepositForfeitOrder(f);
 
 const btnSaveAndShipTop = $('#btnSaveAndShipTop');
@@ -4172,70 +4172,110 @@ const btnMeetupNotifyTop = $('#btnMeetupNotifyTop');
 const btnCancelTopForfeit = $('#btnCancelOrderTop');
 const btnSaveOnlyTop = $('#btnSaveDetailOnlyTop');
 
+const showTopBtn = (btn) => {
+  if (btn) btn.style.display = '';
+};
+
+const hideTopBtn = (btn) => {
+  if (btn) btn.style.display = 'none';
+};
+
+const oidForButtons = String(f.order_id || '').trim();
+const pmForButtons = String(f.payment_method || '').trim().toLowerCase();
+const psForButtons = String(f.pay_status || '').trim().toLowerCase();
+const stForButtons = String(f.status || '').trim().toLowerCase();
+const shipStatusForButtons = String(f.ship_status || f.shipping_status || '').trim().toLowerCase();
+const parentIdForButtons = String(f.parent_order_id || '').trim();
+const orderTypeForButtons = String(f.order_type || '').trim().toLowerCase();
+
+const isMeetupOrder = pmForButtons === 'meetup_cash';
+
+const isActualTailOrder =
+  !!f.is_tail ||
+  orderTypeForButtons === 'tail' ||
+  oidForButtons.toUpperCase().startsWith('TL') ||
+  !!parentIdForButtons;
+
+// ✅ 這裡指「需要發尾款連結的主單」
+// TL 本身已經是尾款單，不應再發尾款連結
+const canSendTailLink =
+  !isActualTailOrder &&
+  (
+    psForButtons === 'deposit_ok' ||
+    pmForButtons === 'atm_deposit' ||
+    pmForButtons.includes('deposit') ||
+    String(f.hold_until || '').trim() ||
+    String(f.deposit_amount || '').trim()
+  );
+
+const isRealPaidMethod =
+  pmForButtons.startsWith('paid_') ||
+  pmForButtons.startsWith('zero_card_') ||
+  pmForButtons.startsWith('yufu_inst_') ||
+  pmForButtons === 'aftee_direct' ||
+  pmForButtons === 'paid_aftee_direct' ||
+  pmForButtons === 'paid_af' ||
+  pmForButtons === 'bank_transfer' ||
+  pmForButtons === 'atm_full' ||
+  pmForButtons.startsWith('deposit_new_full') ||
+  pmForButtons.startsWith('deposit_old_full');
+
+const isRealPaid =
+  psForButtons === 'paid_ok' ||
+  stForButtons === 'paid';
+
+const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+const cashPaidCount = Number(f.cash_inst_paid_count || f.cash_inst_paid_parts || 0) || 0;
+
+const hasReceivedDepositOrInstallment =
+  psForButtons === 'deposit_ok' ||
+  cashStatus === 'active' ||
+  cashStatus === 'completed' ||
+  cashPaidCount > 0;
+
+const isFinalOrder =
+  stForButtons === 'shipped' ||
+  stForButtons === 'completed' ||
+  shipStatusForButtons === 'shipped' ||
+  (isRealPaid && isRealPaidMethod) ||
+  hasReceivedDepositOrInstallment;
+
+// 先全部隱藏，再依規則打開
+[
+  btnSaveAndShipTop,
+  btnConfirmPayTop,
+  btnFailTop,
+  btnSendTailTop,
+  btnMeetupDoneTop,
+  btnMeetupNotifyTop,
+  btnCancelTopForfeit,
+  btnSaveOnlyTop
+].forEach(hideTopBtn);
+
 if (isForfeitOrder) {
-  if (btnSaveAndShipTop) btnSaveAndShipTop.style.display = 'none';
-  if (btnConfirmPayTop) btnConfirmPayTop.style.display = 'none';
-  if (btnFailTop) btnFailTop.style.display = 'none';
-  if (btnSendTailTop) btnSendTailTop.style.display = 'none';
-  if (btnMeetupDoneTop) btnMeetupDoneTop.style.display = 'none';
-  if (btnMeetupNotifyTop) btnMeetupNotifyTop.style.display = 'none';
-  if (btnCancelTopForfeit) btnCancelTopForfeit.style.display = 'none';
+  // 已棄標 / 訂金沒收：只留儲存資料
+  showTopBtn(btnSaveOnlyTop);
 
-  // 只保留儲存資料，方便改內部備註
-  if (btnSaveOnlyTop) btnSaveOnlyTop.style.display = '';
+} else if (isMeetupOrder) {
+  // ✅ 面交單：只留這三顆，避免誤按出貨 / 收款 / 尾款
+  showTopBtn(btnMeetupDoneTop);
+  showTopBtn(btnFailTop);
+  showTopBtn(btnSaveOnlyTop);
+
 } else {
-  const pm = String(f.payment_method || '').trim().toLowerCase();
-
-  const st = String(f.status || '').trim().toLowerCase();
-  const shipStatus = String(f.ship_status || f.shipping_status || '').trim().toLowerCase();
-  const ps = String(f.pay_status || '').trim().toLowerCase();
-
-  const isRealPaidMethod =
-    pm.startsWith('paid_') ||
-    pm.startsWith('zero_card_') ||
-    pm.startsWith('yufu_inst_') ||
-    pm === 'aftee_direct' ||
-    pm === 'paid_aftee_direct' ||
-    pm === 'paid_af' ||
-    pm === 'bank_transfer' ||
-    pm === 'atm_full' ||
-    pm === 'meetup_cash' ||
-    pm.startsWith('deposit_new_full') ||
-    pm.startsWith('deposit_old_full');
-
-  const isRealPaid =
-    ps === 'paid_ok' ||
-    st === 'paid';
-
-  const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
-  const cashPaidCount = Number(f.cash_inst_paid_count || f.cash_inst_paid_parts || 0) || 0;
-
-  const hasReceivedDepositOrInstallment =
-    ps === 'deposit_ok' ||
-    cashStatus === 'active' ||
-    cashStatus === 'completed' ||
-    cashPaidCount > 0;
-
-  const isFinalOrder =
-    st === 'shipped' ||
-    st === 'completed' ||
-    shipStatus === 'shipped' ||
-    (isRealPaid && isRealPaidMethod) ||
-    hasReceivedDepositOrInstallment;
+  // 一般單
+  showTopBtn(btnSaveAndShipTop);
+  showTopBtn(btnConfirmPayTop);
+  showTopBtn(btnCancelTopForfeit);
+  showTopBtn(btnSaveOnlyTop);
 
   if (btnFailTop) {
     btnFailTop.style.display = isFinalOrder ? 'none' : '';
   }
 
-  if (btnSaveAndShipTop) btnSaveAndShipTop.style.display = '';
-  if (btnConfirmPayTop) btnConfirmPayTop.style.display = '';
-  if (btnSendTailTop) btnSendTailTop.style.display = '';
-  if (btnCancelTopForfeit) btnCancelTopForfeit.style.display = '';
-  if (btnSaveOnlyTop) btnSaveOnlyTop.style.display = '';
-
-  // ✅ 顯示/隱藏「完成面交收款」按鈕（只給 meetup_cash）
-  if (btnMeetupDoneTop) {
-    btnMeetupDoneTop.style.display = (pm === 'meetup_cash') ? '' : 'none';
+  // ✅ 只有需要尾款連結的主單才顯示
+  if (canSendTailLink) {
+    showTopBtn(btnSendTailTop);
   }
 }
 
@@ -4315,7 +4355,7 @@ if (btnSaveOnly) {
     if (msgEl) msgEl.textContent = '儲存中…';
 
     try {
-      await saveDetail();  // ← 只用你原本的儲存函式
+      await saveDetail({ skipReload: true });  // 只儲存，不重載整個列表
 
       if (msgEl) {
         msgEl.textContent = '✅ 已儲存資料（未變更出貨／付款狀態，也未發 LINE）';
@@ -6206,7 +6246,9 @@ proxyButton('btnMarkZcFailTop',    'btnMarkZcFail');
 const meetupDoneTop = $('#btnMeetupCashDoneTop');
 if (meetupDoneTop) {
   meetupDoneTop.style.display = 'none'; // 預設先隱藏，選到面交單才顯示
-  meetupDoneTop.addEventListener('click', ()=> markMeetupCashDone());
+  meetupDoneTop.addEventListener('click', () => {
+  runButtonJob(meetupDoneTop, markMeetupCashDone, '面交處理中…');
+});
 }
   proxyButton('btnPrintOrderTop',    'btnPrintOrder');
   proxyButton('btnSendTailLinkTop',  'btnSendTailLink');
@@ -6215,7 +6257,7 @@ if (meetupDoneTop) {
   proxyButton('btnMeetupNotifyTop',  'btnMeetupNotify');
   // ✅ 收款已統一到 btnConfirmPayOkTop，不再使用「已收定金+發保留通知」獨立按鈕
 // proxyButton('btnDepositPayAndNoticeTop', 'btnDepositPayAndNotice');
-proxyButton('btnSaveDetailOnlyTop',      'btnSaveDetailOnly');
+proxyButton('btnSaveDetailOnlyTop', 'btnSaveDetailOnly');
 
 await loadAdminDefaultPage();
 });
