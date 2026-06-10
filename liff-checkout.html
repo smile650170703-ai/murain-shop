@@ -2933,12 +2933,27 @@ function getBindReturnUrl() {
     try { token = String(getLastCheckoutCartToken() || "").trim(); } catch (e) {}
   }
 
+  const isWebBackup = (() => {
+    try {
+      const q = getQS();
+      return q.get("web_backup") === "1";
+    } catch (e) {
+      try {
+        return new URLSearchParams(location.search).get("web_backup") === "1";
+      } catch (err) {
+        return false;
+      }
+    }
+  })();
+
+  const backupParam = isWebBackup ? "&web_backup=1" : "";
+
   try {
     if (token) {
-      return `${origin}/liff-checkout.html?cart_token=${encodeURIComponent(token)}&auth_return=1&t=${Date.now()}`;
+      return `${origin}/liff-checkout.html?cart_token=${encodeURIComponent(token)}&auth_return=1${backupParam}&t=${Date.now()}`;
     }
 
-    return `${origin}/liff-checkout.html?auth_return=1&t=${Date.now()}`;
+    return `${origin}/liff-checkout.html?auth_return=1${backupParam}&t=${Date.now()}`;
   } catch (e) {
     return location.href;
   }
@@ -3265,7 +3280,96 @@ location.href = `${shopOrigin}/shop.html`;
 location.href = `${memberOrigin}/member.html?v=${Date.now()}&return_url=${encodeURIComponent(returnUrl)}`;
     return;
   }
+  // ✅ OP「網頁備用結帳連結」專用流程
+  // 來源：FB / IG / Safari / Chrome 等外部瀏覽器
+  // 重點：web_backup=1 時，完全不要呼叫 liff.init / liff.login，避免 access.line.me 400。
+  const isWebBackupCheckout = (() => {
+    try {
+      const q = getQS();
+      return q.get("web_backup") === "1";
+    } catch (e) {
+      try {
+        return new URLSearchParams(location.search).get("web_backup") === "1";
+      } catch (err) {
+        return false;
+      }
+    }
+  })();
 
+  if (isWebBackupCheckout) {
+    const retryKey = "MURAIN_WEB_BACKUP_MEMBER_RETRY";
+
+    const clearWebBackupRetry = () => {
+      try { sessionStorage.removeItem(retryKey); } catch(e) {}
+      try { sessionStorage.removeItem("MURAIN_LIVE_CHECKOUT_WEB_LOGIN_RETRY"); } catch(e) {}
+    };
+
+    // 1）先吃網站會員 session
+    let ok = await loadCheckoutMemberBySession(null);
+    if (ok) {
+      clearWebBackupRetry();
+      return;
+    }
+
+    // 2）如果剛剛綁定頁 / 會員頁有留下 line_user_id，允許補讀會員資料
+    let backupUid = "";
+    try { backupUid = String(localStorage.getItem("murain_line_user_id") || "").trim(); } catch(e) {}
+
+    if (backupUid) {
+      ok = await loadCheckoutMemberByUid(backupUid, null);
+      if (ok) {
+        clearWebBackupRetry();
+        return;
+      }
+    }
+
+    try { saveLastCheckoutCartToken(cartToken); } catch(e) {}
+    try { saveCheckoutState(); } catch(e) {}
+
+    const checkoutOrigin = String(
+      window.MURAIN_SITE_ORIGIN || location.origin || "https://murain.tw"
+    ).replace(/\/+$/, "");
+
+    let returnUrl = "";
+    let alreadyRetried = false;
+
+    try {
+      const u = new URL(location.href);
+      alreadyRetried =
+        u.searchParams.get("member_retry") === "1" ||
+        sessionStorage.getItem(retryKey) === "1";
+
+      u.searchParams.set("web_backup", "1");
+      u.searchParams.set("auth_return", "1");
+      u.searchParams.set("member_retry", "1");
+
+      if (cartToken && !u.searchParams.get("cart_token")) {
+        u.searchParams.set("cart_token", cartToken);
+      }
+
+      returnUrl = u.toString();
+    } catch(e) {
+      returnUrl = cartToken
+        ? `${checkoutOrigin}/liff-checkout.html?cart_token=${encodeURIComponent(cartToken)}&web_backup=1&auth_return=1&member_retry=1&t=${Date.now()}`
+        : `${checkoutOrigin}/liff-checkout.html?web_backup=1&auth_return=1&member_retry=1&t=${Date.now()}`;
+
+      try {
+        alreadyRetried = sessionStorage.getItem(retryKey) === "1";
+      } catch(err) {}
+    }
+
+    // 已經回來一次還沒有會員資料，就停止，不要再丟 LINE Login，避免 400 / 輪迴。
+    if (alreadyRetried) {
+      clearWebBackupRetry();
+      alert("會員登入或綁定狀態尚未完成，請關閉此頁後重新點一次結帳連結。");
+      return;
+    }
+
+    try { sessionStorage.setItem(retryKey, "1"); } catch(e) {}
+
+    location.replace(`${checkoutOrigin}/member.html?line_login=1&return_url=${encodeURIComponent(returnUrl)}&t=${Date.now()}`);
+    return;
+  }
  // ✅ 直播主 live / regular 車照舊走結帳 LIFF，不改原本直播主流程。
 if (!window.liff) return;
 
