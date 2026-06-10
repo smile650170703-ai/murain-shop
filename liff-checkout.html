@@ -3276,11 +3276,15 @@ if (!liff.isLoggedIn()) {
   try { saveLastCheckoutCartToken(cartToken); } catch (e) {}
   try { saveCheckoutState(); } catch (e) {}
 
-  // ✅ 外部瀏覽器登入時，redirectUri 必須用 LINE Developers 設定的乾淨 endpoint
-  // 不帶 cart_token / v / state / code，避免 access.line.me 400 invalid url
-  const cleanEndpoint = `${String(window.MURAIN_SITE_ORIGIN || "https://murain.tw").replace(/\/+$/, "")}/liff-checkout.html`;
+  // ✅ 直播主 / OP 結帳：外部瀏覽器登入 LINE 後，必須帶回原 cart_token。
+  // redirectUri 仍然使用 LINE Developers 設定的 /liff-checkout.html，
+  // 但 query 帶 cart_token，避免 FB / IG 外部瀏覽器登入後變成空車。
+  const checkoutOrigin = String(window.MURAIN_SITE_ORIGIN || location.origin || "https://murain.tw").replace(/\/+$/, "");
+  const checkoutRedirect = cartToken
+    ? `${checkoutOrigin}/liff-checkout.html?cart_token=${encodeURIComponent(cartToken)}&auth_return=1&t=${Date.now()}`
+    : `${checkoutOrigin}/liff-checkout.html?auth_return=1&t=${Date.now()}`;
 
-  liff.login({ redirectUri: cleanEndpoint });
+  liff.login({ redirectUri: checkoutRedirect });
   return;
 }
 
