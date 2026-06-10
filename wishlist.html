@@ -1749,9 +1749,14 @@ const listPrice = moneyValue(p, [
       return 'NT$ ' + num.toLocaleString();
     }
 
-    function getWishlistLoginUrl(){
-  const returnUrl = location.pathname + location.search;
-  return `/member.html?return_url=${encodeURIComponent(returnUrl)}`;
+function getWishlistLoginUrl(){
+  const origin = String(window.MURAIN_SITE_ORIGIN || location.origin || 'https://murain.tw').replace(/\/$/,'');
+
+  const returnUrl = new URL(location.href);
+  returnUrl.searchParams.set('after_member_login', '1');
+  returnUrl.searchParams.set('t', String(Date.now()));
+
+  return `${origin}/member.html?line_login=1&return_url=${encodeURIComponent(returnUrl.toString())}&t=${Date.now()}`;
 }
 
 function formatWishPriceHtml(p){
@@ -1864,7 +1869,11 @@ function formatWishPriceHtml(p){
 const priceLogin = card.querySelector('.wish-price-login');
 if (priceLogin){
   priceLogin.addEventListener('click', (e) => {
+    e.preventDefault();
     e.stopPropagation();
+
+    // ✅ 不讓外層商品卡點擊事件搶走，直接走會員登入流程
+    location.href = getWishlistLoginUrl();
   });
 }
       return card;
@@ -1973,11 +1982,23 @@ const r = await fetch(u.toString(), {
   });
 }
 
-    window.addEventListener('DOMContentLoaded', async () => {
+window.addEventListener('DOMContentLoaded', async () => {
   await syncWishlistMemberSession();
   refreshWishBadge();
   renderWishlist();
-  renderRecentFromLocalOrApi();
+  await renderRecentFromLocalOrApi();
+
+  // ✅ 從會員中心登入回來後，再補同步一次推薦商品，避免下方還停在未登入價格
+  try {
+    const q = new URLSearchParams(location.search || '');
+    if (q.get('after_member_login') === '1') {
+      setTimeout(async () => {
+        await syncWishlistMemberSession();
+        renderWishlist();
+        await renderRecentFromLocalOrApi();
+      }, 600);
+    }
+  } catch(e) {}
 });
 
     window.addEventListener('storage', async (e) => {
