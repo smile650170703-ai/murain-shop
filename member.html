@@ -4012,5 +4012,69 @@ window.location.href = origin + rawHref;
   }
 }, true);
 </script>
+  <script>
+/* ✅ 9.5-A / 9.5-E：會員中心所有前台連結跟著目前環境走
+   staging.murain.tw → staging.murain.tw
+   murain.tw → murain.tw
+   避免測試版會員中心右上角愛心 / 會員 / 選單跳去正式官網
+*/
+(function normalizeMemberPageLinksByEnv(){
+  const siteOrigin = String(
+    window.MURAIN_SITE_ORIGIN || location.origin || "https://murain.tw"
+  ).replace(/\/+$/, "");
+
+  function fixOneLink(a){
+    if (!a) return;
+
+    const raw = String(a.getAttribute("href") || "").trim();
+    if (!raw) return;
+
+    // 只修前台官網連結，不動 LINE / Facebook / Instagram / mail / tel
+    if (
+      raw.startsWith("https://murain.tw/") ||
+      raw.startsWith("https://www.murain.tw/")
+    ) {
+      try {
+        const u = new URL(raw);
+        a.setAttribute("href", siteOrigin + u.pathname + u.search + u.hash);
+      } catch(e) {}
+      return;
+    }
+
+    // 補修沒有 .html 的常見入口
+    if (raw === "https://murain.tw/member") {
+      a.setAttribute("href", siteOrigin + "/member.html");
+      return;
+    }
+
+    if (raw === "https://murain.tw/shop") {
+      a.setAttribute("href", siteOrigin + "/shop.html");
+      return;
+    }
+  }
+
+  function run(){
+    document.querySelectorAll("a[href]").forEach(fixOneLink);
+
+    // ✅ 右上三個小圖示再保險指定一次
+    const wish = document.querySelector(".nav-wishlist-btn");
+    if (wish) wish.setAttribute("href", siteOrigin + "/wishlist.html");
+
+    const member = document.querySelector(".nav-member-btn");
+    if (member) member.setAttribute("href", siteOrigin + "/member.html");
+
+    const logo = document.querySelector(".navbar .refined-brand-wrap");
+    if (logo) logo.setAttribute("href", siteOrigin + "/index.html");
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", run);
+  } else {
+    run();
+  }
+
+  window.addEventListener("pageshow", run);
+})();
+</script>
 </body>
 </html>
