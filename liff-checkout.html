@@ -3276,14 +3276,53 @@ if (!liff.isLoggedIn()) {
   try { saveLastCheckoutCartToken(cartToken); } catch (e) {}
   try { saveCheckoutState(); } catch (e) {}
 
-  // ✅ 直播主 / OP 結帳：外部瀏覽器登入 LINE 後，必須帶回原 cart_token。
-  // redirectUri 仍然使用 LINE Developers 設定的 /liff-checkout.html，
-  // 但 query 帶 cart_token，避免 FB / IG 外部瀏覽器登入後變成空車。
-  const checkoutOrigin = String(window.MURAIN_SITE_ORIGIN || location.origin || "https://murain.tw").replace(/\/+$/, "");
+  const checkoutOrigin = String(
+    window.MURAIN_SITE_ORIGIN || location.origin || "https://murain.tw"
+  ).replace(/\/+$/, "");
+
   const checkoutRedirect = cartToken
     ? `${checkoutOrigin}/liff-checkout.html?cart_token=${encodeURIComponent(cartToken)}&auth_return=1&t=${Date.now()}`
     : `${checkoutOrigin}/liff-checkout.html?auth_return=1&t=${Date.now()}`;
 
+  // ✅ 重點：
+  // 如果不是在 LINE App 內建瀏覽器，就不要在 checkout 頁一直 liff.login。
+  // FB / IG / Safari / Chrome 外部瀏覽器統一交給 member.html 做 LINE Login + session。
+  const inLineClient = !!(liff.isInClient && liff.isInClient());
+
+  if (!inLineClient) {
+    const retryKey = "MURAIN_LIVE_CHECKOUT_WEB_LOGIN_RETRY";
+    let alreadyRetried = false;
+
+    try {
+      const u = new URL(location.href);
+      alreadyRetried =
+        u.searchParams.get("auth_return") === "1" &&
+        sessionStorage.getItem(retryKey) === "1";
+    } catch (e) {
+      try {
+        alreadyRetried = sessionStorage.getItem(retryKey) === "1";
+      } catch (err) {}
+    }
+
+    // ✅ 防止 FB 外部瀏覽器無限登入輪迴
+    if (alreadyRetried) {
+      try { sessionStorage.removeItem(retryKey); } catch (e) {}
+
+      alert("LINE 登入狀態尚未完成，請從會員中心登入 / 綁定後再回到結帳頁。");
+
+      const memberUrl = `${checkoutOrigin}/member.html?return_url=${encodeURIComponent(checkoutRedirect)}&t=${Date.now()}`;
+      location.replace(memberUrl);
+      return;
+    }
+
+    try { sessionStorage.setItem(retryKey, "1"); } catch (e) {}
+
+    const memberLoginUrl = `${checkoutOrigin}/member.html?line_login=1&return_url=${encodeURIComponent(checkoutRedirect)}&t=${Date.now()}`;
+    location.replace(memberLoginUrl);
+    return;
+  }
+
+  // ✅ 只有真正 LINE App 內建 LIFF 環境，才使用 liff.login
   liff.login({ redirectUri: checkoutRedirect });
   return;
 }
