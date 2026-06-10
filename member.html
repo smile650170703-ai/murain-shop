@@ -4076,5 +4076,68 @@ window.location.href = origin + rawHref;
   window.addEventListener("pageshow", run);
 })();
 </script>
+  <script>
+/* ✅ 9.5-A：所有前台連結跟著目前環境走 */
+(function normalizeXuyuanLinksByEnv(){
+  const siteOrigin = String(
+    window.MURAIN_SITE_ORIGIN || location.origin || "https://murain.tw"
+  ).replace(/\/+$/, "");
+
+  function fixHref(raw){
+    raw = String(raw || "").trim();
+    if (!raw) return raw;
+
+    if (
+      raw.startsWith("https://murain.tw/") ||
+      raw.startsWith("https://www.murain.tw/")
+    ) {
+      try {
+        const u = new URL(raw);
+        return siteOrigin + u.pathname + u.search + u.hash;
+      } catch(e) {
+        return raw;
+      }
+    }
+
+    if (raw === "https://murain.tw/member") return siteOrigin + "/member.html";
+    if (raw === "https://murain.tw/shop") return siteOrigin + "/shop.html";
+
+    return raw;
+  }
+
+  function run(){
+    document.querySelectorAll("a[href]").forEach((a) => {
+      const fixed = fixHref(a.getAttribute("href"));
+      if (fixed) a.setAttribute("href", fixed);
+    });
+
+    const wish = document.querySelector(".nav-wishlist-btn");
+    if (wish) wish.setAttribute("href", siteOrigin + "/wishlist.html");
+
+    const member = document.querySelector(".nav-member-btn");
+    if (member) member.setAttribute("href", siteOrigin + "/member.html");
+
+    const logo = document.querySelector(".navbar .refined-brand-wrap");
+    if (logo) logo.setAttribute("href", siteOrigin + "/index.html");
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", run);
+  } else {
+    run();
+  }
+
+  window.addEventListener("pageshow", run);
+
+  try {
+    new MutationObserver(run).observe(document.body, {
+      childList:true,
+      subtree:true,
+      attributes:true,
+      attributeFilter:["href"]
+    });
+  } catch(e) {}
+})();
+</script>
 </body>
 </html>
