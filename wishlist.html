@@ -1462,7 +1462,8 @@ async function syncWishlistMemberSession(){
 
   try {
     const r = await fetch(`${HOME_API}/line/member-info`, {
-      credentials:'include'
+      credentials:'include',
+      cache:'no-store'
     });
 
     const j = await r.json().catch(() => ({}));
@@ -1474,8 +1475,11 @@ async function syncWishlistMemberSession(){
       const uid = String(
         j.line_user_id ||
         j.lineUserId ||
+        j.user_id ||
+        j.userId ||
         j.member?.line_user_id ||
         j.member?.LineUserId ||
+        j.member?.lineUserId ||
         ''
       ).trim();
 
@@ -1484,7 +1488,15 @@ async function syncWishlistMemberSession(){
     }
   } catch(e) {}
 
+  // ✅ 重點：沒有有效會員 session 時，wishlist 不可以再吃舊 line_user_id
   wishlistMemberOk = false;
+  WISHLIST_MEMBER_INFO = null;
+
+  try {
+    localStorage.removeItem(WISHLIST_LINE_USER_ID_KEY);
+    sessionStorage.removeItem(WISHLIST_LINE_USER_ID_KEY);
+  } catch(e) {}
+
   return false;
 }
 
@@ -1900,7 +1912,8 @@ if (priceLogin){
         u.searchParams.set('page', '1');
         u.searchParams.set('limit', '4');
 
-        const uid = getWishlistLineUserId();
+// ✅ 只有真的有會員 session 時，才帶 line_user_id 抓會員價
+const uid = wishlistCanShowMemberPrice() ? getWishlistLineUserId() : '';
 if (uid) {
   u.searchParams.set('line_user_id', uid);
 }
