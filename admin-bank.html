@@ -646,7 +646,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
       <div id="summary" class="summary-row"></div>
       <!-- ★ 上方：目前選中訂單的快捷操作按鈕 -->
       <div class="top-order-actions">
-        <button class="btn-primary" id="btnSaveAndShipTop" type="button">
+        <button class="btn-primary" id="btnSaveAndShipTop" type="button" style="display:none;">
           📦 儲存+已出貨+發LINE
         </button>
         <button class="btn-secondary" id="btnConfirmPayOkTop" type="button">
@@ -676,7 +676,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
        <button class="btn-secondary" id="btnMeetupCashDoneTop" type="button">
   🤝 完成面交收款（已收款＋出貨完成）
         </button>
-        <button class="btn-secondary" id="btnSendTailLinkTop" type="button">
+        <button class="btn-secondary" id="btnSendTailLinkTop" type="button" style="display:none;">
           💰發尾款結帳連結+發LINE
         </button>
         <button class="btn-secondary" id="btnSaveDetailOnlyTop" type="button">
@@ -4108,7 +4108,7 @@ if (btnZcFail) {
   });
 }
 
- // ✅ 已棄標／訂金沒收：上方危險按鈕全部隱藏，只保留「儲存資料」
+// ✅ 上方快捷按鈕：依頁面用途顯示，避免員工誤按
 const isForfeitOrder = isDepositForfeitOrder(f);
 
 const btnSaveAndShipTop = $('#btnSaveAndShipTop');
@@ -4120,71 +4120,70 @@ const btnMeetupNotifyTop = $('#btnMeetupNotifyTop');
 const btnCancelTopForfeit = $('#btnCancelOrderTop');
 const btnSaveOnlyTop = $('#btnSaveDetailOnlyTop');
 
-if (isForfeitOrder) {
-  if (btnSaveAndShipTop) btnSaveAndShipTop.style.display = 'none';
-  if (btnConfirmPayTop) btnConfirmPayTop.style.display = 'none';
-  if (btnFailTop) btnFailTop.style.display = 'none';
-  if (btnSendTailTop) btnSendTailTop.style.display = 'none';
-  if (btnMeetupDoneTop) btnMeetupDoneTop.style.display = 'none';
-  if (btnMeetupNotifyTop) btnMeetupNotifyTop.style.display = 'none';
-  if (btnCancelTopForfeit) btnCancelTopForfeit.style.display = 'none';
+const showTopBtn = (btn) => {
+  if (btn) btn.style.display = '';
+};
 
-  // 只保留儲存資料，方便改內部備註
-  if (btnSaveOnlyTop) btnSaveOnlyTop.style.display = '';
-} else {
-  const pm = String(f.payment_method || '').trim().toLowerCase();
+const hideTopBtn = (btn) => {
+  if (btn) btn.style.display = 'none';
+};
 
-  const st = String(f.status || '').trim().toLowerCase();
-const shipStatus = String(f.ship_status || '').trim().toLowerCase();
-
-const ps = String(f.pay_status || '').trim().toLowerCase();
-
-const isRealPaidMethod =
-  pm.startsWith('paid_') ||
-  pm.startsWith('zero_card_') ||
-  pm.startsWith('yufu_inst_') ||
-  pm === 'aftee_direct' ||
-  pm === 'paid_aftee_direct' ||
-  pm === 'paid_af' ||
-  pm === 'bank_transfer' ||
-  pm === 'atm_full' ||
-  pm.startsWith('deposit_new_full') ||
-  pm.startsWith('deposit_old_full');
-
-const isRealPaid =
-  ps === 'paid_ok' ||
-  st === 'paid';
-
-const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
-const cashPaidCount = Number(f.cash_inst_paid_count || f.cash_inst_paid_parts || 0) || 0;
-
-const hasReceivedDepositOrInstallment =
-  ps === 'deposit_ok' ||
-  cashStatus === 'active' ||
-  cashStatus === 'completed' ||
-  cashPaidCount > 0;
+const stForButtons = String(f.status || '').trim().toLowerCase();
+const psForButtons = String(f.pay_status || '').trim().toLowerCase();
+const shipStatusForButtons = String(f.ship_status || f.shipping_status || '').trim().toLowerCase();
+const pmForButtons = String(f.payment_method || '').trim().toLowerCase();
+const cashStatusForButtons = String(f.cash_inst_status || '').trim().toLowerCase();
+const cashPaidCountForButtons = Number(f.cash_inst_paid_count || f.cash_inst_paid_parts || 0) || 0;
 
 const isFinalOrder =
-  st === 'shipped' ||
-  st === 'completed' ||
-  shipStatus === 'shipped' ||
-  (isRealPaid && isRealPaidMethod) ||
-  hasReceivedDepositOrInstallment;
+  stForButtons === 'shipped' ||
+  stForButtons === 'completed' ||
+  shipStatusForButtons === 'shipped' ||
+  psForButtons === 'paid_ok' ||
+  cashStatusForButtons === 'completed' ||
+  cashPaidCountForButtons > 0;
 
-if (btnFailTop) {
-  btnFailTop.style.display = isFinalOrder ? 'none' : '';
-}
+// 先全部隱藏，再依規則打開
+[
+  btnSaveAndShipTop,
+  btnConfirmPayTop,
+  btnFailTop,
+  btnSendTailTop,
+  btnMeetupDoneTop,
+  btnMeetupNotifyTop,
+  btnCancelTopForfeit,
+  btnSaveOnlyTop
+].forEach(hideTopBtn);
 
-  if (btnSaveAndShipTop) btnSaveAndShipTop.style.display = '';
-  if (btnConfirmPayTop) btnConfirmPayTop.style.display = '';
-  if (btnSendTailTop) btnSendTailTop.style.display = '';
-  if (btnCancelTopForfeit) btnCancelTopForfeit.style.display = '';
-  if (btnSaveOnlyTop) btnSaveOnlyTop.style.display = '';
+if (isForfeitOrder) {
+  // 已棄標 / 訂金沒收：只留儲存資料
+  showTopBtn(btnSaveOnlyTop);
 
-  // ✅ 顯示/隱藏「完成面交收款」按鈕（只給 meetup_cash）
-  if (btnMeetupDoneTop) {
-    btnMeetupDoneTop.style.display = (pm === 'meetup_cash') ? '' : 'none';
+} else if (ADMIN_PAGE_FILE === 'admin-bank.html') {
+  // ✅ 匯款待確認：只做收款確認 / 取消重結 / 儲存
+  showTopBtn(btnConfirmPayTop);
+  showTopBtn(btnSaveOnlyTop);
+
+  if (btnCancelTopForfeit) {
+    btnCancelTopForfeit.style.display = '';
   }
+
+  if (btnFailTop) {
+    btnFailTop.style.display = isFinalOrder ? 'none' : '';
+  }
+
+  // ✅ admin-bank 永遠不顯示這兩顆
+  hideTopBtn(btnSaveAndShipTop);
+  hideTopBtn(btnSendTailTop);
+  hideTopBtn(btnMeetupDoneTop);
+  hideTopBtn(btnMeetupNotifyTop);
+
+} else {
+  // 其他頁維持基本規則
+  showTopBtn(btnConfirmPayTop);
+  showTopBtn(btnFailTop);
+  showTopBtn(btnCancelTopForfeit);
+  showTopBtn(btnSaveOnlyTop);
 }
 
  // ✅ 顯示/綁定「同步尾款→主單」（只在 TL 才顯示）
@@ -6056,99 +6055,97 @@ function proxyButton(topId, originalId){
 
   proxyButton('btnSaveAndShipTop',   'btnSaveAndShip');
 
-// ✅ 上方唯一「收款/審核通過+發LINE」：現金分期也統一走後端完整推進
+// ✅ 上方唯一「收款/審核通過+發LINE」：現金分期也統一走後端完整推進 + 防連點
 const btnConfirmPayOkTopBind = $('#btnConfirmPayOkTop');
 if (btnConfirmPayOkTopBind) {
   btnConfirmPayOkTopBind.addEventListener('click', async () => {
-    if (!currentRecord) {
-      alert('請先在左邊選一筆訂單');
-      return;
-    }
+    await runButtonJob(btnConfirmPayOkTopBind, async () => {
+      if (!currentRecord) {
+        alert('請先在左邊選一筆訂單');
+        return;
+      }
 
-    const f = currentRecord.fields || currentRecord || {};
-    const notifyOrderId = String(f.order_id || '').trim();
+      const f = currentRecord.fields || currentRecord || {};
+      const notifyOrderId = String(f.order_id || '').trim();
 
-    if (!notifyOrderId) {
-      alert('這筆訂單沒有 order_id，無法發送現金分期通知。');
-      return;
-    }
+      if (!notifyOrderId) {
+        alert('這筆訂單沒有 order_id，無法發送現金分期通知。');
+        return;
+      }
 
-    if (isDepositForfeitOrder(f)) {
-      alert('這筆訂單已棄標，訂金已沒收，不能再收款、出貨、發尾款單或重新結帳。');
-      return;
-    }
+      if (isDepositForfeitOrder(f)) {
+        alert('這筆訂單已棄標，訂金已沒收，不能再收款、出貨、發尾款單或重新結帳。');
+        return;
+      }
 
-    const pm = String(f.payment_method || '').trim().toLowerCase();
-    const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
-    const payStatus = String(f.pay_status || '').trim().toLowerCase();
+      const pm = String(f.payment_method || '').trim().toLowerCase();
+      const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+      const payStatus = String(f.pay_status || '').trim().toLowerCase();
 
-    const isCashInstOrder =
-      pm === 'cash_inst_2' ||
-      pm === 'cash_inst_3' ||
-      pm.startsWith('cash_install_');
+      const isCashInstOrder =
+        pm === 'cash_inst_2' ||
+        pm === 'cash_inst_3' ||
+        pm.startsWith('cash_install_');
 
-    // 非現金分期：維持原本一般收款/審核通過流程
-    if (!isCashInstOrder) {
-      const orig = $('#btnConfirmPayOk');
-      if (orig) orig.click();
-      else await confirmPay('ok');
-      return;
-    }
+      // 非現金分期：維持一般收款/審核通過流程
+      if (!isCashInstOrder) {
+        await confirmPay('ok');
+        return;
+      }
 
-    const totalParts = getCurrentCashInstTotalParts();
+      const totalParts = getCurrentCashInstTotalParts();
 
-    if (!totalParts) {
-      alert('這筆現金分期訂單缺少分期期數，請檢查 payment_method。');
-      return;
-    }
+      if (!totalParts) {
+        alert('這筆現金分期訂單缺少分期期數，請檢查 payment_method。');
+        return;
+      }
 
-    if (cashStatus === 'completed' || payStatus === 'paid_ok') {
-      alert('這筆現金分期已收齊。');
-      return;
-    }
+      if (cashStatus === 'completed' || payStatus === 'paid_ok') {
+        alert('這筆現金分期已收齊。');
+        return;
+      }
 
-    // 第一次：收定金、啟動現金分期，然後發「定金已收」專用卡
-    if (cashStatus === 'pending_deposit') {
+      // 第一次：收定金、啟動現金分期，然後發「定金已收」專用卡
+      if (cashStatus === 'pending_deposit') {
+        const ok = await confirmPay('ok');
+        if (!ok) return;
+
+        try {
+          await sendCashInstLineNotify('deposit', 0, totalParts, notifyOrderId);
+        } catch (e) {
+          console.error(e);
+          alert('定金狀態已更新，但現金分期 LINE 通知發送失敗：' + (e.message || e));
+        }
+        return;
+      }
+
+      // 已進入分期：後端推進下一期
+      const currentPaid =
+        Math.max(
+          Number(f.cash_inst_paid_count || 0) || 0,
+          Number(f.cash_inst_paid_parts || 0) || 0
+        );
+
+      const nextPart = Math.min(currentPaid + 1, totalParts);
+      const isAllDone = nextPart >= totalParts;
+
       const ok = await confirmPay('ok');
       if (!ok) return;
 
       try {
-        await sendCashInstLineNotify('deposit', 0, totalParts, notifyOrderId);
+        await sendCashInstLineNotify(
+          isAllDone ? 'all_done' : `part_${nextPart}`,
+          nextPart,
+          totalParts,
+          notifyOrderId
+        );
       } catch (e) {
         console.error(e);
-        alert('定金狀態已更新，但現金分期 LINE 通知發送失敗：' + (e.message || e));
+        alert('分期狀態已更新，但現金分期 LINE 通知發送失敗：' + (e.message || e));
       }
-      return;
-    }
-
-    // 已進入分期：讓後端 advanceCashInstAfterPaid 推進下一期
-    const currentPaid =
-      Math.max(
-        Number(f.cash_inst_paid_count || 0) || 0,
-        Number(f.cash_inst_paid_parts || 0) || 0
-      );
-
-    const nextPart = Math.min(currentPaid + 1, totalParts);
-    const isAllDone = nextPart >= totalParts;
-
-    const ok = await confirmPay('ok');
-    if (!ok) return;
-
-    try {
-      await sendCashInstLineNotify(
-        isAllDone ? 'all_done' : `part_${nextPart}`,
-        nextPart,
-        totalParts,
-        notifyOrderId
-      );
-    } catch (e) {
-      console.error(e);
-      alert('分期狀態已更新，但現金分期 LINE 通知發送失敗：' + (e.message || e));
-    }
+    }, '收款處理中…');
   });
 }
-
-proxyButton('btnMarkZcFailTop',    'btnMarkZcFail');
   proxyButton('btnConsignTop', 'btnConsign');
 
 // ✅ 面交付現：完成收款（標記已收款 + 出貨完成）
