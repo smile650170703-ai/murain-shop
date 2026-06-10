@@ -3269,7 +3269,27 @@ location.href = `${shopOrigin}/shop.html`;
 location.href = `${memberOrigin}/member.html?v=${Date.now()}&return_url=${encodeURIComponent(returnUrl)}`;
     return;
   }
-  const isWebBackupCheckout = isCheckoutWebBackup(cartToken);
+  const isWebBackupCheckout = (() => {
+    try {
+      const q = getQS();
+      return (
+        isCheckoutWebBackup(cartToken) ||
+        q.get("web_backup") === "1" ||
+        q.get("auth_return") === "1"
+      );
+    } catch (e) {
+      try {
+        const q = new URLSearchParams(location.search);
+        return (
+          isCheckoutWebBackup(cartToken) ||
+          q.get("web_backup") === "1" ||
+          q.get("auth_return") === "1"
+        );
+      } catch (err) {
+        return isCheckoutWebBackup(cartToken);
+      }
+    }
+  })();
 
   if (isWebBackupCheckout) {
     const retryKey = "MURAIN_WEB_BACKUP_MEMBER_RETRY";
@@ -3333,10 +3353,13 @@ location.href = `${memberOrigin}/member.html?v=${Date.now()}&return_url=${encode
       } catch(err) {}
     }
 
-    // 已經回來一次還沒有會員資料，就停止，不要再丟 LINE Login，避免 400 / 輪迴。
+    // ✅ 已經從會員中心 / 綁定頁回來，絕對不要再丟 LINE Login。
+    // 這裡只停止自動跳轉，讓客人停在目前購物車頁，不要變 400。
     if (alreadyRetried) {
       clearWebBackupRetry();
-      alert("會員登入或綁定狀態尚未完成，請關閉此頁後重新點一次結帳連結。");
+
+      // 如果購物車已經有商品畫面，就讓客人留在這裡，不要再跳。
+      console.warn("[checkout] stop web_backup retry loop, stay on checkout page");
       return;
     }
 
