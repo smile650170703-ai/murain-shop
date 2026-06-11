@@ -783,6 +783,46 @@ function normalizeAdminCartItem(it = {}) {
       </div>
     </div>
   `).join('');
+
+  bindAdminCartItemButtons(root);
+}
+
+function bindAdminCartItemButtons(scope = document) {
+  const root = scope || document;
+
+  $$('.btnCartEditItem', root).forEach(btn => {
+    if (btn.dataset.cartBound === '1') return;
+    btn.dataset.cartBound = '1';
+
+    btn.addEventListener('click', () => {
+      setCartEditForm({
+        sku: btn.dataset.sku || '',
+        name: btn.dataset.name || '',
+        qty: Number(btn.dataset.qty || 1),
+        price: Number(btn.dataset.price || 0)
+      });
+    });
+  });
+
+  $$('.btnCartRemoveItem', root).forEach(btn => {
+    if (btn.dataset.cartBound === '1') return;
+    btn.dataset.cartBound = '1';
+
+    btn.addEventListener('click', async () => {
+      const oldText = btn.textContent || '刪除';
+      btn.disabled = true;
+      btn.textContent = '處理中…';
+
+      try {
+        await adminRemoveCartItemBySku(btn.dataset.sku || '');
+      } finally {
+        if (document.body.contains(btn)) {
+          btn.disabled = false;
+          btn.textContent = oldText;
+        }
+      }
+    });
+  });
 }
 
 function setCartEditForm(item = {}) {
@@ -1246,22 +1286,7 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
 
   $('#btnCartAddOrUpdate')?.addEventListener('click', adminAddOrUpdateCartItem);
 
-  $$('.btnCartEditItem', dEl).forEach(btn => {
-    btn.addEventListener('click', () => {
-      setCartEditForm({
-        sku: btn.dataset.sku || '',
-        name: btn.dataset.name || '',
-        qty: Number(btn.dataset.qty || 1),
-        price: Number(btn.dataset.price || 0)
-      });
-    });
-  });
-
-  $$('.btnCartRemoveItem', dEl).forEach(btn => {
-    btn.addEventListener('click', () => {
-      adminRemoveCartItemBySku(btn.dataset.sku || '');
-    });
-  });
+  bindAdminCartItemButtons(dEl);
   $('#btnCartRemindSingle')?.addEventListener('click', async e => {
     const btn = e.currentTarget;
     setButtonBusy(btn, true, '發送中…');
