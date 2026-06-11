@@ -840,17 +840,24 @@ async function adminAddOrUpdateCartItem() {
     return;
   }
 
+  const existingSkuInCart = Array.from(document.querySelectorAll('#cartEditItemsPanel .btnCartEditItem'))
+    .some(btn => String(btn.dataset.sku || '').trim() === sku);
+
+  const willUpdateExisting = !!CART_EDITING_SKU || existingSkuInCart;
+
   const btn = document.getElementById('btnCartAddOrUpdate');
-  setButtonBusy(btn, true, CART_EDITING_SKU ? '儲存中，請稍候…' : '新增中，請稍候…');
-  showDetailMsg(CART_EDITING_SKU ? '正在儲存修改…' : '正在新增商品…');
+  setButtonBusy(btn, true, willUpdateExisting ? '儲存中，請稍候…' : '新增中，請稍候…');
+  showDetailMsg(willUpdateExisting ? '正在儲存修改，數量會改成最終數量…' : '正在新增商品…');
 
   let saveResult = null;
 
-  try {
-    if (CART_EDITING_SKU) {
+   try {
+    const updateSku = CART_EDITING_SKU || (existingSkuInCart ? sku : '');
+
+    if (updateSku) {
       const payload = {
         cart_token: token,
-        sku: CART_EDITING_SKU,
+        sku: updateSku,
         qty,
         op_key: OP_KEY
       };
@@ -883,8 +890,12 @@ async function adminAddOrUpdateCartItem() {
     if (!updatedByResult) {
       await renderCartDetail(currentCartRecord);
     }
-
-    showDetailMsg('已更新購物車商品', 'ok');
+    showDetailMsg(
+      willUpdateExisting
+        ? '已儲存購物車商品：數量已改成最終數量，不是往上加。'
+        : '已新增購物車商品。',
+      'ok'
+    );
 
   } catch (e) {
     showDetailMsg('更新失敗：' + (e.message || e), 'error');
