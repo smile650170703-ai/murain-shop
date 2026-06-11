@@ -1285,7 +1285,22 @@ const CONSIGN_API = API_BASE + "/member/consign";
 const MEMBER_INFO_API = API_BASE + "/line/member-info";
 const LIFF_ID = String(window.LIFF_MEMBER_ID || "2008430261-EGZPg3Qp").trim();
 const MEMBER_NORMAL_URL = `${String(window.MURAIN_SITE_ORIGIN || "https://murain.tw").replace(/\/$/,'')}/member`;
+function isLineInAppBrowser() {
+  const ua = String(navigator.userAgent || "");
+  return /Line\//i.test(ua) || /LIFF/i.test(ua);
+}
 
+function buildMemberLiffLoginUrl(returnUrl = "") {
+  const params = new URLSearchParams();
+  params.set("line_login", "1");
+  params.set("t", String(Date.now()));
+
+  if (returnUrl) {
+    params.set("return_url", returnUrl);
+  }
+
+  return `https://liff.line.me/${encodeURIComponent(LIFF_ID)}?${params.toString()}`;
+}
 async function createMemberAuthSessionFromLiff() {
   if (!window.liff || !liff.isLoggedIn()) return false;
   const idToken = String(liff.getIDToken?.() || "").trim();
@@ -1882,8 +1897,14 @@ bindGatePrimaryBtn.onclick = () => {
   const postLoginReturnUrl = getMemberPostLoginReturnUrl();
   if (postLoginReturnUrl) storeMemberPostLoginReturnUrl(postLoginReturnUrl);
 
-  const returnUrl = postLoginReturnUrl || buildCleanMemberReturnUrl({ line_login: "1" });
+  // LINE App 內開啟：走 LIFF，不走 access-auto.line.me
+  if (isLineInAppBrowser()) {
+    window.location.href = buildMemberLiffLoginUrl(postLoginReturnUrl || "");
+    return;
+  }
 
+  // Safari / Chrome / 桌機：走網頁版 LINE Login
+  const returnUrl = postLoginReturnUrl || buildCleanMemberReturnUrl({ line_login: "1" });
   window.location.href = buildMemberAuthGateUrl(returnUrl, "member_login");
 };
 
