@@ -640,7 +640,20 @@ function clearCurrentCartView(){
   if ($('#total')) $('#total').textContent = 'NT$ 0';
   if ($('#link_out')) $('#link_out').value = '';
 }
+function clearInvalidCustomerSelection(message) {
+  clearCurrentCartView();
 
+  if ($('#line_search_name')) $('#line_search_name').value = '';
+  if ($('#line_user_id')) $('#line_user_id').value = '';
+  if ($('#cartmap_info')) $('#cartmap_info').textContent = '';
+  if ($('#line_search_info')) $('#line_search_info').textContent = message || '查無會員，已清除目前客人。';
+
+  CURRENT_MEMBER_PHONE = '';
+
+  updateCurrentCustomerInfo();
+  syncMainButtons();
+  syncBenefitPanel();
+}
 function resetForNextCustomer(){
   clearCurrentCartView();
   if ($('#line_search_name')) $('#line_search_name').value = '';
@@ -1203,7 +1216,18 @@ function renderSimpleCartList(list) {
         return;
       }
 
-      await updateSimpleItemQty(sku, nextQty);
+      const oldText = btn.textContent;
+      btn.disabled = true;
+      btn.classList.add('is-busy');
+      btn.textContent = '減少中...';
+
+      try {
+        await updateSimpleItemQty(sku, nextQty);
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('is-busy');
+        btn.textContent = oldText || '－';
+      }
     });
   });
 
@@ -1214,7 +1238,18 @@ function renderSimpleCartList(list) {
 
       if (!sku) return;
 
-      await updateSimpleItemQty(sku, currentQty + 1);
+      const oldText = btn.textContent;
+      btn.disabled = true;
+      btn.classList.add('is-busy');
+      btn.textContent = '增加中...';
+
+      try {
+        await updateSimpleItemQty(sku, currentQty + 1);
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('is-busy');
+        btn.textContent = oldText || '＋';
+      }
     });
   });
   ul.querySelectorAll('.btn-save-price').forEach(btn => {
@@ -1440,6 +1475,7 @@ async function linkCheckoutLine() {
   // ★ 新增：呼叫後端，請官方 LINE 幫你發 Flex 卡片
   async function sendCheckoutLinkByLine() {
     if (!guardCart()) return;
+    if (!guardCustomer()) return;
     if (!OP) return alert('請先登入 OP Key');
 
     const lineUserId = ($('#line_user_id').value || '').trim();
@@ -1568,7 +1604,8 @@ async function searchLineMember() {
       return;
     }
 
-    if (!res.member && (!Array.isArray(res.rows) || !res.rows.length)) {
+     if (!res.member && (!Array.isArray(res.rows) || !res.rows.length)) {
+      clearInvalidCustomerSelection('查無會員，已清除目前客人與購物車畫面。請重新查詢正確會員。');
       alert('找不到相符的會員。請確認 LINE 名稱 / 本名 / LineUserId 是否正確。');
       return;
     }
@@ -1621,12 +1658,8 @@ async function verifyLineUserId() {
     const m = rows.find(x => String(x.lineUserId || '').trim() === uid);
 
     if (!res || res.ok !== true || !m) {
-      CURRENT_MEMBER_PHONE = '';
-      if (infoEl) infoEl.textContent = '驗證失敗：找不到這個 LineUserId，請確認是否貼錯。';
+      clearInvalidCustomerSelection('驗證失敗：找不到這個 LineUserId，已清除目前客人與購物車畫面。');
       alert('驗證失敗：找不到這個 LineUserId');
-      updateCurrentCustomerInfo();
-      syncMainButtons();
-      syncBenefitPanel();
       return;
     }
 
