@@ -1759,12 +1759,16 @@ function getBindReturnUrl() {
   return buildCleanMemberReturnUrl({ from_bind: "1" });
 }
 
-function buildMemberAuthGateUrl(returnUrl, mode = "member_bind") {
+function buildMemberAuthGateUrl(returnUrl, mode = "member_bind", opts = {}) {
   const u = new URL(API_BASE + "/line/auth/start");
 
   u.searchParams.set("require_friend", "1");
   u.searchParams.set("mode", mode);
   u.searchParams.set("return_url", returnUrl || MEMBER_NORMAL_URL);
+
+  if (opts && opts.fallback) {
+    u.searchParams.set("fallback", "1");
+  }
 
   return u.toString();
 }
@@ -1863,6 +1867,8 @@ function showBindGate(mode = "login") {
 
   if (mode === "bind") {
     bindGateKicker.textContent = "MEMBER BIND";
+      const fallbackLoginBtn = document.getElementById("fallbackLineLoginBtn");
+  if (fallbackLoginBtn) fallbackLoginBtn.remove();
     bindGateTitle.textContent = "請先完成 LINE 會員綁定";
     bindGateText.textContent = "你已登入 LINE，但尚未完成會員綁定。完成後即可查看歷史訂單、購物金與會員專屬服務。";
     bindGatePrimaryBtn.textContent = "立即綁定會員";
@@ -1885,6 +1891,29 @@ bindGatePrimaryBtn.onclick = () => {
   const returnUrl = postLoginReturnUrl || buildCleanMemberReturnUrl({ line_login: "1" });
 
   window.location.href = buildMemberAuthGateUrl(returnUrl, "member_login");
+};
+    let fallbackLoginBtn = document.getElementById("fallbackLineLoginBtn");
+if (!fallbackLoginBtn) {
+  fallbackLoginBtn = document.createElement("button");
+  fallbackLoginBtn.id = "fallbackLineLoginBtn";
+  fallbackLoginBtn.type = "button";
+  fallbackLoginBtn.className = "bind-gate-btn bind-gate-btn-secondary";
+  fallbackLoginBtn.textContent = "LINE 登入卡住？改用 QR Code 登入";
+
+  bindGatePrimaryBtn.insertAdjacentElement("afterend", fallbackLoginBtn);
+}
+
+fallbackLoginBtn.onclick = () => {
+  markMemberLoginPending();
+
+  const postLoginReturnUrl = getMemberPostLoginReturnUrl();
+  if (postLoginReturnUrl) storeMemberPostLoginReturnUrl(postLoginReturnUrl);
+
+  const returnUrl = postLoginReturnUrl || buildCleanMemberReturnUrl({ line_login: "1" });
+
+  window.location.href = buildMemberAuthGateUrl(returnUrl, "member_login_fallback", {
+    fallback: true
+  });
 };
     statusText.textContent = "請先登入";
     creditValue.textContent = "NT$ --";
