@@ -1892,7 +1892,73 @@ bindGatePrimaryBtn.onclick = () => {
     creditValue.textContent = "NT$ --";
   }
 }
+function needOfficialLineGate() {
+  const p = getMemberSearchParams();
 
+  return (
+    p.get("line_friend_required") === "1" &&
+    p.get("line_friend") === "0"
+  );
+}
+
+function showOfficialLineGate() {
+  hideMemberMainSections();
+  setLogoutVisible(false);
+
+  if (bindGate) bindGate.style.display = "block";
+
+  if (bindGateKicker) bindGateKicker.textContent = "LINE NOTICE";
+  if (bindGateTitle) bindGateTitle.textContent = "請先加入官方 LINE";
+  if (bindGateText) {
+    bindGateText.textContent =
+      "你已完成 LINE 登入，但尚未確認加入 MURAIN 官方 LINE。請先加入官方 LINE，才能接收付款、出貨、尾款、到貨與直播開單通知。";
+  }
+
+  if (bindGatePrimaryBtn) {
+    bindGatePrimaryBtn.textContent = "加入 MURAIN 官方 LINE";
+    bindGatePrimaryBtn.onclick = () => {
+      const url = String(window.OFFICIAL_LINE_URL || "").trim();
+      if (url) window.open(url, "_blank");
+    };
+  }
+
+  let recheckBtn = document.getElementById("recheckLineFriendBtn");
+  if (!recheckBtn) {
+    recheckBtn = document.createElement("button");
+    recheckBtn.id = "recheckLineFriendBtn";
+    recheckBtn.type = "button";
+    recheckBtn.className = "bind-gate-btn bind-gate-btn-secondary";
+    recheckBtn.textContent = "我已加入，重新檢查";
+
+    if (bindGatePrimaryBtn) {
+      bindGatePrimaryBtn.insertAdjacentElement("afterend", recheckBtn);
+    }
+  }
+
+  recheckBtn.onclick = () => {
+    markMemberLoginPending();
+
+    const postLoginReturnUrl = getMemberPostLoginReturnUrl();
+    if (postLoginReturnUrl) storeMemberPostLoginReturnUrl(postLoginReturnUrl);
+
+    const returnUrl = postLoginReturnUrl || buildCleanMemberReturnUrl({ from_bind: "1" });
+
+    window.location.href = buildMemberAuthGateUrl(returnUrl, "member_friend_recheck");
+  };
+
+  if (bindGateNote) {
+    bindGateNote.textContent = "加入或解除封鎖後，請回到此頁按「我已加入，重新檢查」。";
+  }
+
+  if (statusText) statusText.textContent = "尚未加入官方 LINE";
+  if (creditValue) creditValue.textContent = "NT$ --";
+
+  if (infoMsg) {
+    infoMsg.textContent = "";
+    infoMsg.classList.remove("error");
+    infoMsg.style.display = "none";
+  }
+}
   function setLogoutVisible(show) {
   if (!logoutBtn) return;
   logoutBtn.style.display = show ? "inline-flex" : "none";
@@ -3490,7 +3556,10 @@ async function initLiff() {
       showBindGate("login");
       return;
     }
-
+if (needOfficialLineGate()) {
+  showOfficialLineGate();
+  return;
+}
  // ✅ 第一優先：直接用後端 HttpOnly session 還原會員狀態
 // 商品頁、購物車、結帳都以同一顆 murain_member_session cookie 為準。
 const postLoginReturnUrl = getMemberPostLoginReturnUrl();
