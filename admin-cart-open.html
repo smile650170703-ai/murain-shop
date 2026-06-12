@@ -767,7 +767,96 @@ function displayCartMainStatus(row = {}) {
 
   return displayCartStatus(row.status || 'open');
 }
+function buildAdminCheckoutLineUrl(row = {}) {
+  const token = String(row.cart_token || '').trim();
+  if (!token) return '';
 
+  const liffId = String(window.LIFF_CHECKOUT_ID || '').trim();
+
+  if (liffId) {
+    return `https://liff.line.me/${liffId}?cart_token=${encodeURIComponent(token)}&v=${Date.now()}`;
+  }
+
+  const origin = String(
+    window.MURAIN_SITE_ORIGIN ||
+    location.origin ||
+    'https://murain.tw'
+  ).replace(/\/+$/, '');
+
+  return `${origin}/liff-checkout?cart_token=${encodeURIComponent(token)}&v=${Date.now()}`;
+}
+
+async function copyTextToClipboard(text) {
+  const value = String(text || '').trim();
+  if (!value) throw new Error('沒有可複製的連結');
+
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(value);
+    return true;
+  }
+
+  const ta = document.createElement('textarea');
+  ta.value = value;
+  ta.setAttribute('readonly', 'readonly');
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+
+  const ok = document.execCommand('copy');
+  document.body.removeChild(ta);
+
+  if (!ok) throw new Error('瀏覽器不允許自動複製，請手動複製');
+  return true;
+}
+
+async function markAdminCartCopied(row = {}) {
+  const token = String(row.cart_token || '').trim();
+  if (!token) return;
+
+  try {
+    const r = await fetch(`${API}/op/cart/mark-copied`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        cart_token: token,
+        line_user_id: row.line_user_id || '',
+        customer_name: row.customer_name || '',
+        streamer_name: row.streamer_name || ''
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+
+    row.link_copied_at = new Date().toISOString();
+  } catch (e) {
+    console.warn('markAdminCartCopied failed', e);
+  }
+}
+
+async function copyAdminCartLink(row = {}) {
+  const url = buildAdminCheckoutLineUrl(row);
+
+  if (!url) {
+    showDetailMsg('複製失敗：沒有 cart_token', 'error');
+    return;
+  }
+
+  await copyTextToClipboard(url);
+  await markAdminCartCopied(row);
+
+  showDetailMsg(
+    `已複製購物車連結。\n\n${url}`,
+    'ok'
+  );
+
+  try { renderCartList(); } catch(e) {}
+}
 function money(n) {
   return 'NT$ ' + (Number(n || 0) || 0).toLocaleString('zh-TW');
 }
@@ -1160,6 +1249,9 @@ renderCartList();
 function renderCartList() {
   const listEl = $('#orderList');
   const detailEl = $('#orderDetail');
+  const activeToken = currentCartRecord?.cart_token
+    ? String(currentCartRecord.cart_token || '').trim()
+    : '';
 
   if (!listEl) return;
 
@@ -1238,7 +1330,17 @@ listEl.innerHTML = currentCartRows.map((row, idx) => {
     });
   });
 
-  if (detailEl) {
+  if (activeToken) {
+    const activeIdx = currentCartRows.findIndex(x =>
+      String(x.cart_token || '').trim() === activeToken
+    );
+
+    if (activeIdx >= 0) {
+      const activeEl = document.querySelector(`#orderList .order-row[data-idx="${activeIdx}"]`);
+      if (activeEl) activeEl.classList.add('active');
+      currentCartRecord = currentCartRows[activeIdx];
+    }
+  } else if (detailEl) {
     detailEl.innerHTML = '<div class="muted">請從左邊點選一台購物車</div>';
   }
 }
@@ -1392,7 +1494,13 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
       <div class="mt-3" id="cartEditItemsPanel"></div>
     `}
     <div class="mt-3" style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn-secondary" id="btnCartRemindSingle" type="button">🛒 手動發送購物車卡</button>
+      ${lineId ? `
+        <button class="btn-secondary" id="btnCartRemindSingle" type="button">🛒 手動發送購物車卡</button>
+      ` : `
+        <button class="btn-secondary" id="btnCartCopyLinkSingle" type="button">
+          🔗 ${row.link_copied_at ? '再次複製購物車連結' : '複製購物車連結'}
+        </button>
+      `}
       ${canEditCart(row) ? `<button class="btn-secondary" id="btnCartClearSingle" type="button">🧹 清空此購物車</button>` : ''}
     </div>
 
@@ -1414,7 +1522,18 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
       setButtonBusy(btn, false);
     }
   });
+  $('#btnCartCopyLinkSingle')?.addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    setButtonBusy(btn, true, '複製中…');
 
+    try {
+      await copyAdminCartLink(row);
+    } catch (err) {
+      showDetailMsg('複製失敗：' + (err.message || err), 'error');
+    } finally {
+      setButtonBusy(btn, false);
+    }
+  });
   $('#btnCartClearSingle')?.addEventListener('click', async e => {
     const btn = e.currentTarget;
     setButtonBusy(btn, true, '清空中…');
