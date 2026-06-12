@@ -3097,13 +3097,42 @@ function getCheckoutSearchParamsSafe() {
   }
 }
 
+function checkoutFriendCheckKey() {
+  const token = String(cartToken || "").trim() || "no_cart_token";
+  return `MURAIN_CHECKOUT_FRIEND_CHECKED_${token}`;
+}
+
+function rememberCheckoutFriendChecked() {
+  try {
+    sessionStorage.setItem(checkoutFriendCheckKey(), String(Date.now()));
+  } catch (e) {}
+}
+
 function hasCheckoutFriendChecked() {
   const q = getCheckoutSearchParamsSafe();
 
-  return (
+  const fromUrl =
     q.get("checkout_friend_checked") === "1" ||
-    q.get("friend_checked") === "1"
-  );
+    q.get("friend_checked") === "1";
+
+  // ✅ 從 member.html / LINE Login 成功回來時，網址會有 checkout_friend_checked=1。
+  // 這時記住「同一台 cart_token 已經檢查過官方 LINE」。
+  // 避免選 7-11 門市回來，網址參數掉了，又重跑 member.html。
+  if (fromUrl) {
+    rememberCheckoutFriendChecked();
+    return true;
+  }
+
+  try {
+    const checkedAt = Number(sessionStorage.getItem(checkoutFriendCheckKey()) || "0");
+    if (!checkedAt) return false;
+
+    // ✅ 同一台購物車 2 小時內不用重複檢查。
+    // 只處理選門市 / 付款跳轉 / 頁面重整造成的重複跳轉。
+    return Date.now() - checkedAt < 2 * 60 * 60 * 1000;
+  } catch (e) {
+    return false;
+  }
 }
 
 function buildCheckoutReturnUrlAfterFriendCheck() {
@@ -3195,9 +3224,10 @@ async function ensureCheckoutOfficialFriendInLineApp() {
     if (typeof liff.getFriendship === "function") {
       const before = await liff.getFriendship();
 
-      if (before && before.friendFlag === true) {
-        return true;
-      }
+if (before && before.friendFlag === true) {
+  rememberCheckoutFriendChecked();
+  return true;
+}
     }
   } catch (e) {
     console.warn("[checkout] getFriendship before failed", e);
@@ -3212,9 +3242,10 @@ async function ensureCheckoutOfficialFriendInLineApp() {
       if (typeof liff.getFriendship === "function") {
         const after = await liff.getFriendship();
 
-        if (after && after.friendFlag === true) {
-          return true;
-        }
+if (after && after.friendFlag === true) {
+  rememberCheckoutFriendChecked();
+  return true;
+}
       }
     }
   } catch (e) {
@@ -5375,15 +5406,11 @@ if (cartToken) qs2.set("cart_token", cartToken); // ✅ 保險補上
 
   qs2.delete('customer');
 
- // 🚨 LIFF 回來時，不自動導去 cvs map
-if (!sessionStorage.getItem('__from_liff_state')) {
-  if (!sessionStorage.getItem('__cvs_redirected')) {
-    sessionStorage.setItem('__cvs_redirected', '1');
-    const url = `${API}/cvs/map?${qs2.toString()}`;
-    window.location.href = url;
-  }
-}
-} // ✅ ← 這一個是缺的：用來關掉 function open711(src)
+  // ✅ 使用者主動按「選擇 7-11 門市」時，每次都應該可以重新開地圖。
+  // 不要用 __cvs_redirected 擋住，不然選過一次或測試後，按鈕會看起來沒反應。
+  const url = `${API}/cvs/map?${qs2.toString()}`;
+  window.location.href = url;
+} // ✅ 關掉 function open711(src)
 function applyStoreFromURL(){
   // ✅ 用 getQS() 才吃得到 LIFF 的 liff.state 內參數
   const qs2 = getQS();
