@@ -3085,7 +3085,151 @@ async function createCheckoutAuthSessionFromLiff(){
   const json = await res.json().catch(() => ({}));
   return !!(res.ok && json && json.ok);
 }
+function getCheckoutSearchParamsSafe() {
+  try {
+    return getQS();
+  } catch (e) {
+    try {
+      return new URLSearchParams(location.search || "");
+    } catch (err) {
+      return new URLSearchParams("");
+    }
+  }
+}
 
+function hasCheckoutFriendChecked() {
+  const q = getCheckoutSearchParamsSafe();
+
+  return (
+    q.get("checkout_friend_checked") === "1" ||
+    q.get("friend_checked") === "1"
+  );
+}
+
+function buildCheckoutReturnUrlAfterFriendCheck() {
+  const checkoutOrigin = String(
+    window.MURAIN_SITE_ORIGIN || location.origin || "https://murain.tw"
+  ).replace(/\/+$/, "");
+
+  try {
+    const u = new URL(location.href);
+
+    if (cartToken && !u.searchParams.get("cart_token")) {
+      u.searchParams.set("cart_token", cartToken);
+    }
+
+    u.searchParams.set("auth_return", "1");
+    u.searchParams.set("checkout_friend_checked", "1");
+    u.searchParams.set("t", String(Date.now()));
+
+    return u.toString();
+  } catch (e) {
+    return cartToken
+      ? `${checkoutOrigin}/liff-checkout.html?cart_token=${encodeURIComponent(cartToken)}&auth_return=1&checkout_friend_checked=1&t=${Date.now()}`
+      : `${checkoutOrigin}/liff-checkout.html?auth_return=1&checkout_friend_checked=1&t=${Date.now()}`;
+  }
+}
+
+function redirectCheckoutToMemberFriendRecheck(mode = "checkout_friend_recheck") {
+  try { saveLastCheckoutCartToken(cartToken); } catch(e) {}
+  try { saveCheckoutState(); } catch(e) {}
+
+  const checkoutOrigin = String(
+    window.MURAIN_SITE_ORIGIN || location.origin || "https://murain.tw"
+  ).replace(/\/+$/, "");
+
+  const returnUrl = buildCheckoutReturnUrlAfterFriendCheck();
+
+  const u = new URL(`${checkoutOrigin}/member.html`);
+  u.searchParams.set("line_login", "1");
+  u.searchParams.set("force_line_auth", "1");
+  u.searchParams.set("return_url", returnUrl);
+  u.searchParams.set("mode", mode);
+  u.searchParams.set("t", String(Date.now()));
+
+  location.replace(u.toString());
+  return true;
+}
+
+function checkoutMemberSource(info) {
+  return info?.member || info?.data || info || {};
+}
+
+function isCheckoutMemberProfileComplete(info) {
+  const src = checkoutMemberSource(info);
+
+  return !!(
+    String(src.email || src.Email || "").trim() &&
+    String(src.phone || src.Phone || "").trim() &&
+    String(src.name || src.Name || "").trim()
+  );
+}
+
+function redirectCheckoutToMemberProfileGate() {
+  try { saveLastCheckoutCartToken(cartToken); } catch(e) {}
+  try { saveCheckoutState(); } catch(e) {}
+
+  const checkoutOrigin = String(
+    window.MURAIN_SITE_ORIGIN || location.origin || "https://murain.tw"
+  ).replace(/\/+$/, "");
+
+  const returnUrl = buildCheckoutReturnUrlAfterFriendCheck();
+
+  const u = new URL(`${checkoutOrigin}/member.html`);
+  u.searchParams.set("line_login", "1");
+  u.searchParams.set("return_url", returnUrl);
+  u.searchParams.set("t", String(Date.now()));
+
+  location.replace(u.toString());
+  return true;
+}
+
+async function ensureCheckoutOfficialFriendInLineApp() {
+  // 只有 LINE App 內建 LIFF 環境可以用 getFriendship / requestFriendship。
+  // 外部瀏覽器、FB、IG 統一走 member.html → /line/auth/start → callback 查 friendFlag。
+  if (!window.liff || !liff.isInClient || !liff.isInClient()) {
+    return true;
+  }
+
+  try {
+    if (typeof liff.getFriendship === "function") {
+      const before = await liff.getFriendship();
+
+      if (before && before.friendFlag === true) {
+        return true;
+      }
+    }
+  } catch (e) {
+    console.warn("[checkout] getFriendship before failed", e);
+  }
+
+  try {
+    if (typeof liff.requestFriendship === "function") {
+      await liff.requestFriendship();
+
+      await new Promise(resolve => setTimeout(resolve, 900));
+
+      if (typeof liff.getFriendship === "function") {
+        const after = await liff.getFriendship();
+
+        if (after && after.friendFlag === true) {
+          return true;
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[checkout] requestFriendship failed", e);
+  }
+
+  alert("請先加入或解除封鎖官方 LINE，才能進入購物車結帳並接收訂單通知。");
+
+  try {
+    const url = String(window.OFFICIAL_LINE_URL || "").trim();
+    if (url) location.href = url;
+  } catch (e) {}
+
+  return false;
+}
 async function loadCheckoutMemberBySession(profile = null){
   try {
     const r = await fetch(`${API}/line/member-info`, {
@@ -3136,11 +3280,20 @@ async function loadCheckoutMemberByUid(uidForApi, profile = null){
     const j = await r.json().catch(() => ({}));
     console.log("member-info 回來長這樣:", j);
 
-    if (r.ok && j && j.ok) {
-      j._from = 'member-info';
-      MEMBER_INFO = j;
-      applyMemberInfoToForm(j);
-    } else if (r.status === 404 || j?.error === "not_found") {
+if (r.ok && j && j.ok) {
+  j._from = 'member-info';
+  MEMBER_INFO = j;
+
+  // ✅ 結帳前不能只看「LINE user_id 找得到」。
+  // 一定要確認會員資料完整：email + phone + name。
+  // 不完整就交回 member.html 補資料，完成後再回原 cart_token。
+  if (!isCheckoutMemberProfileComplete(j)) {
+    redirectCheckoutToMemberProfileGate();
+    return false;
+  }
+
+  applyMemberInfoToForm(j);
+} else if (r.status === 404 || j?.error === "not_found") {
       // ✅ 未綁定：先去綁定，再回原頁
       redirectToMemberBind();
       return false;
@@ -3214,13 +3367,21 @@ async function initLiffAndMember() {
       try { sessionStorage.removeItem(retryKey); } catch(e) {}
     };
 
-    let ok = await loadCheckoutMemberBySession(null);
-    if (ok) {
-      clearCheckoutRetry();
-      return;
-    }
+// ✅ 官網 web 購物車第一次進來，不能只吃舊 session。
+// 必須先交給 member.html → /line/auth/start 重新查官方 LINE friendFlag。
+// 成功回來會帶 checkout_friend_checked=1，才允許吃 session。
+if (!hasCheckoutFriendChecked()) {
+  redirectCheckoutToMemberFriendRecheck("web_checkout_friend_recheck");
+  return;
+}
 
-    // ✅ 安全 fallback：
+let ok = await loadCheckoutMemberBySession(null);
+if (ok) {
+  clearCheckoutRetry();
+  return;
+}
+
+// ✅ 安全 fallback：
     // 如果後端 cookie session 一時沒吃到，但本機 uid 與這台購物車 owner 完全一致，
     // 就允許用 uid 載入會員資料，避免購物車/會員中心來回輪迴。
     let sharedUid = getCheckoutSharedLineUserId();
@@ -3308,13 +3469,19 @@ location.href = `${memberOrigin}/member.html?v=${Date.now()}&return_url=${encode
       try { sessionStorage.removeItem("MURAIN_LIVE_CHECKOUT_WEB_LOGIN_RETRY"); } catch(e) {}
     };
 
-    // 1）先吃網站會員 session
-    let ok = await loadCheckoutMemberBySession(null);
-    if (ok) {
-      clearWebBackupRetry();
-      return;
-    }
+// ✅ FB / IG / 外部瀏覽器回來的直播主購物車，也不能只吃舊 session。
+// 必須先經過 member.html → /line/auth/start → callback 查 friendFlag。
+if (!hasCheckoutFriendChecked()) {
+  redirectCheckoutToMemberFriendRecheck("live_checkout_friend_recheck");
+  return;
+}
 
+// 1）先吃網站會員 session
+let ok = await loadCheckoutMemberBySession(null);
+if (ok) {
+  clearWebBackupRetry();
+  return;
+}
     // 2）如果剛剛綁定頁 / 會員頁有留下 line_user_id，允許補讀會員資料
     let backupUid = "";
     try { backupUid = String(localStorage.getItem("murain_line_user_id") || "").trim(); } catch(e) {}
@@ -3391,9 +3558,9 @@ if (!liff.isLoggedIn()) {
     window.MURAIN_SITE_ORIGIN || location.origin || "https://murain.tw"
   ).replace(/\/+$/, "");
 
-  const checkoutRedirect = cartToken
-    ? `${checkoutOrigin}/liff-checkout.html?cart_token=${encodeURIComponent(cartToken)}&auth_return=1&t=${Date.now()}`
-    : `${checkoutOrigin}/liff-checkout.html?auth_return=1&t=${Date.now()}`;
+const checkoutRedirect = cartToken
+  ? `${checkoutOrigin}/liff-checkout.html?cart_token=${encodeURIComponent(cartToken)}&auth_return=1&checkout_friend_checked=1&t=${Date.now()}`
+  : `${checkoutOrigin}/liff-checkout.html?auth_return=1&checkout_friend_checked=1&t=${Date.now()}`;
 
   // ✅ 重點：
   // 如果不是在 LINE App 內建瀏覽器，就不要在 checkout 頁一直 liff.login。
@@ -3421,14 +3588,14 @@ if (!liff.isLoggedIn()) {
 
       alert("LINE 登入狀態尚未完成，請從會員中心登入 / 綁定後再回到結帳頁。");
 
-      const memberUrl = `${checkoutOrigin}/member.html?return_url=${encodeURIComponent(checkoutRedirect)}&t=${Date.now()}`;
+      const memberUrl = `${checkoutOrigin}/member.html?line_login=1&force_line_auth=1&return_url=${encodeURIComponent(checkoutRedirect)}&t=${Date.now()}`;
       location.replace(memberUrl);
       return;
     }
 
     try { sessionStorage.setItem(retryKey, "1"); } catch (e) {}
 
-    const memberLoginUrl = `${checkoutOrigin}/member.html?line_login=1&return_url=${encodeURIComponent(checkoutRedirect)}&t=${Date.now()}`;
+    const memberLoginUrl = `${checkoutOrigin}/member.html?line_login=1&force_line_auth=1&return_url=${encodeURIComponent(checkoutRedirect)}&t=${Date.now()}`;
     location.replace(memberLoginUrl);
     return;
   }
@@ -3438,9 +3605,12 @@ if (!liff.isLoggedIn()) {
   return;
 }
 
-  let profile = null;
-  let uidForApi = (typeof lineUserIdFromPay === 'string' && lineUserIdFromPay) ? lineUserIdFromPay : '';
+const checkoutFriendOk = await ensureCheckoutOfficialFriendInLineApp();
+if (!checkoutFriendOk) return;
 
+let profile = null;
+let uidForApi = (typeof lineUserIdFromPay === 'string' && lineUserIdFromPay) ? lineUserIdFromPay : '';
+  
   try {
     if (liff.isLoggedIn()) {
       profile = await liff.getProfile();
