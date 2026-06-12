@@ -716,7 +716,34 @@ function switchCustomerSafely(nextLineUserId, nextName){
   syncMainButtons();
   syncBenefitPanel();
 }
+function confirmBeforeCreateCart() {
+  const customerName = getCustomerName();
+  const lineUserId = getLineUserId();
+  const streamer = ($('#streamer')?.value || '').trim();
 
+  if (!streamer) {
+    alert('請先輸入直播主名稱');
+    return false;
+  }
+
+  if (!customerName && !lineUserId) {
+    alert('請先輸入客人名稱，或查詢會員後再建立購物車。');
+    return false;
+  }
+
+  const lineText = lineUserId
+    ? lineUserId
+    : '無 LINE ID（此車之後只能複製結帳連結，不能直接發 LINE 卡片）';
+
+  return confirm(
+    '請最後確認這台購物車要開給誰：\n\n' +
+    `客人：${customerName || '(未填名稱)'}\n` +
+    `LINE ID：${lineText}\n` +
+    `直播主：${streamer}\n` +
+    '來源：直播主開單\n\n' +
+    '確認無誤後才會建立購物車。'
+  );
+}
 function updateCurrentCustomerInfo(){
   const name = getCustomerName();
   const uid  = getLineUserId();
@@ -1023,7 +1050,7 @@ async function createCart() {
   const btn = $('#btn-create');
   const streamer = ($('#streamer').value || '').trim();
 
-  if (!streamer) return alert('請先輸入直播主名稱');
+  if (!confirmBeforeCreateCart()) return;
 
   CREATE_CART_BUSY = true;
   setButtonBusy(btn, true, '建立中...');
@@ -1385,7 +1412,53 @@ async function refreshList() {
 
   renderSimpleCartList(res.items || []);
 }
+function buildCartItemsConfirmText() {
+  const rows = Array.from(document.querySelectorAll('#items li'));
+  const lines = rows.map((li, idx) => {
+    const text = String(li.textContent || '')
+      .replace(/\s+/g, ' ')
+      .trim();
 
+    return text ? `${idx + 1}. ${text}` : '';
+  }).filter(Boolean);
+
+  return lines;
+}
+
+function confirmBeforeSendOrCopy(actionLabel) {
+  if (!guardCart()) return false;
+
+  const customerName = getCustomerName();
+  const lineUserId = getLineUserId();
+  const streamer = ($('#streamer')?.value || '').trim();
+  const totalText = ($('#total')?.textContent || 'NT$ 0').trim();
+  const itemLines = buildCartItemsConfirmText();
+
+  if (!itemLines.length) {
+    alert('購物車目前沒有商品，不能發送或複製結帳連結。');
+    return false;
+  }
+
+  if (!customerName && !lineUserId) {
+    alert('請先確認客人名稱，再發送或複製結帳連結。');
+    return false;
+  }
+
+  const lineText = lineUserId
+    ? lineUserId
+    : '無 LINE ID（只能複製連結，不能直接發官方 LINE 卡片）';
+
+  return confirm(
+    `即將${actionLabel}，請最後確認：\n\n` +
+    `客人：${customerName || '(未填名稱)'}\n` +
+    `LINE ID：${lineText}\n` +
+    `直播主：${streamer || '(未填)'}\n` +
+    `購物車：${CART}\n\n` +
+    `商品明細：\n${itemLines.join('\n')}\n\n` +
+    `合計：${totalText}\n\n` +
+    '確認商品、數量、金額都正確後再繼續。'
+  );
+}
 function buildCheckoutLineUrl() {
   const cartToken = String(CART || '').trim();
   if (!cartToken) return '';
@@ -1454,7 +1527,7 @@ async function linkCheckout() {
   }
 }
 async function linkCheckoutLine() {
-  if (!guardCart()) return;
+  if (!confirmBeforeSendOrCopy('複製 LINE 結帳連結')) return;
 
   const url = buildCheckoutLineUrl();
   const out = $('#link_out');
@@ -1489,6 +1562,7 @@ async function linkCheckoutLine() {
   async function sendCheckoutLinkByLine() {
     if (!guardCart()) return;
     if (!guardCustomer()) return;
+    if (!confirmBeforeSendOrCopy('從官方 LINE 發送結帳卡片')) return;
     if (!OP) return alert('請先登入 OP Key');
 
     const lineUserId = ($('#line_user_id').value || '').trim();
