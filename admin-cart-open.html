@@ -1361,23 +1361,30 @@ async function renderCartDetail(row) {
 
     if (token) {
       const params = new URLSearchParams();
-params.set('op_key', OP_KEY);
-params.set('cart_token', token);
+      params.set('op_key', OP_KEY);
+      params.set('cart_token', token);
 
-const r = await fetch(`${API}/cart/${encodeURIComponent(token)}`);
-const j = await r.json().catch(() => ({}));
+      const [briefRes, itemsRes] = await Promise.all([
+        fetch(`${API}/admin/cart/brief?` + params.toString()),
+        fetch(`${API}/admin/cart/items?` + params.toString())
+      ]);
 
-if (r.ok && j.ok && Array.isArray(j.items)) {
-  row.status = j.cart_status || row.status || 'open';
-  row.checked_out = j.checked_out === true;
-  row.checked_out_order_id = j.checked_out_order_id || '';
+      const briefJson = await briefRes.json().catch(() => ({}));
+      const itemsJson = await itemsRes.json().catch(() => ({}));
 
-  detailItems = j.items.map(normalizeAdminCartItem);
+      if (briefRes.ok && briefJson.ok && briefJson.cart) {
+        row.status = briefJson.cart.status || row.status || 'open';
+        row.checked_out = briefJson.cart.checked_out === true;
+        row.checked_out_order_id = briefJson.cart.checked_out_order_id || '';
+      }
 
-  itemText = detailItems.map(it => {
-    return `${it.name || it.sku}${it.qty > 0 ? ` × ${it.qty}` : ''}`;
-  }).filter(Boolean).join('\n');
-}
+      if (itemsRes.ok && itemsJson.ok && Array.isArray(itemsJson.items)) {
+        detailItems = itemsJson.items.map(normalizeAdminCartItem);
+
+        itemText = detailItems.map(it => {
+          return `${it.name || it.sku}${it.qty > 0 ? ` × ${it.qty}` : ''}`;
+        }).filter(Boolean).join('\n');
+      }
     }
   } catch (e) {
     console.warn('load cart items failed', e);
