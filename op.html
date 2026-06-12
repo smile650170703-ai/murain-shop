@@ -328,6 +328,12 @@ button.is-busy {
       <input id="line_user_id" placeholder="LineUserId（查到會員後會自動帶入，也可手動貼上）" />
       <button id="btn-verify-line-id" class="ghost" type="button">驗證 LineUserId</button>
     </div>
+
+    <div class="row" style="margin-top:10px">
+      <button id="btn-use-guest-customer" class="ghost" type="button">
+        改用未綁定客人（只能複製連結）
+      </button>
+    </div>
     </div>
   </div>
 
@@ -711,6 +717,41 @@ function switchCustomerSafely(nextLineUserId, nextName){
 
   if ($('#line_search_name')) $('#line_search_name').value = nextName || '';
   if ($('#line_user_id')) $('#line_user_id').value = nextLineUserId || '';
+
+  updateCurrentCustomerInfo();
+  syncMainButtons();
+  syncBenefitPanel();
+}
+
+  function useGuestCustomer() {
+  const name = ($('#line_search_name')?.value || '').trim();
+
+  if (!name) {
+    alert('請先在客人名稱欄輸入未綁定客人的名稱，例如：王小美 / IG帳號 / 社團暱稱。');
+    $('#line_search_name')?.focus();
+    return;
+  }
+
+  if (!confirm(
+    '確定改用未綁定客人嗎？\n\n' +
+    `客人名稱：${name}\n` +
+    'LINE ID：無\n\n' +
+    '注意：未綁定客人不能從官方 LINE 發購物車卡，只能複製結帳連結給客人。'
+  )) {
+    return;
+  }
+
+  if ($('#line_user_id')) $('#line_user_id').value = '';
+  CURRENT_MEMBER_PHONE = '';
+
+  if ($('#line_search_info')) {
+    $('#line_search_info').textContent =
+      `已設定為未綁定客人：${name}。此客人只能複製結帳連結，不能發官方 LINE 卡片。`;
+  }
+
+  if ($('#cartmap_info')) {
+    $('#cartmap_info').textContent = '未綁定客人不會記住 LINE 購物車。';
+  }
 
   updateCurrentCustomerInfo();
   syncMainButtons();
@@ -1678,7 +1719,8 @@ async function searchLineMember() {
       method: 'POST',
       body: JSON.stringify({
         op_key: OP,
-        keyword: q
+        keyword: q,
+        mode: 'display_name'
       })
     });
 
@@ -1737,7 +1779,8 @@ async function verifyLineUserId() {
       method: 'POST',
       body: JSON.stringify({
         op_key: OP,
-        keyword: uid
+        keyword: uid,
+        mode: 'line_user_id'
       })
     });
 
@@ -1945,6 +1988,11 @@ if (btnSubmitBenefitRequest) {
   const btnVerifyLineId = $('#btn-verify-line-id');
   if (btnVerifyLineId) {
     btnVerifyLineId.addEventListener('click', verifyLineUserId);
+  }
+
+  const btnUseGuestCustomer = $('#btn-use-guest-customer');
+  if (btnUseGuestCustomer) {
+    btnUseGuestCustomer.addEventListener('click', useGuestCustomer);
   }
      // ★ 新增：從官方 LINE 發結帳卡片
     const btnSendLink = $('#btn-send-link');
