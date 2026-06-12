@@ -1346,7 +1346,40 @@ function hasMemberLoginReturnFlag() {
     return false;
   }
 }
+function shouldForceMemberAuthOnce() {
+  try {
+    const params = getMemberSearchParams();
 
+    // 結帳 / 直播主 cart_token 要求重新驗證官方 LINE 好友狀態時，
+    // 不能只吃舊 session。
+    return (
+      params.get("force_line_auth") === "1" &&
+      params.get("auth_return") !== "1" &&
+      params.get("from_line_login") !== "1"
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
+function buildMemberSelfAuthReturnUrl() {
+  const u = new URL(MEMBER_NORMAL_URL);
+  const params = getMemberSearchParams();
+
+  const returnUrl = params.get("return_url") || "";
+
+  u.searchParams.set("line_login", "1");
+  u.searchParams.set("auth_return", "1");
+  u.searchParams.set("from_line_login", "1");
+
+  if (returnUrl) {
+    u.searchParams.set("return_url", returnUrl);
+  }
+
+  u.searchParams.set("t", String(Date.now()));
+
+  return u.toString();
+}
 function markMemberLoginPending() {
   try {
     sessionStorage.setItem("MURAIN_MEMBER_LOGIN_PENDING", "1");
@@ -3756,6 +3789,19 @@ if (needOfficialLineGate()) {
  // ✅ 第一優先：直接用後端 HttpOnly session 還原會員狀態
 // 商品頁、購物車、結帳都以同一顆 murain_member_session cookie 為準。
 const postLoginReturnUrl = getMemberPostLoginReturnUrl();
+
+// ✅ 結帳 / 直播主 cart_token 要求強制重新驗證官方 LINE 好友狀態時，不能只吃舊 session。
+if (shouldForceMemberAuthOnce()) {
+  markMemberLoginPending();
+
+  if (postLoginReturnUrl) {
+    storeMemberPostLoginReturnUrl(postLoginReturnUrl);
+  }
+
+  const selfReturnUrl = buildMemberSelfAuthReturnUrl();
+  window.location.href = buildMemberAuthGateUrl(selfReturnUrl, "checkout_friend_recheck");
+  return;
+}
 
 // 從商品頁 / 購物車 / 結帳頁過來時，先快速判斷，不要等歷史訂單與購物金載入
 if (postLoginReturnUrl) {
