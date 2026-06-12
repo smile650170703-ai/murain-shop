@@ -4385,39 +4385,66 @@ function buildBreadcrumb(product){
   return `<div class="related-price">${formatMoney(memberPrice || listPrice || 0)}</div>`;
 }
 
-   function renderRelated(product){
+function renderRelated(product){
+  const section = $('relatedSection');
+  const row = $('relatedRow');
+
+  if (!section || !row) return;
+
   if(!Array.isArray(allItems) || !allItems.length){
-    $('relatedSection').style.display = 'none';
+    section.style.display = 'none';
+    row.innerHTML = '';
     return;
   }
-      const related = allItems
-        .map(normalizeProduct)
-        .filter(x => x.sku && x.sku !== product.sku)
-        .filter(x => Math.max(0, Number(x.stockQty || 0) || 0) > 0)
-        .filter(x => (product.category && x.category === product.category) || (product.brand && x.brand === product.brand))
-        .slice(0, 8);
 
-      $('relatedSection').style.display = related.length ? '' : 'none';
-      $('relatedRow').innerHTML = related.map(item => {
-        const imageUrl = imageUrlFromValue(item.thumb || item.image || item.images);
-        const imageMarkup = imageUrl
-          ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(item.title)}" loading="lazy">`
-          : `<div class="related-placeholder" aria-hidden="true"><span>XUYUAN</span></div>`;
+  const normalized = allItems
+    .map(normalizeProduct)
+    .filter(x => x.sku && x.sku !== product.sku)
+    .filter(x => Math.max(0, Number(x.stockQty || 0) || 0) > 0);
 
-        return `
-        <article class="related-card-item" data-sku="${escapeHtml(item.sku)}">
-          <div class="related-thumb">${imageMarkup}</div>
-          <div class="related-name">${escapeHtml(item.title)}</div>
-          ${formatRelatedPriceHtml(item)}
-        </article>
-      `;
-      }).join('');
-      $('relatedRow').querySelectorAll('.related-card-item').forEach(card => {
-        card.addEventListener('click', () => {
-          location.href = `/product.html?sku=${encodeURIComponent(card.dataset.sku || '')}`;
-        });
-      });
-    }
+  // 第一優先：同分類 / 同品牌
+  let related = normalized.filter(x =>
+    (product.category && x.category === product.category) ||
+    (product.brand && x.brand === product.brand)
+  );
+
+  // ✅ 找不到同分類 / 同品牌時，不要整區消失。
+  // 改抓其他有庫存商品，避免商品頁底部空掉。
+  if (!related.length) {
+    related = normalized;
+  }
+
+  related = related.slice(0, 8);
+
+  section.style.display = related.length ? '' : 'none';
+
+  if (!related.length) {
+    row.innerHTML = '';
+    return;
+  }
+
+  row.innerHTML = related.map(item => {
+    const imageUrl = imageUrlFromValue(item.thumb || item.image || item.images);
+    const imageMarkup = imageUrl
+      ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(item.title)}" loading="lazy">`
+      : `<div class="related-placeholder" aria-hidden="true"><span>XUYUAN</span></div>`;
+
+    return `
+      <article class="related-card-item" data-sku="${escapeHtml(item.sku)}">
+        <div class="related-thumb">${imageMarkup}</div>
+        <div class="related-name">${escapeHtml(item.title)}</div>
+        ${formatRelatedPriceHtml(item)}
+      </article>
+    `;
+  }).join('');
+
+  row.querySelectorAll('.related-card-item').forEach(card => {
+    card.addEventListener('click', () => {
+      const origin = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+      location.href = `${origin}/product.html?sku=${encodeURIComponent(card.dataset.sku || '')}`;
+    });
+  });
+}
 
   function renderProductPage(product){
   currentProduct = product;
