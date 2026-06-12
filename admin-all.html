@@ -1661,15 +1661,23 @@ async function renderCartDetail(row){
   let itemText = row.items_text || '';
 
   try {
-    const r = await fetch(`${API}/cart/${encodeURIComponent(row.cart_token || '')}`);
-    const j = await r.json().catch(() => ({}));
+    const token = String(row.cart_token || '').trim();
 
-    if (r.ok && j.ok && Array.isArray(j.items)) {
-      itemText = j.items.map(it => {
-        const name = String(it.name || it.Name || it.title || '').trim();
-        const qty = Number(it.qty || 0) || 0;
-        return `${name}${qty > 0 ? ` × ${qty}` : ''}`;
-      }).filter(Boolean).join('\n');
+    if (token) {
+      const params = new URLSearchParams();
+      params.set('op_key', OP_KEY);
+      params.set('cart_token', token);
+
+      const r = await fetch(`${API}/admin/cart/items?` + params.toString());
+      const j = await r.json().catch(() => ({}));
+
+      if (r.ok && j.ok && Array.isArray(j.items)) {
+        itemText = j.items.map(it => {
+          const name = String(it.name || it.Name || it.title || it.sku || '').trim();
+          const qty = Number(it.qty || 0) || 0;
+          return `${name}${qty > 0 ? ` × ${qty}` : ''}`;
+        }).filter(Boolean).join('\n');
+      }
     }
   } catch (e) {
     console.warn('load cart items failed', e);
@@ -2722,6 +2730,11 @@ async function loadOrders(filter='all', extra = {}){
 
     // 新拆頁使用：讓後端直接讀 Airtable View，不要先撈全部再前端篩
     if (view_key) params.set('view_key', view_key);
+
+    // ✅ 10 速度完整化：後台主列表不要一次抓 300 / 500
+    // 特殊頁若真的需要更多，呼叫 loadOrders 時再從 extra.limit 傳入。
+    const limit = Number(extra.limit || ADMIN_PAGE.limit || (view_key ? 180 : 120)) || 120;
+    params.set('limit', String(Math.max(20, Math.min(200, limit))));
 
     if (date_from) params.set('date_from', date_from);
     if (date_to)   params.set('date_to', date_to);
