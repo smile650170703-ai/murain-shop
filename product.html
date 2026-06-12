@@ -3810,6 +3810,20 @@ const PRODUCT_LINE_UID_KEY = 'murain_line_user_id';
     let allItems = [];
     let authReturnRefreshRunning = false;
 
+    // ✅ 10 速度完整化：避免商品頁 focus / 返回頁面時重複打 /cart/:token
+    let lastCartRestoreAt = 0;
+    const CART_RESTORE_MIN_INTERVAL = 15000;
+
+    async function restoreCartThrottled(force = false){
+      const now = Date.now();
+
+      if (!force && now - lastCartRestoreAt < CART_RESTORE_MIN_INTERVAL) {
+        return;
+      }
+
+      lastCartRestoreAt = now;
+      return restoreCart();
+    }
     const $ = (id) => document.getElementById(id);
     const params = new URLSearchParams(location.search);
     const productSku = String(params.get('sku') || '').trim();
@@ -4899,7 +4913,7 @@ async function refreshAfterAuthReturn(){
   authReturnRefreshRunning = true;
   try{
 await fetchProduct();
-restoreCart().catch(() => {});
+restoreCartThrottled(true).catch(() => {});
 clearAuthReturnParams();
   }finally{
     authReturnRefreshRunning = false;
@@ -5103,7 +5117,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
       // ✅ 不管商品頁有沒有 sku，右上購物車都要能按
       $('cartBtn')?.addEventListener('click', goCheckout);
-      restoreCart().catch(() => {});
+      restoreCartThrottled(true).catch(() => {});
 
       if(!productSku){
         $('loading').style.display = 'none';
@@ -5120,7 +5134,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     window.addEventListener('focus', async () => {
       if(hasAuthReturn()) await refreshAfterAuthReturn();
-      else await restoreCart();
+      else await restoreCartThrottled(false);
       refreshWishBadge();
     });
 
