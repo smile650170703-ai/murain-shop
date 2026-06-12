@@ -4727,6 +4727,9 @@ let CART_BANK_INFO = null;
 let CART_STATUS = '';
 let CART_ACTIVE_ORDER = null;
 
+// ✅ 10.5-B：pending 線上付款取消 / 繼續付款防連點
+let PENDING_ACTION_BUSY = false;
+
 // ✅ 官網 web 購物車車主 LINE userId
 // 只用來確認「本機登入 uid 是否等於這台 cart 的 owner」，避免拿錯人的車。
 let CART_LINE_USER_ID = '';
@@ -5102,8 +5105,11 @@ ${o.can_cancel_for_edit ? `
     </button>
 ` : ``}
 
-    <div class="muted">
-      若您已完成付款，請勿取消訂單；可稍候至會員中心查看付款狀態，或聯繫客服確認。
+    <div class="muted" id="pendingOrderActionMsg" style="margin-top:10px;"></div>
+
+        <div class="muted">
+      如果您剛剛已在付款頁看到「付款成功」，請不要按取消，請稍候系統同步或聯繫客服確認。
+      如果您尚未付款成功，可按「繼續付款」回到付款頁，或取消原訂單後重新修改。
     </div>
   `;
 
@@ -5120,47 +5126,114 @@ ${o.can_cancel_for_edit ? `
 }
 
 async function continuePendingOrderPayment() {
+  if (PENDING_ACTION_BUSY) return;
+  PENDING_ACTION_BUSY = true;
+
   const o = CART_ACTIVE_ORDER || {};
   const orderId = String(o.order_id || '').trim();
   const pm = String(o.payment_method || '').trim().toLowerCase();
 
-  if (!orderId) {
-    alert('找不到訂單編號，請聯繫客服。');
-    return;
+  const btnPay = document.getElementById('btnContinuePendingPay');
+  const btnCancel = document.getElementById('btnCancelPendingForEdit');
+  const msg = document.getElementById('pendingOrderActionMsg');
+
+  const oldPayText = btnPay ? btnPay.textContent : '';
+
+  if (btnPay) {
+    btnPay.disabled = true;
+    btnPay.textContent = '開啟付款頁中...';
+    btnPay.style.opacity = '0.6';
+    btnPay.style.pointerEvents = 'none';
   }
 
-  let redirect = String(o.next_url || '').trim();
+  if (btnCancel) {
+    btnCancel.disabled = true;
+    btnCancel.style.opacity = '0.45';
+    btnCancel.style.pointerEvents = 'none';
+  }
+
+  if (msg) msg.textContent = '正在開啟原付款頁，請勿重複點擊。';
 
   try {
+    if (!orderId) {
+      throw new Error('找不到訂單編號，請聯繫客服。');
+    }
+
     if (pm.startsWith('zero_card_')) {
-  alert('中租付款已停用，請取消原訂單後改選其他付款方式。');
-  return;
-}
+      throw new Error('中租付款已停用，請取消原訂單後改選其他付款方式。');
+    }
+
+    let redirect = String(o.next_url || '').trim();
 
     if (!redirect && (pm.startsWith('paid_') || pm === 'aftee_direct' || pm === 'paid_aftee_direct' || pm === 'paid_af')) {
       redirect = `${API}/payuni/start?order_id=${encodeURIComponent(orderId)}`;
     }
 
     if (!redirect) {
-      alert('付款連結取得失敗，請稍後再試或聯繫客服。');
-      return;
+      throw new Error('付款連結取得失敗，請稍後再試或聯繫客服。');
     }
 
     try { saveCheckoutState(true); } catch(e){}
     window.location.href = redirect;
   } catch (e) {
     console.error('continuePendingOrderPayment error', e);
-    alert('付款連結取得失敗，請稍後再試。');
+
+    if (msg) msg.textContent = '';
+    alert(e?.message || '付款連結取得失敗，請稍後再試。');
+
+    if (btnPay) {
+      btnPay.disabled = false;
+      btnPay.textContent = oldPayText || '繼續付款';
+      btnPay.style.opacity = '';
+      btnPay.style.pointerEvents = '';
+    }
+
+    if (btnCancel) {
+      btnCancel.disabled = false;
+      btnCancel.style.opacity = '';
+      btnCancel.style.pointerEvents = '';
+    }
+
+    PENDING_ACTION_BUSY = false;
   }
 }
 
 async function cancelPendingOrderForEdit() {
+  if (PENDING_ACTION_BUSY) return;
+
+  const btnText = isLiveCartType(CART_CUSTOMER_TYPE)
+    ? '更換付款方式'
+    : '取消訂單並返回購物車修改';
+
   const yes = confirm(
-    '確定要取消這筆未完成付款的訂單，並返回購物車修改嗎？\n\n' +
-    '取消後原訂單會作廢，庫存與購物金會重新釋放。'
+    `確定要${btnText}嗎？\n\n` +
+    '取消後原未完成付款訂單會作廢，庫存與購物金會重新釋放。'
   );
 
   if (!yes) return;
+
+  PENDING_ACTION_BUSY = true;
+
+  const btnPay = document.getElementById('btnContinuePendingPay');
+  const btnCancel = document.getElementById('btnCancelPendingForEdit');
+  const msg = document.getElementById('pendingOrderActionMsg');
+
+  const oldCancelText = btnCancel ? btnCancel.textContent : '';
+
+  if (btnPay) {
+    btnPay.disabled = true;
+    btnPay.style.opacity = '0.45';
+    btnPay.style.pointerEvents = 'none';
+  }
+
+  if (btnCancel) {
+    btnCancel.disabled = true;
+    btnCancel.textContent = '取消中，正在返回購物車...';
+    btnCancel.style.opacity = '0.6';
+    btnCancel.style.pointerEvents = 'none';
+  }
+
+  if (msg) msg.textContent = '正在取消原未完成付款訂單，請勿關閉或重複點擊。';
 
   try {
     const r = await fetch(`${API}/cart/cancel-online-pending-for-edit`, {
@@ -5178,13 +5251,32 @@ async function cancelPendingOrderForEdit() {
     try { clearCheckoutState(); } catch(e){}
     try { clearCreditPersist(); } catch(e){}
 
-    alert('已取消原訂單，您可以重新修改購物車。');
+    if (msg) msg.textContent = '已取消原訂單，正在重新開啟購物車...';
 
-    await loadCart();
+    await loadCart({ silent: true });
     try { updateCreditAndTotal(); } catch(e){}
+
+    alert('已取消原訂單，現在可以重新修改購物車或改選付款方式。');
   } catch (e) {
     console.error('cancelPendingOrderForEdit error', e);
+
+    if (msg) msg.textContent = '';
     alert(e?.message || '取消失敗，請聯繫客服協助處理。');
+
+    if (btnPay) {
+      btnPay.disabled = false;
+      btnPay.style.opacity = '';
+      btnPay.style.pointerEvents = '';
+    }
+
+    if (btnCancel) {
+      btnCancel.disabled = false;
+      btnCancel.textContent = oldCancelText || btnText;
+      btnCancel.style.opacity = '';
+      btnCancel.style.pointerEvents = '';
+    }
+  } finally {
+    PENDING_ACTION_BUSY = false;
   }
 }
 async function updateCartItemQtySelf(sku, nextQty, sourceEl){
@@ -7205,10 +7297,21 @@ await initLiffAndMember();
 // ✅ 防止 iOS/Safari 上一頁返回（BFCache）按鈕維持 disabled
 window.addEventListener('pageshow', function () {
   const btn = document.getElementById('submitBtn');
-  if (btn) btn.disabled = false;
+
+  // ✅ pending 線上付款狀態下，送出按鈕應維持鎖住，不能因 BFCache 返回就被解鎖
+  if (btn && btn.dataset.pendingLocked !== '1' && !window.__checkoutSubmitting) {
+    btn.disabled = false;
+  }
 
   // ✅ iOS/LINE 內建瀏覽器「上一頁返回」很常用 BFCache，不會重跑 init
   try { setTimeout(resyncPayUI, 0); } catch(e){}
+
+  // ✅ 從金流頁返回時，重新同步 CartToken / active order 狀態
+  try {
+    if (cartToken && CART_LOADED) {
+      setTimeout(() => loadCart({ silent: true }), 120);
+    }
+  } catch(e){}
 });
 
 function resyncPayUI(){
