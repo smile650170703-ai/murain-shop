@@ -3988,7 +3988,16 @@ function getProductBindUrl(){
         size: firstNonEmpty(p.size, p.dimension, p['尺寸']),
         material: firstNonEmpty(p.material, p['材質']),
         condition: firstNonEmpty(p.condition, p.item_condition, p.status, p['狀態']),
-        stockQty: toNumberLike(firstNonEmpty(p.stock_qty, p.stock, p.StockQty)),
+                stockQty: toNumberLike(firstNonEmpty(
+          p.stockQty,
+          p.stock_qty,
+          p.stock,
+          p.StockQty,
+          p.qty,
+          p.quantity,
+          p.available_qty,
+          p.availableQty
+        )),
         aiDesc: firstNonEmpty(p.ai_desc, p.aiDesc),
         memberPriceLocked: p.member_price_locked === true || p.memberPriceLocked === true,
         memberPriceVisible: p.member_price_visible === true || p.memberPriceVisible === true,
@@ -4400,7 +4409,12 @@ function renderRelated(product){
   const normalized = allItems
     .map(normalizeProduct)
     .filter(x => x.sku && x.sku !== product.sku)
-    .filter(x => Math.max(0, Number(x.stockQty || 0) || 0) > 0);
+    .filter(x => {
+      // 有庫存欄位：只顯示 > 0
+      // 沒有庫存欄位：不要直接當 0 篩掉，避免推薦商品整區消失
+      if (x.stockQty == null || x.stockQty === '') return true;
+      return Math.max(0, Number(x.stockQty || 0) || 0) > 0;
+    });
 
   // 第一優先：同分類 / 同品牌
   let related = normalized.filter(x =>
