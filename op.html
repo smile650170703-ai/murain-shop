@@ -329,11 +329,6 @@ button.is-busy {
       <button id="btn-verify-line-id" class="ghost" type="button">驗證 LineUserId</button>
     </div>
 
-    <div class="row" style="margin-top:10px">
-      <button id="btn-use-guest-customer" class="ghost" type="button">
-        改用未綁定客人（只能複製連結）
-      </button>
-    </div>
     </div>
   </div>
 
@@ -647,14 +642,26 @@ function clearCurrentCartView(){
   if ($('#link_out')) $('#link_out').value = '';
 }
 function clearInvalidCustomerSelection(message) {
+  const typedName = ($('#line_search_name')?.value || '').trim();
+
+  // ✅ 查不到會員 = 自動改成未綁定客人
+  // 保留客人名稱，但清掉 LineUserId / 舊購物車，避免混到上一位會員
   clearCurrentCartView();
 
-  if ($('#line_search_name')) $('#line_search_name').value = '';
   if ($('#line_user_id')) $('#line_user_id').value = '';
-  if ($('#cartmap_info')) $('#cartmap_info').textContent = '';
-  if ($('#line_search_info')) $('#line_search_info').textContent = message || '查無會員，已清除目前客人。';
+  if ($('#line_search_name')) $('#line_search_name').value = typedName;
 
   CURRENT_MEMBER_PHONE = '';
+
+  if ($('#line_search_info')) {
+    $('#line_search_info').textContent =
+      message ||
+      `查無綁定會員，已自動改為未綁定客人：${typedName || '未命名客人'}。只能複製結帳連結，不能發官方 LINE 卡片。`;
+  }
+
+  if ($('#cartmap_info')) {
+    $('#cartmap_info').textContent = '未綁定客人：可建立購物車，但不會記住 LINE 購物車。';
+  }
 
   updateCurrentCustomerInfo();
   syncMainButtons();
@@ -1011,7 +1018,7 @@ function syncMainButtons(){
   if ($('#btn-create')) $('#btn-create').disabled = !hasStreamer;
   if ($('#btn-add')) $('#btn-add').disabled = !hasCart;
 if ($('#btn-link-line')) $('#btn-link-line').disabled = !hasCart;
-if ($('#btn-send-link')) $('#btn-send-link').disabled = !(hasCustomer && hasCart);
+if ($('#btn-send-link')) $('#btn-send-link').disabled = !(!!getLineUserId() && hasCart);
 if ($('#btn-clear')) $('#btn-clear').disabled = !hasCart;
 
   const canSubmitBenefit = !!OP && !!getLineUserId() && hasBenefitApplicant;
@@ -1726,7 +1733,10 @@ async function searchLineMember() {
 
     if (!res || res.ok !== true) {
       if (res && res.error === 'not_found') {
-        alert('找不到相符的會員（名稱要跟 Airtable 上的一模一樣）');
+        clearInvalidCustomerSelection(
+          `查無綁定會員，已自動改為未綁定客人：${q}。只能複製結帳連結，不能發官方 LINE 卡片。`
+        );
+        alert('查無綁定會員，已自動改為未綁定客人。');
       } else {
         alert('搜尋失敗：' + ((res && res.error) || 'unknown'));
       }
@@ -1734,8 +1744,10 @@ async function searchLineMember() {
     }
 
      if (!res.member && (!Array.isArray(res.rows) || !res.rows.length)) {
-      clearInvalidCustomerSelection('查無會員，已清除目前客人與購物車畫面。請重新查詢正確會員。');
-      alert('找不到相符的會員。請確認 LINE 名稱 / 本名 / LineUserId 是否正確。');
+      clearInvalidCustomerSelection(
+        `查無綁定會員，已自動改為未綁定客人：${q}。只能複製結帳連結，不能發官方 LINE 卡片。`
+      );
+      alert('查無綁定會員，已自動改為未綁定客人。');
       return;
     }
 
