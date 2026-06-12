@@ -7293,10 +7293,43 @@ await initLiffAndMember();
     console.error("init failed", e);
   }
 })();
+function resetPendingActionBusyUI() {
+  PENDING_ACTION_BUSY = false;
 
+  const btnPay = document.getElementById('btnContinuePendingPay');
+  const btnCancel = document.getElementById('btnCancelPendingForEdit');
+  const msg = document.getElementById('pendingOrderActionMsg');
+
+  if (btnPay) {
+    btnPay.disabled = false;
+    btnPay.textContent = '繼續付款';
+    btnPay.style.opacity = '';
+    btnPay.style.pointerEvents = '';
+  }
+
+  if (btnCancel) {
+    btnCancel.disabled = false;
+    btnCancel.textContent = isLiveCartType(CART_CUSTOMER_TYPE)
+      ? '更換付款方式'
+      : '取消訂單並返回購物車修改';
+    btnCancel.style.opacity = '';
+    btnCancel.style.pointerEvents = '';
+  }
+
+  if (msg) {
+    const t = String(msg.textContent || '');
+    if (t.includes('正在開啟原付款頁') || t.includes('請勿重複點擊')) {
+      msg.textContent = '';
+    }
+  }
+}
 // ✅ 防止 iOS/Safari 上一頁返回（BFCache）按鈕維持 disabled
 window.addEventListener('pageshow', function () {
   const btn = document.getElementById('submitBtn');
+
+  // ✅ 從付款頁按上一頁回來時，BFCache 會保留「開啟付款頁中」狀態
+  // 所以要先解開 pending 操作防連點，否則取消返回修改會沒反應
+  try { resetPendingActionBusyUI(); } catch(e){}
 
   // ✅ pending 線上付款狀態下，送出按鈕應維持鎖住，不能因 BFCache 返回就被解鎖
   if (btn && btn.dataset.pendingLocked !== '1' && !window.__checkoutSubmitting) {
