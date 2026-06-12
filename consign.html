@@ -1924,7 +1924,7 @@ document.addEventListener('click', function(e){
 </script>
     <script>
 (function () {
-  const API_URL = "https://api.murain.tw/site/popup";
+  const API_URL = String(window.API_BASE || "https://api.murain.tw").replace(/\/$/,'') + "/site/popup";
 
   const BLOCKED_PATHS = [
     "/liff-checkout",
@@ -2227,6 +2227,57 @@ document.addEventListener('click', function(e){
     .catch(() => {
       // 彈窗讀取失敗不能影響官網使用
     });
+})();
+</script>
+  <script>
+/* ✅ consign：站內連結 / 官方 LINE 跟著目前環境走 */
+(function normalizeConsignLinksByEnv(){
+  const siteOrigin = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+  const officialLineUrl = String(window.OFFICIAL_LINE_URL || 'https://line.me/R/ti/p/@cc0857').trim();
+
+  function fixOneLink(a){
+    if (!a) return;
+
+    const raw = String(a.getAttribute('href') || '').trim();
+    if (!raw) return;
+
+    if (
+      raw.startsWith('https://murain.tw/') ||
+      raw.startsWith('https://www.murain.tw/')
+    ) {
+      try {
+        const u = new URL(raw);
+        let path = u.pathname || '/';
+
+        if (path === '/member') path = '/member.html';
+        if (path === '/shop') path = '/shop.html';
+        if (path === '/index') path = '/index.html';
+        if (path === '/consign') path = '/consign.html';
+
+        a.setAttribute('href', siteOrigin + path + u.search + u.hash);
+      } catch(e) {}
+      return;
+    }
+
+    if (
+      raw === 'https://line.me/R/ti/p/@mu88888' ||
+      raw === 'https://line.me/R/ti/p/@cc0857'
+    ) {
+      a.setAttribute('href', officialLineUrl);
+    }
+  }
+
+  function run(){
+    document.querySelectorAll('a[href]').forEach(fixOneLink);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
+
+  window.addEventListener('pageshow', run);
 })();
 </script>
 </body>
