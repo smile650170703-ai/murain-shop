@@ -3937,7 +3937,8 @@ function getOfficialProductUrl(){
 
 function getProductBindUrl(){
   const returnUrl = getOfficialProductUrl();
-  return `${PRODUCT_SITE_ORIGIN}/member.html?v=${Date.now()}&return_url=${encodeURIComponent(returnUrl)}`;
+
+  return `${PRODUCT_SITE_ORIGIN}/member.html?line_login=1&return_url=${encodeURIComponent(returnUrl)}&t=${Date.now()}`;
 }
 
     function showToast(msg){
@@ -4374,12 +4375,12 @@ function formatRelatedPriceHtml(item){
     if (listPrice > 0) {
       return `
         <div class="related-list">${formatMoney(listPrice)}</div>
-        <div class="related-price related-login-price">登入查看會員價</div>
+        <a class="related-price related-login-price" data-member-login="1" href="${escapeHtml(getProductBindUrl())}">登入查看會員價</a>
       `;
     }
 
     return `
-      <div class="related-price related-login-price">登入查看會員價</div>
+      <a class="related-price related-login-price" data-member-login="1" href="${escapeHtml(getProductBindUrl())}">登入查看會員價</a>
     `;
   }
 
@@ -4452,11 +4453,24 @@ function renderRelated(product){
   }).join('');
 
   row.querySelectorAll('.related-card-item').forEach(card => {
-    card.addEventListener('click', () => {
-      const origin = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
-      location.href = `${origin}/product.html?sku=${encodeURIComponent(card.dataset.sku || '')}`;
-    });
+  card.addEventListener('click', (e) => {
+    const loginTarget = e.target.closest('.related-login-price, [data-member-login="1"]');
+
+    if (loginTarget) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      showToast('請先登入會員');
+      setTimeout(() => {
+        location.href = getProductBindUrl();
+      }, 250);
+      return;
+    }
+
+    const origin = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+    location.href = `${origin}/product.html?sku=${encodeURIComponent(card.dataset.sku || '')}`;
   });
+});
 }
 
   function renderProductPage(product){
