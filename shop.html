@@ -5543,7 +5543,11 @@ async function fetchProducts(){
   });
 </script>
   <script>
-/* ✅ 正式站保險：避免 LINE/LIFF 內開時，站內相對連結跑去 liff.line.me 造成 404 */
+/* ✅ 站內連結跟著目前環境走
+   staging.murain.tw → staging.murain.tw
+   murain.tw → murain.tw
+   避免左側主選單或 LIFF 內開時跳到正式版 / liff.line.me 造成錯誤
+*/
 document.addEventListener('click', function(e){
   const a = e.target.closest('a[href]');
   if (!a) return;
@@ -5551,12 +5555,75 @@ document.addEventListener('click', function(e){
   const rawHref = String(a.getAttribute('href') || '').trim();
   if (!rawHref) return;
 
-  if (!rawHref.startsWith('/') || rawHref.startsWith('//')) return;
-
-  e.preventDefault();
   const siteOrigin = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
-window.location.href = siteOrigin + rawHref;
+
+  // 1) 處理站內相對連結：/shop.html、/member.html
+  if (rawHref.startsWith('/') && !rawHref.startsWith('//')) {
+    e.preventDefault();
+    window.location.href = siteOrigin + rawHref;
+    return;
+  }
+
+  // 2) 處理硬寫正式版的前台連結：https://murain.tw/xxx
+  if (
+    rawHref.startsWith('https://murain.tw/') ||
+    rawHref.startsWith('https://www.murain.tw/')
+  ) {
+    try {
+      const u = new URL(rawHref);
+      e.preventDefault();
+      window.location.href = siteOrigin + u.pathname + u.search + u.hash;
+      return;
+    } catch (err) {}
+  }
 }, true);
+</script>
+  <script>
+/* ✅ shop：把左側主選單 / 頁面內硬寫正式版的前台連結，先改成目前環境 */
+(function normalizeShopLinksByEnv(){
+  const siteOrigin = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+
+  function fixOneLink(a){
+    if (!a) return;
+
+    const raw = String(a.getAttribute('href') || '').trim();
+    if (!raw) return;
+
+    if (
+      raw.startsWith('https://murain.tw/') ||
+      raw.startsWith('https://www.murain.tw/')
+    ) {
+      try {
+        const u = new URL(raw);
+        a.setAttribute('href', siteOrigin + u.pathname + u.search + u.hash);
+      } catch(e) {}
+      return;
+    }
+
+    // 補修沒有 .html 的正式入口
+    if (raw === 'https://murain.tw/member') {
+      a.setAttribute('href', siteOrigin + '/member.html');
+      return;
+    }
+
+    if (raw === 'https://murain.tw/shop') {
+      a.setAttribute('href', siteOrigin + '/shop.html');
+      return;
+    }
+  }
+
+  function run(){
+    document.querySelectorAll('a[href]').forEach(fixOneLink);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
+
+  window.addEventListener('pageshow', run);
+})();
 </script>
   <script>
 /* ✅ 全站會員中心入口保險
