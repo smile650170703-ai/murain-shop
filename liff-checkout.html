@@ -3103,8 +3103,16 @@ function checkoutFriendCheckKey() {
 }
 
 function rememberCheckoutFriendChecked() {
+  const v = String(Date.now());
+
   try {
-    sessionStorage.setItem(checkoutFriendCheckKey(), String(Date.now()));
+    sessionStorage.setItem(checkoutFriendCheckKey(), v);
+  } catch (e) {}
+
+  // ✅ FB / IG / 7-11 外部跳轉後，sessionStorage 可能會掉。
+  // 所以同一台 cart_token 也寫 localStorage，避免選門市回來又跳會員中心。
+  try {
+    localStorage.setItem(checkoutFriendCheckKey(), v);
   } catch (e) {}
 }
 
@@ -3115,16 +3123,16 @@ function hasCheckoutFriendChecked() {
     q.get("checkout_friend_checked") === "1" ||
     q.get("friend_checked") === "1";
 
-  // ✅ 從 member.html / LINE Login 成功回來時，網址會有 checkout_friend_checked=1。
-  // 這時記住「同一台 cart_token 已經檢查過官方 LINE」。
-  // 避免選 7-11 門市回來，網址參數掉了，又重跑 member.html。
   if (fromUrl) {
     rememberCheckoutFriendChecked();
     return true;
   }
 
   try {
-    const checkedAt = Number(sessionStorage.getItem(checkoutFriendCheckKey()) || "0");
+    const ss = Number(sessionStorage.getItem(checkoutFriendCheckKey()) || "0");
+    const ls = Number(localStorage.getItem(checkoutFriendCheckKey()) || "0");
+    const checkedAt = Math.max(ss || 0, ls || 0);
+
     if (!checkedAt) return false;
 
     // ✅ 同一台購物車 2 小時內不用重複檢查。
@@ -5406,8 +5414,11 @@ if (cartToken) qs2.set("cart_token", cartToken); // ✅ 保險補上
 
   qs2.delete('customer');
 
+  // ✅ 能按到 7-11 地圖，代表目前這台購物車已經通過前面的登入 / 綁定 / 好友檢查。
+  // 先記住，避免 7-11 回來後網址參數掉了，又重跑 member.html / LINE Login。
+  try { rememberCheckoutFriendChecked(); } catch (e) {}
+
   // ✅ 使用者主動按「選擇 7-11 門市」時，每次都應該可以重新開地圖。
-  // 不要用 __cvs_redirected 擋住，不然選過一次或測試後，按鈕會看起來沒反應。
   const url = `${API}/cvs/map?${qs2.toString()}`;
   window.location.href = url;
 } // ✅ 關掉 function open711(src)
