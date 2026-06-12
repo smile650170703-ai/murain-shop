@@ -2495,7 +2495,20 @@ body.product-detail-page{
   text-align:center !important;
   white-space:nowrap !important;
 }
-
+.product-detail-page .related-login-price{
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  min-height:26px !important;
+  padding:5px 11px !important;
+  border-radius:999px !important;
+  background:linear-gradient(135deg, #704f40 0%, #9b705a 50%, #604337 100%) !important;
+  color:#fffaf7 !important;
+  font-size:10.5px !important;
+  font-weight:700 !important;
+  letter-spacing:.06em !important;
+  white-space:nowrap !important;
+}
 .product-detail-page .related-card#relatedSection .related-price::before{
   content:"" !important;
   display:block !important;
@@ -4336,6 +4349,42 @@ function buildBreadcrumb(product){
       $('detailDesc').innerHTML = formatDetailDesc(product.description || '【商品介紹】\n這裡可放妳 Airtable 商品描述、尺寸、顏色、材質、重點整理。');
     }
 
+    function formatRelatedPriceHtml(item){
+  const locked = item.memberPriceLocked === true;
+  const hasMember = PRODUCT_HAS_MEMBER === true;
+  const memberPrice = Number(item.price || 0) || 0;
+  const listPrice = Number(item.listPrice || 0) || 0;
+
+  // 未登入 / 登出狀態：推薦商品不能顯示會員價。
+  if (!hasMember) {
+    if (listPrice > 0) {
+      return `
+        <div class="related-list">${formatMoney(listPrice)}</div>
+        <div class="related-price related-login-price">登入查看會員價</div>
+      `;
+    }
+
+    return `
+      <div class="related-price related-login-price">登入查看會員價</div>
+    `;
+  }
+
+  // 已登入但商品仍鎖價
+  if (locked) {
+    return `<div class="related-price related-login-price">會員價</div>`;
+  }
+
+  // 已登入：正常顯示會員價與原價
+  if (listPrice > 0 && memberPrice > 0 && listPrice > memberPrice) {
+    return `
+      <div class="related-list">${formatMoney(listPrice)}</div>
+      <div class="related-price">${formatMoney(memberPrice)}</div>
+    `;
+  }
+
+  return `<div class="related-price">${formatMoney(memberPrice || listPrice || 0)}</div>`;
+}
+
    function renderRelated(product){
   if(!Array.isArray(allItems) || !allItems.length){
     $('relatedSection').style.display = 'none';
@@ -4350,19 +4399,16 @@ function buildBreadcrumb(product){
 
       $('relatedSection').style.display = related.length ? '' : 'none';
       $('relatedRow').innerHTML = related.map(item => {
-        const locked = item.memberPriceLocked === true;
-        const hasRelatedPrice = item.price != null && item.price > 0;
-        const showRelatedList = !locked && hasRelatedPrice && item.listPrice && item.listPrice > item.price;
         const imageUrl = imageUrlFromValue(item.thumb || item.image || item.images);
         const imageMarkup = imageUrl
           ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(item.title)}" loading="lazy">`
           : `<div class="related-placeholder" aria-hidden="true"><span>XUYUAN</span></div>`;
+
         return `
         <article class="related-card-item" data-sku="${escapeHtml(item.sku)}">
           <div class="related-thumb">${imageMarkup}</div>
           <div class="related-name">${escapeHtml(item.title)}</div>
-          ${showRelatedList ? `<div class="related-list">${formatMoney(item.listPrice)}</div>` : ''}
-          <div class="related-price">${locked ? '會員價' : formatMoney(item.price || 0)}</div>
+          ${formatRelatedPriceHtml(item)}
         </article>
       `;
       }).join('');
