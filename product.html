@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Playfair+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
-
+<script src="/config.js?v=20260604-1"></script>
   <style>
     :root{
       --bg:#fffaf7;
@@ -2495,7 +2495,20 @@ body.product-detail-page{
   text-align:center !important;
   white-space:nowrap !important;
 }
-
+.product-detail-page .related-login-price{
+  display:inline-flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  min-height:26px !important;
+  padding:5px 11px !important;
+  border-radius:999px !important;
+  background:linear-gradient(135deg, #704f40 0%, #9b705a 50%, #604337 100%) !important;
+  color:#fffaf7 !important;
+  font-size:10.5px !important;
+  font-weight:700 !important;
+  letter-spacing:.06em !important;
+  white-space:nowrap !important;
+}
 .product-detail-page .related-card#relatedSection .related-price::before{
   content:"" !important;
   display:block !important;
@@ -3761,7 +3774,8 @@ body.product-detail-page.is-hair-product-page .qty-box{
 
 <a
   class="floating-line-btn"
-  href="https://line.me/R/ti/p/@mu88888"
+href="#"
+data-official-line-link
   target="_blank"
   rel="noopener"
   aria-label="私訊官方LINE"
@@ -3775,11 +3789,16 @@ body.product-detail-page.is-hair-product-page .qty-box{
   </div>
   
   <script>
-    const API_BASE = 'https://api.murain.tw';
+const API_BASE = String(window.API_BASE || '').replace(/\/$/,'');
+if (!API_BASE) throw new Error('API_BASE missing');
 const PRODUCT_API_BASE = API_BASE + '/product/';
 const CART_KEY = 'MURAIN_WEB_CART_TOKEN';
-const LIFF_CHECKOUT = 'https://murain.tw/liff-checkout';
-const PRODUCT_BIND_LIFF_ID = '2008430261-kOeNLR9x';
+
+const PRODUCT_SITE_ORIGIN = String(
+  window.MURAIN_SITE_ORIGIN || location.origin || 'https://murain.tw'
+).replace(/\/$/,'');
+
+const LIFF_CHECKOUT = `${PRODUCT_SITE_ORIGIN}/liff-checkout.html`;
 const PRODUCT_LINE_UID_KEY = 'murain_line_user_id';
     
     let cartToken = '';
@@ -3791,6 +3810,20 @@ const PRODUCT_LINE_UID_KEY = 'murain_line_user_id';
     let allItems = [];
     let authReturnRefreshRunning = false;
 
+    // ✅ 10 速度完整化：避免商品頁 focus / 返回頁面時重複打 /cart/:token
+    let lastCartRestoreAt = 0;
+    const CART_RESTORE_MIN_INTERVAL = 15000;
+
+    async function restoreCartThrottled(force = false){
+      const now = Date.now();
+
+      if (!force && now - lastCartRestoreAt < CART_RESTORE_MIN_INTERVAL) {
+        return;
+      }
+
+      lastCartRestoreAt = now;
+      return restoreCart();
+    }
     const $ = (id) => document.getElementById(id);
     const params = new URLSearchParams(location.search);
     const productSku = String(params.get('sku') || '').trim();
@@ -3911,14 +3944,15 @@ function formatProductTitleHtml(title){
 
   return `${escapeHtml(name)}<span class="product-title-size">${escapeHtml(size)}</span>`;
 }
-    function getOfficialProductUrl(){
-      const sku = currentProduct?.sku || productSku;
-      return `https://murain.tw/product?sku=${encodeURIComponent(sku || '')}`;
-    }
+function getOfficialProductUrl(){
+  const sku = currentProduct?.sku || productSku;
+  return `${PRODUCT_SITE_ORIGIN}/product.html?sku=${encodeURIComponent(sku || '')}`;
+}
 
-  function getProductBindUrl(){
+function getProductBindUrl(){
   const returnUrl = getOfficialProductUrl();
-  return `https://murain.tw/member.html?v=${Date.now()}&return_url=${encodeURIComponent(returnUrl)}`;
+
+  return `${PRODUCT_SITE_ORIGIN}/member.html?line_login=1&return_url=${encodeURIComponent(returnUrl)}&t=${Date.now()}`;
 }
 
     function showToast(msg){
@@ -3969,7 +4003,16 @@ function formatProductTitleHtml(title){
         size: firstNonEmpty(p.size, p.dimension, p['尺寸']),
         material: firstNonEmpty(p.material, p['材質']),
         condition: firstNonEmpty(p.condition, p.item_condition, p.status, p['狀態']),
-        stockQty: toNumberLike(firstNonEmpty(p.stock_qty, p.stock, p.StockQty)),
+                stockQty: toNumberLike(firstNonEmpty(
+          p.stockQty,
+          p.stock_qty,
+          p.stock,
+          p.StockQty,
+          p.qty,
+          p.quantity,
+          p.available_qty,
+          p.availableQty
+        )),
         aiDesc: firstNonEmpty(p.ai_desc, p.aiDesc),
         memberPriceLocked: p.member_price_locked === true || p.memberPriceLocked === true,
         memberPriceVisible: p.member_price_visible === true || p.memberPriceVisible === true,
@@ -4330,42 +4373,119 @@ function buildBreadcrumb(product){
       $('detailDesc').innerHTML = formatDetailDesc(product.description || '【商品介紹】\n這裡可放妳 Airtable 商品描述、尺寸、顏色、材質、重點整理。');
     }
 
-   function renderRelated(product){
+function formatRelatedPriceHtml(item){
+  const locked = item.memberPriceLocked === true;
+
+  // ✅ PRODUCT_HAS_MEMBER 不是全域變數，不能直接讀。
+  // 後端若判斷未登入，會讓 memberPriceLocked = true；
+  // 所以推薦商品只需要看 locked，就能知道要顯示會員價或「登入查看會員價」。
+  const hasMember = !locked;
+
+  const memberPrice = Number(item.price || 0) || 0;
+  const listPrice = Number(item.listPrice || 0) || 0;
+
+  // 未登入 / 登出狀態：推薦商品不能顯示會員價。
+  if (!hasMember) {
+    if (listPrice > 0) {
+      return `
+        <div class="related-list">${formatMoney(listPrice)}</div>
+        <a class="related-price related-login-price" data-member-login="1" href="${escapeHtml(getProductBindUrl())}">登入查看會員價</a>
+      `;
+    }
+
+    return `
+      <a class="related-price related-login-price" data-member-login="1" href="${escapeHtml(getProductBindUrl())}">登入查看會員價</a>
+    `;
+  }
+
+  // 已登入但商品仍鎖價
+  if (locked) {
+    return `<div class="related-price related-login-price">會員價</div>`;
+  }
+
+  // 已登入：正常顯示會員價與原價
+  if (listPrice > 0 && memberPrice > 0 && listPrice > memberPrice) {
+    return `
+      <div class="related-list">${formatMoney(listPrice)}</div>
+      <div class="related-price">${formatMoney(memberPrice)}</div>
+    `;
+  }
+
+  return `<div class="related-price">${formatMoney(memberPrice || listPrice || 0)}</div>`;
+}
+
+function renderRelated(product){
+  const section = $('relatedSection');
+  const row = $('relatedRow');
+
+  if (!section || !row) return;
+
   if(!Array.isArray(allItems) || !allItems.length){
-    $('relatedSection').style.display = 'none';
+    section.style.display = 'none';
+    row.innerHTML = '';
     return;
   }
-      const related = allItems
-        .map(normalizeProduct)
-        .filter(x => x.sku && x.sku !== product.sku)
-        .filter(x => Math.max(0, Number(x.stockQty || 0) || 0) > 0)
-        .filter(x => (product.category && x.category === product.category) || (product.brand && x.brand === product.brand))
-        .slice(0, 8);
 
-      $('relatedSection').style.display = related.length ? '' : 'none';
-      $('relatedRow').innerHTML = related.map(item => {
-        const locked = item.memberPriceLocked === true;
-        const hasRelatedPrice = item.price != null && item.price > 0;
-        const showRelatedList = !locked && hasRelatedPrice && item.listPrice && item.listPrice > item.price;
-        const imageUrl = imageUrlFromValue(item.thumb || item.image || item.images);
-        const imageMarkup = imageUrl
-          ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(item.title)}" loading="lazy">`
-          : `<div class="related-placeholder" aria-hidden="true"><span>XUYUAN</span></div>`;
-        return `
-        <article class="related-card-item" data-sku="${escapeHtml(item.sku)}">
-          <div class="related-thumb">${imageMarkup}</div>
-          <div class="related-name">${escapeHtml(item.title)}</div>
-          ${showRelatedList ? `<div class="related-list">${formatMoney(item.listPrice)}</div>` : ''}
-          <div class="related-price">${locked ? '會員價' : formatMoney(item.price || 0)}</div>
-        </article>
-      `;
-      }).join('');
-      $('relatedRow').querySelectorAll('.related-card-item').forEach(card => {
-        card.addEventListener('click', () => {
-          location.href = `/product.html?sku=${encodeURIComponent(card.dataset.sku || '')}`;
-        });
-      });
+ const normalized = allItems
+  .map(normalizeProduct)
+  .filter(x => x.sku && x.sku !== product.sku);
+
+  // 第一優先：同分類 / 同品牌
+  let related = normalized.filter(x =>
+    (product.category && x.category === product.category) ||
+    (product.brand && x.brand === product.brand)
+  );
+
+  // ✅ 找不到同分類 / 同品牌時，不要整區消失。
+  // 改抓其他有庫存商品，避免商品頁底部空掉。
+  if (!related.length) {
+    related = normalized;
+  }
+
+  related = related.slice(0, 8);
+
+  section.style.display = related.length ? '' : 'none';
+
+  if (!related.length) {
+    row.innerHTML = '';
+    return;
+  }
+
+  row.innerHTML = related.map(item => {
+    const imageUrl = imageUrlFromValue(item.thumb || item.image || item.images);
+    const imageMarkup = imageUrl
+      ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(item.title)}" loading="lazy">`
+      : `<div class="related-placeholder" aria-hidden="true"><span>XUYUAN</span></div>`;
+
+    return `
+      <article class="related-card-item" data-sku="${escapeHtml(item.sku)}">
+        <div class="related-thumb">${imageMarkup}</div>
+        <div class="related-name">${escapeHtml(item.title)}</div>
+        ${formatRelatedPriceHtml(item)}
+      </article>
+    `;
+  }).join('');
+
+  row.querySelectorAll('.related-card-item').forEach(card => {
+  card.addEventListener('click', (e) => {
+    const loginTarget = e.target.closest('.related-login-price, [data-member-login="1"]');
+
+    if (loginTarget) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      showToast('請先登入會員');
+      setTimeout(() => {
+        location.href = getProductBindUrl();
+      }, 250);
+      return;
     }
+
+    const origin = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+    location.href = `${origin}/product.html?sku=${encodeURIComponent(card.dataset.sku || '')}`;
+  });
+});
+}
 
   function renderProductPage(product){
   currentProduct = product;
@@ -4793,7 +4913,7 @@ async function refreshAfterAuthReturn(){
   authReturnRefreshRunning = true;
   try{
 await fetchProduct();
-restoreCart().catch(() => {});
+restoreCartThrottled(true).catch(() => {});
 clearAuthReturnParams();
   }finally{
     authReturnRefreshRunning = false;
@@ -4986,7 +5106,7 @@ if(mobileBtn){
       });
     }
 
-    window.addEventListener('DOMContentLoaded', async () => {
+window.addEventListener('DOMContentLoaded', async () => {
       bindMenu();
       bindTabs();
       bindQty();
@@ -4995,25 +5115,26 @@ if(mobileBtn){
       bindMobileBuyBar();
       refreshWishBadge();
 
+      // ✅ 不管商品頁有沒有 sku，右上購物車都要能按
+      $('cartBtn')?.addEventListener('click', goCheckout);
+      restoreCartThrottled(true).catch(() => {});
+
       if(!productSku){
         $('loading').style.display = 'none';
         $('notFound').style.display = '';
         return;
       }
 
-await fetchProduct();
-if(hasAuthReturn()) clearAuthReturnParams();
+      await fetchProduct();
+      if(hasAuthReturn()) clearAuthReturnParams();
 
-restoreCart().catch(() => {});
-
-      $('cartBtn').addEventListener('click', goCheckout);
-      $('addCartBtn').addEventListener('click', () => addToCartAndMaybeCheckout(false));
-      $('buyNowBtn').addEventListener('click', () => addToCartAndMaybeCheckout(true));
+      $('addCartBtn')?.addEventListener('click', () => addToCartAndMaybeCheckout(false));
+      $('buyNowBtn')?.addEventListener('click', () => addToCartAndMaybeCheckout(true));
     });
 
     window.addEventListener('focus', async () => {
       if(hasAuthReturn()) await refreshAfterAuthReturn();
-      else await restoreCart();
+      else await restoreCartThrottled(false);
       refreshWishBadge();
     });
 
@@ -5109,8 +5230,11 @@ restoreCart().catch(() => {});
    只修「會員中心入口」，不動商品/結帳 return_url 流程
 */
 (function () {
-  const MEMBER_WEB_URL = 'https://murain.tw/member.html';
-  const MEMBER_LIFF_URL = 'https://liff.line.me/2008430261-EGZPg3Qp/?line_login=1';
+  const MEMBER_WEB_URL = `${String(window.MURAIN_SITE_ORIGIN || location.origin || 'https://murain.tw').replace(/\/$/,'')}/member.html`;
+  const PRODUCT_MEMBER_LIFF_ID = String(window.LIFF_MEMBER_ID || '').trim();
+const MEMBER_LIFF_URL = PRODUCT_MEMBER_LIFF_ID
+  ? `https://liff.line.me/${PRODUCT_MEMBER_LIFF_ID}?line_login=1`
+  : MEMBER_WEB_URL;
 
   function isLineBrowser() {
     const ua = navigator.userAgent || '';
@@ -5143,7 +5267,7 @@ restoreCart().catch(() => {});
 </script>
   <script>
 (function () {
-  const API_URL = "https://api.murain.tw/site/popup";
+  const API_URL = `${API_BASE}/site/popup`;
 
 const BLOCKED_PATHS = [
     "/liff-checkout",
@@ -5411,6 +5535,15 @@ const BLOCKED_PATHS = [
     .catch(() => {
       // 彈窗讀取失敗不能影響官網使用
     });
+})();
+</script>
+  <script>
+(function(){
+  const url = String(window.OFFICIAL_LINE_URL || '').trim();
+  if (!url) return;
+  document.querySelectorAll('[data-official-line-link]').forEach(a => {
+    a.href = url;
+  });
 })();
 </script>
 </body>
