@@ -13,7 +13,7 @@
 
   <!-- 全站共用骨架 CSS -->
   <link rel="stylesheet" href="/common-shell.css" />
-
+<script src="/config.js?v=20260604-1"></script>
   <style>
 /* =========================================================
    XUYUAN｜我的最愛 wishlist.html
@@ -1388,7 +1388,7 @@ body{
   </footer>
 
   <!-- ===== 固定：右下角 LINE 浮動按鈕 ===== -->
-  <a class="floating-line-btn" href="https://line.me/R/ti/p/@mu88888" target="_blank" rel="noopener" aria-label="私訊官方LINE">
+  <a class="floating-line-btn" href="#" data-official-line-link target="_blank" rel="noopener" aria-label="私訊官方LINE">
     <img src="https://upload.wikimedia.org/wikipedia/commons/4/41/LINE_logo.svg" alt="LINE">
   </a>
 
@@ -1432,7 +1432,9 @@ body{
   <script>
     const XUYUAN_WISHLIST_KEY = 'xuyuan_wishlist_v1';
 const XUYUAN_RECENT_KEY = 'xuyuan_recent_viewed_v1';
-const PRODUCT_API = 'https://api.murain.tw/public/products-paged';
+const WISHLIST_API_BASE = String(window.API_BASE || '').replace(/\/$/,'');
+if (!WISHLIST_API_BASE) throw new Error('API_BASE missing');
+const PRODUCT_API = `${WISHLIST_API_BASE}/public/products-paged`;
 
 // ✅ 收藏中心不用登入；會員價跟官網 cookie session 同步
 const WISHLIST_LINE_USER_ID_KEY = 'murain_line_user_id';
@@ -1460,8 +1462,9 @@ async function syncWishlistMemberSession(){
   WISHLIST_MEMBER_INFO = null;
 
   try {
-    const r = await fetch('https://api.murain.tw/line/member-info', {
-      credentials:'include'
+    const r = await fetch(`${HOME_API}/line/member-info`, {
+      credentials:'include',
+      cache:'no-store'
     });
 
     const j = await r.json().catch(() => ({}));
@@ -1473,8 +1476,11 @@ async function syncWishlistMemberSession(){
       const uid = String(
         j.line_user_id ||
         j.lineUserId ||
+        j.user_id ||
+        j.userId ||
         j.member?.line_user_id ||
         j.member?.LineUserId ||
+        j.member?.lineUserId ||
         ''
       ).trim();
 
@@ -1483,7 +1489,15 @@ async function syncWishlistMemberSession(){
     }
   } catch(e) {}
 
+  // ✅ 重點：沒有有效會員 session 時，wishlist 不可以再吃舊 line_user_id
   wishlistMemberOk = false;
+  WISHLIST_MEMBER_INFO = null;
+
+  try {
+    localStorage.removeItem(WISHLIST_LINE_USER_ID_KEY);
+    sessionStorage.removeItem(WISHLIST_LINE_USER_ID_KEY);
+  } catch(e) {}
+
   return false;
 }
 
@@ -1621,12 +1635,27 @@ function wishlistCanShowMemberPrice(){
         ''
       );
 
-      const price = moneyValue(p, [
-  'price',
-  'Price',
+const price = moneyValue(p, [
+  'member_price',
+  'memberPrice',
+  'MemberPrice',
+  '會員價',
+  '活動價',
   'sale_price',
   'salePrice',
+  'SalePrice',
+  'price',
+  'Price',
   '售價',
+
+  'fields.member_price',
+  'fields.memberPrice',
+  'fields.MemberPrice',
+  'fields.會員價',
+  'fields.活動價',
+  'fields.sale_price',
+  'fields.salePrice',
+  'fields.SalePrice',
   'fields.price',
   'fields.Price',
   'fields.售價'
@@ -1636,10 +1665,23 @@ const listPrice = moneyValue(p, [
   'list_price',
   'listPrice',
   'ListPrice',
+  'original_price',
+  'originalPrice',
+  'OriginalPrice',
+  'market_price',
+  'marketPrice',
+  '建議售價',
   '原價',
+
   'fields.list_price',
   'fields.listPrice',
   'fields.ListPrice',
+  'fields.original_price',
+  'fields.originalPrice',
+  'fields.OriginalPrice',
+  'fields.market_price',
+  'fields.marketPrice',
+  'fields.建議售價',
   'fields.原價'
 ]);
 
@@ -1708,9 +1750,14 @@ const listPrice = moneyValue(p, [
       return 'NT$ ' + num.toLocaleString();
     }
 
-    function getWishlistLoginUrl(){
-  const returnUrl = location.pathname + location.search;
-  return `/member.html?return_url=${encodeURIComponent(returnUrl)}`;
+function getWishlistLoginUrl(){
+  const origin = String(window.MURAIN_SITE_ORIGIN || location.origin || 'https://murain.tw').replace(/\/$/,'');
+
+  const returnUrl = new URL(location.href);
+  returnUrl.searchParams.set('after_member_login', '1');
+  returnUrl.searchParams.set('t', String(Date.now()));
+
+  return `${origin}/member.html?line_login=1&return_url=${encodeURIComponent(returnUrl.toString())}&t=${Date.now()}`;
 }
 
 function formatWishPriceHtml(p){
@@ -1823,7 +1870,11 @@ function formatWishPriceHtml(p){
 const priceLogin = card.querySelector('.wish-price-login');
 if (priceLogin){
   priceLogin.addEventListener('click', (e) => {
+    e.preventDefault();
     e.stopPropagation();
+
+    // ✅ 不讓外層商品卡點擊事件搶走，直接走會員登入流程
+    location.href = getWishlistLoginUrl();
   });
 }
       return card;
@@ -1871,12 +1922,18 @@ if (priceLogin){
         u.searchParams.set('page', '1');
         u.searchParams.set('limit', '4');
 
-        const uid = getWishlistLineUserId();
+// ✅ 只有真的有會員 session 時，才帶 line_user_id 抓會員價
+const uid = wishlistCanShowMemberPrice() ? getWishlistLineUserId() : '';
 if (uid) {
   u.searchParams.set('line_user_id', uid);
 }
 
-        const r = await fetch(u.toString(), { cache:'no-store' });
+  u.searchParams.set('_t', String(Date.now()));
+
+const r = await fetch(u.toString(), {
+  cache:'no-store',
+  credentials:'include'
+});
         if (!r.ok) return [];
         const j = await r.json().catch(() => ({}));
         return extractProductsFromApi(j).map(normalizeWishProduct).filter(x => x.sku);
@@ -1885,43 +1942,64 @@ if (uid) {
       }
     }
 
-    async function renderRecentFromLocalOrApi(){
-      const loading = $('recentLoading');
-      const grid = $('recentGrid');
-      const empty = $('recentEmpty');
-      if (!grid) return;
+   async function renderRecentFromLocalOrApi(){
+  const loading = $('recentLoading');
+  const grid = $('recentGrid');
+  const empty = $('recentEmpty');
+  if (!grid) return;
 
-      grid.innerHTML = '';
-      if (loading) loading.style.display = 'block';
-      if (empty) empty.style.display = 'none';
+  grid.innerHTML = '';
+  if (loading) loading.style.display = 'block';
+  if (empty) empty.style.display = 'none';
 
-      let recent = readJson(XUYUAN_RECENT_KEY, []);
-      if (!Array.isArray(recent)) recent = [];
+  let recent = readJson(XUYUAN_RECENT_KEY, []);
+  if (!Array.isArray(recent)) recent = [];
 
-      recent = recent.map(normalizeWishProduct).filter(x => x.sku).slice(0, 4);
+  recent = recent.map(normalizeWishProduct).filter(x => x.sku).slice(0, 4);
 
-      // 目前 shop.html 若還沒寫入最近瀏覽，這裡會抓最新商品補位，避免區塊空白。
-      if (!recent.length){
-        recent = await fetchLatestProducts();
-      }
-
-      if (loading) loading.style.display = 'none';
-
-      if (!recent.length){
-        if (empty) empty.style.display = 'block';
-        return;
-      }
-
-      recent.slice(0,4).forEach(item => {
-        grid.appendChild(renderCard(item, { inWishlistPage:false }));
-      });
+  // ✅ 已登入會員時，推薦商品要重新抓 API，避免吃到未登入時存在 localStorage 的舊價格。
+  // 這樣下方推薦商品才會同步會員價。
+  if (wishlistCanShowMemberPrice()) {
+    const fresh = await fetchLatestProducts();
+    if (fresh.length) {
+      recent = fresh.slice(0, 4);
     }
+  }
 
-    window.addEventListener('DOMContentLoaded', async () => {
+  // 沒登入或 API 沒資料時，才用最近瀏覽；最近瀏覽也沒有就抓最新商品補位。
+  if (!recent.length){
+    recent = await fetchLatestProducts();
+  }
+
+  if (loading) loading.style.display = 'none';
+
+  if (!recent.length){
+    if (empty) empty.style.display = 'block';
+    return;
+  }
+
+  recent.slice(0,4).forEach(item => {
+    grid.appendChild(renderCard(item, { inWishlistPage:false }));
+  });
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
   await syncWishlistMemberSession();
   refreshWishBadge();
   renderWishlist();
-  renderRecentFromLocalOrApi();
+  await renderRecentFromLocalOrApi();
+
+  // ✅ 從會員中心登入回來後，再補同步一次推薦商品，避免下方還停在未登入價格
+  try {
+    const q = new URLSearchParams(location.search || '');
+    if (q.get('after_member_login') === '1') {
+      setTimeout(async () => {
+        await syncWishlistMemberSession();
+        renderWishlist();
+        await renderRecentFromLocalOrApi();
+      }, 600);
+    }
+  } catch(e) {}
 });
 
     window.addEventListener('storage', async (e) => {
@@ -1940,9 +2018,11 @@ if (uid) {
 
  <!-- ===== 固定：購物車 JS ===== -->
 <script>
-  const HOME_API = 'https://api.murain.tw';
+const HOME_API = String(window.API_BASE || '').replace(/\/$/,'');
+if (!HOME_API) throw new Error('API_BASE missing');
   const HOME_CART_KEY = 'MURAIN_WEB_CART_TOKEN';
-  const HOME_LIFF_CHECKOUT = 'https://murain.tw/liff-checkout';
+  const HOME_SITE_ORIGIN = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+const HOME_LIFF_CHECKOUT = `${HOME_SITE_ORIGIN}/liff-checkout.html`;
 
   const cartBtn = document.getElementById('cartBtn');
   const cartBadge = document.getElementById('cartBadge');
@@ -2179,8 +2259,13 @@ if (uid) {
    只修「會員中心入口」，不動商品/結帳 return_url 流程
 */
 (function () {
-  const MEMBER_WEB_URL = 'https://murain.tw/member.html';
-  const MEMBER_LIFF_URL = 'https://liff.line.me/2008430261-EGZPg3Qp/?line_login=1';
+const MEMBER_SITE_ORIGIN = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+const MEMBER_LIFF_ID = String(window.LIFF_MEMBER_ID || '').trim();
+
+const MEMBER_WEB_URL = `${MEMBER_SITE_ORIGIN}/member.html`;
+const MEMBER_LIFF_URL = MEMBER_LIFF_ID
+  ? `https://liff.line.me/${MEMBER_LIFF_ID}?line_login=1`
+  : MEMBER_WEB_URL;
 
   function isLineBrowser() {
     const ua = navigator.userAgent || '';
@@ -2209,6 +2294,15 @@ if (uid) {
   }
 
   window.addEventListener('pageshow', normalizeMemberEntryLinks);
+})();
+</script>
+  <script>
+(function(){
+  const url = String(window.OFFICIAL_LINE_URL || '').trim();
+  if (!url) return;
+  document.querySelectorAll('[data-official-line-link]').forEach(a => {
+    a.href = url;
+  });
 })();
 </script>
 </body>
