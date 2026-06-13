@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="/common-shell.css" />
 
   <!-- 頁面自己的 CSS：只寫這一頁 main 內容要用的 -->
+  <script src="/config.js?v=20260604-1"></script>
   <style>
   .consign-page #process,
   .consign-page #line-submit,
@@ -1446,13 +1447,13 @@
         </div>
 
         <div class="site-footer-socials">
-          <a class="site-footer-social" href="YOUR_FACEBOOK_LINK" target="_blank" rel="noopener" aria-label="Facebook">
+          <a class="site-footer-social" href="https://www.facebook.com/Lumibabe" target="_blank" rel="noopener" aria-label="Facebook">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M14 8h2V4h-2c-2.2 0-4 1.8-4 4v2H8v4h2v6h4v-6h2.2l.8-4H14V8c0-.6.4-1 1-1z"/>
             </svg>
           </a>
 
-          <a class="site-footer-social" href="YOUR_INSTAGRAM_LINK" target="_blank" rel="noopener" aria-label="Instagram">
+          <a class="site-footer-social" href="https://www.instagram.com/cc0.8.5.7/" target="_blank" rel="noopener" aria-label="Instagram">
             <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="5"/>
               <circle cx="12" cy="12" r="4"/>
@@ -1471,7 +1472,7 @@
   </footer>
 
   <!-- ===== 固定：右下角 LINE 浮動按鈕 ===== -->
-  <a class="floating-line-btn" href="https://line.me/R/ti/p/@mu88888" target="_blank" rel="noopener" aria-label="私訊官方LINE">
+  <a class="floating-line-btn" href="https://line.me/R/ti/p/@cc0857" target="_blank" rel="noopener" aria-label="私訊官方LINE">
     <img src="https://upload.wikimedia.org/wikipedia/commons/4/41/LINE_logo.svg" alt="LINE">
   </a>
 
@@ -1556,9 +1557,10 @@
 
   <!-- ===== 固定：購物車 JS（不要改 id） ===== -->
   <script>
-    const HOME_API = 'https://api.murain.tw';
+    const HOME_API = String(window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
     const HOME_CART_KEY = 'MURAIN_WEB_CART_TOKEN';
-    const HOME_LIFF_CHECKOUT = 'https://murain.tw/liff-checkout';
+    const HOME_SITE_ORIGIN = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+const HOME_LIFF_CHECKOUT = `${HOME_SITE_ORIGIN}/liff-checkout`;
 
     const cartBtn = document.getElementById('cartBtn');
     const cartBadge = document.getElementById('cartBadge');
@@ -1866,7 +1868,7 @@ const msg = encodeURIComponent('我要索取寄賣契約，想了解寄賣流程
   })();
 </script>
   <script>
-/* ✅ 正式站保險：避免 LINE/LIFF 內開時，站內相對連結跑去 liff.line.me 造成 404 */
+/* ✅ 站內相對連結保險：避免 LINE/LIFF 內開時，站內相對連結跑去 liff.line.me 造成 404 */
 document.addEventListener('click', function(e){
   const a = e.target.closest('a[href]');
   if (!a) return;
@@ -1874,22 +1876,32 @@ document.addEventListener('click', function(e){
   const rawHref = String(a.getAttribute('href') || '').trim();
   if (!rawHref) return;
 
-  // 只處理站內絕對路徑，例如 /shop.html、/member.html
+  // 只處理站內絕對路徑，例如 /shop.html、/member
   if (!rawHref.startsWith('/') || rawHref.startsWith('//')) return;
 
+  const siteOrigin = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/+$/, '');
+  let path = rawHref;
+
+  if (path === '/member.html') path = '/member';
+
   e.preventDefault();
-  window.location.href = 'https://murain.tw' + rawHref;
+  window.location.href = siteOrigin + path;
 }, true);
 </script>
   <script>
 /* ✅ 全站會員中心入口保險
    LINE 內開 → 走會員中心 LIFF
-   一般網頁 / 電腦 → 走 murain.tw/member.html
+   一般網頁 / 電腦 → 走目前環境的 /member
    只修「會員中心入口」，不動商品/結帳 return_url 流程
 */
 (function () {
-  const MEMBER_WEB_URL = 'https://murain.tw/member.html';
-  const MEMBER_LIFF_URL = 'https://liff.line.me/2008430261-EGZPg3Qp/?line_login=1';
+ const MEMBER_SITE_ORIGIN = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+const MEMBER_LIFF_ID = String(window.LIFF_MEMBER_ID || '').trim();
+
+const MEMBER_WEB_URL = `${MEMBER_SITE_ORIGIN}/member`;
+const MEMBER_LIFF_URL = MEMBER_LIFF_ID
+  ? `https://liff.line.me/${MEMBER_LIFF_ID}?line_login=1`
+  : MEMBER_WEB_URL;
 
   function isLineBrowser() {
     const ua = navigator.userAgent || '';
@@ -1922,7 +1934,12 @@ document.addEventListener('click', function(e){
 </script>
     <script>
 (function () {
-  const API_URL = "https://api.murain.tw/site/popup";
+  const POPUP_API_BASE = String(window.API_BASE || "").replace(/\/+$/,"");
+if (!POPUP_API_BASE) {
+  console.warn("[store-operation popup] API_BASE missing");
+  return;
+}
+const API_URL = `${POPUP_API_BASE}/site/popup`;
 
   const BLOCKED_PATHS = [
     "/liff-checkout",
@@ -2225,6 +2242,57 @@ document.addEventListener('click', function(e){
     .catch(() => {
       // 彈窗讀取失敗不能影響官網使用
     });
+})();
+</script>
+  <script>
+/* ✅ consign：站內連結 / 官方 LINE 跟著目前環境走 */
+(function normalizeConsignLinksByEnv(){
+  const siteOrigin = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+  const officialLineUrl = String(window.OFFICIAL_LINE_URL || 'https://line.me/R/ti/p/@cc0857').trim();
+
+  function fixOneLink(a){
+    if (!a) return;
+
+    const raw = String(a.getAttribute('href') || '').trim();
+    if (!raw) return;
+
+    if (
+      raw.startsWith('https://murain.tw/') ||
+      raw.startsWith('https://www.murain.tw/')
+    ) {
+      try {
+        const u = new URL(raw);
+        let path = u.pathname || '/';
+
+        if (path === '/member') path = '/member.html';
+        if (path === '/shop') path = '/shop.html';
+        if (path === '/index') path = '/index.html';
+        if (path === '/consign') path = '/consign.html';
+
+        a.setAttribute('href', siteOrigin + path + u.search + u.hash);
+      } catch(e) {}
+      return;
+    }
+
+    if (
+      raw === 'https://line.me/R/ti/p/@mu88888' ||
+      raw === 'https://line.me/R/ti/p/@cc0857'
+    ) {
+      a.setAttribute('href', officialLineUrl);
+    }
+  }
+
+  function run(){
+    document.querySelectorAll('a[href]').forEach(fixOneLink);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
+
+  window.addEventListener('pageshow', run);
 })();
 </script>
 </body>
