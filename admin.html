@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>訂單後台</title>
+ <script src="/config.js?v=20260604-1"></script>
 <style>
   *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
   body{margin:0;background:#020617;color:#e2e8f0}
@@ -102,7 +103,31 @@
 }
 
 .hidden{display:none !important;}
+body.dashboard-locked .admin-sub-tabs a.filter-btn{
+  opacity:.42;
+  filter:grayscale(1);
+  cursor:not-allowed;
+}
 
+.dashboard-login-card{
+  padding:18px;
+  border-radius:16px;
+  border:1px solid rgba(148,163,184,.35);
+  background:rgba(15,23,42,.96);
+  color:#e2e8f0;
+}
+
+.dashboard-login-card h2{
+  margin:0 0 8px;
+  font-size:18px;
+}
+
+.dashboard-login-card p{
+  margin:6px 0;
+  color:#94a3b8;
+  font-size:13px;
+  line-height:1.6;
+}
 .btn-badge-wrap{
   display:inline-flex;
   align-items:center;
@@ -352,10 +377,81 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   border-color:#22d3ee;
   box-shadow:0 8px 20px rgba(34,211,238,.35);
 }
+/* ===== 9.4-H-6 後台入口權限防呆 ===== */
+#adminEntryLock{
+  max-width:420px;
+  margin:90px auto;
+  padding:24px;
+  border-radius:18px;
+  border:1px solid rgba(148,163,184,.35);
+  background:rgba(15,23,42,.96);
+  box-shadow:0 16px 40px rgba(0,0,0,.35);
+  color:#e2e8f0;
+}
 
+#adminEntryLock h2{
+  margin:0 0 8px;
+  font-size:22px;
+}
+
+#adminEntryLock .hint{
+  margin:0 0 14px;
+  color:#94a3b8;
+  font-size:13px;
+  line-height:1.6;
+}
+
+#adminEntryLock input{
+  width:100%;
+  padding:12px;
+  border-radius:12px;
+  border:1px solid rgba(148,163,184,.65);
+  background:#020617;
+  color:#e2e8f0;
+  font-size:16px;
+}
+
+#adminEntryLock button{
+  width:100%;
+  margin-top:12px;
+  padding:12px;
+  border:0;
+  border-radius:12px;
+  background:#22d3ee;
+  color:#0f172a;
+  font-size:16px;
+  font-weight:800;
+  cursor:pointer;
+}
+
+#adminEntryLock button:disabled{
+  opacity:.65;
+  cursor:not-allowed;
+}
+
+#adminEntryMsg{
+  margin-top:10px;
+  min-height:18px;
+  color:#fecaca;
+  font-size:13px;
+}
+
+#adminProtectedRoot[hidden]{
+  display:none !important;
+}
 </style>
 </head>
 <body>
+
+<div id="adminEntryLock">
+  <h2>後台入口驗證</h2>
+  <p class="hint">請先輸入後台管理密碼，通過後才會顯示後台按鈕、清單數量與訂單資料。</p>
+  <input id="adminEntryPassword" type="password" placeholder="請輸入後台密碼" autocomplete="off">
+  <button id="adminEntryUnlockBtn" type="button">進入後台</button>
+  <div id="adminEntryMsg"></div>
+</div>
+
+<div id="adminProtectedRoot" hidden>
 <div class="wrap">
   <h1>訂單後台</h1>
 
@@ -401,11 +497,6 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     <span>賣貨便登記</span>
     <span id="pickupNeedBadge" class="count-badge" style="display:none;">0</span>
   </a>
-
-<a class="filter-btn btn-badge-wrap" data-admin-file="admin-deposit.html" href="admin-deposit.html">
-  <span>待確認定金收款</span>
-  <span id="depositBadge" class="count-badge" style="display:none;">0</span>
-</a>
 
 <a class="filter-btn btn-badge-wrap" data-admin-file="admin-cashinst.html" href="admin-cashinst.html">
   <span>已收定金未出貨</span>
@@ -494,18 +585,6 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     <label>&nbsp;</label>
     <button class="small-btn" id="btnPrintSlipsRange" type="button">⭐列印出貨單</button>
   </div>
-  <div class="field">
-    <label>&nbsp;</label>
-    <button class="small-btn" id="btnExportShip" type="button" disabled>
-      ⭐下載「賣貨便」檔
-    </button>
-  </div>
-  <div class="field">
-    <label>&nbsp;</label>
-    <button class="small-btn" id="btnExportZero" type="button" disabled>
-      ⭐下載「0 元包裹」檔
-    </button>
-  </div>
 </div>
 
 
@@ -559,28 +638,14 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 
 <div class="toolbar-side">
   <span id="opLabel" class="tag-small"></span>
-  <button id="btnCancelOrderTop" class="small-btn" type="button">
-    🚫 棄標(請勿亂按)
-  </button>
 
-  <div class="side-box" id="vendorMonthBox">
-  <label>賣貨便月份</label>
-  <input id="vendor_month" type="month" />
-  <div id="vendor_month_summary" class="tag-small"></div>
-</div>
-
-    <div class="side-box">
-    <label>LINE 名稱搜尋</label>
-    <input id="line_search" type="text" placeholder="輸入 LINE 名稱" />
+  <div class="side-box" id="dashboardAuthBox">
+    <label>後台入口狀態</label>
+    <div id="dashboardAuthStatus" class="tag-small">尚未登入後台</div>
+    <button class="small-btn" id="btnDashboardLogin" type="button">
+      🔐 登入後台
+    </button>
   </div>
-
-<div class="side-box hidden" id="benefitReviewPanel">
-  <div class="side-box-head">
-    <label>待審核購物金</label>
-    <button type="button" class="panel-close" id="btnBenefitReviewClose">✕</button>
-  </div>
-  <div id="benefitReviewList" class="tag-small">尚未載入</div>
-</div>
 </div>
   </div>
 
@@ -594,9 +659,11 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     </div>
   </div>
 </div>
+</div>
 
 <script>
-const API = (window.API_BASE || 'https://api.murain.tw').replace(/\/$/,'');
+const API = String(window.API_BASE || '').replace(/\/$/,'');
+if (!API) throw new Error('API_BASE missing');
 const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
 
 function normalizeAdminPageFile(){
@@ -652,13 +719,6 @@ const ADMIN_PAGE_MAP = {
     useDate: false
   },
 
-'admin-deposit.html': {
-  title: '待確認定金收款',
-  mode: 'orders',
-  viewKey: 'deposit_unshipped',
-  viewName: '待確認定金收款',
-  useDate: false
-},
 'admin-cashinst.html': {
   title: '已收定金未出貨',
   mode: 'orders',
@@ -712,6 +772,91 @@ const ADMIN_PAGE_MAP = {
 };
 
 const ADMIN_PAGE = ADMIN_PAGE_MAP[ADMIN_PAGE_FILE] || ADMIN_PAGE_MAP['admin.html'];
+
+ function isDashboardPage(){
+  return ADMIN_PAGE_FILE === 'admin.html' && ADMIN_PAGE.mode === 'dashboard';
+}
+
+function resetDashboardBadges(){
+  [
+    'cartOpenBadge',
+    'quickPaidBadge',
+    'remindTodayBadge',
+    'pickupNeedBadge',
+    'cashInstBadge',
+    'consignBadge',
+    'tradeBadge',
+    'benefitBadge',
+    'creditErrorBadge'
+  ].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.textContent = '';
+      el.style.display = 'none';
+    }
+  });
+}
+
+function setDashboardLocked(locked){
+  if (!isDashboardPage()) return;
+
+  document.body.classList.toggle('dashboard-locked', !!locked);
+
+  const statusEl = document.getElementById('dashboardAuthStatus');
+  const loginBtn = document.getElementById('btnDashboardLogin');
+
+  if (statusEl) {
+    statusEl.textContent = locked
+      ? '尚未登入後台，功能入口與數量已鎖定。'
+      : '已登入後台，可以查看入口數量與進入功能頁。';
+  }
+
+  if (loginBtn) {
+    loginBtn.style.display = locked ? '' : 'none';
+  }
+}
+
+function bindDashboardEntryGuard(){
+  if (!isDashboardPage()) return;
+
+  document.querySelectorAll('.admin-sub-tabs a.filter-btn').forEach(a => {
+    if (a.dataset.guardBound === '1') return;
+    a.dataset.guardBound = '1';
+
+    a.addEventListener('click', async (e) => {
+      if (OP_KEY) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      alert('請先登入後台，才可以進入功能頁。');
+
+      try {
+        await ensureOpKey();
+        setDashboardLocked(!OP_KEY);
+
+        if (OP_KEY) {
+          await loadAdminDashboard();
+        }
+      } catch (_) {
+        setDashboardLocked(true);
+      }
+    }, true);
+  });
+}
+
+async function loginDashboardFromButton(){
+  try {
+    await ensureOpKey();
+    setDashboardLocked(!OP_KEY);
+
+    if (OP_KEY) {
+      await loadAdminDashboard();
+    }
+  } catch (_) {
+    setDashboardLocked(true);
+  }
+}
 
 function setupAdminPageChrome(){
   document.title = `${ADMIN_PAGE.title}｜訂單後台`;
@@ -787,6 +932,89 @@ function shouldUseAdminLinkNav(el){
 }
 
 let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
+
+const ADMIN_ENTRY_UNLOCK_KEY = 'MURAIN_ADMIN_ENTRY_UNLOCKED';
+
+function setupAdminEntryGate(){
+  return new Promise((resolve) => {
+    const lockBox = document.getElementById('adminEntryLock');
+    const protectedRoot = document.getElementById('adminProtectedRoot');
+    const passInput = document.getElementById('adminEntryPassword');
+    const btn = document.getElementById('adminEntryUnlockBtn');
+    const msg = document.getElementById('adminEntryMsg');
+
+    if (!lockBox || !protectedRoot) {
+      resolve(true);
+      return;
+    }
+
+    function showAdmin(){
+      sessionStorage.setItem(ADMIN_ENTRY_UNLOCK_KEY, '1');
+      lockBox.style.display = 'none';
+      protectedRoot.hidden = false;
+      resolve(true);
+    }
+
+    // 同一個分頁已驗證過，就不用重打；換分頁 / 重開瀏覽器會再要求輸入
+    if (sessionStorage.getItem(ADMIN_ENTRY_UNLOCK_KEY) === '1' && OP_KEY) {
+      showAdmin();
+      return;
+    }
+
+    protectedRoot.hidden = true;
+    lockBox.style.display = 'block';
+
+    async function checkPassword(){
+      const k = String(passInput?.value || '').trim();
+
+      if (!k) {
+        if (msg) msg.textContent = '請輸入後台密碼';
+        return;
+      }
+
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '驗證中...';
+      }
+
+      if (msg) msg.textContent = '';
+
+      try {
+        const r = await fetch(`${API}/op/auth`, {
+          method:'POST',
+          headers:{ 'Content-Type':'application/json' },
+          body: JSON.stringify({ op_key: k })
+        });
+
+        const j = await r.json().catch(() => ({}));
+
+        if (!r.ok || !j.ok) {
+          if (msg) msg.textContent = '密碼錯誤，請重新輸入';
+          return;
+        }
+
+        OP_KEY = k;
+        localStorage.setItem(STORAGE_KEY, OP_KEY);
+        showAdmin();
+
+      } catch (e) {
+        console.error(e);
+        if (msg) msg.textContent = '驗證失敗，請稍後再試';
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '進入後台';
+        }
+      }
+    }
+
+    btn?.addEventListener('click', checkPassword);
+    passInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') checkPassword();
+    });
+  });
+}
+
 let currentFilter = 'all';
 let currentOrders = [];
 let currentRecord = null;
@@ -1937,11 +2165,11 @@ function displayPaymentMethod(code){
       return '匯款全額 - 面交';
 
     case 'paid_af':
-      return 'AF先享後付';
-    case 'paid_linepay':
-      return 'LINE PAY';
-    case 'paid_aftee_direct':
       return 'AF 先享後付';
+    case 'paid_linepay':
+      return 'LINE Pay';
+    case 'paid_aftee_direct':
+      return 'AFTEE 先享後付';
 
     case 'zero_card_3':
       return '中租分期 3 期';
@@ -1975,27 +2203,27 @@ function displayPaymentMethod(code){
       return '現金分期 3 期';
 
     case 'atm_full_tail':
-      return '尾款：匯款 / 購物金';
+      return '尾款匯款';
 
     case 'deposit_new_partial':
     case 'deposit_old_partial':
     case 'deposit_new':
     case 'deposit_old':
     case 'atm_deposit':
-      return '訂金匯款';
+      return '匯款定金';
 
+    case 'bank_transfer':
     case 'deposit_new_full':
     case 'deposit_old_full':
     case 'deposit_new_full_711':
     case 'deposit_new_full_post':
     case 'atm_full':
-      return '全額匯款';
+      return '匯款全額';
 
     default:
       return String(code || '').trim();
   }
 }
-
 
 function toDatetimeLocal(v){
   if(!v) return '';
@@ -2472,7 +2700,6 @@ async function refreshDashboardBadges() {
       shipRows,
       bankRows,
       pickupRows,
-      depositRows,
       cashInstRows,
       consignTrade,
       benefitCount,
@@ -2482,7 +2709,6 @@ async function refreshDashboardBadges() {
       fetchAdminRowsByView('ship'),
       fetchAdminRowsByView('bank'),
       fetchAdminRowsByView('pickup'),
-      fetchAdminRowsByView('deposit_unshipped'),
       fetchAdminRowsByView('cashinst_unpaid'),
       fetchConsignTradeCounts(),
       fetchBenefitPendingCount(),
@@ -2500,7 +2726,6 @@ async function refreshDashboardBadges() {
       dashSetBadge($('#pickupNeedBadge'), pickupRows.length);
     }
 
-    dashSetBadge($('#depositBadge'), depositRows.length);
     dashSetBadge($('#cashInstBadge'), cashInstRows.length);
     dashSetBadge($('#consignBadge'), consignTrade.consignCount);
     dashSetBadge($('#tradeBadge'), consignTrade.tradeCount);
@@ -3056,16 +3281,12 @@ async function reloadCurrentView(){
 function updateSummary(){
   const sumEl         = $('#summary');
   const btnExport     = $('#exportBtn');
-  const btnExportShip = $('#btnExportShip');
-  const btnExportZero = $('#btnExportZero');
   if (!sumEl) return;
 
 // ✅ 只有全部訂單頁顯示總筆數＋合計金額
 if (ADMIN_PAGE_FILE !== 'admin-all.html') {
     sumEl.textContent = '';
     if (btnExport) btnExport.disabled = true;
-    if (btnExportShip) btnExportShip.disabled = true;
-    if (btnExportZero) btnExportZero.disabled = true;
     return;
   }
 
@@ -3073,8 +3294,6 @@ if (ADMIN_PAGE_FILE !== 'admin-all.html') {
   if (!currentOrders.length){
     sumEl.textContent = '';
     if (btnExport) btnExport.disabled = true;
-    if (btnExportShip) btnExportShip.disabled = true;
-    if (btnExportZero) btnExportZero.disabled = true;
     return;
   }
 
@@ -5568,7 +5787,7 @@ ${a.credit>0 ? `<tr><th>購物金折抵</th><td>-${creditUse}</td></tr>` : ``}
   w.focus();
   w.print();
 }
- async function loadAdminDashboard() {
+async function loadAdminDashboard() {
   currentPanelMode = 'dashboard';
   currentRecord = null;
   currentOrders = [];
@@ -5583,6 +5802,44 @@ ${a.credit>0 ? `<tr><th>購物金折抵</th><td>-${creditUse}</td></tr>` : ``}
   const sumEl = $('#summary');
 
   if (sumEl) sumEl.textContent = '';
+  if (msgEl) msgEl.textContent = '';
+
+  bindDashboardEntryGuard();
+
+  const loginBtn = document.getElementById('btnDashboardLogin');
+  if (loginBtn && !loginBtn.dataset.bound) {
+    loginBtn.dataset.bound = '1';
+    loginBtn.addEventListener('click', loginDashboardFromButton);
+  }
+
+  if (!OP_KEY) {
+    resetDashboardBadges();
+    setDashboardLocked(true);
+
+    if (listEl) {
+      listEl.innerHTML = `
+        <div class="dashboard-login-card">
+          <h2>請先登入後台</h2>
+          <p>登入後才會顯示各功能入口的紅色數量，也才能進入訂單功能頁。</p>
+          <p>此頁只作為後台入口總覽，不做收款、出貨、棄標或訂單修改。</p>
+          <button class="btn-primary" id="btnDashboardLoginMain" type="button">🔐 登入後台</button>
+        </div>
+      `;
+    }
+
+    if (detailEl) {
+      detailEl.innerHTML = `
+        <div class="muted">
+          登入後請從上方分類進入對應清單。
+        </div>
+      `;
+    }
+
+    document.getElementById('btnDashboardLoginMain')?.addEventListener('click', loginDashboardFromButton);
+    return;
+  }
+
+  setDashboardLocked(false);
 
   if (listEl) {
     listEl.innerHTML = `
@@ -5600,21 +5857,19 @@ ${a.credit>0 ? `<tr><th>購物金折抵</th><td>-${creditUse}</td></tr>` : ``}
     `;
   }
 
-  if (msgEl) {
-    msgEl.textContent = '';
-  }
-
   await refreshDashboardBadges();
 }
 async function loadAdminDefaultPage(){
   setupAdminPageChrome();
-  await ensureOpKey();
 
   setBatchActionMode('none');
-   if (ADMIN_PAGE.mode === 'dashboard') {
+
+  if (ADMIN_PAGE.mode === 'dashboard') {
     await loadAdminDashboard();
     return;
   }
+
+  await ensureOpKey();
 
   if (ADMIN_PAGE.mode === 'cart_open') {
     await loadOpenCartList();
@@ -5691,6 +5946,8 @@ async function loadAdminDefaultPage(){
 
 
 document.addEventListener('DOMContentLoaded', async () => {
+
+  await setupAdminEntryGate();
 
   // OP_KEY 重設（如果你已經拿掉更改密碼那顆，可以保留這段但加保護）
   const btnChangeKey = $('#btnChangeKey');
@@ -5889,12 +6146,6 @@ if (vendorMonthEl){
 // 匯出 / 列印維持原本
 const btnExport = $('#exportBtn');
 if (btnExport) btnExport.addEventListener('click', exportCSV);
-
-const btnExportShip = $('#btnExportShip');
-if (btnExportShip) btnExportShip.addEventListener('click', exportShipReport);
-
-const btnExportZero = $('#btnExportZero');
-if (btnExportZero) btnExportZero.addEventListener('click', exportZeroReport);
 
 const btnPrintSlips = $('#btnPrintSlipsRange');
 if (btnPrintSlips) btnPrintSlips.addEventListener('click', printShipSlipsRange);
