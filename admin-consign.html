@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>訂單後台</title>
+ <script src="/config.js?v=20260604-1"></script>
 <style>
   *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
   body{margin:0;background:#020617;color:#e2e8f0}
@@ -566,7 +567,6 @@ body.is-consign-page #btnCartRemindTop{
     <span id="pickupNeedBadge" class="count-badge" style="display:none;">0</span>
   </a>
 
-  <a class="filter-btn" data-admin-file="admin-deposit.html" href="admin-deposit.html">待確認定金收款</a>
   <a class="filter-btn" data-admin-file="admin-cashinst.html" href="admin-cashinst.html">已收定金未出貨</a>
   <a class="filter-btn" data-admin-file="admin-cancelled.html" href="admin-cancelled.html">已取消／棄標</a>
 
@@ -668,13 +668,6 @@ const ADMIN_PAGE_MAP = {
     viewName: '賣貨便登記',
     useDate: false
   },
-'admin-deposit.html': {
-  title: '待確認定金收款',
-  mode: 'orders',
-  viewKey: 'deposit_unshipped',
-  viewName: '待確認定金收款',
-  useDate: false
-},
 'admin-cashinst.html': {
   title: '已收定金未出貨',
   mode: 'orders',
@@ -2099,7 +2092,6 @@ function parseShippingInfo(fields){
     return {};
   }
 }
-// 付款方式代碼 → 中文名稱（列表＋右側 pill 共用）
 function displayPaymentMethod(code){
   const c = String(code || '').trim().toLowerCase();
 
@@ -2124,11 +2116,11 @@ function displayPaymentMethod(code){
       return '匯款全額 - 面交';
 
     case 'paid_af':
-      return 'AF先享後付';
-    case 'paid_linepay':
-      return 'LINE PAY';
-    case 'paid_aftee_direct':
       return 'AF 先享後付';
+    case 'paid_linepay':
+      return 'LINE Pay';
+    case 'paid_aftee_direct':
+      return 'AFTEE 先享後付';
 
     case 'zero_card_3':
       return '中租分期 3 期';
@@ -2162,21 +2154,22 @@ function displayPaymentMethod(code){
       return '現金分期 3 期';
 
     case 'atm_full_tail':
-      return '尾款：匯款 / 購物金';
+      return '尾款匯款';
 
     case 'deposit_new_partial':
     case 'deposit_old_partial':
     case 'deposit_new':
     case 'deposit_old':
     case 'atm_deposit':
-      return '訂金匯款';
+      return '匯款定金';
 
+    case 'bank_transfer':
     case 'deposit_new_full':
     case 'deposit_old_full':
     case 'deposit_new_full_711':
     case 'deposit_new_full_post':
     case 'atm_full':
-      return '全額匯款';
+      return '匯款全額';
 
     default:
       return String(code || '').trim();
@@ -2575,7 +2568,6 @@ async function refreshTopShortcutBadges(){
   setCountBadge($('#consignBadge'), consignCount);
 
   // ✅ 原本沒有小圓圈的頁籤，這裡自動補
-  setAdminTabBadge('admin-deposit.html', depositCount);
   setAdminTabBadge('admin-cashinst.html', cashInstCount);
   setAdminTabBadge('admin-cancelled.html', cancelledCount);
   setAdminTabBadge('admin-trade.html', tradeCount);
@@ -3598,7 +3590,16 @@ async function consignAction(orderItemId, action, opts = {}){
     const j = await r.json().catch(() => ({}));
 
     if (!r.ok || !j.ok) {
-      if (!silent) alert('操作失敗：' + (j.error || j.reason || 'unknown'));
+      const reasonText = String(j.reason || j.error || 'unknown');
+
+      const msg =
+        reasonText.startsWith('cod_not_picked:')
+          ? '這筆是 7-11 取貨付款 / COD，但取貨登記不是「已取貨」，禁止寄賣撥款或轉購物金。'
+          : reasonText.startsWith('bad_status:') || reasonText.startsWith('bad_pay_status:')
+            ? '這筆訂單已取消、失敗或作廢，禁止寄賣撥款。'
+            : (j.message || reasonText);
+
+      if (!silent) alert('操作失敗：' + msg);
       return { ok:false, error:j.error || 'request_failed', reason:j.reason || '' };
     }
 
@@ -3717,16 +3718,12 @@ async function reloadCurrentView(){
 function updateSummary(){
   const sumEl         = $('#summary');
   const btnExport     = $('#exportBtn');
-  const btnExportShip = $('#btnExportShip');
-  const btnExportZero = $('#btnExportZero');
   if (!sumEl) return;
 
   // ✅ 只有全部訂單頁顯示總筆數＋合計金額
   if (ADMIN_PAGE_FILE !== 'admin.html') {
     sumEl.textContent = '';
     if (btnExport) btnExport.disabled = true;
-    if (btnExportShip) btnExportShip.disabled = true;
-    if (btnExportZero) btnExportZero.disabled = true;
     return;
   }
 
@@ -3734,8 +3731,6 @@ function updateSummary(){
   if (!currentOrders.length){
     sumEl.textContent = '';
     if (btnExport) btnExport.disabled = true;
-    if (btnExportShip) btnExportShip.disabled = true;
-    if (btnExportZero) btnExportZero.disabled = true;
     return;
   }
 
@@ -6515,12 +6510,6 @@ if (vendorMonthEl){
 // 匯出 / 列印維持原本
 const btnExport = $('#exportBtn');
 if (btnExport) btnExport.addEventListener('click', exportCSV);
-
-const btnExportShip = $('#btnExportShip');
-if (btnExportShip) btnExportShip.addEventListener('click', exportShipReport);
-
-const btnExportZero = $('#btnExportZero');
-if (btnExportZero) btnExportZero.addEventListener('click', exportZeroReport);
 
 const btnPrintSlips = $('#btnPrintSlipsRange');
 if (btnPrintSlips) btnPrintSlips.addEventListener('click', printShipSlipsRange);
