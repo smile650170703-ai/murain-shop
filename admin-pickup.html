@@ -4,6 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>訂單後台</title>
+ <script src="/config.js?v=20260604-1"></script>
 <style>
   *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
   body{margin:0;background:#020617;color:#e2e8f0}
@@ -578,11 +579,6 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     <span id="pickupNeedBadge" class="count-badge" style="display:none;">0</span>
   </a>
 
-  <a class="filter-btn btn-badge-wrap" data-admin-file="admin-deposit.html" href="admin-deposit.html">
-    <span>待確認定金收款</span>
-    <span id="depositBadge" class="count-badge" style="display:none;">0</span>
-  </a>
-
   <a class="filter-btn btn-badge-wrap" data-admin-file="admin-cashinst.html" href="admin-cashinst.html">
     <span>已收定金未出貨</span>
     <span id="cashInstBadge" class="count-badge" style="display:none;">0</span>
@@ -667,18 +663,6 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     <label>&nbsp;</label>
     <button class="small-btn" id="btnPrintSlipsRange" type="button">⭐列印出貨單</button>
   </div>
-  <div class="field">
-    <label>&nbsp;</label>
-    <button class="small-btn" id="btnExportShip" type="button" disabled>
-      ⭐下載「賣貨便」檔
-    </button>
-  </div>
-  <div class="field">
-    <label>&nbsp;</label>
-    <button class="small-btn" id="btnExportZero" type="button" disabled>
-      ⭐下載「0 元包裹」檔
-    </button>
-  </div>
 </div>
 
 
@@ -732,8 +716,8 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 
 <div class="toolbar-side">
   <span id="opLabel" class="tag-small"></span>
-  <button id="btnCancelOrderTop" class="small-btn" type="button">
-    🚫 棄標(請勿亂按)
+<button id="btnCancelOrderTop" class="small-btn" type="button">
+    🚫 棄標／沒收定金
   </button>
 
   <div class="side-box" id="vendorMonthBox">
@@ -825,13 +809,6 @@ const ADMIN_PAGE_MAP = {
     useDate: false
   },
 
-'admin-deposit.html': {
-  title: '待確認定金收款',
-  mode: 'orders',
-  viewKey: 'deposit_unshipped',
-  viewName: '待確認定金收款',
-  useDate: false
-},
 'admin-cashinst.html': {
   title: '已收定金未出貨',
   mode: 'orders',
@@ -1633,9 +1610,13 @@ else if (mode === 'remind_today'){
       const is711 = String(ship.type || '').toLowerCase() === '711';
 
       const pickReg = String(f['取貨登記'] || '').trim();
-      const notPicked = (pickReg !== '已取貨');
 
-      return shipped && is711 && notPicked;
+      // ✅ 已取貨、未取退回 都算已處理，不再出現在賣貨便待登記清單
+      const pickupHandled =
+        pickReg === '已取貨' ||
+        pickReg === '未取退回';
+
+      return shipped && is711 && !pickupHandled;
     });
     emptyText = '目前沒有「已出貨且尚未登記已取貨」的訂單。';
     okText = `僅顯示「已出貨 + 7-11 取貨 + 取貨登記≠已取貨」的訂單。共 ${rows.length} 筆。`;
@@ -2339,11 +2320,11 @@ function displayPaymentMethod(code){
       return '匯款全額 - 面交';
 
     case 'paid_af':
-      return 'AF先享後付';
-    case 'paid_linepay':
-      return 'LINE PAY';
-    case 'paid_aftee_direct':
       return 'AF 先享後付';
+    case 'paid_linepay':
+      return 'LINE Pay';
+    case 'paid_aftee_direct':
+      return 'AFTEE 先享後付';
 
     case 'zero_card_3':
       return '中租分期 3 期';
@@ -2377,27 +2358,27 @@ function displayPaymentMethod(code){
       return '現金分期 3 期';
 
     case 'atm_full_tail':
-      return '尾款：匯款 / 購物金';
+      return '尾款匯款';
 
     case 'deposit_new_partial':
     case 'deposit_old_partial':
     case 'deposit_new':
     case 'deposit_old':
     case 'atm_deposit':
-      return '訂金匯款';
+      return '匯款定金';
 
+    case 'bank_transfer':
     case 'deposit_new_full':
     case 'deposit_old_full':
     case 'deposit_new_full_711':
     case 'deposit_new_full_post':
     case 'atm_full':
-      return '全額匯款';
+      return '匯款全額';
 
     default:
       return String(code || '').trim();
   }
 }
-
 
 function toDatetimeLocal(v){
   if(!v) return '';
@@ -3331,16 +3312,12 @@ async function reloadCurrentView(){
 function updateSummary(){
   const sumEl         = $('#summary');
   const btnExport     = $('#exportBtn');
-  const btnExportShip = $('#btnExportShip');
-  const btnExportZero = $('#btnExportZero');
   if (!sumEl) return;
 
 // ✅ 只有全部訂單頁顯示總筆數＋合計金額
 if (ADMIN_PAGE_FILE !== 'admin-all.html') {
     sumEl.textContent = '';
     if (btnExport) btnExport.disabled = true;
-    if (btnExportShip) btnExportShip.disabled = true;
-    if (btnExportZero) btnExportZero.disabled = true;
     return;
   }
 
@@ -3348,8 +3325,6 @@ if (ADMIN_PAGE_FILE !== 'admin-all.html') {
   if (!currentOrders.length){
     sumEl.textContent = '';
     if (btnExport) btnExport.disabled = true;
-    if (btnExportShip) btnExportShip.disabled = true;
-    if (btnExportZero) btnExportZero.disabled = true;
     return;
   }
 
@@ -6176,33 +6151,214 @@ if (lineSearchEl){
 const btnExport = $('#exportBtn');
 if (btnExport) btnExport.addEventListener('click', exportCSV);
 
-const btnExportShip = $('#btnExportShip');
-if (btnExportShip) btnExportShip.addEventListener('click', exportShipReport);
-
-const btnExportZero = $('#btnExportZero');
-if (btnExportZero) btnExportZero.addEventListener('click', exportZeroReport);
-
 const btnPrintSlips = $('#btnPrintSlipsRange');
 if (btnPrintSlips) btnPrintSlips.addEventListener('click', printShipSlipsRange);
-  // ★ 上方「取消訂單（補回庫存）」按鈕：直接走 cancelCurrentOrder()
+  // ✅ 上方「棄標／沒收定金」按鈕：走專用 forfeit API，不走一般取消
   const btnCancelTop = $('#btnCancelOrderTop');
 if (btnCancelTop) {
-  btnCancelTop.addEventListener('click', () => {
-    if (!currentRecord) {
-      alert('請先在左邊選一筆訂單');
-      return;
-    }
-
-    const f = currentRecord.fields || currentRecord || {};
-    if (isDepositForfeitOrder(f)) {
-      alert('這筆訂單已經是棄標／訂金沒收狀態，不需要再按棄標。');
-      return;
-    }
-
-    cancelCurrentOrder();
+  btnCancelTop.addEventListener('click', async () => {
+    await forfeitCurrentOrder();
   });
 }
+ function chooseForfeitReason(defaultReason = '7-11未取貨退回／棄標／購物金沒收') {
+  return new Promise((resolve) => {
+    const old = document.getElementById('forfeitReasonModal');
+    if (old) old.remove();
 
+    const wrap = document.createElement('div');
+    wrap.id = 'forfeitReasonModal';
+    wrap.style.cssText = `
+      position:fixed;
+      inset:0;
+      z-index:99999;
+      background:rgba(2,6,23,.72);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+    `;
+
+    wrap.innerHTML = `
+      <div style="
+        width:min(520px, 100%);
+        border-radius:18px;
+        border:1px solid rgba(148,163,184,.35);
+        background:#020617;
+        color:#e2e8f0;
+        padding:18px;
+        box-shadow:0 20px 60px rgba(0,0,0,.45);
+      ">
+        <div style="font-size:18px;font-weight:900;margin-bottom:8px;">選擇棄標／沒收原因</div>
+        <div style="font-size:13px;color:#94a3b8;line-height:1.6;margin-bottom:12px;">
+          這會執行棄標／沒收定金，購物金不退回。請確認不是客人要重新結帳。
+        </div>
+
+        <label style="display:block;font-size:12px;color:#cbd5f5;margin-bottom:6px;">棄標原因</label>
+        <select id="forfeitReasonSelect" style="
+          width:100%;
+          padding:10px 12px;
+          border-radius:12px;
+          border:1px solid rgba(148,163,184,.6);
+          background:#020617;
+          color:#e2e8f0;
+          font-size:14px;
+        ">
+          <option value="7-11未取貨退回／棄標／購物金沒收">7-11未取貨退回／棄標／購物金沒收</option>
+          <option value="賣貨便未取貨退回／棄標／購物金沒收">賣貨便未取貨退回／棄標／購物金沒收</option>
+          <option value="現金分期逾期／棄標／訂金沒收">現金分期逾期／棄標／訂金沒收</option>
+          <option value="棄標／訂金沒收／未取退回">棄標／訂金沒收／未取退回</option>
+          <option value="裕富未通過／棄標／購物金沒收">裕富未通過／棄標／購物金沒收</option>
+          <option value="custom">其他原因，自行輸入</option>
+        </select>
+
+        <textarea id="forfeitReasonCustom" placeholder="選其他原因時填寫" style="
+          display:none;
+          width:100%;
+          margin-top:10px;
+          min-height:76px;
+          padding:10px 12px;
+          border-radius:12px;
+          border:1px solid rgba(148,163,184,.6);
+          background:#020617;
+          color:#e2e8f0;
+          font-size:14px;
+        "></textarea>
+
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+          <button id="forfeitReasonCancel" type="button" style="
+            padding:9px 14px;
+            border-radius:999px;
+            border:1px solid rgba(148,163,184,.55);
+            background:transparent;
+            color:#e2e8f0;
+            cursor:pointer;
+          ">取消</button>
+          <button id="forfeitReasonOk" type="button" style="
+            padding:9px 14px;
+            border-radius:999px;
+            border:none;
+            background:#22d3ee;
+            color:#0f172a;
+            font-weight:900;
+            cursor:pointer;
+          ">確定</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(wrap);
+
+    const sel = wrap.querySelector('#forfeitReasonSelect');
+    const custom = wrap.querySelector('#forfeitReasonCustom');
+
+    if (defaultReason) {
+      const opt = Array.from(sel.options).find(o => o.value === defaultReason);
+      if (opt) sel.value = defaultReason;
+    }
+
+    sel.addEventListener('change', () => {
+      custom.style.display = sel.value === 'custom' ? 'block' : 'none';
+      if (sel.value === 'custom') custom.focus();
+    });
+
+    wrap.querySelector('#forfeitReasonCancel').addEventListener('click', () => {
+      wrap.remove();
+      resolve('');
+    });
+
+    wrap.querySelector('#forfeitReasonOk').addEventListener('click', () => {
+      let reason = sel.value;
+
+      if (reason === 'custom') {
+        reason = String(custom.value || '').trim();
+        if (!reason) {
+          alert('請輸入其他原因。');
+          custom.focus();
+          return;
+        }
+      }
+
+      wrap.remove();
+      resolve(reason);
+    });
+  });
+}
+async function forfeitCurrentOrder() {
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = String(f.order_id || f['訂單編號'] || '').trim();
+
+  if (!orderId) {
+    alert('這筆訂單沒有 order_id，無法執行棄標／沒收定金。');
+    return;
+  }
+
+  if (isDepositForfeitOrder(f)) {
+    alert('這筆訂單已經是棄標／訂金沒收狀態，不需要再按。');
+    return;
+  }
+
+  const warning = [
+    '這會執行：棄標／沒收定金',
+    '',
+    '系統會：',
+    '1. 訂單改為取消／棄標',
+    '2. 補回庫存',
+    '3. 購物金不退回',
+    '4. 不可再收款、出貨、發尾款或重新結帳',
+    '',
+    '若只是客人要改付款或重新結帳，請改按「取消原單＋發重新結帳」。',
+    '',
+    '請輸入棄標密碼'
+  ].join('\n');
+
+  const forfeitPassword = prompt(warning, '');
+
+  if (!forfeitPassword) {
+    alert('未輸入棄標密碼，已取消操作。');
+    return;
+  }
+
+  const reason = await chooseForfeitReason('7-11未取貨退回／棄標／購物金沒收');
+
+  if (!reason) {
+    alert('未選擇棄標原因，已取消操作。');
+    return;
+  }
+
+  const r = await fetch(`${API}/admin/order/forfeit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      op_key: OP_KEY,
+      order_id: orderId,
+      confirm_text: '沒收定金',
+      forfeit_password: forfeitPassword,
+      reason
+    })
+  });
+
+  const j = await r.json().catch(() => ({}));
+
+  if (!r.ok || !j.ok) {
+    alert('棄標／沒收定金失敗：' + (j.message || j.error || r.status));
+    return;
+  }
+
+  if (j.already === 'forfeited') {
+    alert('這筆訂單已經是棄標／沒收定金狀態。');
+  } else if (j.already === 'cancelled') {
+    alert('這筆訂單已取消，未再次執行棄標。');
+  } else {
+    alert(j.message || '已標記棄標／沒收定金。');
+  }
+
+  await reloadCurrentView();
+}
 function proxyButton(topId, originalId){
   const top = $('#' + topId);
   if (!top) return;
