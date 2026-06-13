@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>只讀一致性檢查</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!--
+    檔名：admin-readonly-consistency.html
+
+    這是「只讀一致性檢查」前端頁。
+    安全原則：
+    1. 不會自動跑檢查，一定要按按鈕才執行。
+    2. 只呼叫 GET /admin/readonly-consistency-check。
+    3. 不 PATCH、不 POST、不 DELETE。
+    4. 預設只查最近 7 天、limit 100，避免頁面卡死。
+    5. 表格最多顯示 150 筆，完整資料可下載 JSON / CSV。
+  -->
+ <script src="/config.js?v=20260604-1"></script>
+  <style>
+    :root {
+      --bg: #f7f3ee;
+      --card: #ffffff;
+      --text: #2b211b;
+      --muted: #7a6f68;
+      --border: #e5d8cc;
+      --high: #b42318;
+      --medium: #b54708;
+      --low: #475467;
+      --ok: #067647;
+      --btn: #2b211b;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 6px 18px rgba(60, 40, 20, 0.05);
+    }
+
+    h1 {
+      font-size: 22px;
+      margin: 0 0 6px;
+    }
+
+    h2 {
+      font-size: 17px;
+      margin: 0 0 10px;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    input, select, button {
+      width: 100%;
+      min-height: 42px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      padding: 9px 10px;
+      font-size: 15px;
+      background: #fff;
+      color: var(--text);
+    }
+
+    button {
+      cursor: pointer;
+      border: 0;
+      background: var(--btn);
+      color: white;
+      font-weight: 700;
+    }
+
+    button.secondary {
+      background: #efe7dd;
+      color: #2b211b;
+      border: 1px solid var(--border);
+    }
+
+    button:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .stat {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      background: #fffaf5;
+    }
+
+    .stat .num {
+      font-size: 26px;
+      font-weight: 800;
+      line-height: 1.2;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 2px 9px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid currentColor;
+      white-space: nowrap;
+    }
+
+    .tag.high { color: var(--high); }
+    .tag.medium { color: var(--medium); }
+    .tag.low { color: var(--low); }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .toolbar .left,
+    .toolbar .right {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .toolbar select,
+    .toolbar button {
+      width: auto;
+      min-width: 120px;
+    }
+
+    .tableBox {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: white;
+      max-height: 70vh;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 980px;
+    }
+
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--border);
+      padding: 10px;
+      font-size: 14px;
+    }
+
+    th {
+      background: #fbf6f0;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      font-size: 13px;
+      color: #5d5148;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .titleCell { font-weight: 800; }
+
+    .small {
+      font-size: 12px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+
+    .empty {
+      padding: 24px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .notice {
+      border-left: 5px solid var(--ok);
+      padding: 10px 12px;
+      background: #ecfdf3;
+      border-radius: 10px;
+      color: #064e3b;
+      font-size: 14px;
+    }
+
+    .error {
+      border-left: 5px solid var(--high);
+      padding: 10px 12px;
+      background: #fff1f0;
+      border-radius: 10px;
+      color: #7a271a;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+
+    @media (max-width: 820px) {
+      .wrap { padding: 12px; }
+      .controls { grid-template-columns: 1fr; }
+      .summary { grid-template-columns: repeat(2, 1fr); }
+      .toolbar { align-items: stretch; }
+      .toolbar .left,
+      .toolbar .right,
+      .toolbar select,
+      .toolbar button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>只讀一致性檢查</h1>
+      <div class="muted">
+        這個頁面只讀取資料並產生檢查報告，不會修改訂單、購物車、庫存或購物金。
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>檢查設定</h2>
+      <div class="controls">
+        <div>
+          <label for="apiBase">API 網址</label>
+          <input id="apiBase" autocomplete="off">
+        </div>
+
+        <div>
+          <label for="opKey">op_key / 後台金鑰</label>
+          <input id="opKey" placeholder="例如 88" autocomplete="off">
+        </div>
+
+        <div>
+          <label for="days">檢查最近幾天</label>
+          <select id="days">
+            <option value="7" selected>7 天</option>
+            <option value="14">14 天</option>
+            <option value="30">30 天</option>
+            <option value="45">45 天</option>
+            <option value="60">60 天</option>
+            <option value="90">90 天</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="limit">最多讀取筆數</label>
+          <select id="limit">
+            <option value="50">50 筆</option>
+            <option value="100" selected>100 筆</option>
+            <option value="200">200 筆</option>
+            <option value="300">300 筆</option>
+          </select>
+        </div>
+
+        <div>
+          <button id="runBtn" type="button">開始只讀檢查</button>
+        </div>
+      </div>
+
+      <div class="muted" style="margin-top:10px;">
+        建議第一次先用 7 天＋100 筆測試，確認 API 正常後再拉長天數。
+      </div>
+    </div>
+
+    <div id="messageBox" class="card" style="display:none;"></div>
+
+    <div id="resultCard" class="card" style="display:none;">
+      <h2>檢查結果</h2>
+
+      <div id="summaryBox" class="summary" style="margin-bottom:14px;"></div>
+
+      <div class="toolbar">
+        <div class="left">
+          <select id="severityFilter">
+            <option value="all">全部等級</option>
+            <option value="high">高風險</option>
+            <option value="medium">中風險</option>
+            <option value="low">低風險</option>
+          </select>
+
+          <select id="typeFilter">
+            <option value="all">全部類型</option>
+          </select>
+        </div>
+
+        <div class="right">
+          <button id="downloadJsonBtn" type="button" class="secondary">下載 JSON</button>
+          <button id="downloadCsvBtn" type="button" class="secondary">下載 CSV</button>
+        </div>
+      </div>
+
+      <div class="muted" id="renderNote" style="margin-bottom:8px;"></div>
+
+      <div class="tableBox">
+        <table>
+          <thead>
+            <tr>
+              <th>等級</th>
+              <th>問題</th>
+              <th>訂單 / 購物車</th>
+              <th>說明</th>
+              <th>建議處理</th>
+              <th>來源</th>
+            </tr>
+          </thead>
+          <tbody id="issuesBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_ENDPOINT = "/admin/readonly-consistency-check";
+    const MAX_RENDER_ROWS = 150;
+
+    let latestReport = null;
+document.addEventListener("DOMContentLoaded", () => {
+  const apiInput = document.getElementById("apiBase");
+  if (apiInput) {
+    apiInput.value = String(window.API_BASE || "https://api.murain.tw").replace(/\/+$/, "");
+  }
+});
+    const $ = (id) => document.getElementById(id);
+
+    function setMessage(type, text) {
+      const box = $("messageBox");
+      box.style.display = "block";
+      box.className = "card " + (type === "error" ? "error" : "notice");
+      box.textContent = text;
+    }
+
+    function clearMessage() {
+      const box = $("messageBox");
+      box.style.display = "none";
+      box.textContent = "";
+    }
+
+    function safeText(v) {
+      return String(v ?? "");
+    }
+
+    function severityLabel(s) {
+      if (s === "high") return "高風險";
+      if (s === "medium") return "中風險";
+      if (s === "low") return "低風險";
+      return "未分類";
+    }
+
+    function downloadText(filename, text, mime) {
+      const blob = new Blob([text], { type: mime || "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function csvEscape(v) {
+      const s = safeText(v).replace(/"/g, '""');
+      return `"${s}"`;
+    }
+
+    function issuesToCsv(issues) {
+      const rows = [
+        ["severity", "type", "title", "orderNo", "cartToken", "message", "suggestion", "source", "recordId"]
+      ];
+
+      for (const x of issues) {
+        rows.push([
+          x.severity,
+          x.type,
+          x.title,
+          x.orderNo,
+          x.cartToken,
+          x.message,
+          x.suggestion,
+          x.source,
+          x.recordId
+        ]);
+      }
+
+      return rows.map(row => row.map(csvEscape).join(",")).join("\n");
+    }
+
+    function renderSummary(report) {
+      const s = report.summary || {};
+      const scanned = report.scanned || {};
+
+      const items = [
+        ["高風險", s.high || 0],
+        ["中風險", s.medium || 0],
+        ["低風險", s.low || 0],
+        ["總問題", s.total || 0]
+      ];
+
+      const box = $("summaryBox");
+      box.textContent = "";
+
+      for (const item of items) {
+        const div = document.createElement("div");
+        div.className = "stat";
+
+        const num = document.createElement("div");
+        num.className = "num";
+        num.textContent = item[1];
+
+        const label = document.createElement("div");
+        label.className = "muted";
+        label.textContent = item[0];
+
+        div.appendChild(num);
+        div.appendChild(label);
+        box.appendChild(div);
+      }
+
+      $("renderNote").textContent =
+        `只讀掃描：Orders ${scanned.orders || 0} 筆、CartToken ${scanned.carts || 0} 筆。` +
+        `表格最多顯示 ${MAX_RENDER_ROWS} 筆，完整內容可下載 JSON 或 CSV。`;
+    }
+
+    function renderTypeOptions(issues) {
+      const select = $("typeFilter");
+      const current = select.value;
+      select.textContent = "";
+
+      const all = document.createElement("option");
+      all.value = "all";
+      all.textContent = "全部類型";
+      select.appendChild(all);
+
+      const types = Array.from(new Set(issues.map(x => x.type).filter(Boolean))).sort();
+      for (const type of types) {
+        const opt = document.createElement("option");
+        opt.value = type;
+        opt.textContent = type;
+        select.appendChild(opt);
+      }
+
+      if (types.includes(current)) select.value = current;
+    }
+
+    function getFilteredIssues() {
+      if (!latestReport || !Array.isArray(latestReport.issues)) return [];
+
+      const severity = $("severityFilter").value;
+      const type = $("typeFilter").value;
+
+      return latestReport.issues.filter(x => {
+        if (severity !== "all" && x.severity !== severity) return false;
+        if (type !== "all" && x.type !== type) return false;
+        return true;
+      });
+    }
+
+    function renderIssues() {
+      const tbody = $("issuesBody");
+      tbody.textContent = "";
+
+      const issues = getFilteredIssues();
+      const limited = issues.slice(0, MAX_RENDER_ROWS);
+
+      if (limited.length === 0) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 6;
+        td.className = "empty";
+        td.textContent = "目前沒有符合篩選條件的問題。";
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+        return;
+      }
+
+      const frag = document.createDocumentFragment();
+
+      for (const issue of limited) {
+        const tr = document.createElement("tr");
+
+        const tdSeverity = document.createElement("td");
+        const tag = document.createElement("span");
+        tag.className = "tag " + safeText(issue.severity);
+        tag.textContent = severityLabel(issue.severity);
+        tdSeverity.appendChild(tag);
+
+        const tdTitle = document.createElement("td");
+        const title = document.createElement("div");
+        title.className = "titleCell";
+        title.textContent = safeText(issue.title);
+        const type = document.createElement("div");
+        type.className = "small";
+        type.textContent = safeText(issue.type);
+        tdTitle.appendChild(title);
+        tdTitle.appendChild(type);
+
+        const tdIds = document.createElement("td");
+        const order = document.createElement("div");
+        order.textContent = "訂單：" + (issue.orderNo || "—");
+        const cart = document.createElement("div");
+        cart.className = "small";
+        cart.textContent = "cart_token：" + (issue.cartToken || "—");
+        tdIds.appendChild(order);
+        tdIds.appendChild(cart);
+
+        const tdMsg = document.createElement("td");
+        tdMsg.textContent = safeText(issue.message);
+
+        const tdSug = document.createElement("td");
+        tdSug.textContent = safeText(issue.suggestion);
+
+        const tdSource = document.createElement("td");
+        const source = document.createElement("div");
+        source.textContent = safeText(issue.source || "—");
+        const rid = document.createElement("div");
+        rid.className = "small";
+        rid.textContent = safeText(issue.recordId || "");
+        tdSource.appendChild(source);
+        tdSource.appendChild(rid);
+
+        tr.appendChild(tdSeverity);
+        tr.appendChild(tdTitle);
+        tr.appendChild(tdIds);
+        tr.appendChild(tdMsg);
+        tr.appendChild(tdSug);
+        tr.appendChild(tdSource);
+
+        frag.appendChild(tr);
+      }
+
+      tbody.appendChild(frag);
+    }
+
+    async function runCheck() {
+      clearMessage();
+
+      const btn = $("runBtn");
+      btn.disabled = true;
+      btn.textContent = "檢查中...";
+
+      try {
+        const apiBase = $("apiBase").value.replace(/\/+$/, "");
+        const opKey = $("opKey").value.trim();
+        const days = $("days").value;
+        const limit = $("limit").value;
+
+        if (!apiBase) throw new Error("請填 API 網址。");
+        if (!opKey) throw new Error("請填 op_key。");
+
+        const params = new URLSearchParams();
+        params.set("op_key", opKey);
+        params.set("days", days);
+        params.set("limit", limit);
+
+        const url = `${apiBase}${API_ENDPOINT}?${params.toString()}`;
+
+        const resp = await fetch(url, {
+          method: "GET",
+          headers: { "accept": "application/json" },
+          cache: "no-store"
+        });
+
+        const text = await resp.text();
+        let data = null;
+
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          throw new Error("API 回傳不是 JSON：\n" + text.slice(0, 500));
+        }
+
+        if (!resp.ok || !data.ok) {
+          throw new Error(data.message || data.error || `HTTP ${resp.status}`);
+        }
+
+        latestReport = data;
+        $("resultCard").style.display = "block";
+        renderSummary(data);
+        renderTypeOptions(data.issues || []);
+        renderIssues();
+
+        if ((data.summary && data.summary.total) > 0) {
+          setMessage("ok", "檢查完成：有找到需要人工確認的資料矛盾。這個頁面沒有修改任何資料。");
+        } else {
+          setMessage("ok", "檢查完成：目前沒有找到明顯矛盾。這個頁面沒有修改任何資料。");
+        }
+
+      } catch (err) {
+        setMessage("error", err && err.message ? err.message : String(err));
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "開始只讀檢查";
+      }
+    }
+
+    $("runBtn").addEventListener("click", runCheck);
+    $("severityFilter").addEventListener("change", renderIssues);
+    $("typeFilter").addEventListener("change", renderIssues);
+
+    $("downloadJsonBtn").addEventListener("click", () => {
+      if (!latestReport) return;
+      const name = `readonly-consistency-report-${new Date().toISOString().slice(0, 10)}.json`;
+      downloadText(name, JSON.stringify(latestReport, null, 2), "application/json;charset=utf-8");
+    });
+
+    $("downloadCsvBtn").addEventListener("click", () => {
+      if (!latestReport) return;
+      const issues = Array.isArray(latestReport.issues) ? latestReport.issues : [];
+      const name = `readonly-consistency-issues-${new Date().toISOString().slice(0, 10)}.csv`;
+      downloadText(name, "\ufeff" + issuesToCsv(issues), "text/csv;charset=utf-8");
+    });
+  </script>
+</body>
+</html>
