@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>未結單購物車｜訂單後台</title>
+<title>購物車管理｜訂單後台</title>
+ <script src="/config.js?v=20260604-1"></script>
 <style>
   *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
   body{margin:0;background:#020617;color:#e2e8f0}
@@ -273,7 +274,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 
  /* ★ 隱藏：0 元包裹匯出按鈕（不動其他邏輯） */
   #btnExportZero{display:none !important;}
-/* ===== 未結單購物車頁：隱藏訂單處理用功能 ===== */
+/* ===== 購物車管理頁：隱藏訂單處理用功能 ===== */
 body.is-cart-open-page #btnPrintSlipsRange,
 body.is-cart-open-page #btnExportShip,
 body.is-cart-open-page #btnExportZero,
@@ -368,12 +369,70 @@ body.is-cart-open-page #orderList {
   border-color:#22d3ee;
   box-shadow:0 8px 20px rgba(34,211,238,.35);
 }
+/* ===== 購物車管理：縮小右側購物車明細欄位 ===== */
+body.is-cart-open-page #orderDetail{
+  font-size:12px;
+}
 
+body.is-cart-open-page #orderDetail .section-title{
+  font-size:13px;
+  margin:0 0 8px;
+}
+
+body.is-cart-open-page #orderDetail label{
+  font-size:11px;
+  margin:4px 0 2px;
+}
+
+body.is-cart-open-page #orderDetail .row{
+  gap:6px;
+}
+
+body.is-cart-open-page #orderDetail .mt-2{
+  margin-top:6px;
+}
+
+body.is-cart-open-page #orderDetail .mt-3{
+  margin-top:8px;
+}
+
+body.is-cart-open-page #orderDetail .ro-field{
+  height:34px;
+  min-height:34px;
+  padding:0 10px;
+  border-radius:10px;
+  font-size:12px;
+}
+
+body.is-cart-open-page #orderDetail .ro-field[style*="min-height:60px"]{
+  min-height:44px !important;
+  padding-top:8px !important;
+}
+
+body.is-cart-open-page #orderDetail .ro-field[style*="min-height:88px"]{
+  min-height:50px !important;
+  padding-top:8px !important;
+}
+
+body.is-cart-open-page #orderDetail .btn-primary{
+  padding:8px 12px;
+  font-size:13px;
+}
+
+body.is-cart-open-page #orderDetail .btn-secondary{
+  padding:7px 10px;
+  font-size:12px;
+}
+
+body.is-cart-open-page #cartEditItemsPanel > div{
+  padding:8px !important;
+  margin-bottom:6px !important;
+}
 </style>
 </head>
 <body>
 <div class="wrap">
- <h1>未結單購物車</h1>
+<h1>購物車管理</h1>
 
 <div class="page-tabs">
   <div class="page-tabs-bar">
@@ -398,13 +457,12 @@ body.is-cart-open-page #orderList {
       <a class="filter-btn" data-admin-file="admin-all.html" href="admin-all.html">全部訂單</a>
 
       <a class="filter-btn active" data-admin-file="admin-cart-open.html" id="btnCartOpenTop" href="admin-cart-open.html">
-        🛒 未結單購物車
+        🛒 購物車管理
       </a>
 
       <a class="filter-btn" data-admin-file="admin-ship.html" href="admin-ship.html">⭐待出貨訂單</a>
       <a class="filter-btn" data-admin-file="admin-bank.html" href="admin-bank.html">匯款待確認</a>
       <a class="filter-btn" data-admin-file="admin-pickup.html" href="admin-pickup.html">賣貨便登記</a>
-      <a class="filter-btn" data-admin-file="admin-deposit.html" href="admin-deposit.html">待確認定金收款</a>
       <a class="filter-btn" data-admin-file="admin-cashinst.html" href="admin-cashinst.html">已收定金未出貨</a>
       <a class="filter-btn" data-admin-file="admin-cancelled.html" href="admin-cancelled.html">已取消／棄標</a>
       <a class="filter-btn" data-admin-file="admin-consign.html" href="admin-consign.html">寄賣</a>
@@ -436,6 +494,8 @@ const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
 let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
 let currentCartRows = [];
 let currentCartRecord = null;
+let CART_EDITING_SKU = '';
+ 
 
 const $  = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -636,12 +696,443 @@ function showDetailMsg(text, type = 'info') {
   el.style.color = type === 'ok' ? '#bbf7d0' : (type === 'error' ? '#fecaca' : '#94a3b8');
   el.textContent = text || '';
 }
+ function rawCartStatus(row = {}) {
+  return String(row.status || row.cart_status || 'open').trim().toLowerCase();
+}
+
+function cartEditBlockReason(row = {}) {
+  const st = rawCartStatus(row);
+  const checkedOut =
+    row.checked_out === true ||
+    String(row.checked_out || '').trim().toLowerCase() === 'true';
+
+  const orderId = String(row.checked_out_order_id || '').trim();
+  const payStatus = String(row.pay_status || row.payment_status || '').trim().toLowerCase();
+  const orderStatus = String(row.order_status || '').trim().toLowerCase();
+
+  if (st !== 'open') {
+    if (st === 'checking_out') return '正在送出訂單中，暫時不能修改';
+    if (st === 'submitted') return orderId ? `已送出訂單 ${orderId}，不能直接修改` : '已送出訂單，不能直接修改';
+    if (st === 'paid') return '已付款，不能修改購物車';
+    if (st === 'cancelled' || st === 'canceled') return '已取消，不能修改';
+    return `狀態為 ${displayCartStatus(st)}，不能修改`;
+  }
+
+  if (checkedOut || orderId) {
+    if (payStatus && payStatus !== 'paid_ok' && payStatus !== 'paid') {
+      return `已有未完成付款訂單 ${orderId || ''}，需由客人取消後才可修改`;
+    }
+
+    if (orderStatus === 'paid' || payStatus === 'paid_ok' || payStatus === 'paid') {
+      return `訂單 ${orderId || ''} 已付款，不能修改`;
+    }
+
+    return orderId ? `已綁定訂單 ${orderId}，不能直接修改` : '已送出結帳，不能直接修改';
+  }
+
+  return '';
+}
+
+function canEditCart(row = {}) {
+  return !cartEditBlockReason(row);
+}
+
+function displayCartSource(row = {}) {
+  const type = String(row.customer_type || '').trim().toLowerCase();
+
+  if (['web', 'shop', 'official', 'site', '官網'].includes(type)) return '官網';
+  if (['live', '直播', 'streamer'].includes(type)) return '直播主';
+  if (['regular', '一般'].includes(type)) return '一般開單';
+
+  return row.customer_type || '未標示';
+}
+
+function displayPayStatus(row = {}) {
+  const ps = String(row.pay_status || row.payment_status || '').trim().toLowerCase();
+  const os = String(row.order_status || '').trim().toLowerCase();
+
+  if (ps === 'paid_ok' || ps === 'paid' || os === 'paid') return '已付款';
+  if (ps === 'failed') return '付款失敗';
+  if (ps === 'pending' || os === 'pending' || os === 'submitted') return '付款未完成';
+  if (row.checked_out_order_id) return '已送出未完成';
+
+  return '';
+}
+
+function displayCartMainStatus(row = {}) {
+  if (canEditCart(row)) return '可修改';
+
+  const payText = displayPayStatus(row);
+  if (payText) return payText;
+
+  return displayCartStatus(row.status || 'open');
+}
+function buildAdminCheckoutLineUrl(row = {}) {
+  const token = String(row.cart_token || '').trim();
+  if (!token) return '';
+
+  const liffId = String(window.LIFF_CHECKOUT_ID || '').trim();
+
+  if (liffId) {
+    return `https://liff.line.me/${liffId}?cart_token=${encodeURIComponent(token)}&v=${Date.now()}`;
+  }
+
+  const origin = String(
+    window.MURAIN_SITE_ORIGIN ||
+    location.origin ||
+    'https://murain.tw'
+  ).replace(/\/+$/, '');
+
+  return `${origin}/liff-checkout?cart_token=${encodeURIComponent(token)}&v=${Date.now()}`;
+}
+
+async function copyTextToClipboard(text) {
+  const value = String(text || '').trim();
+  if (!value) throw new Error('沒有可複製的連結');
+
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(value);
+    return true;
+  }
+
+  const ta = document.createElement('textarea');
+  ta.value = value;
+  ta.setAttribute('readonly', 'readonly');
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+
+  const ok = document.execCommand('copy');
+  document.body.removeChild(ta);
+
+  if (!ok) throw new Error('瀏覽器不允許自動複製，請手動複製');
+  return true;
+}
+
+async function markAdminCartCopied(row = {}) {
+  const token = String(row.cart_token || '').trim();
+  if (!token) return;
+
+  try {
+    const r = await fetch(`${API}/op/cart/mark-copied`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        cart_token: token,
+        line_user_id: row.line_user_id || '',
+        customer_name: row.customer_name || '',
+        streamer_name: row.streamer_name || ''
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+
+    row.link_copied_at = new Date().toISOString();
+  } catch (e) {
+    console.warn('markAdminCartCopied failed', e);
+  }
+}
+
+async function copyAdminCartLink(row = {}) {
+  const url = buildAdminCheckoutLineUrl(row);
+
+  if (!url) {
+    showDetailMsg('複製失敗：沒有 cart_token', 'error');
+    return;
+  }
+
+  await copyTextToClipboard(url);
+  await markAdminCartCopied(row);
+
+  showDetailMsg(
+    `已複製購物車連結。\n\n${url}`,
+    'ok'
+  );
+
+  try { renderCartList(); } catch(e) {}
+}
+function money(n) {
+  return 'NT$ ' + (Number(n || 0) || 0).toLocaleString('zh-TW');
+}
+
+function normalizeAdminCartItem(it = {}) {
+  const qty = Number(it.qty ?? it.Qty ?? it.quantity ?? 0) || 0;
+  const price = Number(it.price ?? it.Price ?? 0) || 0;
+
+  return {
+    sku: String(it.sku || it.SKU || '').trim(),
+    name: String(it.name || it.Name || it.title || it.sku || it.SKU || '').trim(),
+    qty,
+    price,
+    subtotal: Number(it.subtotal ?? it.Subtotal ?? qty * price) || 0
+  };
+}
+ function applyCartItemsResult(j = {}) {
+  if (!Array.isArray(j.items)) return false;
+
+  const list = j.items.map(normalizeAdminCartItem);
+
+  const text = list.map(it => {
+    return `${it.name || it.sku}${it.qty > 0 ? ` × ${it.qty}` : ''}`;
+  }).filter(Boolean).join('\n');
+
+  const box = document.getElementById('cartItemsTextBox');
+  if (box) box.textContent = text || '-';
+
+  if (currentCartRecord) {
+    currentCartRecord.items_text = text;
+  }
+
+  renderAdminCartEditPanel(list, canEditCart(currentCartRecord));
+  return true;
+}
+ function renderAdminCartEditPanel(items = [], editable = false) {
+  const root = document.getElementById('cartEditItemsPanel');
+  if (!root) return;
+
+  const list = Array.isArray(items) ? items.map(normalizeAdminCartItem) : [];
+
+  if (!list.length) {
+    root.innerHTML = '<div class="muted">目前購物車沒有商品</div>';
+    return;
+  }
+
+  root.innerHTML = list.map(it => `
+    <div style="padding:10px;border:1px solid rgba(148,163,184,.35);border-radius:12px;margin-bottom:8px;background:rgba(15,23,42,.9);">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div style="min-width:220px;flex:1;">
+          <div style="font-weight:700;">${escapeHtml(it.name || it.sku || '-')}</div>
+          <div class="muted mono" style="margin-top:4px;">
+            ${escapeHtml(it.sku)} ｜ 數量 ${it.qty} ｜ 單價 ${money(it.price)} ｜ 小計 ${money(it.subtotal)}
+          </div>
+        </div>
+
+        ${editable ? `
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn-secondary btnCartEditItem"
+              type="button"
+              data-sku="${escapeHtml(it.sku)}"
+              data-name="${escapeHtml(it.name)}"
+              data-qty="${escapeHtml(it.qty)}"
+              data-price="${escapeHtml(it.price)}">修改</button>
+
+            <button class="btn-secondary btnCartRemoveItem"
+              type="button"
+              data-sku="${escapeHtml(it.sku)}">刪除</button>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  bindAdminCartItemButtons(root);
+}
+
+function bindAdminCartItemButtons(scope = document) {
+  const root = scope || document;
+
+  $$('.btnCartEditItem', root).forEach(btn => {
+    if (btn.dataset.cartBound === '1') return;
+    btn.dataset.cartBound = '1';
+
+    btn.addEventListener('click', () => {
+      setCartEditForm({
+        sku: btn.dataset.sku || '',
+        name: btn.dataset.name || '',
+        qty: Number(btn.dataset.qty || 1),
+        price: Number(btn.dataset.price || 0)
+      });
+    });
+  });
+
+  $$('.btnCartRemoveItem', root).forEach(btn => {
+    if (btn.dataset.cartBound === '1') return;
+    btn.dataset.cartBound = '1';
+
+    btn.addEventListener('click', async () => {
+      const oldText = btn.textContent || '刪除';
+      btn.disabled = true;
+      btn.textContent = '處理中…';
+
+      try {
+        await adminRemoveCartItemBySku(btn.dataset.sku || '');
+      } finally {
+        if (document.body.contains(btn)) {
+          btn.disabled = false;
+          btn.textContent = oldText;
+        }
+      }
+    });
+  });
+}
+
+function setCartEditForm(item = {}) {
+  CART_EDITING_SKU = String(item.sku || '').trim();
+
+  const skuEl = document.getElementById('editSku');
+  const qtyEl = document.getElementById('editQty');
+  const priceEl = document.getElementById('editPrice');
+
+  if (skuEl) skuEl.value = CART_EDITING_SKU;
+  if (qtyEl) qtyEl.value = String(item.qty || 1);
+  if (priceEl) priceEl.value = item.price != null ? String(item.price) : '';
+
+  showDetailMsg(
+    CART_EDITING_SKU
+      ? `目前修改：${item.name || CART_EDITING_SKU}。只改數量/價格；如果要換條碼，請先刪除再新增。`
+      : ''
+  );
+}
+
+async function postCartEdit(path, payload) {
+  const r = await fetch(`${API}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {})
+  });
+
+  const j = await r.json().catch(() => ({}));
+
+  if (!r.ok || !j.ok) {
+    throw new Error(j.message || j.error || ('HTTP ' + r.status));
+  }
+
+  return j;
+}
+
+async function adminAddOrUpdateCartItem() {
+  if (!currentCartRecord || !currentCartRecord.cart_token) {
+    showDetailMsg('請先選一台購物車', 'error');
+    return;
+  }
+
+  if (!canEditCart(currentCartRecord)) {
+    showDetailMsg('此購物車不是 open，不能修改商品。', 'error');
+    return;
+  }
+
+  const token = String(currentCartRecord.cart_token || '').trim();
+  const sku = String(document.getElementById('editSku')?.value || '').trim();
+  const qty = Math.max(1, parseInt(document.getElementById('editQty')?.value || '1', 10) || 1);
+  const priceRaw = String(document.getElementById('editPrice')?.value || '').trim();
+
+  if (!sku) {
+    showDetailMsg('請輸入條碼 / SKU', 'error');
+    return;
+  }
+
+  const existingSkuInCart = Array.from(document.querySelectorAll('#cartEditItemsPanel .btnCartEditItem'))
+    .some(btn => String(btn.dataset.sku || '').trim() === sku);
+
+  const willUpdateExisting = !!CART_EDITING_SKU || existingSkuInCart;
+
+  const btn = document.getElementById('btnCartAddOrUpdate');
+  setButtonBusy(btn, true, willUpdateExisting ? '儲存中，請稍候…' : '新增中，請稍候…');
+  showDetailMsg(willUpdateExisting ? '正在儲存修改，數量會改成最終數量…' : '正在新增商品…');
+
+  let saveResult = null;
+
+   try {
+    const updateSku = CART_EDITING_SKU || (existingSkuInCart ? sku : '');
+
+    if (updateSku) {
+      const payload = {
+        cart_token: token,
+        sku: updateSku,
+        qty,
+        op_key: OP_KEY
+      };
+
+      if (priceRaw !== '') {
+        payload.price = Math.max(0, parseInt(priceRaw, 10) || 0);
+      }
+
+      saveResult = await postCartEdit('/cart/update-qty-self', payload);
+    } else {
+      const payload = {
+        cart_token: token,
+        sku,
+        qty,
+        op_key: OP_KEY,
+        customer_type: 'live'
+      };
+
+      if (priceRaw !== '') {
+        payload.price = Math.max(0, parseInt(priceRaw, 10) || 0);
+      }
+
+      saveResult = await postCartEdit('/cart/add', payload);
+    }
+
+    CART_EDITING_SKU = '';
+
+    const updatedByResult = applyCartItemsResult(saveResult);
+
+    if (!updatedByResult) {
+      await renderCartDetail(currentCartRecord);
+    }
+    showDetailMsg(
+      willUpdateExisting
+        ? '已儲存購物車商品：數量已改成最終數量，不是往上加。'
+        : '已新增購物車商品。',
+      'ok'
+    );
+
+  } catch (e) {
+    showDetailMsg('更新失敗：' + (e.message || e), 'error');
+  } finally {
+    setButtonBusy(btn, false);
+  }
+}
+
+async function adminRemoveCartItemBySku(sku) {
+  if (!currentCartRecord || !currentCartRecord.cart_token) {
+    showDetailMsg('請先選一台購物車', 'error');
+    return;
+  }
+
+  if (!canEditCart(currentCartRecord)) {
+    showDetailMsg('此購物車不是 open，不能刪除商品。', 'error');
+    return;
+  }
+
+  const token = String(currentCartRecord.cart_token || '').trim();
+  const targetSku = String(sku || '').trim();
+
+  if (!targetSku) {
+    showDetailMsg('缺少要移除的條碼 / SKU', 'error');
+    return;
+  }
+
+  if (!confirm(`確定移除此商品？\n${targetSku}`)) return;
+
+  try {
+    await postCartEdit('/cart/remove', {
+      cart_token: token,
+      sku: targetSku,
+      op_key: OP_KEY
+    });
+
+    CART_EDITING_SKU = '';
+    showDetailMsg('已移除商品', 'ok');
+    await renderCartDetail(currentCartRecord);
+
+  } catch (e) {
+    showDetailMsg('移除失敗：' + (e.message || e), 'error');
+  }
+}
 function setupCartOpenPageChrome() {
   document.body.classList.add('is-cart-open-page');
-  document.title = '未結單購物車｜訂單後台';
+  document.title = '購物車管理｜訂單後台';
 
   const h1 = document.querySelector('h1');
-  if (h1) h1.textContent = '未結單購物車';
+  if (h1) h1.textContent = '購物車管理';
 
   document.querySelectorAll('.admin-sub-tabs [data-admin-file]').forEach(a => {
     a.classList.toggle('active', a.dataset.adminFile === 'admin-cart-open.html');
@@ -705,7 +1196,7 @@ async function loadOpenCartList() {
   const listEl = $('#orderList');
   const detailEl = $('#orderDetail');
 
-  if (listEl) listEl.innerHTML = '<div class="muted">未結單購物車載入中…</div>';
+   if (listEl) listEl.innerHTML = '<div class="muted">購物車管理載入中…</div>';
   if (detailEl) detailEl.innerHTML = '<div class="muted">請從左邊點選一台購物車</div>';
 
   try {
@@ -746,7 +1237,7 @@ renderCartList();
     currentCartRows = [];
 
     if (listEl) {
-      listEl.innerHTML = '<div class="error">未結單購物車載入失敗：' + escapeHtml(e.message || e) + '</div>';
+      listEl.innerHTML = '<div class="error">購物車管理載入失敗：' + escapeHtml(e.message || e) + '</div>';
     }
 
     if (detailEl) {
@@ -758,41 +1249,70 @@ renderCartList();
 function renderCartList() {
   const listEl = $('#orderList');
   const detailEl = $('#orderDetail');
+  const activeToken = currentCartRecord?.cart_token
+    ? String(currentCartRecord.cart_token || '').trim()
+    : '';
 
   if (!listEl) return;
 
-  if (!currentCartRows.length) {
-    listEl.innerHTML = '<div class="muted">目前沒有未完成結單購物車。</div>';
+if (!currentCartRows.length) {
+  listEl.innerHTML = '<div class="muted">目前沒有可修改的 open 購物車。</div>';
 
-    if (detailEl) {
-      detailEl.innerHTML = '<div class="muted">目前沒有資料</div>';
-    }
-
-    return;
+  if (detailEl) {
+    detailEl.innerHTML = '<div class="muted">目前沒有資料</div>';
   }
 
-  listEl.innerHTML = currentCartRows.map((row, idx) => {
+  return;
+}
+
+listEl.innerHTML = currentCartRows.map((row, idx) => {
     const title = row.customer_name || '未命名購物車';
+    const lineId = String(row.line_user_id || '').trim();
+    const orderId = String(row.checked_out_order_id || '').trim();
+    const blockReason = cartEditBlockReason(row);
+    const itemCount = Number(row.item_count || 0) || 0;
+    const sourceText = displayCartSource(row);
+    const payText = displayPayStatus(row);
 
     return `
       <div class="order-row" data-idx="${idx}">
         <div class="ord-top">
           <div class="ord-id">🛒 ${escapeHtml(title)}</div>
+          <div class="ord-right">
+            <div class="ord-amount">${itemCount ? `${itemCount} 件` : '-'}</div>
+          </div>
         </div>
 
-        ${row.items_text ? `<div class="ord-sub">${escapeHtml(row.items_text)}</div>` : ''}
+        <div class="ord-sub">
+          ${lineId ? `LINE ID：${escapeHtml(lineId)}` : '⚠ 無 LINE ID'}
+          ${orderId ? ` ／ 訂單：${escapeHtml(orderId)}` : ''}
+        </div>
 
         <div class="badges">
-          <span class="badge">${escapeHtml(displayCartStatus(row.status || 'open'))}</span>
-          ${row.streamer_name ? `<span class="badge blue">直播主：${escapeHtml(row.streamer_name)}</span>` : '<span class="badge red">未填直播主</span>'}
-          ${row.link_sent_at ? '<span class="badge green">已發購物車卡</span>' : ''}
+          <span class="badge ${canEditCart(row) ? 'green' : 'red'}">
+            ${escapeHtml(displayCartMainStatus(row))}
+          </span>
+
+          <span class="badge blue">來源：${escapeHtml(sourceText)}</span>
+
+          ${row.streamer_name
+            ? `<span class="badge blue">直播主：${escapeHtml(row.streamer_name)}</span>`
+            : (sourceText === '直播主' ? '<span class="badge red">未填直播主</span>' : '')
+          }
+
+          ${lineId ? '<span class="badge green">有 LINE ID</span>' : '<span class="badge red">無 LINE ID</span>'}
+          ${row.link_sent_at ? '<span class="badge green">已發購物車卡</span>' : '<span class="badge yellow">尚未發卡</span>'}
           ${row.link_copied_at ? '<span class="badge blue">已複製連結</span>' : ''}
-      ${displayCartReminderBadges(row)}
+          ${payText ? `<span class="badge yellow">${escapeHtml(payText)}</span>` : ''}
+          ${displayCartReminderBadges(row)}
         </div>
+
+        ${blockReason ? `<div class="ord-sub" style="color:#fecaca;">不可修改原因：${escapeHtml(blockReason)}</div>` : ''}
 
         <div class="ord-sub">
           建立：${escapeHtml(fmtAdminDateTime(row.created_at) || '-')}
           ／ 更新：${escapeHtml(fmtAdminDateTime(row.updated_at) || '-')}
+          ${row.link_sent_at ? ` ／ 發卡：${escapeHtml(fmtAdminDateTime(row.link_sent_at) || '-')}` : ''}
         </div>
       </div>
     `;
@@ -810,7 +1330,17 @@ function renderCartList() {
     });
   });
 
-  if (detailEl) {
+  if (activeToken) {
+    const activeIdx = currentCartRows.findIndex(x =>
+      String(x.cart_token || '').trim() === activeToken
+    );
+
+    if (activeIdx >= 0) {
+      const activeEl = document.querySelector(`#orderList .order-row[data-idx="${activeIdx}"]`);
+      if (activeEl) activeEl.classList.add('active');
+      currentCartRecord = currentCartRows[activeIdx];
+    }
+  } else if (detailEl) {
     detailEl.innerHTML = '<div class="muted">請從左邊點選一台購物車</div>';
   }
 }
@@ -822,6 +1352,7 @@ async function renderCartDetail(row) {
   if (!dEl) return;
 
   let itemText = row.items_text || '';
+ let detailItems = [];
 
   dEl.innerHTML = '<div class="muted">購物車明細載入中…</div>';
 
@@ -830,26 +1361,41 @@ async function renderCartDetail(row) {
 
     if (token) {
       const params = new URLSearchParams();
-params.set('op_key', OP_KEY);
-params.set('cart_token', token);
+      params.set('op_key', OP_KEY);
+      params.set('cart_token', token);
 
-const r = await fetch(`${API}/admin/cart/items?${params.toString()}`);
-const j = await r.json().catch(() => ({}));
+      const [briefRes, itemsRes] = await Promise.all([
+        fetch(`${API}/admin/cart/brief?` + params.toString()),
+        fetch(`${API}/admin/cart/items?` + params.toString())
+      ]);
 
-if (r.ok && j.ok && Array.isArray(j.items)) {
-  itemText = j.items.map(it => {
-    const name = String(it.name || it.Name || it.title || it.sku || '').trim();
-    const qty = Number(it.qty || it.quantity || 0) || 0;
-    return `${name}${qty > 0 ? ` × ${qty}` : ''}`;
-  }).filter(Boolean).join('\n');
-}
+      const briefJson = await briefRes.json().catch(() => ({}));
+      const itemsJson = await itemsRes.json().catch(() => ({}));
+
+      if (briefRes.ok && briefJson.ok && briefJson.cart) {
+        row.status = briefJson.cart.status || row.status || 'open';
+        row.checked_out = briefJson.cart.checked_out === true;
+        row.checked_out_order_id = briefJson.cart.checked_out_order_id || '';
+      }
+
+      if (itemsRes.ok && itemsJson.ok && Array.isArray(itemsJson.items)) {
+        detailItems = itemsJson.items.map(normalizeAdminCartItem);
+
+        itemText = detailItems.map(it => {
+          return `${it.name || it.sku}${it.qty > 0 ? ` × ${it.qty}` : ''}`;
+        }).filter(Boolean).join('\n');
+      }
     }
   } catch (e) {
     console.warn('load cart items failed', e);
   }
 
+  const blockReason = cartEditBlockReason(row);
+  const lineId = String(row.line_user_id || '').trim();
+  const orderId = String(row.checked_out_order_id || '').trim();
+
   dEl.innerHTML = `
-    <div class="section-title">未結單購物車</div>
+    <div class="section-title">購物車明細</div>
 
     <div class="row mt-2">
       <div>
@@ -857,10 +1403,39 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
         <div class="ro-field">${escapeHtml(row.customer_name || '-')}</div>
       </div>
       <div>
-        <label>狀態</label>
-        <div class="ro-field">${escapeHtml(displayCartStatus(row.status || 'open'))}</div>
+        <label>目前狀態</label>
+        <div class="ro-field">${escapeHtml(displayCartMainStatus(row))}</div>
       </div>
     </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>LINE userId</label>
+        <div class="ro-field">${escapeHtml(lineId || '無 LINE ID')}</div>
+      </div>
+      <div>
+        <label>購物車來源</label>
+        <div class="ro-field">${escapeHtml(displayCartSource(row))}</div>
+      </div>
+    </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>綁定訂單</label>
+        <div class="ro-field">${escapeHtml(orderId || '-')}</div>
+      </div>
+      <div>
+        <label>可否修改</label>
+        <div class="ro-field">${escapeHtml(canEditCart(row) ? '可以修改商品 / 清空購物車' : '不可修改')}</div>
+      </div>
+    </div>
+
+    ${blockReason ? `
+      <div class="mt-2">
+        <label>不可修改原因</label>
+        <div class="ro-field" style="height:auto;min-height:44px;align-items:flex-start;padding-top:10px;white-space:pre-wrap;color:#fecaca;">${escapeHtml(blockReason)}</div>
+      </div>
+    ` : ''}
 
     <div class="row mt-2">
       <div>
@@ -873,14 +1448,11 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
       </div>
     </div>
 
-    <div class="row mt-2">
-
     <div class="mt-2">
       <label>排程檢查結果</label>
-      <div class="ro-field" style="height:auto;min-height:60px;align-items:flex-start;padding-top:10px;white-space:pre-wrap;">
-        ${escapeHtml(displayCartAutoStatus(row))}
-      </div>
+ <div class="ro-field" style="height:auto;min-height:60px;align-items:flex-start;padding-top:10px;white-space:pre-wrap;">${escapeHtml(displayCartAutoStatus(row))}</div>
     </div>
+
     <div class="row mt-2">
       <div>
         <label>建立時間</label>
@@ -893,18 +1465,59 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
     </div>
 
     <label class="mt-2">商品明細</label>
-    <div class="ro-field" style="height:auto;min-height:88px;align-items:flex-start;padding-top:10px;white-space:pre-wrap;">
-      ${escapeHtml(itemText || '-')}
-    </div>
+<div id="cartItemsTextBox" class="ro-field" style="height:auto;min-height:88px;align-items:flex-start;padding-top:10px;white-space:pre-wrap;">${escapeHtml(itemText || '-')}</div>
+    ${canEditCart(row) ? `
+      <div class="mt-3" style="padding:10px;border:1px solid rgba(148,163,184,.35);border-radius:14px;background:rgba(2,6,23,.55);">
+        <div class="section-title">購物車商品管理</div>
 
+        <div class="row mt-2">
+          <div>
+            <label>條碼 / SKU</label>
+            <input id="editSku" class="mono" placeholder="輸入條碼 / SKU" />
+          </div>
+          <div>
+            <label>數量</label>
+            <input id="editQty" type="number" min="1" value="1" />
+          </div>
+        </div>
+
+        <div class="row mt-2">
+          <div>
+            <label>改價格</label>
+            <input id="editPrice" type="number" min="0" placeholder="不改價可留空" />
+          </div>
+          <div style="align-self:end;">
+            <button class="btn-primary" id="btnCartAddOrUpdate" type="button">新增 / 儲存修改</button>
+          </div>
+        </div>
+
+        <div class="mt-3" id="cartEditItemsPanel"></div>
+      </div>
+    ` : `
+      <div class="mt-3" style="padding:10px;border:1px solid rgba(248,113,113,.45);border-radius:14px;background:rgba(127,29,29,.18);color:#fecaca;white-space:pre-wrap;">
+        此購物車目前不能修改。
+        ${escapeHtml(blockReason || '只有 open 且尚未送出訂單的購物車可以新增、刪除或改價。')}
+      </div>
+      <div class="mt-3" id="cartEditItemsPanel"></div>
+    `}
     <div class="mt-3" style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button class="btn-secondary" id="btnCartRemindSingle" type="button">🛒 手動發送購物車卡</button>
-      <button class="btn-secondary" id="btnCartClearSingle" type="button">🧹 清空此購物車</button>
+      ${lineId ? `
+        <button class="btn-secondary" id="btnCartRemindSingle" type="button">🛒 手動發送購物車卡</button>
+      ` : `
+        <button class="btn-secondary" id="btnCartCopyLinkSingle" type="button">
+          🔗 ${row.link_copied_at ? '再次複製購物車連結' : '複製購物車連結'}
+        </button>
+      `}
+      ${canEditCart(row) ? `<button class="btn-secondary" id="btnCartClearSingle" type="button">🧹 清空此購物車</button>` : ''}
     </div>
 
     <div class="muted mt-3" id="detailMsg"></div>
   `;
+  renderAdminCartEditPanel(detailItems, canEditCart(row));
 
+  $('#btnCartAddOrUpdate')?.addEventListener('click', adminAddOrUpdateCartItem);
+
+  bindAdminCartItemButtons(dEl);
   $('#btnCartRemindSingle')?.addEventListener('click', async e => {
     const btn = e.currentTarget;
     setButtonBusy(btn, true, '發送中…');
@@ -916,7 +1529,18 @@ if (r.ok && j.ok && Array.isArray(j.items)) {
       setButtonBusy(btn, false);
     }
   });
+  $('#btnCartCopyLinkSingle')?.addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    setButtonBusy(btn, true, '複製中…');
 
+    try {
+      await copyAdminCartLink(row);
+    } catch (err) {
+      showDetailMsg('複製失敗：' + (err.message || err), 'error');
+    } finally {
+      setButtonBusy(btn, false);
+    }
+  });
   $('#btnCartClearSingle')?.addEventListener('click', async e => {
     const btn = e.currentTarget;
     setButtonBusy(btn, true, '清空中…');
@@ -991,11 +1615,18 @@ async function remindCartRows(rows) {
 
   showDetailMsg(msg, failed > 0 || skipped > 0 ? 'error' : 'ok');
 
+  try { renderCartList(); } catch(e) {}
+
   return { ok, skipped, failed, failedMsgs };
 }
 
 async function clearCartRow(row) {
   if (!row || !row.cart_token) return;
+
+  if (!canEditCart(row)) {
+    showDetailMsg('此購物車不是 open，不能清空。', 'error');
+    return;
+  }
 
   const token = String(row.cart_token || '').trim();
   const title = row.customer_name || token;
@@ -1015,7 +1646,7 @@ async function clearCartRow(row) {
     const j = await r.json().catch(() => ({}));
 
     if (!r.ok || !j.ok) {
-      throw new Error(j.error || ('HTTP ' + r.status));
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
     }
 
     alert('已清空購物車');
