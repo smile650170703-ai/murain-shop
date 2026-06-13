@@ -1145,8 +1145,11 @@ async function goCartCheckout(){
   </script>
 <script>
 (function () {
-  const POPUP_API_BASE = String(window.API_BASE || "").replace(/\/+$/,"");
-if (!POPUP_API_BASE) throw new Error("API_BASE missing");
+const POPUP_API_BASE = String(window.API_BASE || "").replace(/\/+$/,"");
+if (!POPUP_API_BASE) {
+  console.warn("[store-operation popup] API_BASE missing");
+  return;
+}
 const API_URL = `${POPUP_API_BASE}/site/popup`;
 
   const BLOCKED_PATHS = [
@@ -1175,6 +1178,23 @@ const API_URL = `${POPUP_API_BASE}/site/popup`;
   function normalizeUrl(u) {
     const s = safeText(u).trim();
     if (!s) return "";
+
+    const siteOrigin = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+
+    if (s.startsWith("/") && !s.startsWith("//")) {
+      return siteOrigin + s;
+    }
+
+    if (
+      s.startsWith("https://murain.tw/") ||
+      s.startsWith("https://www.murain.tw/")
+    ) {
+      try {
+        const url = new URL(s);
+        return siteOrigin + url.pathname + url.search + url.hash;
+      } catch(e) {}
+    }
+
     return s;
   }
 
