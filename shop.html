@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="/common-shell.css" />
 
   <!-- 頁面自己的 CSS：只寫這一頁 main 內容要用的 -->
+  <script src="/config.js?v=20260604-1"></script>
   <style>
 /* =========================================================
    XUYUAN 官方商城｜整理版 CSS
@@ -2427,7 +2428,7 @@ nav.page-breadcrumb .current,
       </a>
 
   <div class="nav-right nav-icons-lux">
-  <a class="nav-btn nav-icon-btn nav-wishlist-btn" href="https://murain.tw/wishlist.html" aria-label="我的收藏">
+  <a class="nav-btn nav-icon-btn nav-wishlist-btn" href="/wishlist.html" aria-label="我的收藏">
     <span class="nav-icon-slot nav-icon-slot-wish" aria-hidden="true">
       <svg class="nav-icon-svg" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 20.35C11.72 20.35 11.45 20.24 11.25 20.04L5.15 13.98C3.23 12.07 3.05 9.08 4.73 7.2C6.48 5.24 9.42 5.23 11.22 7.04L12 7.83L12.78 7.04C14.58 5.23 17.52 5.24 19.27 7.2C20.95 9.08 20.77 12.07 18.85 13.98L12.75 20.04C12.55 20.24 12.28 20.35 12 20.35Z"/>
@@ -2778,9 +2779,11 @@ window.addEventListener('storage', (e) => {
 
   <!-- ===== 固定：購物車 JS（不要改 id） ===== -->
   <script>
-    const HOME_API = 'https://api.murain.tw';
+const HOME_API = String(window.API_BASE || '').replace(/\/$/,'');
+if (!HOME_API) throw new Error('API_BASE missing');
     const HOME_CART_KEY = 'MURAIN_WEB_CART_TOKEN';
-    const HOME_LIFF_CHECKOUT = 'https://murain.tw/liff-checkout';
+    const HOME_SITE_ORIGIN = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+const HOME_LIFF_CHECKOUT = `${HOME_SITE_ORIGIN}/liff-checkout.html`;
 
     const cartBtn = document.getElementById('cartBtn');
     const cartBadge = document.getElementById('cartBadge');
@@ -3052,10 +3055,10 @@ window.addEventListener('storage', (e) => {
   </script>
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script>
-  const PRODUCT_API = 'https://api.murain.tw/public/products-paged';
+  const PRODUCT_API = `${HOME_API}/public/products-paged`;
 
-  const SHOP_LIFF_ID = '2008430261-BasomVVU';
-const SHOP_BIND_LIFF_ID = '2008430261-kOeNLR9x';
+const SHOP_LIFF_ID = String(window.LIFF_MEMBER_ID || '').trim();
+const SHOP_BIND_LIFF_ID = String(window.LIFF_BIND_MEMBER_ID || '').trim();
 const SHOP_LINE_UID_KEY = 'murain_line_user_id';
 const SHOP_RETURN_SKU_KEY = 'murain_shop_return_sku';
 const SHOP_RETURN_URL_KEY = 'murain_shop_return_url';
@@ -3069,9 +3072,16 @@ let SHOP_MEMBER_JUST_RESTORED = false;
 function shopApiBase(){
   return (typeof HOME_API !== 'undefined' && HOME_API)
     ? HOME_API
-    : 'https://api.murain.tw';
+    : '';
+}
+function shopSiteOrigin(){
+  return String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
 }
 
+function shopUrl(path){
+  const p = String(path || '').trim();
+  return shopSiteOrigin() + (p.startsWith('/') ? p : '/' + p);
+}
 function getShopLineUserId(){
   return String(localStorage.getItem(SHOP_LINE_UID_KEY) || '').trim();
 }
@@ -3230,7 +3240,6 @@ function getShopCustomerName(){
     ''
   ).trim();
 }
-
 function buildShopCleanReturnUrl(){
   let u;
 
@@ -3238,16 +3247,20 @@ function buildShopCleanReturnUrl(){
     u = new URL(location.href);
   } catch(e) {
     const saved = String(localStorage.getItem(SHOP_RETURN_URL_KEY) || '').trim();
-    return saved || 'https://murain.tw/shop';
+    return saved || shopUrl('/shop.html');
   }
 
+  const siteHost = String(new URL(shopSiteOrigin()).hostname || '').toLowerCase();
+  const currentHost = String(u.hostname || '').toLowerCase();
+
   const isMurainSite =
-    u.hostname === 'murain.tw' ||
-    u.hostname === 'www.murain.tw';
+    currentHost === siteHost ||
+    currentHost === 'murain.tw' ||
+    currentHost === 'www.murain.tw' ||
+    currentHost === 'staging.murain.tw';
 
   const path = String(u.pathname || '').toLowerCase();
 
-  // 首頁不能當商品會員登入回跳，避免 LIFF Endpoint 把回跳洗成首頁
   const isHomePage =
     path === '/' ||
     path === '/index.html' ||
@@ -3264,13 +3277,18 @@ function buildShopCleanReturnUrl(){
         saved.includes('/product.html') ||
         saved.includes('/haircare.html') ||
         saved.includes('/member') ||
-        saved.includes('/member.html')
+        saved.includes('/member.html') ||
+        saved.includes('/wishlist') ||
+        saved.includes('/wishlist.html')
       )
     ) {
-      return saved;
+      try {
+        const su = new URL(saved, shopSiteOrigin());
+        if (su.hostname === siteHost) return su.toString();
+      } catch(e) {}
     }
 
-    return 'https://murain.tw/shop';
+    return shopUrl('/shop.html');
   }
 
   u.searchParams.delete('logged_out');
@@ -3286,7 +3304,7 @@ function buildShopCleanReturnUrl(){
 
 function buildShopReturnUrlForPreview(productArg){
   // 商品預覽一定回商城頁，不要拿首頁當底
-  const u = new URL('https://murain.tw/shop');
+  const u = new URL(shopUrl('/shop.html'));
   const product = productArg || ((typeof previewProduct !== 'undefined') ? previewProduct : null);
 
   let sku = '';
@@ -3332,7 +3350,7 @@ function buildShopMemberReturnUrl(){
     u.searchParams.set('after_member_login', '1');
     url = u.toString();
   } catch(e) {
-    url = 'https://murain.tw/shop?after_member_login=1';
+    url = shopUrl('/shop.html?after_member_login=1');
   }
 
   localStorage.setItem(SHOP_RETURN_URL_KEY, url);
@@ -3347,7 +3365,7 @@ function redirectShopMemberBind(returnUrl){
 }
 
 function buildShopMemberLoginUrl(returnUrl){
-  return `https://murain.tw/member.html?v=${Date.now()}&return_url=${encodeURIComponent(returnUrl || buildShopCleanReturnUrl())}`;
+  return `${shopUrl('/member.html')}?v=${Date.now()}&return_url=${encodeURIComponent(returnUrl || buildShopCleanReturnUrl())}`;
 }
 
 function redirectShopMemberLogin(returnUrl){
@@ -4238,7 +4256,7 @@ async function loadPreviewImages(product){
   if(!sku) return;
 
   try{
-    const apiBase = (typeof HOME_API !== 'undefined') ? HOME_API : 'https://api.murain.tw';
+  const apiBase = (typeof HOME_API !== 'undefined') ? HOME_API : '';
     const detailUrl = new URL(`${apiBase}/product/${encodeURIComponent(sku)}`);
 
     if (SHOP_MEMBER_INFO) {
@@ -4304,20 +4322,45 @@ async function loadPreviewImages(product){
 
 function bindPreviewImageSwipe(){
   const main = document.querySelector('.shop-preview-image-wrap');
-  if(!main) return;
+  if(!main || main.dataset.swipeBound === '1') return;
+  main.dataset.swipeBound = '1';
 
   let startX = 0;
   let startY = 0;
   let moveX = 0;
   let tracking = false;
 
+  function beginSwipe(x, y){
+    tracking = true;
+    startX = x;
+    startY = y;
+    moveX = 0;
+  }
+
+  function moveSwipe(x, y){
+    if(!tracking) return;
+
+    const dx = x - startX;
+    const dy = y - startY;
+
+    if(Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 8){
+      moveX = dx;
+    }
+  }
+
+  function endSwipe(){
+    if(!tracking) return;
+    tracking = false;
+
+    if(Math.abs(moveX) < 38) return;
+
+    previewStepImage(moveX > 0 ? -1 : 1);
+  }
+
+  // 桌機 / Android / 新版瀏覽器
   main.addEventListener('pointerdown', (e) => {
     if(e.target.closest('button')) return;
-
-    tracking = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    moveX = 0;
+    beginSwipe(e.clientX, e.clientY);
 
     try{
       main.setPointerCapture(e.pointerId);
@@ -4325,28 +4368,29 @@ function bindPreviewImageSwipe(){
   });
 
   main.addEventListener('pointermove', (e) => {
-    if(!tracking) return;
-
-    const dx = e.clientX - startX;
-    const dy = e.clientY - startY;
-
-    if(Math.abs(dx) > Math.abs(dy)){
-      moveX = dx;
-    }
+    moveSwipe(e.clientX, e.clientY);
   });
-
-  function endSwipe(){
-    if(!tracking) return;
-    tracking = false;
-
-    if(Math.abs(moveX) < 42) return;
-
-    previewStepImage(moveX > 0 ? -1 : 1);
-  }
 
   main.addEventListener('pointerup', endSwipe);
   main.addEventListener('pointercancel', endSwipe);
   main.addEventListener('pointerleave', endSwipe);
+
+  // ✅ iPhone / Safari / Meta 內建瀏覽器保險
+  main.addEventListener('touchstart', (e) => {
+    if(e.target.closest('button')) return;
+    const t = e.touches && e.touches[0];
+    if(!t) return;
+    beginSwipe(t.clientX, t.clientY);
+  }, { passive:true });
+
+  main.addEventListener('touchmove', (e) => {
+    const t = e.touches && e.touches[0];
+    if(!t) return;
+    moveSwipe(t.clientX, t.clientY);
+  }, { passive:true });
+
+  main.addEventListener('touchend', endSwipe, { passive:true });
+  main.addEventListener('touchcancel', endSwipe, { passive:true });
 }
 function updatePreviewWishBtn(p){
   const btn = document.getElementById('previewWishBtn');
@@ -4537,7 +4581,7 @@ async function previewEnsureCart(){
   // ✅ 有舊 token 時，先確認它是不是還是 open 官網購物車
   if (token) {
     try {
-      const r0 = await fetch(`https://api.murain.tw/cart/${encodeURIComponent(token)}`);
+      const r0 = await fetch(`${shopApiBase()}/cart/${encodeURIComponent(token)}`);
       if (r0.ok) {
         const j0 = await r0.json().catch(() => ({}));
         const status = String(j0.cart_status || j0.status || '').trim().toLowerCase();
@@ -4559,7 +4603,7 @@ async function previewEnsureCart(){
     token = '';
   }
 
-  const res = await fetch('https://api.murain.tw/cart/create', {
+  const res = await fetch(`${shopApiBase()}/cart/create`, {
     method:'POST',
     headers:{ 'content-type':'application/json' },
     credentials:'include',
@@ -4770,49 +4814,51 @@ async function previewAddToCart(){
   if (PREVIEW_ADD_CART_BUSY) return;
   if (!previewProduct) return;
 
+  // ✅ 鎖住「按下當下」的商品，避免還沒加入完成時切到別的商品造成錯亂
+  const productAtClick = previewProduct;
+  const skuAtClick = previewSku(productAtClick);
+  const titleAtClick = previewTitle(productAtClick);
+
   const btn = $('previewCartBtn');
   PREVIEW_ADD_CART_BUSY = true;
 
-updatePreviewCartButton(previewProduct, '加入中');
+  updatePreviewCartButton(productAtClick, '加入中');
 
   try {
-    const stock = previewStockValue(previewProduct);
+    const stock = previewStockValue(productAtClick);
     if (stock <= 0) {
-      updatePreviewCartButton(previewProduct);
+      updatePreviewCartButton(productAtClick);
       return;
     }
 
-    const sku = previewSku(previewProduct);
-    if (!sku) {
+    if (!skuAtClick) {
       alert('找不到商品 SKU');
-      updatePreviewCartButton(previewProduct);
+      updatePreviewCartButton(productAtClick);
       return;
     }
 
     if (!SHOP_MEMBER_INFO) {
       if (btn) btn.textContent = '確認會員中';
 
-      // 記住：這次跳會員登入，是因為客人剛剛按了「加入購物籃」
-      markShopPendingAction('add_cart', sku);
+      markShopPendingAction('add_cart', skuAtClick);
 
       const ok = await initShopMember(true);
       if (!ok) return;
 
-      // 如果沒有真的跳走、只是成功補到 session，就清掉 pending，避免之後重複自動加入
-      consumeShopPendingAction(sku);
+      consumeShopPendingAction(skuAtClick);
 
       if (btn) btn.textContent = '加入中';
     }
 
     const token = await previewEnsureCart();
 
-    const res = await fetch('https://api.murain.tw/cart/add', {
+    const res = await fetch(`${shopApiBase()}/cart/add`, {
       method:'POST',
       headers:{ 'content-type':'application/json' },
       credentials:'include',
       body: JSON.stringify({
         cart_token: token,
-        sku,
+        sku: skuAtClick,
         qty: 1,
         customer_type: 'web',
         line_user_id: getShopLineUserId(),
@@ -4829,13 +4875,13 @@ updatePreviewCartButton(previewProduct, '加入中');
         err === 'member_required' ||
         err === 'member_login_required'
       ) {
-        markShopPendingAction('add_cart', sku);
-        redirectShopMemberLogin(buildShopMemberReturnUrl());
+        markShopPendingAction('add_cart', skuAtClick);
+        redirectShopMemberLogin(buildShopMemberReturnUrl(productAtClick));
         return;
       }
 
       if (err === 'member_not_bound') {
-        markShopPendingAction('add_cart', sku);
+        markShopPendingAction('add_cart', skuAtClick);
         redirectShopMemberBindForPreview();
         return;
       }
@@ -4850,24 +4896,27 @@ updatePreviewCartButton(previewProduct, '加入中');
         String(json.message || '').includes('缺貨') ||
         String(json.message || '').includes('庫存')
       ){
-        updatePreviewCartButton({ ...previewProduct, stock: 0 });
+        if (previewSku(previewProduct) === skuAtClick) {
+          updatePreviewCartButton({ ...productAtClick, stock: 0 });
+        }
       }else{
-        updatePreviewCartButton(previewProduct);
+        if (previewSku(previewProduct) === skuAtClick) {
+          updatePreviewCartButton(productAtClick);
+        }
       }
 
       return;
     }
 
-showShopActionToast(
-  previewProduct,
-  '已加入購物籃',
-  '前往購物車',
-  () => {
-    location.href = `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(token)}`;
-  }
-);
+    showShopActionToast(
+      productAtClick,
+      `已加入購物籃：${titleAtClick || '商品'}`,
+      '前往購物車',
+      () => {
+        location.href = `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(token)}`;
+      }
+    );
 
-    // 不要卡住成功提示，購物車數字背景更新即可
     if(typeof refreshCartBadge === 'function'){
       refreshCartBadge();
     }
@@ -4879,13 +4928,16 @@ showShopActionToast(
       refreshShopMemberPriceViewForList();
     }
 
-    if(btn){
+    // ✅ 只有目前還停在同一個商品，才改目前按鈕文字
+    if(btn && previewSku(previewProduct) === skuAtClick){
       btn.classList.remove('is-loading');
       btn.textContent = '已加入';
     }
 
     setTimeout(() => {
-      updatePreviewCartButton(previewProduct);
+      if (previewSku(previewProduct) === skuAtClick) {
+        updatePreviewCartButton(productAtClick);
+      }
     }, 900);
 
   } catch(e) {
@@ -4895,28 +4947,30 @@ showShopActionToast(
       err === 'member_required' ||
       err === 'member_login_required'
     ) {
-      const sku = previewSku(previewProduct);
-      markShopPendingAction('add_cart', sku);
-      redirectShopMemberLogin(buildShopMemberReturnUrl());
+      markShopPendingAction('add_cart', skuAtClick);
+      redirectShopMemberLogin(buildShopMemberReturnUrl(productAtClick));
       return;
     }
 
     if (err === 'member_not_bound') {
-      markShopPendingAction('add_cart', previewSku(previewProduct));
+      markShopPendingAction('add_cart', skuAtClick);
       redirectShopMemberBindForPreview();
       return;
     }
 
     alert('加入失敗，請稍後再試');
-    updatePreviewCartButton(previewProduct);
+
+    if (previewSku(previewProduct) === skuAtClick) {
+      updatePreviewCartButton(productAtClick);
+    }
   } finally {
     PREVIEW_ADD_CART_BUSY = false;
 
-    if (btn) {
+    if (btn && previewSku(previewProduct) === skuAtClick) {
       btn.classList.remove('is-loading');
 
       if (!btn.classList.contains('is-soldout')) {
-        const finalStock = previewStockValue(previewProduct);
+        const finalStock = previewStockValue(productAtClick);
         if (finalStock > 0) btn.disabled = false;
       }
     }
@@ -4938,7 +4992,7 @@ document.addEventListener('DOMContentLoaded', () => {
   active ? '已加入願望錄' : '已從願望錄移除',
   '瀏覽願望錄',
   () => {
-    location.href = 'https://murain.tw/wishlist.html';
+    location.href = shopUrl('/wishlist.html');
   }
 );
 });
@@ -5214,7 +5268,7 @@ if(heartBtn){
   active ? '已加入願望錄' : '已從願望錄移除',
   '瀏覽願望錄',
   () => {
-    location.href = 'https://murain.tw/wishlist.html';
+    location.href = shopUrl('/wishlist.html');
   }
 );
   });
@@ -5286,6 +5340,13 @@ setTimeout(scrollToProducts, 80);
     };
   }
 
+const SHOP_LIST_CACHE_TTL = 5 * 60 * 1000;
+
+function isFreshShopCache(cached){
+  const ts = Number(cached?.ts || 0) || 0;
+  return !!ts && (Date.now() - ts) < SHOP_LIST_CACHE_TTL;
+}
+
 async function fetchProducts(){
   const loader = $('loading');
   const grid = $('productList');
@@ -5305,7 +5366,7 @@ async function fetchProducts(){
     const raw = sessionStorage.getItem(publicCacheKey);
     if (raw) {
       const cached = JSON.parse(raw);
-      if (cached && Array.isArray(cached.items) && cached.pagination) {
+      if (isFreshShopCache(cached) && Array.isArray(cached.items) && cached.pagination) {
         allItems = cached.items || [];
         allCats = cached.categories || [];
         paginationState = cached.pagination || {
@@ -5362,7 +5423,7 @@ async function fetchProducts(){
         const raw = sessionStorage.getItem(cacheKey);
         if (raw) {
           const cached = JSON.parse(raw);
-          if (cached && Array.isArray(cached.items) && cached.pagination) {
+          if (isFreshShopCache(cached) && Array.isArray(cached.items) && cached.pagination) {
             allItems = cached.items || [];
             allCats = cached.categories || [];
             paginationState = cached.pagination || {
@@ -5489,7 +5550,11 @@ async function fetchProducts(){
   });
 </script>
   <script>
-/* ✅ 正式站保險：避免 LINE/LIFF 內開時，站內相對連結跑去 liff.line.me 造成 404 */
+/* ✅ 站內連結跟著目前環境走
+   staging.murain.tw → staging.murain.tw
+   murain.tw → murain.tw
+   避免左側主選單或 LIFF 內開時跳到正式版 / liff.line.me 造成錯誤
+*/
 document.addEventListener('click', function(e){
   const a = e.target.closest('a[href]');
   if (!a) return;
@@ -5497,11 +5562,75 @@ document.addEventListener('click', function(e){
   const rawHref = String(a.getAttribute('href') || '').trim();
   if (!rawHref) return;
 
-  if (!rawHref.startsWith('/') || rawHref.startsWith('//')) return;
+  const siteOrigin = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
 
-  e.preventDefault();
-  window.location.href = 'https://murain.tw' + rawHref;
+  // 1) 處理站內相對連結：/shop.html、/member.html
+  if (rawHref.startsWith('/') && !rawHref.startsWith('//')) {
+    e.preventDefault();
+    window.location.href = siteOrigin + rawHref;
+    return;
+  }
+
+  // 2) 處理硬寫正式版的前台連結：https://murain.tw/xxx
+  if (
+    rawHref.startsWith('https://murain.tw/') ||
+    rawHref.startsWith('https://www.murain.tw/')
+  ) {
+    try {
+      const u = new URL(rawHref);
+      e.preventDefault();
+      window.location.href = siteOrigin + u.pathname + u.search + u.hash;
+      return;
+    } catch (err) {}
+  }
 }, true);
+</script>
+  <script>
+/* ✅ shop：把左側主選單 / 頁面內硬寫正式版的前台連結，先改成目前環境 */
+(function normalizeShopLinksByEnv(){
+  const siteOrigin = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+
+  function fixOneLink(a){
+    if (!a) return;
+
+    const raw = String(a.getAttribute('href') || '').trim();
+    if (!raw) return;
+
+    if (
+      raw.startsWith('https://murain.tw/') ||
+      raw.startsWith('https://www.murain.tw/')
+    ) {
+      try {
+        const u = new URL(raw);
+        a.setAttribute('href', siteOrigin + u.pathname + u.search + u.hash);
+      } catch(e) {}
+      return;
+    }
+
+    // 補修沒有 .html 的正式入口
+    if (raw === 'https://murain.tw/member') {
+      a.setAttribute('href', siteOrigin + '/member.html');
+      return;
+    }
+
+    if (raw === 'https://murain.tw/shop') {
+      a.setAttribute('href', siteOrigin + '/shop.html');
+      return;
+    }
+  }
+
+  function run(){
+    document.querySelectorAll('a[href]').forEach(fixOneLink);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', run);
+  } else {
+    run();
+  }
+
+  window.addEventListener('pageshow', run);
+})();
 </script>
   <script>
 /* ✅ 全站會員中心入口保險
@@ -5510,8 +5639,13 @@ document.addEventListener('click', function(e){
    只修「會員中心入口」，不動商品/結帳 return_url 流程
 */
 (function () {
-  const MEMBER_WEB_URL = 'https://murain.tw/member.html';
-  const MEMBER_LIFF_URL = 'https://liff.line.me/2008430261-EGZPg3Qp/?line_login=1';
+ const MEMBER_SITE_ORIGIN = String(window.MURAIN_SITE_ORIGIN || location.origin).replace(/\/$/,'');
+const MEMBER_LIFF_ID = String(window.LIFF_MEMBER_ID || '').trim();
+
+const MEMBER_WEB_URL = `${MEMBER_SITE_ORIGIN}/member.html`;
+const MEMBER_LIFF_URL = MEMBER_LIFF_ID
+  ? `https://liff.line.me/${MEMBER_LIFF_ID}?line_login=1`
+  : MEMBER_WEB_URL;
 
   function isLineBrowser() {
     const ua = navigator.userAgent || '';
@@ -5544,7 +5678,7 @@ document.addEventListener('click', function(e){
 </script>
   <script>
 (function () {
-  const API_URL = "https://api.murain.tw/site/popup";
+  const API_URL = `${HOME_API}/site/popup`;
 
   const BLOCKED_PATHS = [
     "/liff-checkout",
