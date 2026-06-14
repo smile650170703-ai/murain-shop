@@ -528,7 +528,38 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   font-weight:400 !important;
   margin-top:6px !important;
 }
+.pickup-penalty-top{
+  margin-top:10px;
+  max-width:430px;
+  display:flex;
+  align-items:flex-end;
+  gap:8px;
+  padding:10px;
+  border-radius:14px;
+  border:1px solid rgba(148,163,184,.3);
+  background:rgba(15,23,42,.95);
+}
 
+.pickup-penalty-top .field{
+  min-width:170px;
+}
+
+.pickup-penalty-top label{
+  display:block;
+  font-size:11px;
+  margin:0 0 4px;
+  color:#cbd5f5;
+}
+
+.pickup-penalty-top input{
+  height:36px;
+  padding:7px 9px;
+  border-radius:10px;
+}
+
+.pickup-penalty-top .tag-small{
+  padding-bottom:8px;
+}
 </style>
 </head>
 <body>
@@ -709,6 +740,19 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
        <button class="btn-secondary" id="btnCartRemindTop" type="button" style="display:none;">
   🛒 提醒目前購物車清單
 </button>
+      </div>
+
+      <div class="pickup-penalty-top hidden" id="pickupPenaltyTopBox">
+        <div class="field">
+          <label>違約費用 TWD</label>
+          <input id="d_cod_penalty_fee_top" type="number" min="0" step="1" placeholder="例：500">
+        </div>
+
+        <button class="small-btn" id="btnSaveCodPenaltyTop" type="button">
+          存違約費
+        </button>
+
+        <div class="tag-small" id="codPenaltyMsgTop">請先點左邊訂單</div>
       </div>
 
       <div id="msg"></div>
@@ -932,7 +976,8 @@ function setupAdminPageChrome(){
 
     // 移除：賣貨便月份 2026年05月 那個區塊
     document.getElementById('vendorMonthBox')?.classList.add('hidden');
-
+    // 顯示：賣貨便頁上方違約費用欄位
+    document.getElementById('pickupPenaltyTopBox')?.classList.remove('hidden');
     // 保險：強制第二排亮「賣貨便登記」，不要亮全部訂單
     document.querySelectorAll('.admin-sub-tabs [data-admin-file]').forEach(a => {
       a.classList.remove('active');
@@ -4277,6 +4322,18 @@ if (btnConfirmPayOkTop) {
     vendorSel.onchange = updateVendorStats;
   }
   updateVendorStats();
+ // 違約費用：帶入目前選取訂單的值
+const penaltyTop = $('#d_cod_penalty_fee_top');
+if (penaltyTop) {
+  penaltyTop.value = String(f['違約費用'] ?? '').trim();
+}
+
+const penaltyMsgTop = $('#codPenaltyMsgTop');
+if (penaltyMsgTop) {
+  penaltyMsgTop.textContent = f.order_id
+    ? `目前選取：${f.order_id}`
+    : '請先點左邊訂單';
+}
 // 取貨登記旁「存」按鈕
 const btnPick = $('#btnSavePickupReg');
 if (btnPick) {
@@ -4800,7 +4857,83 @@ renderOrderList();
     if (msgEl) msgEl.textContent = '取貨登記儲存失敗：' + (e.message || e);
   }
 }
- 
+ // ===== 只儲存：違約費用（不重載、不跳單）=====
+async function saveCodPenaltyFeeOnly(){
+  if(!currentRecord) {
+    alert('請先選一筆訂單');
+    return;
+  }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = String(f.order_id || '').trim();
+
+  if(!orderId) {
+    alert('這筆訂單沒有 order_id');
+    return;
+  }
+
+  const input = $('#d_cod_penalty_fee_top');
+  const raw = input ? String(input.value || '').trim() : '';
+
+  let fee = null;
+
+  if (raw !== '') {
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) {
+      alert('違約費用請輸入 0 以上的數字，例如 500');
+      input?.focus();
+      return;
+    }
+    fee = n;
+  }
+
+  const payload = {
+    op_key: OP_KEY,
+    record_id: currentRecord.id || null,
+    order_id: orderId,
+    fields: {
+      '違約費用': fee
+    }
+  };
+
+  const msgEl = $('#codPenaltyMsgTop') || $('#detailMsg');
+  if (msgEl) msgEl.textContent = '儲存違約費用中…';
+
+  try {
+    const r = await fetch(`${API}/admin/order/update?op_key=${encodeURIComponent(OP_KEY)}`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+
+    const setField = (rec, k, val) => {
+      if (!rec) return;
+      if (rec.fields && typeof rec.fields === 'object') rec.fields[k] = val;
+      else rec[k] = val;
+    };
+
+    setField(currentRecord, '違約費用', fee);
+
+    const idx = currentOrders.findIndex(x => {
+      const fx = x.fields || x || {};
+      return String(fx.order_id || '') === String(orderId);
+    });
+
+    if (idx >= 0) setField(currentOrders[idx], '違約費用', fee);
+
+    if (msgEl) msgEl.textContent = `✅ 違約費用已儲存：${fee === null ? '空白' : 'NT$ ' + fee}`;
+
+    renderOrderList();
+  } catch(e) {
+    console.error(e);
+    if (msgEl) msgEl.textContent = '❌ 違約費用儲存失敗：' + (e.message || e);
+  }
+}
 /* ===== 儲存右側欄位 ===== */
 async function saveDetail(opts = {}){
   if(!currentRecord) return false;
@@ -6146,7 +6279,11 @@ if (lineSearchEl){
     await reloadCurrentView();
   });
 }
-
+// 賣貨便頁：儲存違約費用
+const btnSaveCodPenaltyTop = $('#btnSaveCodPenaltyTop');
+if (btnSaveCodPenaltyTop) {
+  btnSaveCodPenaltyTop.addEventListener('click', saveCodPenaltyFeeOnly);
+}
 // 匯出 / 列印維持原本
 const btnExport = $('#exportBtn');
 if (btnExport) btnExport.addEventListener('click', exportCSV);
