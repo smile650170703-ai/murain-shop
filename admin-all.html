@@ -654,6 +654,10 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     <label>&nbsp;</label>
     <button class="small-btn" id="btnPrintSlipsRange" type="button">⭐列印出貨單</button>
   </div>
+   <div class="field">
+    <label>&nbsp;</label>
+    <button class="small-btn" id="btnDepositForfeitRestock" type="button">📦 訂金沒收待放回</button>
+  </div>
 </div>
 
 
@@ -873,6 +877,7 @@ const isFixedPage = ADMIN_PAGE_FILE !== 'admin-all.html';
     'btnConsign',
     'btnConsignAccounting',
     'btnPrintSlipsRange',
+   'btnDepositForfeitRestock',
     'btnExportShip',
     'btnExportZero'
   ].forEach(id => {
@@ -898,7 +903,8 @@ const isFixedPage = ADMIN_PAGE_FILE !== 'admin-all.html';
       'btnRemindToday',
       'btnPickupNeed',
       'btnConsign',
-      'btnConsignAccounting'
+      'btnConsignAccounting',
+'btnDepositForfeitRestock'
     ].forEach(id => {
       const el = document.getElementById(id);
       const field = el?.closest?.('.field');
@@ -937,6 +943,8 @@ let currentConsignRows = [];
 let currentConsignRecord = null;
  let currentCartRows = [];
 let currentCartRecord = null;
+ let currentDepositForfeitRestockRows = [];
+let currentDepositForfeitRestockRecord = null;
 
  function getBiMonthLabel(dateLike){
   const s = String(dateLike || '').trim();
@@ -1987,7 +1995,243 @@ if (ADMIN_PAGE_FILE === 'admin.html') {
     alert('清空購物車失敗：' + (e.message || e));
   }
 }
+async function loadDepositForfeitRestockList(){
+  currentPanelMode = 'deposit_forfeit_restock';
+  currentRecord = null;
+  currentDepositForfeitRestockRecord = null;
+  currentDepositForfeitRestockRows = [];
 
+  saveViewState('deposit_forfeit_restock', {
+    filter: 'all',
+    date_from: $('#date_from') ? ($('#date_from').value || '') : '',
+    date_to: $('#date_to') ? ($('#date_to').value || '') : '',
+    status: $('#status') ? ($('#status').value || '') : ''
+  });
+
+  const listEl = $('#orderList');
+  const detailEl = $('#orderDetail');
+  const msgEl = $('#msg');
+  const sumEl = $('#summary');
+
+  if (listEl) listEl.innerHTML = '<div class="muted">訂金沒收待放回商品載入中…</div>';
+  if (detailEl) detailEl.innerHTML = '<div class="muted">請從左邊選一筆紀錄</div>';
+  if (msgEl) msgEl.textContent = '';
+  if (sumEl) sumEl.textContent = '';
+
+  setBatchActionMode('none');
+
+  try {
+    await ensureOpKey();
+
+    const params = new URLSearchParams();
+    params.set('op_key', OP_KEY);
+    params.set('limit', '1000');
+
+    const r = await fetch(`${API}/admin/deposit-forfeit-restock/list?` + params.toString());
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+
+    currentDepositForfeitRestockRows = Array.isArray(j.rows) ? j.rows : [];
+    renderDepositForfeitRestockList();
+
+    if (sumEl) {
+      sumEl.innerHTML = `<span>待放回商品：${currentDepositForfeitRestockRows.length} 筆</span>`;
+    }
+
+    if (msgEl) {
+      msgEl.textContent = currentDepositForfeitRestockRows.length
+        ? `目前顯示「訂金沒收進利」尚未勾選已放回商品的紀錄，共 ${currentDepositForfeitRestockRows.length} 筆。`
+        : '目前沒有待放回商品的訂金沒收紀錄。';
+    }
+  } catch (e) {
+    console.error(e);
+    if (listEl) listEl.innerHTML = '<div class="error">訂金沒收待放回商品載入失敗：' + escapeHtml(e.message || e) + '</div>';
+    if (detailEl) detailEl.innerHTML = '<div class="muted">請稍後再試</div>';
+  }
+}
+
+function renderDepositForfeitRestockList(){
+  const listEl = $('#orderList');
+  const detailEl = $('#orderDetail');
+
+  if (!listEl) return;
+
+  if (!currentDepositForfeitRestockRows.length) {
+    listEl.innerHTML = '<div class="muted">目前沒有待放回商品的訂金沒收紀錄。</div>';
+    if (detailEl) detailEl.innerHTML = '<div class="muted">目前沒有資料</div>';
+    return;
+  }
+
+  const shortText = (s, n = 70) => {
+    const t = String(s || '').replace(/\s+/g, ' ').trim();
+    return t.length > n ? t.slice(0, n) + '…' : t;
+  };
+
+  listEl.innerHTML = currentDepositForfeitRestockRows.map(row => {
+    return `
+      <div class="order-row" data-id="${escapeHtml(row.id || '')}">
+        <div class="ord-top">
+          <div class="ord-id">📦 ${escapeHtml(row.orderId || row.id || '-')}</div>
+          <div class="ord-right">
+            <div class="ord-amount">${money(row.amount || 0)}</div>
+          </div>
+        </div>
+
+        <div class="ord-sub">
+          ${escapeHtml(row.lineName || '-')}
+          ${row.paymentMethod ? ' ／ ' + escapeHtml(displayPaymentMethod(row.paymentMethod) || row.paymentMethod) : ''}
+        </div>
+
+        ${row.productDetail ? `<div class="ord-sub">${escapeHtml(shortText(row.productDetail))}</div>` : ''}
+
+        <div class="badges">
+          <span class="badge red">訂金沒收</span>
+          ${row.decision ? `<span class="badge yellow">${escapeHtml(row.decision)}</span>` : ''}
+          ${row.forfeitTime ? `<span class="badge">${escapeHtml(fmtAdminDateTime(row.forfeitTime) || row.forfeitTime)}</span>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  $$('#orderList .order-row').forEach(rowEl => {
+    rowEl.addEventListener('click', () => {
+      $$('#orderList .order-row').forEach(x => x.classList.remove('active'));
+      rowEl.classList.add('active');
+
+      const id = rowEl.getAttribute('data-id') || '';
+      const row = currentDepositForfeitRestockRows.find(x => String(x.id || '') === String(id));
+      if (row) renderDepositForfeitRestockDetail(row);
+    });
+  });
+
+  if (detailEl) {
+    detailEl.innerHTML = '<div class="muted">請從左邊選一筆紀錄</div>';
+  }
+}
+
+function renderDepositForfeitRestockDetail(row){
+  currentDepositForfeitRestockRecord = row;
+
+  const detailEl = $('#orderDetail');
+  if (!detailEl) return;
+
+  detailEl.innerHTML = `
+    <div class="section-title">訂金沒收待放回商品</div>
+    <div class="tag-small">
+      勾選「已放回商品」只會更新「訂金沒收進利」表單欄位，不會再次補庫存，避免庫存重複加回。
+    </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>訂單編號</label>
+        <div class="ro-field">${escapeHtml(row.orderId || '-')}</div>
+      </div>
+      <div>
+        <label>LINE名稱</label>
+        <div class="ro-field">${escapeHtml(row.lineName || '-')}</div>
+      </div>
+    </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>付款方式</label>
+        <div class="ro-field">${escapeHtml(displayPaymentMethod(row.paymentMethod) || row.paymentMethod || '-')}</div>
+      </div>
+      <div>
+        <label>訂金沒收金額</label>
+        <div class="ro-field">${money(row.amount || 0)}</div>
+      </div>
+    </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>訂金沒收時間</label>
+        <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.forfeitTime) || row.forfeitTime || '-')}</div>
+      </div>
+      <div>
+        <label>取消原因</label>
+        <div class="ro-field">${escapeHtml(row.cancelReason || '-')}</div>
+      </div>
+    </div>
+
+    <label class="mt-2">商品明細</label>
+    <div class="ro-field" style="height:auto;min-height:100px;align-items:flex-start;padding-top:10px;white-space:pre-wrap;">
+      ${escapeHtml(row.productDetail || '-')}
+    </div>
+
+    <label class="label-inline mt-3">
+      <input id="d_forfeit_restock_done_cb" type="checkbox">
+      已放回商品
+    </label>
+
+    <button class="btn-primary" id="btnMarkDepositForfeitRestockDone" type="button">
+      ✅ 確認已放回並從清單移除
+    </button>
+
+    <div class="muted mt-3" id="detailMsg"></div>
+  `;
+
+  $('#btnMarkDepositForfeitRestockDone')?.addEventListener('click', async () => {
+    await markDepositForfeitRestockDone(row);
+  });
+
+  $('#d_forfeit_restock_done_cb')?.addEventListener('change', async (e) => {
+    if (e.target.checked) {
+      await markDepositForfeitRestockDone(row);
+    }
+  });
+}
+
+async function markDepositForfeitRestockDone(row){
+  if (!row?.id) {
+    alert('缺少紀錄 id，無法勾選已放回商品。');
+    return;
+  }
+
+  const title = row.orderId || row.id;
+
+  if (!confirm(`確認這筆「${title}」的商品已經實體放回可賣區嗎？\n\n確認後會勾選「已放回商品」，並從此清單移除。`)) {
+    const cb = $('#d_forfeit_restock_done_cb');
+    if (cb) cb.checked = false;
+    return;
+  }
+
+  const msgEl = $('#detailMsg');
+  if (msgEl) msgEl.textContent = '更新中…';
+
+  try {
+    await ensureOpKey();
+
+    const r = await fetch(`${API}/admin/deposit-forfeit-restock/mark-done`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        id: row.id
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+
+    alert('已勾選「已放回商品」，這筆會從清單移除。');
+    await loadDepositForfeitRestockList();
+  } catch (e) {
+    console.error(e);
+    alert('更新失敗：' + (e.message || e));
+
+    const cb = $('#d_forfeit_restock_done_cb');
+    if (cb) cb.checked = false;
+
+    if (msgEl) msgEl.textContent = '更新失敗，請稍後再試。';
+  }
+}
  // ★ 列印出貨單：左邊勾選用
 let PRINT_SLIP_SELECTED = new Set();
 
@@ -3292,7 +3536,15 @@ async function reloadCurrentView(){
 
     return;
   }
-
+  if (mode === 'deposit_forfeit_restock' || currentPanelMode === 'deposit_forfeit_restock') {
+    saveViewState('deposit_forfeit_restock', {
+      filter: 'all',
+      date_from: $('#date_from') ? ($('#date_from').value || '') : '',
+      date_to: $('#date_to') ? ($('#date_to').value || '') : '',
+      status: st
+    });
+    return loadDepositForfeitRestockList();
+  }
   if (mode === 'cart_open' || currentPanelMode === 'cart_open') {
     return loadOpenCartList();
   }
@@ -6206,6 +6458,10 @@ if (btnExport) btnExport.addEventListener('click', exportCSV);
 
 const btnPrintSlips = $('#btnPrintSlipsRange');
 if (btnPrintSlips) btnPrintSlips.addEventListener('click', printShipSlipsRange);
+ const btnDepositForfeitRestock = $('#btnDepositForfeitRestock');
+if (btnDepositForfeitRestock) {
+  btnDepositForfeitRestock.addEventListener('click', loadDepositForfeitRestockList);
+}
   // ✅ 上方「棄標／沒收定金」按鈕：走專用 forfeit API，不走一般取消
   const btnCancelTop = $('#btnCancelOrderTop');
 if (btnCancelTop) {
