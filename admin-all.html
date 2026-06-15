@@ -1525,10 +1525,11 @@ else if (mode === 'remind_today'){
     okText = '僅顯示「訂金已收(pay_status = deposit_ok) ＋ 尚未出貨」的訂單。';
   }
 
-  else if (mode === 'status_cancelled_forfeit_custom'){
-    emptyText = '目前沒有「已取消／棄標」的訂單。';
-    okText = `僅顯示「已取消／棄標」訂單。共 ${rows.length} 筆。`;
-  }
+else if (mode === 'status_cancelled_forfeit_custom'){
+  rows = rows.filter(isCancelledOrForfeitOrder);
+  emptyText = '目前沒有「已取消／棄標」的訂單。';
+  okText = `僅顯示「已取消／棄標」訂單。共 ${rows.length} 筆。`;
+}
 
   else {
     emptyText = '目前沒有訂單。';
@@ -2093,7 +2094,37 @@ function isDepositForfeitOrder(f = {}) {
     )
   );
 }
+function isCancelledOrForfeitOrder(rec = {}) {
+  const f = rec.fields || rec || {};
+  const st = String(f.status || '').trim().toLowerCase();
+  const ps = String(f.pay_status || '').trim().toLowerCase();
+  const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+  const cancelReason = String(f['取消原因'] || f.cancel_reason || '').trim();
+  const noteUpper = String(f.internal_note || '').trim().toUpperCase();
 
+  const orderStillActive =
+    ['paid', 'shipped', 'completed'].includes(st) ||
+    ['paid_ok', 'paid'].includes(ps);
+
+  const cancelledLike =
+    ['cancelled', 'canceled', 'failed', 'void', 'expired', 'abandoned'].includes(st) ||
+    (
+      !orderStillActive &&
+      ['failed', 'cancelled', 'canceled', 'void', 'expired', 'abandoned'].includes(ps)
+    );
+
+  const forfeitLike =
+    isDepositForfeitOrder(f) ||
+    cashStatus === 'cancelled_forfeit' ||
+    noteUpper.includes('[MANUAL_ORDER_FORFEIT]') ||
+    noteUpper.includes('[TAIL_OVERDUE_DEPOSIT_FORFEIT]') ||
+    noteUpper.includes('[CASH_INST_OVERDUE_CANCEL]') ||
+    cancelReason.includes('棄標') ||
+    cancelReason.includes('訂金沒收') ||
+    cancelReason.includes('購物金沒收');
+
+  return cancelledLike || forfeitLike;
+}
 function isRestockNeedsAttention(f = {}) {
   const note = String(f.internal_note || '').trim();
 
