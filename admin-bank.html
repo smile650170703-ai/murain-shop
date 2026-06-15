@@ -4128,12 +4128,35 @@ const hideTopBtn = (btn) => {
   if (btn) btn.style.display = 'none';
 };
 
-const stForButtons = String(f.status || '').trim().toLowerCase();
-const psForButtons = String(f.pay_status || '').trim().toLowerCase();
-const shipStatusForButtons = String(f.ship_status || f.shipping_status || '').trim().toLowerCase();
+const oidForButtons = String(f.order_id || '').trim();
 const pmForButtons = String(f.payment_method || '').trim().toLowerCase();
+const psForButtons = String(f.pay_status || '').trim().toLowerCase();
+const stForButtons = String(f.status || '').trim().toLowerCase();
+const shipStatusForButtons = String(f.ship_status || f.shipping_status || '').trim().toLowerCase();
+const parentIdForButtons = String(f.parent_order_id || '').trim();
+const orderTypeForButtons = String(f.order_type || '').trim().toLowerCase();
 const cashStatusForButtons = String(f.cash_inst_status || '').trim().toLowerCase();
 const cashPaidCountForButtons = Number(f.cash_inst_paid_count || f.cash_inst_paid_parts || 0) || 0;
+
+// ✅ TL 本身就是尾款單，不可以再發尾款連結，也不要走取消原單＋重新結帳
+const isActualTailOrder =
+  !!f.is_tail ||
+  orderTypeForButtons === 'tail' ||
+  oidForButtons.toUpperCase().startsWith('TL') ||
+  !!parentIdForButtons;
+
+// ✅ 這裡指「需要發尾款連結的 OD 主單」
+// TL 本身不算，避免尾款單再生尾款單
+const canSendTailLink =
+  ['admin-bank.html', 'admin-cashinst.html'].includes(ADMIN_PAGE_FILE) &&
+  !isActualTailOrder &&
+  (
+    psForButtons === 'deposit_ok' ||
+    pmForButtons === 'atm_deposit' ||
+    pmForButtons.includes('deposit') ||
+    String(f.hold_until || '').trim() ||
+    String(f.deposit_amount || '').trim()
+  );
 
 const isFinalOrder =
   stForButtons === 'shipped' ||
@@ -4160,30 +4183,51 @@ if (isForfeitOrder) {
   showTopBtn(btnSaveOnlyTop);
 
 } else if (ADMIN_PAGE_FILE === 'admin-bank.html') {
-  // ✅ 匯款待確認：只做收款確認 / 取消重結 / 儲存
-  showTopBtn(btnConfirmPayTop);
+  // ✅ 匯款待確認頁：不做出貨、不做面交通知
   showTopBtn(btnSaveOnlyTop);
 
   if (btnCancelTopForfeit) {
     btnCancelTopForfeit.style.display = '';
   }
 
-  if (btnFailTop) {
-    btnFailTop.style.display = isFinalOrder ? 'none' : '';
-  }
-
-  // ✅ admin-bank 永遠不顯示這兩顆
   hideTopBtn(btnSaveAndShipTop);
-  hideTopBtn(btnSendTailTop);
   hideTopBtn(btnMeetupDoneTop);
   hideTopBtn(btnMeetupNotifyTop);
+
+  if (isActualTailOrder) {
+    // ✅ TL 尾款單：只確認尾款收款，不發尾款連結，不取消原單重結
+    showTopBtn(btnConfirmPayTop);
+    hideTopBtn(btnFailTop);
+    hideTopBtn(btnSendTailTop);
+
+  } else if (canSendTailLink) {
+    // ✅ OD 主單：要請客人補尾款，只顯示發尾款連結，不顯示取消原單重結
+    showTopBtn(btnSendTailTop);
+    hideTopBtn(btnConfirmPayTop);
+    hideTopBtn(btnFailTop);
+
+  } else {
+    // ✅ 一般匯款待確認：收款確認 / 取消重結
+    showTopBtn(btnConfirmPayTop);
+
+    if (btnFailTop) {
+      btnFailTop.style.display = isFinalOrder ? 'none' : '';
+    }
+  }
 
 } else {
   // 其他頁維持基本規則
   showTopBtn(btnConfirmPayTop);
-  showTopBtn(btnFailTop);
   showTopBtn(btnCancelTopForfeit);
   showTopBtn(btnSaveOnlyTop);
+
+  if (btnFailTop) {
+    btnFailTop.style.display = isFinalOrder ? 'none' : '';
+  }
+
+  if (canSendTailLink) {
+    showTopBtn(btnSendTailTop);
+  }
 }
 
  // ✅ 顯示/綁定「同步尾款→主單」（只在 TL 才顯示）
