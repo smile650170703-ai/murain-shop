@@ -177,6 +177,19 @@
   color:#fecaca;
 }
 .pill.credit-red span{ color:#fecaca; }
+ /* ✅ 7-11 取貨付款：應付金額紅框＋紅字 */
+.pill.cod711-pay-amount{
+  border-color:#fca5a5;
+  background:rgba(239,68,68,.12);
+  color:#fecaca;
+  font-weight:800;
+}
+
+.pill.cod711-pay-amount span{
+  color:#f87171;
+  -webkit-text-fill-color:#f87171;
+  font-weight:900;
+}
  /* ★ 只把賣貨便累積那一行改成紅色 */
 #d_vendor_stats {
   color:#fecaca;   /* 你也可以換成 #f87171 或 red */
@@ -1836,6 +1849,16 @@ async function runButtonJob(btn, job, busyText = '處理中…'){
 }
 
 function money(n){ return 'NT$ ' + Number(n||0).toLocaleString(); }
+
+function moneyNoComma(n){
+  const v = Math.round(Number(n || 0) || 0);
+  return 'NT$ ' + String(v);
+}
+
+function isCod711Payment(f = {}){
+  return String(f?.payment_method || '').trim().toLowerCase() === 'cod_711';
+}
+
 function calcAmounts(f){
   const base   = Number(f?.total_amount ?? f?.total ?? 0) || 0;
   const credit = Number(f?.credit_used ?? f?.CreditUsed ?? f?.credit ?? 0) || 0;
@@ -3669,9 +3692,12 @@ const rawInstApplyText = String(f.installment_apply_text || "")
   .join('\n')
   .trim();
 const a = calcAmounts(f);
+const isCod711 = isCod711Payment(f);
+
 const totalBase = money(a.base);
 const creditUse = money(a.credit);
-const totalNet  = money(a.net);
+const totalNet  = isCod711 ? moneyNoComma(a.net) : money(a.net);
+const cod711PayAmountClass = isCod711 ? 'cod711-pay-amount' : '';
 
 const isYufuOrder = /^yufu_inst_/i.test(String(f.payment_method || '').trim());
 
@@ -3698,7 +3724,7 @@ const yufuCopyText = instApplyText;
 </div>
 <div class="pill">訂單金額：<span>${totalBase}</span></div>
 ${a.credit>0 ? `<div class="pill credit-red">購物金折抵：<span>-${creditUse}</span></div>` : ``}
-<div class="pill">應付金額：<span>${totalNet}</span></div>
+<div class="pill ${cod711PayAmountClass}">應付金額：<span>${totalNet}</span></div>
 <div class="pill">建立時間：<span>${f.CreatedAt || f.created_at || ''}</span></div>
 
 ${renderTailInfoBlock(f)}
