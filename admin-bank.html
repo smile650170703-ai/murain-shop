@@ -4143,9 +4143,25 @@ const isActualTailOrder =
 
 // ✅ 這裡指「需要發尾款連結的 OD 主單」
 // TL 本身不算，避免尾款單再生尾款單
+// ✅ 現金分期不是尾款單，不能顯示「發尾款連結」
+const isCashInstOrderForButtons =
+  pmForButtons === 'cash_inst_2' ||
+  pmForButtons === 'cash_inst_3' ||
+  pmForButtons === 'cash_install_2' ||
+  pmForButtons === 'cash_install_3' ||
+  pmForButtons.startsWith('cash_inst_') ||
+  pmForButtons.startsWith('cash_install_') ||
+  !!cashStatusForButtons ||
+  cashPaidCountForButtons > 0 ||
+  String(f.cash_inst_total_parts || f.cash_inst_parts || f.cash_inst_total || '').trim() ||
+  String(f.cash_inst_next_due_date || '').trim();
+
+// ✅ 這裡只給「真正訂金保留 / 訂金主單」用
+// admin-bank 不靠這顆發尾款；admin-bank 主要是收款確認
 const canSendTailLink =
-  ['admin-bank.html', 'admin-cashinst.html'].includes(ADMIN_PAGE_FILE) &&
+  ['admin-cashinst.html'].includes(ADMIN_PAGE_FILE) &&
   !isActualTailOrder &&
+  !isCashInstOrderForButtons &&
   (
     psForButtons === 'deposit_ok' ||
     pmForButtons === 'atm_deposit' ||
@@ -4180,43 +4196,39 @@ if (isForfeitOrder) {
   showTopBtn(btnSaveOnlyTop);
 
 } else if (ADMIN_PAGE_FILE === 'admin-bank.html') {
-  // ✅ 匯款待確認頁：不做出貨、不做面交通知
+  // ✅ 匯款 / 收款待確認頁：
+  // 一般單：收款確認 / 取消重結 / 儲存
+  // 現金分期：收款確認 / 儲存
+  // TL 尾款單：收款確認 / 重發尾款連結改付款方式 / 儲存
+  showTopBtn(btnConfirmPayTop);
   showTopBtn(btnSaveOnlyTop);
 
-  if (btnCancelTopForfeit) {
-    btnCancelTopForfeit.style.display = '';
-  }
-
   hideTopBtn(btnSaveAndShipTop);
+  hideTopBtn(btnSendTailTop);
   hideTopBtn(btnMeetupDoneTop);
   hideTopBtn(btnMeetupNotifyTop);
+
   if (isActualTailOrder) {
-    // ✅ TL 尾款單：可確認尾款收款，也可重發「母單尾款連結」讓客人改付款方式
-    showTopBtn(btnConfirmPayTop);
+    // ✅ TL 尾款單：不能取消原單重結，也不能再發一般尾款
     hideTopBtn(btnFailTop);
-    hideTopBtn(btnSendTailTop);
     hideTopBtn(btnCancelTopForfeit);
 
-    // ✅ 只在 TL 且有母單 parent_order_id、尚未 paid_ok 時顯示
     if (parentIdForButtons && psForButtons !== 'paid_ok') {
       showTopBtn(btnResendTailChangePayTop);
     }
 
-  } else if (canSendTailLink) {
-    // ✅ OD 主單：要請客人補尾款，只顯示發尾款連結，不顯示取消原單重結
-    showTopBtn(btnSendTailTop);
-    hideTopBtn(btnConfirmPayTop);
-    hideTopBtn(btnFailTop);
-
   } else {
-    // ✅ 一般匯款待確認：收款確認 / 取消重結
-    showTopBtn(btnConfirmPayTop);
+    // ✅ 一般匯款 / 現金分期待確認
+    if (btnCancelTopForfeit) {
+      btnCancelTopForfeit.style.display = '';
+    }
 
     if (btnFailTop) {
       btnFailTop.style.display = isFinalOrder ? 'none' : '';
     }
-  }
 
+    hideTopBtn(btnResendTailChangePayTop);
+  }
 } else {
   // 其他頁維持基本規則
   showTopBtn(btnConfirmPayTop);
