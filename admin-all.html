@@ -914,6 +914,7 @@ let ALL_ORDERS_CACHE = [];
 let VENDOR_SUMMARY_CACHE = [];
 let LINE_SEARCH_TERM = '';
 let ORDER_SEARCH_TERM = '';
+let SIDE_SEARCH_TIMER = null;
 let currentConsignAccountingRows = [];
 let currentConsignAccountingBucket = '';
 
@@ -1261,6 +1262,33 @@ function getCurrentDateRange(){
   };
 }
 
+// ✅ LINE 名稱 / 訂單單號搜尋時，也要吃日期區間
+// 如果日期被清空，搜尋時自動補回最近 30 天，避免全歷史亂撈
+function getAdminSearchDateRange(range){
+  const r = {
+    date_from: String(range?.date_from || '').trim(),
+    date_to: String(range?.date_to || '').trim()
+  };
+
+  const hasSearch =
+    !!normalizeSearchText(LINE_SEARCH_TERM) ||
+    !!normalizeSearchText(ORDER_SEARCH_TERM);
+
+  if (ADMIN_PAGE_FILE === 'admin-all.html' && hasSearch) {
+    if (!r.date_from || !r.date_to) {
+      const last30 = getLast30DaysRange();
+
+      r.date_from = r.date_from || last30.date_from;
+      r.date_to = r.date_to || last30.date_to;
+
+      if ($('#date_from')) $('#date_from').value = r.date_from;
+      if ($('#date_to')) $('#date_to').value = r.date_to;
+    }
+  }
+
+  return r;
+}
+
 function isAdminAllDateRangeTooLarge(range, maxDays = 31){
   const from = String(range?.date_from || '').trim();
   const to = String(range?.date_to || '').trim();
@@ -1279,8 +1307,8 @@ function isAdminAllDateRangeTooLarge(range, maxDays = 31){
 function validateAdminAllDateRange(range){
   if (ADMIN_PAGE_FILE !== 'admin-all.html') return true;
 
-  if (isAdminAllDateRangeTooLarge(range, 31)) {
-    alert('全部訂單一次最多查 31 天，請縮小日期範圍。\n\n如果要查兩個月，請分段查或用匯出。');
+  if (isAdminAllDateRangeTooLarge(range, 93)) {
+    alert('全部訂單一次最多查 93 天，請縮小日期範圍。\n\n如果要查更久以前的訂單，請分段查詢。');
     return false;
   }
 
@@ -1397,7 +1425,7 @@ async function applyFullView(mode = 'all', save = true){
     await loadVendorSummaryCache();
   }
 
-  const dateRange = getCurrentDateRange();
+  const dateRange = getAdminSearchDateRange(getCurrentDateRange());
   if (!validateAdminAllDateRange(dateRange)) return;
 
   const statusVal = $('#status') ? ($('#status').value || '') : '';
@@ -2713,6 +2741,15 @@ async function loadOrders(filter='all', extra = {}){
   $('#msg').textContent = '';
 
   const view_key = String(extra.view_key || extra.viewKey || '').trim();
+
+  const qLine = normalizeSearchText(
+    extra.line_query ?? extra.line_name ?? LINE_SEARCH_TERM
+  );
+
+  const qOrder = normalizeSearchText(
+    extra.order_id ?? extra.order_query ?? ORDER_SEARCH_TERM
+  );
+
   const allowDate = !view_key && ADMIN_PAGE.useDate !== false;
 
   const date_from = allowDate
@@ -2731,13 +2768,19 @@ async function loadOrders(filter='all', extra = {}){
     // 新拆頁使用：讓後端直接讀 Airtable View，不要先撈全部再前端篩
     if (view_key) params.set('view_key', view_key);
 
-    // ✅ 10 速度完整化：後台主列表不要一次抓 300 / 500
-    // 特殊頁若真的需要更多，呼叫 loadOrders 時再從 extra.limit 傳入。
-    const limit = Number(extra.limit || ADMIN_PAGE.limit || (view_key ? 180 : 120)) || 120;
-    params.set('limit', String(Math.max(20, Math.min(200, limit))));
+    // ✅ 一般開頁維持 120，避免後台卡死
+    // ✅ LINE / 訂單搜尋時，交給後端先篩，再最多回 500 筆，避免前端只抓 120 筆找不到
+    const isSearchMode = !!qLine || !!qOrder;
+    const defaultLimit = isSearchMode ? 500 : (view_key ? 180 : 120);
+    const limit = Number(extra.limit || ADMIN_PAGE.limit || defaultLimit) || defaultLimit;
+
+    params.set('limit', String(Math.max(20, Math.min(500, limit))));
 
     if (date_from) params.set('date_from', date_from);
     if (date_to)   params.set('date_to', date_to);
+
+    if (qLine)  params.set('line_query', qLine);
+    if (qOrder) params.set('order_id', qOrder);
 
     const r = await fetch(`${API}/admin/orders?` + params.toString());
     const j = await r.json();
@@ -5936,14 +5979,22 @@ async function handleSideSearchInput(){
   await reloadCurrentView();
 }
 
+// ✅ 避免每打一個字就狂打 API
+function scheduleSideSearchInput(){
+  clearTimeout(SIDE_SEARCH_TIMER);
+  SIDE_SEARCH_TIMER = setTimeout(()=>{
+    handleSideSearchInput();
+  }, 350);
+}
+
 const lineSearchEl = $('#line_search');
 if (lineSearchEl){
-  lineSearchEl.addEventListener('input', handleSideSearchInput);
+  lineSearchEl.addEventListener('input', scheduleSideSearchInput);
 }
 
 const orderSearchEl = $('#order_search');
 if (orderSearchEl){
-  orderSearchEl.addEventListener('input', handleSideSearchInput);
+  orderSearchEl.addEventListener('input', scheduleSideSearchInput);
 }
 
 // 賣貨便月份預設本月
