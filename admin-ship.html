@@ -690,6 +690,10 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     🚫 棄標／沒收定金
   </button>
 
+  <button id="btnDownloadForfeitLabelTop" class="small-btn" type="button" style="display:none;">
+    🏷️ 下載棄標標籤 CSV
+  </button>
+
   <div class="side-box" id="vendorMonthBox">
   <label>賣貨便月份</label>
   <input id="vendor_month" type="month" />
@@ -4170,6 +4174,7 @@ const btnSendTailTop = $('#btnSendTailLinkTop');
 const btnMeetupDoneTop = $('#btnMeetupCashDoneTop');
 const btnMeetupNotifyTop = $('#btnMeetupNotifyTop');
 const btnCancelTopForfeit = $('#btnCancelOrderTop');
+const btnDownloadForfeitLabelTop = $('#btnDownloadForfeitLabelTop');
 const btnSaveOnlyTop = $('#btnSaveDetailOnlyTop');
 
 const showTopBtn = (btn) => {
@@ -4251,12 +4256,14 @@ const isFinalOrder =
   btnMeetupDoneTop,
   btnMeetupNotifyTop,
   btnCancelTopForfeit,
+  btnDownloadForfeitLabelTop,
   btnSaveOnlyTop
 ].forEach(hideTopBtn);
 
 if (isForfeitOrder) {
-  // 已棄標 / 訂金沒收：只留儲存資料
+  // 已棄標 / 訂金沒收：只留儲存資料 + 可補下載棄標標籤
   showTopBtn(btnSaveOnlyTop);
+  showTopBtn(btnDownloadForfeitLabelTop);
 
 } else if (isMeetupOrder) {
   // ✅ 面交單：只留這三顆，避免誤按出貨 / 收款 / 尾款
@@ -5931,6 +5938,12 @@ if (btnCancelTop) {
     await forfeitCurrentOrder();
   });
 }
+ const btnDownloadForfeitLabelTopBind = $('#btnDownloadForfeitLabelTop');
+if (btnDownloadForfeitLabelTopBind) {
+  btnDownloadForfeitLabelTopBind.addEventListener('click', async () => {
+    await downloadForfeitLabelCsvForCurrentOrder('已棄標補下載');
+  });
+}
  function chooseForfeitReason(defaultReason = '7-11未取貨退回／棄標／購物金沒收') {
   return new Promise((resolve) => {
     const old = document.getElementById('forfeitReasonModal');
@@ -6083,6 +6096,53 @@ if (btnCancelTop) {
     return false;
   }
 }
+ async function downloadForfeitLabelCsvForCurrentOrder(reason = '已棄標補下載') {
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return false;
+  }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = String(f.order_id || f['訂單編號'] || '').trim();
+
+  if (!orderId) {
+    alert('這筆訂單沒有 order_id，無法下載棄標標籤。');
+    return false;
+  }
+
+  try {
+    const r = await fetch(`${API}/admin/order/forfeit-label-csv`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        order_id: orderId,
+        reason
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      alert('下載棄標標籤失敗：' + (j.message || j.error || r.status));
+      return false;
+    }
+
+    const ok = downloadForfeitLabelCsv(j.label_csv);
+
+    if (ok) {
+      alert('已下載棄標標籤 CSV，可用 Excel 開啟。');
+      return true;
+    }
+
+    alert('後端有回傳資料，但瀏覽器沒有成功下載，請再按一次。');
+    return false;
+  } catch (e) {
+    console.error(e);
+    alert('下載棄標標籤時發生錯誤，請稍後再試。');
+    return false;
+  }
+}
 async function forfeitCurrentOrder() {
   if (!currentRecord) {
     alert('請先在左邊選一筆訂單');
@@ -6155,7 +6215,7 @@ async function forfeitCurrentOrder() {
 
   const labelNote = labelDownloaded
     ? '\n\n已自動下載棄標標籤 CSV，可用 Excel 開啟。'
-    : '';
+    : (!j.already ? '\n\n⚠️ 這次沒有收到棄標標籤 CSV。選回這筆訂單後，可按「🏷️ 下載棄標標籤 CSV」補下載。' : '');
 
   if (j.already === 'forfeited') {
     alert('這筆訂單已經是棄標／沒收定金狀態。');
