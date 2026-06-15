@@ -596,13 +596,34 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     <button class="small-btn" id="btnClearDate" type="button">清除日期</button>
   </div>
 
-  <div class="field">
+  <div class="field" style="min-width:220px;">
     <label>貨單狀況</label>
     <select id="status">
       <option value="">全部貨單</option>
-      <option value="unshipped_custom">📦 未出貨訂單</option>
-      <option value="deposit_unshipped_custom">💰 已收定金未出貨</option>
-      <option value="cancelled_forfeit_custom">🚫 已取消／棄標</option>
+
+      <optgroup label="常用貨單狀況">
+        <option value="unshipped_custom">📦 未出貨訂單</option>
+        <option value="view_ship">⭐ 待出貨訂單</option>
+        <option value="quick_paid">💸 已收款但運費未填</option>
+        <option value="remind_today">🟡 付款待確認</option>
+        <option value="view_bank">🏦 匯款待確認</option>
+        <option value="view_pickup">📮 賣貨便登記</option>
+        <option value="pickup_need">🧾 已出貨但取貨未登記</option>
+        <option value="view_deposit_unshipped">💰 待確認定金收款</option>
+        <option value="deposit_unshipped_custom">💰 訂金已收＋尚未出貨</option>
+        <option value="view_cashinst_unpaid">💰 已收定金未出貨</option>
+        <option value="cancelled_forfeit_custom">🚫 已取消／棄標</option>
+      </optgroup>
+
+      <optgroup label="異常／需要人工確認">
+        <option value="view_all_risk_orders">⚠️ 全部系統異常</option>
+        <option value="view_credit_error">💳 購物金異常</option>
+        <option value="view_abnormal">⚠️ 異常清單</option>
+        <option value="view_payuni_pending_24h">⚠️ PayUNI pending 超過 24 小時</option>
+        <option value="view_installment_pending_3d">⚠️ 分期審核 pending 超過 3 天</option>
+        <option value="view_restock_failed">⚠️ 補庫存失敗</option>
+        <option value="view_cancelled_stock_locked">⚠️ 已取消但庫存仍扣住</option>
+      </optgroup>
     </select>
   </div>
 
@@ -1408,7 +1429,86 @@ function renderVendorMonthSummary(){
     .map(([name, sum]) => `${name}：${money(sum)}`)
     .join('<br>');
 }
+const ADMIN_STATUS_VIEW_MAP = {
+  view_ship: {
+    view_key: 'ship',
+    label: '待出貨訂單'
+  },
+  view_bank: {
+    view_key: 'bank',
+    label: '匯款待確認'
+  },
+  view_pickup: {
+    view_key: 'pickup',
+    label: '賣貨便登記'
+  },
+  view_deposit_unshipped: {
+    view_key: 'deposit_unshipped',
+    label: '待確認定金收款'
+  },
+  view_cashinst_unpaid: {
+    view_key: 'cashinst_unpaid',
+    label: '已收定金未出貨'
+  },
+  view_credit_error: {
+    view_key: 'credit_error',
+    label: '購物金異常'
+  },
+  view_all_risk_orders: {
+    view_key: 'all_risk_orders',
+    label: '全部系統異常'
+  },
+  view_abnormal: {
+    view_key: 'abnormal',
+    label: '異常清單'
+  },
+  view_payuni_pending_24h: {
+    view_key: 'payuni_pending_24h',
+    label: 'PayUNI pending 超過 24 小時'
+  },
+  view_installment_pending_3d: {
+    view_key: 'installment_pending_3d',
+    label: '分期審核 pending 超過 3 天'
+  },
+  view_restock_failed: {
+    view_key: 'restock_failed',
+    label: '補庫存失敗'
+  },
+  view_cancelled_stock_locked: {
+    view_key: 'cancelled_stock_locked',
+    label: '已取消但庫存仍扣住'
+  }
+};
 
+function getAdminStatusViewInfo(mode){
+  return ADMIN_STATUS_VIEW_MAP[String(mode || '').trim()] || null;
+}
+
+function adminStatusModeFromValue(value){
+  const st = String(value || '').trim();
+
+  if (!st) return 'all';
+
+  // 前端快速判斷類
+  if (st === 'unshipped_custom') return 'status_unshipped_custom';
+  if (st === 'deposit_unshipped_custom') return 'status_deposit_unshipped_custom';
+  if (st === 'cancelled_forfeit_custom') return 'status_cancelled_forfeit_custom';
+
+  // 既有前端快捷條件
+  if (st === 'quick_paid') return 'quick_paid';
+  if (st === 'remind_today') return 'remind_today';
+  if (st === 'pickup_need') return 'pickup_need';
+
+  // 後端 Airtable View 類
+  if (ADMIN_STATUS_VIEW_MAP[st]) return st;
+
+  return 'all';
+}
+
+async function applyAdminStatusDropdown(value){
+  setBatchActionMode('none');
+  return applyFullView(adminStatusModeFromValue(value));
+}
 async function applyFullView(mode = 'all', save = true){
   currentPanelMode = 'orders';
   await ensureOpKey();
@@ -1433,6 +1533,15 @@ async function applyFullView(mode = 'all', save = true){
   }
 
   const loadExtra = { ...dateRange };
+  const statusViewInfo = getAdminStatusViewInfo(mode);
+
+  // ✅ 下拉選到 Airtable View 類時，直接交給後端讀對應 View
+  // 避免只抓目前 120 筆再前端篩，導致舊資料找不到
+  if (statusViewInfo) {
+    loadExtra.view_key = statusViewInfo.view_key;
+    loadExtra.limit = 500;
+    loadExtra.allow_date_for_view = true;
+  }
 
   // ✅ 全部訂單下拉選「已取消／棄標」時，改讀原本 Airtable View
   // 這樣不會只在前端 120 筆裡面篩，才抓得到真正的取消／棄標清單
@@ -1522,6 +1631,11 @@ else if (mode === 'status_cancelled_forfeit_custom'){
   emptyText = '目前沒有「已取消／棄標」的訂單。';
   okText = `僅顯示「已取消／棄標」訂單。共 ${rows.length} 筆。`;
 }
+
+  else if (statusViewInfo){
+    emptyText = `目前沒有「${statusViewInfo.label}」的訂單。`;
+    okText = `目前顯示「${statusViewInfo.label}」。共 ${rows.length} 筆。`;
+  }
 
   else {
     emptyText = '目前沒有訂單。';
@@ -3204,19 +3318,10 @@ async function reloadCurrentView(){
     return loadConsignAccountingList();
   }
 
-  if (st === 'unshipped_custom') {
+  const dropdownMode = adminStatusModeFromValue(st);
+  if (dropdownMode !== 'all') {
     setBatchActionMode('none');
-    return applyFullView('status_unshipped_custom');
-  }
-
-  if (st === 'deposit_unshipped_custom') {
-    setBatchActionMode('none');
-    return applyFullView('status_deposit_unshipped_custom');
-  }
-
-  if (st === 'cancelled_forfeit_custom') {
-    setBatchActionMode('none');
-    return applyFullView('status_cancelled_forfeit_custom');
+    return applyFullView(dropdownMode);
   }
 
   setBatchActionMode('none');
@@ -5930,31 +6035,13 @@ $$('.filter-btn[data-filter]').forEach(btn=>{
   });
 });
 
-// 狀態下拉：只留兩個自訂值
+// 狀態下拉：統一轉成對應查詢模式
 const statusEl = $('#status');
 if (statusEl){
   statusEl.addEventListener('change', async ()=>{
-    const st = statusEl.value || '';
-
-    if (st === 'unshipped_custom') {
-      await applyFullView('status_unshipped_custom');
-      return;
-    }
-
-    if (st === 'deposit_unshipped_custom') {
-      await applyFullView('status_deposit_unshipped_custom');
-      return;
-    }
-
-    if (st === 'cancelled_forfeit_custom') {
-      await applyFullView('status_cancelled_forfeit_custom');
-      return;
-    }
-
-    await applyFullView('all');
+    await applyAdminStatusDropdown(statusEl.value || '');
   });
 }
-
 const btnApplyDate = $('#btnApplyDate');
 if (btnApplyDate){
   btnApplyDate.addEventListener('click', async ()=>{
