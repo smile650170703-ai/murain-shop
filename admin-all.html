@@ -2145,8 +2145,21 @@ function renderDepositForfeitRestockDetail(row){
 
   detailEl.innerHTML = `
     <div class="section-title">訂金沒收待放回商品</div>
-    <div class="tag-small">
-      勾選「已放回商品」只會更新「訂金沒收進利」表單欄位，不會再次補庫存，避免庫存重複加回。
+
+    <div class="tag-small" style="line-height:1.7;margin-bottom:10px;">
+      員工操作順序：先確認商品明細 → 需要標籤先下載 CSV → 商品實體放回可賣區後，按「商品已放回」。
+      <br>
+      這裡只會勾選 Orders 的「已放回商品」，不會再次補庫存、不會發 LINE、不會改金額。
+    </div>
+
+    <div class="top-order-actions" style="margin-top:10px;margin-bottom:12px;">
+      <button class="btn-secondary" id="btnDepositForfeitDownloadLabel" type="button">
+        🏷️ 下載棄標標籤 CSV
+      </button>
+
+      <button class="btn-primary" id="btnMarkDepositForfeitRestockDone" type="button">
+        ✅ 商品已放回，從清單移除
+      </button>
     </div>
 
     <div class="row mt-2">
@@ -2187,27 +2200,60 @@ function renderDepositForfeitRestockDetail(row){
       ${escapeHtml(row.productDetail || '-')}
     </div>
 
-    <label class="label-inline mt-3">
-      <input id="d_forfeit_restock_done_cb" type="checkbox">
-      已放回商品
-    </label>
-
-    <button class="btn-primary" id="btnMarkDepositForfeitRestockDone" type="button">
-      ✅ 確認已放回並從清單移除
-    </button>
-
     <div class="muted mt-3" id="detailMsg"></div>
   `;
+
+  $('#btnDepositForfeitDownloadLabel')?.addEventListener('click', async () => {
+    await downloadForfeitLabelCsvForDepositForfeitRow(row);
+  });
 
   $('#btnMarkDepositForfeitRestockDone')?.addEventListener('click', async () => {
     await markDepositForfeitRestockDone(row);
   });
+}
 
-  $('#d_forfeit_restock_done_cb')?.addEventListener('change', async (e) => {
-    if (e.target.checked) {
-      await markDepositForfeitRestockDone(row);
+async function downloadForfeitLabelCsvForDepositForfeitRow(row){
+  const orderId = String(row?.orderId || '').trim();
+
+  if (!orderId) {
+    alert('這筆資料沒有訂單編號，無法下載棄標標籤。');
+    return false;
+  }
+
+  try {
+    await ensureOpKey();
+
+    const r = await fetch(`${API}/admin/order/forfeit-label-csv`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        order_id: orderId,
+        reason: row.cancelReason || row.decision || '已棄標補下載'
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      alert('下載棄標標籤失敗：' + (j.message || j.error || r.status));
+      return false;
     }
-  });
+
+    const ok = downloadForfeitLabelCsv(j.label_csv);
+
+    if (ok) {
+      alert('已下載棄標標籤 CSV，可用 Excel 開啟。');
+      return true;
+    }
+
+    alert('後端有回傳標籤資料，但瀏覽器沒有成功下載，請再按一次。');
+    return false;
+  } catch (e) {
+    console.error(e);
+    alert('下載棄標標籤時發生錯誤：' + (e.message || e));
+    return false;
+  }
 }
 
 async function markDepositForfeitRestockDone(row){
