@@ -679,6 +679,9 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
         <button class="btn-secondary" id="btnSendTailLinkTop" type="button" style="display:none;">
           💰發尾款結帳連結+發LINE
         </button>
+        <button class="btn-secondary" id="btnResendTailChangePayTop" type="button" style="display:none;">
+          🔄 重發尾款連結（改付款方式）
+        </button>
         <button class="btn-secondary" id="btnSaveDetailOnlyTop" type="button">
           💾 儲存資料
         </button>
@@ -4115,6 +4118,7 @@ const btnSaveAndShipTop = $('#btnSaveAndShipTop');
 const btnConfirmPayTop = $('#btnConfirmPayOkTop');
 const btnFailTop = $('#btnMarkZcFailTop');
 const btnSendTailTop = $('#btnSendTailLinkTop');
+const btnResendTailChangePayTop = $('#btnResendTailChangePayTop');
 const btnMeetupDoneTop = $('#btnMeetupCashDoneTop');
 const btnMeetupNotifyTop = $('#btnMeetupNotifyTop');
 const btnCancelTopForfeit = $('#btnCancelOrderTop');
@@ -4172,6 +4176,7 @@ const isFinalOrder =
   btnConfirmPayTop,
   btnFailTop,
   btnSendTailTop,
+  btnResendTailChangePayTop,
   btnMeetupDoneTop,
   btnMeetupNotifyTop,
   btnCancelTopForfeit,
@@ -4195,10 +4200,15 @@ if (isForfeitOrder) {
   hideTopBtn(btnMeetupNotifyTop);
 
   if (isActualTailOrder) {
-    // ✅ TL 尾款單：只確認尾款收款，不發尾款連結，不取消原單重結
+    // ✅ TL 尾款單：可確認尾款收款，也可重發「母單尾款連結」讓客人改付款方式
     showTopBtn(btnConfirmPayTop);
     hideTopBtn(btnFailTop);
     hideTopBtn(btnSendTailTop);
+
+    // ✅ 只在 TL 且有母單 parent_order_id、尚未 paid_ok 時顯示
+    if (parentIdForButtons && psForButtons !== 'paid_ok') {
+      showTopBtn(btnResendTailChangePayTop);
+    }
 
   } else if (canSendTailLink) {
     // ✅ OD 主單：要請客人補尾款，只顯示發尾款連結，不顯示取消原單重結
@@ -6099,6 +6109,72 @@ function proxyButton(topId, originalId){
 
   proxyButton('btnSaveAndShipTop',   'btnSaveAndShip');
 proxyButton('btnMarkZcFailTop',    'btnMarkZcFail');
+
+// ✅ TL 尾款單專用：重發母單尾款結帳連結，讓客人重新選付款方式
+const btnResendTailChangePayTopBind = $('#btnResendTailChangePayTop');
+if (btnResendTailChangePayTopBind) {
+  btnResendTailChangePayTopBind.addEventListener('click', async () => {
+    await runButtonJob(btnResendTailChangePayTopBind, async () => {
+      if (!currentRecord) {
+        alert('請先在左邊選一筆 TL 尾款單');
+        return;
+      }
+
+      const f = currentRecord.fields || currentRecord || {};
+      const tailId = String(f.order_id || '').trim();
+      const parentId = String(f.parent_order_id || '').trim();
+      const ps = String(f.pay_status || '').trim().toLowerCase();
+
+      const isTail =
+        !!f.is_tail ||
+        String(f.order_type || '').trim().toLowerCase() === 'tail' ||
+        tailId.toUpperCase().startsWith('TL') ||
+        !!parentId;
+
+      if (!isTail) {
+        alert('這顆按鈕只給 TL 尾款單使用。');
+        return;
+      }
+
+      if (!parentId) {
+        alert('這筆 TL 沒有 parent_order_id，無法重發母單尾款連結。');
+        return;
+      }
+
+      if (ps === 'paid_ok') {
+        alert('這筆 TL 尾款已經收款完成，不能再重發改付款方式連結。');
+        return;
+      }
+
+      if (!confirm(`要重新發送母單 ${parentId} 的尾款結帳連結，讓客人重新選付款方式嗎？\n\n目前這筆 TL：${tailId}\n\n注意：舊 TL 會在客人送出新的尾款結帳時，由後端自動作廢。`)) {
+        return;
+      }
+
+      try {
+        const r = await fetch(`${API}/admin/deposit/send-tail-link`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            op_key: OP_KEY,
+            order_id: parentId
+          })
+        });
+
+        const j = await r.json().catch(() => ({}));
+
+        if (!r.ok || !j.ok) {
+          alert('重發失敗：' + (j.message || j.error || ('HTTP ' + r.status)));
+          return;
+        }
+
+        alert('已重新發送尾款結帳連結。請客人點新的連結後，重新選擇付款方式。');
+      } catch (e) {
+        console.error(e);
+        alert('系統錯誤，重發尾款連結失敗。');
+      }
+    }, '重發尾款連結中…');
+  });
+}
 
 // ✅ 上方唯一「收款/審核通過+發LINE」：現金分期也統一走後端完整推進 + 防連點
 const btnConfirmPayOkTopBind = $('#btnConfirmPayOkTop');
