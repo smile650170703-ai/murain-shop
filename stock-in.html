@@ -705,17 +705,17 @@
         </div>
 <div class="field span-3">
   <label for="price">建議售價</label>
-  <input id="price" type="number" inputmode="decimal" min="0" step="1" placeholder="0" />
+  <input id="price" type="number" inputmode="decimal" min="0" step="1" placeholder="可空白" />
 </div>
 
 <div id="auctionStartPriceField" class="field span-3 hidden">
   <label for="auctionStartPrice">起標價格</label>
-  <input id="auctionStartPrice" type="number" inputmode="decimal" min="0" step="1" placeholder="0" />
+  <input id="auctionStartPrice" type="number" inputmode="decimal" min="0" step="1" placeholder="可空白" />
 </div>
 
 <div id="bidStepField" class="field span-3 hidden">
   <label for="bidStep">一標多少</label>
-  <input id="bidStep" type="number" inputmode="decimal" min="0" step="1" placeholder="0" />
+  <input id="bidStep" type="number" inputmode="decimal" min="0" step="1" placeholder="可空白" />
 </div>
 
 <div class="field span-3">
@@ -725,7 +725,7 @@
 
 <div id="costField" class="field span-3">
   <label for="cost">成本</label>
-  <input id="cost" type="number" inputmode="decimal" min="0" step="1" placeholder="0" />
+  <input id="cost" type="number" inputmode="decimal" min="0" step="1" placeholder="可空白" />
 </div>
         
         <div class="field span-3">
@@ -1416,11 +1416,11 @@ function getFormData() {
     consignorRecordId: isConsign ? String(state.selectedConsignorRecordId || '').trim() : '',
     庫存位置: el.location.value.trim(),
     Name: el.name.value.trim(),
-    Price: normalizeNumber(el.price.value, 0),
-    起標價格: isConsign ? normalizeNumber(el.auctionStartPrice.value, 0) : 0,
-    一標多少: isConsign ? normalizeNumber(el.bidStep.value, 0) : 0,
+    Price: coerceDraftValue('Price', el.price.value),
+    起標價格: isConsign ? coerceDraftValue('起標價格', el.auctionStartPrice.value) : 0,
+    一標多少: isConsign ? coerceDraftValue('一標多少', el.bidStep.value) : 0,
     StockQty: normalizeNumber(el.stockQty.value, 0),
-    Cost: isConsign ? 0 : normalizeNumber(el.cost.value, 0),
+    Cost: isConsign ? 0 : coerceDraftValue('Cost', el.cost.value),
     入庫日期: el.stockInDate.value || todayStr(),
     sub_category: isConsign ? '寄賣' : el.subCategory.value.trim(),
     直播截圖Url: ''
@@ -1469,11 +1469,11 @@ function validateItem(item) {
     consignorRecordId: isConsign ? String(state.selectedConsignorRecordId || '').trim() : '',
     庫存位置: '',
     Name: '',
-    Price: 0,
-    起標價格: isConsign ? 0 : 0,
-    一標多少: isConsign ? 0 : 0,
+    Price: '',
+    起標價格: isConsign ? '' : 0,
+    一標多少: isConsign ? '' : 0,
     StockQty: 1,
-    Cost: isConsign ? 0 : 0,
+    Cost: isConsign ? 0 : '',
     入庫日期: el.stockInDate.value || todayStr(),
     sub_category: isConsign ? '寄賣' : '',
     直播截圖Url: ''
@@ -1572,15 +1572,15 @@ async function addDraft() {
   const row = state.drafts.find(x => x.id === id);
   if (!row) return;
 
-  row[key] = value;
+  row[key] = coerceDraftValue(key, value);
 
   if (key === '商品來源') {
     if (value === '自有') {
       row.原本包包條碼 = '';
       row.寄賣人 = '';
       row.consignorRecordId = '';
-      row['起標價格'] = 0;
-      row['一標多少'] = 0;
+      row['起標價格'] = '';
+      row['一標多少'] = '';
     }
   }
 
@@ -1634,11 +1634,11 @@ function getDraftColumns(mode = state.mode) {
       { key: 'SKU', label: 'SKU', type: 'text', readonly: true },
       { key: '寄賣人', label: '寄賣人', type: 'text', readonly: true },
       { key: '庫存位置', label: '庫存位置', type: 'text', placeholder: '可不填', paste: true },
-{ key: '直播截圖Url', label: '直播截圖', type: 'text', placeholder: '可貼圖片或圖片網址', paste: true },
+      { key: '直播截圖Url', label: '直播截圖', type: 'text', placeholder: '可貼圖片或圖片網址', paste: true },
       { key: 'Name', label: '商品名稱', type: 'text', placeholder: '輸入品牌+商品名稱', paste: true },
-       { key: 'StockQty', label: '數量', type: 'number', paste: true },
-      { key: '起標價格', label: '起標價格', type: 'number', paste: true },
-      { key: '一標多少', label: '一標多少', type: 'number', paste: true },
+      { key: 'StockQty', label: '數量', type: 'number', paste: true },
+      { key: '起標價格', label: '起標價格', type: 'number', placeholder: '可空白', paste: true },
+      { key: '一標多少', label: '一標多少', type: 'number', placeholder: '可空白', paste: true },
       { key: '入庫日期', label: '入庫日期', type: 'date', paste: true },
       { key: 'sub_category', label: '分類', type: 'text', readonly: true }
     ];
@@ -1650,14 +1650,13 @@ function getDraftColumns(mode = state.mode) {
     { key: 'SKU', label: 'SKU', type: 'text', placeholder: '請手動輸入條碼', paste: true },
     { key: '庫存位置', label: '庫存位置', type: 'text', placeholder: '可不填', paste: true },
     { key: 'Name', label: '商品名稱', type: 'text', placeholder: '輸入商品名稱', paste: true },
-    { key: 'Price', label: '建議售價', type: 'number', paste: true },
+    { key: 'Price', label: '建議售價', type: 'number', placeholder: '可空白', paste: true },
     { key: 'StockQty', label: '數量', type: 'number', paste: true },
-    { key: 'Cost', label: '成本', type: 'number', paste: true },
+    { key: 'Cost', label: '成本', type: 'number', placeholder: '可空白', paste: true },
     { key: '入庫日期', label: '入庫日期', type: 'date', paste: true },
     { key: 'sub_category', label: '分類', type: 'text', placeholder: '請輸入分類', paste: true }
   ];
 }
-
 function getPasteKeys(mode = state.mode) {
   return getDraftColumns(mode)
     .filter(col => col.paste)
@@ -1673,12 +1672,41 @@ function renderDraftTableHead() {
   `;
 }
 
+function isBlankableNumberKey(key) {
+  return ['Price', 'Cost', '起標價格', '一標多少'].includes(String(key || ''));
+}
+
 function coerceDraftValue(key, value) {
   const numKeys = ['Price', '起標價格', '一標多少', 'StockQty', 'Cost'];
   if (numKeys.includes(key)) {
-    return Number(value || 0);
+    const raw = String(value ?? '').replace(/,/g, '').trim();
+    if (!raw) return isBlankableNumberKey(key) ? '' : 0;
+
+    const n = Number(raw);
+    if (Number.isFinite(n)) return n;
+
+    return isBlankableNumberKey(key) ? '' : 0;
   }
+
   return String(value || '').trim();
+}
+
+function isLiveScreenshotPreviewUrl(url) {
+  const s = String(url || '').trim();
+  return /^https?:\/\//i.test(s) || /^data:image\//i.test(s) || /^blob:/i.test(s);
+}
+
+function renderLiveScreenshotPreview(url) {
+  const s = String(url || '').trim();
+  if (!isLiveScreenshotPreviewUrl(s)) return '';
+
+  const safeUrl = escapeHtml(s);
+  return `
+    <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:6px;">
+      <img src="${safeUrl}" alt="直播截圖預覽"
+        style="width:76px;height:76px;object-fit:cover;border-radius:10px;border:1px solid #e5e7eb;display:block;background:#f9fafb;">
+    </a>
+  `;
 }
 
 async function ensureDraftRows(targetCount) {
@@ -1764,7 +1792,7 @@ const attrs = [
   col.paste ? `data-paste-key="${col.key}"` : '',
   ...extraAttrs,
   !col.readonly
-    ? `oninput="window.__updateDraft('${escapeHtml(row.id)}','${col.key}',${col.type === 'number' ? 'Number(this.value || 0)' : 'this.value'})"`
+    ? `oninput="window.__updateDraft('${escapeHtml(row.id)}','${col.key}',this.value)"`
     : '',
   !col.readonly
     ? `onblur="window.__refreshDraftUi()"`
@@ -1777,7 +1805,18 @@ const attrs = [
     : ''
 ].filter(Boolean).join(' ');
 
-  return `<input ${attrs} />`;
+  const inputHtml = `<input ${attrs} />`;
+
+  if (col.key === '直播截圖Url') {
+    return `
+      <div style="display:grid;gap:4px;">
+        ${inputHtml}
+        ${renderLiveScreenshotPreview(value)}
+      </div>
+    `;
+  }
+
+  return inputHtml;
 }
 
 function renderDrafts() {
@@ -1889,33 +1928,75 @@ if (state.mode === 'consign' && startKey === '直播截圖Url') {
   saveDrafts();
   renderDrafts();
 }
-    async function handleDraftKeydown(e) {
-  if (e.key !== 'Enter') return;
+    function getEditableDraftKeys(mode = state.mode) {
+  return getDraftColumns(mode)
+    .filter(col => col.type !== 'action' && !col.readonly)
+    .map(col => col.key);
+}
+
+async function focusDraftInput(rowIndex, colKey) {
+  const rowNo = Math.max(0, Number(rowIndex || 0));
+  const key = String(colKey || '');
+
+  if (rowNo >= state.drafts.length) {
+    await ensureDraftRows(rowNo + 1);
+    saveDrafts();
+    renderDrafts();
+  }
+
+  const input = el.draftTableBody.querySelector(
+    `input[data-row-index="${rowNo}"][data-col-key="${key}"]`
+  );
+
+  if (input) {
+    input.focus();
+    input.select?.();
+  }
+}
+
+async function handleDraftKeydown(e) {
+  const moveKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'];
+  if (!moveKeys.includes(e.key)) return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
 
   const target = e.target;
-  if (!target) return;
+  if (!target || !target.dataset) return;
 
-  const colKey = String(target.dataset.colKey || '');
-  if (colKey !== 'sub_category') return;
+  const editableKeys = getEditableDraftKeys();
+  const currentRow = Number(target.dataset.rowIndex || 0);
+  const currentKey = String(target.dataset.colKey || '');
+  let currentCol = editableKeys.indexOf(currentKey);
+
+  if (currentCol < 0) return;
 
   e.preventDefault();
 
-  const currentRow = Number(target.dataset.rowIndex || 0);
-  let nextInput = el.draftTableBody.querySelector(
-    `input[data-row-index="${currentRow + 1}"][data-col-key="sub_category"]`
-  );
+  let nextRow = currentRow;
+  let nextCol = currentCol;
 
-  if (!nextInput) {
-    await addBlankRow();
-    nextInput = el.draftTableBody.querySelector(
-      `input[data-row-index="${currentRow + 1}"][data-col-key="sub_category"]`
-    );
+  if (e.key === 'ArrowUp') {
+    nextRow = Math.max(0, currentRow - 1);
+  } else if (e.key === 'ArrowDown' || e.key === 'Enter') {
+    nextRow = currentRow + 1;
+  } else if (e.key === 'ArrowRight') {
+    nextCol += 1;
+    if (nextCol >= editableKeys.length) {
+      nextCol = 0;
+      nextRow = currentRow + 1;
+    }
+  } else if (e.key === 'ArrowLeft') {
+    nextCol -= 1;
+    if (nextCol < 0) {
+      if (currentRow <= 0) {
+        nextCol = 0;
+      } else {
+        nextRow = currentRow - 1;
+        nextCol = editableKeys.length - 1;
+      }
+    }
   }
 
-  if (nextInput) {
-    nextInput.focus();
-    nextInput.select?.();
-  }
+  await focusDraftInput(nextRow, editableKeys[nextCol]);
 }
 
 function buildPayload(row) {
