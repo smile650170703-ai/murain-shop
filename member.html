@@ -3062,22 +3062,34 @@ function normalizeOrdersWithTail(raw){
   const ss = String(o?.ship_status || "").toLowerCase();
   const pm = String(o?.payment_method || "").toLowerCase();
 
-  // ✅ 視為「定金保留」tab 的 payment_method 都集中在這裡
-if (
-  pm === "deposit_old" ||
-  pm === "deposit_old_partial" ||
-  pm.includes("deposit_old") ||
+  // ✅ 定金保留 tab：只放「匯款定金保留」+「現金分期」
+  // 注意：不要用 pm.includes("deposit_old")，會誤抓 deposit_old_full 全額匯款。
+  const isBankDeposit =
+    pm === "atm_deposit" ||
+    pm === "deposit_old" ||
+    pm === "deposit_old_partial" ||
+    pm === "deposit_new" ||
+    pm === "deposit_new_partial" ||
+    pm === "deposit_new_partial_711" ||
+    pm === "deposit_new_partial_post" ||
+    pm === "dep_old" ||
+    pm === "dep_old_partial" ||
+    pm === "dep_new" ||
+    pm === "dep_new_partial" ||
+    pm.includes("deposit_old_partial") ||
+    pm.includes("deposit_new_partial");
 
-  // 你 map 裡有：atm_deposit = 定金匯款
-  pm === "atm_deposit" ||
+  const isCashInstallment =
+    pm === "cash_inst_2" ||
+    pm === "cash_inst_3" ||
+    pm === "cash_install_2" ||
+    pm === "cash_install_3" ||
+    pm.startsWith("cash_inst_") ||
+    pm.startsWith("cash_install_");
 
-  // 你 map 裡有：deposit_new_partial_711 / deposit_new_partial_post
-  pm === "deposit_new_partial_711" ||
-  pm === "deposit_new_partial_post" ||
-  pm.includes("deposit_new_partial")
-) return true;
+  if (isBankDeposit || isCashInstallment) return true;
 
-  // ✅ 原本的判斷：後端有些會用 deposit_hold / deposit_ok
+  // ✅ 後端舊資料：有些會只回 deposit_hold / deposit_ok
   if (st.includes("deposit_hold") || ps.includes("deposit_hold") || ss.includes("deposit_hold")) return true;
   if (ps === "deposit_ok" || st === "deposit_ok" || ss === "deposit_ok") return true;
 
@@ -3261,7 +3273,37 @@ if (txt === "已出貨" || txt === "已送達" || txt === "已取貨" || txt ===
   const d = v ? new Date(v) : null;
   return (d && !isNaN(d.getTime())) ? d : null;
 }
+function getOrderFinishedAt(o){
+  const display = getDisplayOrder(o);
+  const src = display?.src || o || {};
 
+  const v =
+    src?.shipped_at || src?.shippedAt ||
+    src?.completed_at || src?.completedAt ||
+    src?.arrived_at || src?.arrivedAt ||
+    src?.picked_up_at || src?.pickedUpAt ||
+    o?.shipped_at || o?.shippedAt ||
+    o?.completed_at || o?.completedAt ||
+    o?.arrived_at || o?.arrivedAt ||
+    o?.picked_up_at || o?.pickedUpAt ||
+    "";
+
+  const d = v ? new Date(v) : null;
+  return (d && !isNaN(d.getTime())) ? d : null;
+}
+
+function isOrderShippedCompleted(o){
+  const display = getDisplayOrder(o);
+  const src = display?.src || o || {};
+
+  const st = String(src?.status || "").toLowerCase();
+  const ss = String(src?.ship_status || "").toLowerCase();
+
+  return (
+    st === "shipped" || st === "completed" || st === "picked_up" || st === "arrived" ||
+    ss === "shipped" || ss === "completed" || ss === "picked_up" || ss === "arrived"
+  );
+}
   /* --- Tabs & Render Logic --- */
   function updateTabsUI() {
     document.querySelectorAll(".tab").forEach(btn => {
@@ -3293,35 +3335,37 @@ if (txt === "已出貨" || txt === "已送達" || txt === "已取貨" || txt ===
     const now = new Date();
 
     if (currentFilter === "history") {
-      // 15 天前
-      const halfMonthAgo = new Date(now.getTime() - 15 * 24 * 60 * 60 * 1000);
+      // ✅ 歷史訂單：近 30 天
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       list = list.filter(o => {
         if (focusOrderId && o.order_id === focusOrderId) return true;
-        const pm = String(o.payment_method || "").toLowerCase();
-        // 排除「定金保留」(deposit_hold)
+
+        // 排除「定金保留 / 現金分期」
         if (isDepositHoldOrder(o)) return false;
 
-        // ✅ 新增：隱藏 failed / cancelled（避免一堆作廢單）
-    if (shouldHideInHistory(o)) return false;
-        
-        const createdAt = getOrderCreatedAt(o);
-if (!createdAt) return true;
-        return createdAt >= halfMonthAgo;
-      });
-    } else if (currentFilter === "deposit") {
-      // 45 天前
-      const oneAndHalfMonthAgo = new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000);
-      list = list.filter(o => {
-        if (focusOrderId && o.order_id === focusOrderId) return true;
-        const pm = String(o.payment_method || "").toLowerCase();
-        // 必須是「定金保留」(deposit_hold)
-        if (!isDepositHoldOrder(o)) return false;
+        // 隱藏 failed / cancelled（避免一堆作廢單）
         if (shouldHideInHistory(o)) return false;
 
         const createdAt = getOrderCreatedAt(o);
-// ✅ 有些單如果後端沒回 created_at，不要整張被濾掉
-if (!createdAt) return true;
-return createdAt >= oneAndHalfMonthAgo;
+        if (!createdAt) return true;
+        return createdAt >= thirtyDaysAgo;
+      });
+    } else if (currentFilter === "deposit") {
+      // ✅ 定金保留：匯款定金保留 / 現金分期都顯示
+      // ✅ 已完成出貨 / 已取貨 / 已送達 / completed：只保留完成後 30 天
+      const thirtyDaysAfterFinished = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      list = list.filter(o => {
+        if (focusOrderId && o.order_id === focusOrderId) return true;
+        if (!isDepositHoldOrder(o)) return false;
+        if (shouldHideInHistory(o)) return false;
+
+        // 未完成出貨：不再用 45 天砍掉，持續保留在定金保留 tab
+        if (!isOrderShippedCompleted(o)) return true;
+
+        // 已完成出貨：用 shipped_at / completed_at / picked_up_at / arrived_at 計算 30 天
+        const finishedAt = getOrderFinishedAt(o);
+        if (!finishedAt) return true;
+        return finishedAt >= thirtyDaysAfterFinished;
       });
     }
     if (!list.length) {
