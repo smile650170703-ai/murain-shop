@@ -1978,17 +1978,31 @@ function displayOrderStatus(st){
   return st; // 其他未知狀態就直接顯示原碼
 }
 
-function displayPayStatus(ps){
-  switch (ps) {
+function isMeetupPendingOrder(f = {}){
+  const pm = String(f.payment_method || "").trim().toLowerCase();
+  const ps = String(f.pay_status || "").trim().toLowerCase();
+  const ss = String(f.ship_status || f.shipping_status || "").trim().toLowerCase();
+
+  return (
+    pm === "meetup_cash" &&
+    ps === "pending" &&
+    (ss === "pending" || ss === "meetup_pending")
+  );
+}
+
+function displayPayStatus(ps, f = {}){
+  if (isMeetupPendingOrder(f)) return "待面交收款";
+
+  const key = String(ps || '').trim().toLowerCase();
+
+  switch (key) {
     case 'unpaid':  return '未收款';
     case 'pending': return '待確認';
     case 'paid_ok': return '已收款';
-    // ★ 新增：訂金已收
     case 'deposit_ok': return '訂金已收';
-    // ★ 新增：取消
     case 'cancelled': return '已取消';
     case 'failed':  return '失敗 / 作廢';
-    default:        return ps || '';
+    default:        return String(ps || '').trim();
   }
 }
  function noteDateLabel(text){
@@ -2131,16 +2145,19 @@ if (!isTail && (hasTailMarked || hasTailChildInRows(oid, ALL_ORDERS_CACHE))) ret
   // 其他一律視為未出貨
   return true;
 }
-function displayShipStatusText(st){
+function displayShipStatusText(st, f = {}){
+  if (isMeetupPendingOrder(f)) return "待面交";
+
   const s = String(st || '').trim().toLowerCase();
   if(!s) return '';
   if(s === 'none')           return '未設定';
+  if(s === 'pending')        return '待出貨';
   if(s === 'ready_to_ship')  return '待出貨';
   if(s === 'meetup_pending') return '待面交';
   if(s === 'shipped')        return '已出貨';
   if(s === 'returned')       return '退貨';
   if(s === 'cancelled')      return '取消';
-  return st;
+  return String(st || '').trim();
 }
 function parseShippingInfo(fields){
   try{
@@ -3266,44 +3283,70 @@ function exportZeroReport(){
   window.open(url, '_blank');
 }
 
- function statusBadgePay(pay){
+function statusBadgePay(pay, f = {}){
   if (!pay) return '';
-  let cls  = 'badge';
-  let text = pay;
 
-  if (pay === 'paid_ok') {
+  const key = String(pay || '').trim().toLowerCase();
+  let cls  = 'badge';
+  let text = key;
+
+  if (isMeetupPendingOrder(f)) {
+    cls += ' yellow';
+    text = '待面交收款';
+  } else if (key === 'paid_ok') {
     cls  += ' green';
     text  = '已收款';
-  } else if (pay === 'deposit_ok') {
-    // 訂金已收
+  } else if (key === 'deposit_ok') {
     cls  += ' green';
     text  = '訂金已收';
-  } else if (pay === 'pending') {
+  } else if (key === 'pending') {
     cls  += ' yellow';
     text  = '待確認';
-  } else if (pay === 'unpaid') {
+  } else if (key === 'unpaid') {
     text  = '未收款';
-  } else if (pay === 'cancelled') {
-    // 付款狀態 = cancelled
+  } else if (key === 'cancelled') {
     cls  += ' red';
     text  = '取消訂單（補回庫存）';
-  } else if (pay === 'failed') {
+  } else if (key === 'failed') {
     cls  += ' red';
     text  = '失敗 / 作廢';
+  } else {
+    text = String(pay || '').trim();
   }
 
   return `<span class="${cls}">${text}</span>`;
 }
 
-function statusBadgeShip(st){
-  if(!st) return '';
+function statusBadgeShip(st, f = {}){
+  const key = String(st || '').trim().toLowerCase();
+  if(!key) return '';
+
   let cls = 'badge blue';
-  let text = st;
-  if(st === 'none'){ text = '未設定'; cls='badge'; }
-  else if(st === 'ready_to_ship'){ text = '待出貨'; }
-  else if(st === 'shipped'){ text = '已出貨'; }
-  else if(st === 'returned'){ text = '退貨'; cls='badge red'; }
-  else if(st === 'cancelled'){ text = '取消'; cls='badge red'; }
+  let text = key;
+
+  if (isMeetupPendingOrder(f)) {
+    text = '待面交';
+  } else if(key === 'none'){
+    text = '未設定';
+    cls = 'badge';
+  } else if(key === 'pending'){
+    text = '待出貨';
+  } else if(key === 'ready_to_ship'){
+    text = '待出貨';
+  } else if(key === 'meetup_pending'){
+    text = '待面交';
+  } else if(key === 'shipped'){
+    text = '已出貨';
+  } else if(key === 'returned'){
+    text = '退貨';
+    cls = 'badge red';
+  } else if(key === 'cancelled'){
+    text = '取消';
+    cls = 'badge red';
+  } else {
+    text = String(st || '').trim();
+  }
+
   return `<span class="${cls}">${text}</span>`;
 }
 
@@ -3406,8 +3449,8 @@ const overdueTag = isBankPending
     }
 
     const line2   = [ship.name, ship.phone, addr].filter(Boolean).join(' / ');
-    const pay_b   = statusBadgePay(f.pay_status);
-    const ship_b  = statusBadgeShip(f.ship_status);
+const pay_b   = statusBadgePay(f.pay_status, f);
+const ship_b  = statusBadgeShip(f.ship_status || f.shipping_status, f);
     const method  = displayPaymentMethod(f.payment_method || '');
     const created = f.CreatedAt || (f.created_at || '');
     const a = calcAmounts(f);
@@ -3829,11 +3872,11 @@ ${renderTailInfoBlock(f)}
 <div class="row">
   <div>
     <label>付款狀態</label>
-    <div class="ro-field ro-sm" id="d_pay_status_ro">${displayPayStatus(f.pay_status)}</div>
+<div class="ro-field ro-sm" id="d_pay_status_ro">${displayPayStatus(f.pay_status, f)}</div>
   </div>
   <div>
     <label>出貨狀態 (ship_status)</label>
-    <div class="ro-field ro-sm" id="d_ship_status_ro">${displayShipStatusText(f.ship_status)}</div>
+    <div class="ro-field ro-sm" id="d_ship_status_ro">${displayShipStatusText(f.ship_status || f.shipping_status, f)}</div>
   </div>
 </div>
 
