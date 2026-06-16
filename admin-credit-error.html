@@ -677,26 +677,12 @@
   </a>
 </div>
   <div class="card">
-    <div class="top-hint">
-  這裡是「系統異常中心」，集中查看購物金、付款、通知、庫存、分期審核等異常。<br>
-  上方主要處理「付款已成功，但購物金正式扣款失敗」的訂單；這類訂單才可以按「重新扣購物金並放行」。<br>
-  下方其他異常清單主要是只讀查看與人工確認；確認已處理後，勾選「異常問題已解決」並儲存即可隱藏。<br>
-  若看到「疑似異常」但沒有 CREDIT_CAPTURE_ERROR，請先確認 CreditsLedger；舊資料已人工處理者，只需補勾 credit_spend_done，不要按重新扣款。
-</div>
-
-<div class="risk-level-help">
-  <div class="risk-help-card">
-    <b><span class="badge red">🔴 紅色</span> 立即處理</b>
-    可能影響付款、庫存、重複訂單、購物金或出貨。看到紅色先不要出貨、不要叫客人重下單，先照「馬上怎麼處理」核對。
-  </div>
-  <div class="risk-help-card">
-    <b><span class="badge yellow">🟡 黃色</span> 今日確認</b>
-    通常不是訂單整筆失敗，常見是通知失敗、分期狀態晚到、重新付款提醒失敗。今天內確認後補通知或標記處理。
-  </div>
-  <div class="risk-help-card">
-    <b><span class="badge gray">⚪ 灰色</span> 紀錄 / 低風險</b>
-    多半是系統正常紀錄、已自動處理、或沒有命中嚴重規則。確認沒有紅黃問題後，可標記已處理。
-  </div>
+<div class="top-hint">
+  <b>這頁只做三件事：</b><br>
+  🔴 紅色：先核對付款、庫存、重複訂單，不要直接出貨。<br>
+  🧪 只讀一致性：只顯示資料矛盾，不會自動改庫存；有訂單編號才可以勾選完成。<br>
+  🧾 系統事件：先按「檢查問題」，確認 Orders / CartToken / CartItems 後，再勾選完成並儲存。<br>
+  <b>時間：</b>下方全部改顯示台灣時間；只讀一致性會顯示「依據時間」和「檢查時間」。
 </div>
 
         <div class="toolbar">
@@ -844,7 +830,74 @@ function esc(s){
 function money(n){
   return 'NT$ ' + Math.round(Number(n || 0)).toLocaleString('zh-TW');
 }
+function formatTaipeiTime(v, fallback = '—'){
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return fallback;
 
+  const ms = Date.parse(s);
+  if (!Number.isFinite(ms)) return s;
+
+  const parts = new Intl.DateTimeFormat('zh-TW', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(new Date(ms));
+
+  const get = type => parts.find(p => p.type === type)?.value || '';
+
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
+}
+
+function timeAgoText(v){
+  const ms = Date.parse(String(v || ''));
+  if (!Number.isFinite(ms)) return '';
+
+  const diff = Date.now() - ms;
+  if (diff < 0) return '';
+
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return '剛剛';
+  if (min < 60) return `${min} 分鐘前`;
+
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} 小時前`;
+
+  const day = Math.floor(hr / 24);
+  return `${day} 天前`;
+}
+
+function formatTaipeiTimeWithAgo(v, fallback = '—'){
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return fallback;
+
+  const t = formatTaipeiTime(s, fallback);
+  const ago = timeAgoText(s);
+
+  return ago ? `${t}（${ago}）` : t;
+}
+
+function readonlyIssueTime(issue = {}){
+  const e = issue.evidence || {};
+
+  return (
+    issue.happenedAt ||
+    issue.happened_at ||
+    issue.createdAt ||
+    issue.created_at ||
+    e.order_created_at ||
+    e.cart_updated_at ||
+    e.checkout_lock_at ||
+    e.checked_out_at ||
+    e.created_at ||
+    e.updated_at ||
+    ''
+  );
+}
 function normBool(v){
   return v === true || String(v || '').trim().toLowerCase() === 'true';
 }
@@ -2220,13 +2273,6 @@ function systemEventsRowsHtml(rows){
     return s.length > len ? s.slice(0, len) + '…' : s;
   };
 
-  const jsArg = (v) => {
-    return JSON.stringify(String(v == null ? '' : v))
-      .replace(/</g, '\\u003C')
-      .replace(/>/g, '\\u003E')
-      .replace(/&/g, '\\u0026');
-  };
-
   const filtered = (rows || []).filter(rec => {
     const f = rec.fields || {};
     const hay = [
@@ -2251,6 +2297,7 @@ function systemEventsRowsHtml(rows){
         const eventId = rec.id || '';
         const eventType = String(f.event_type || '').trim();
         const level = String(f.level || '').trim().toLowerCase();
+        const eventTime = f.event_time || rec.createdTime || '';
 
         const levelClass =
           level === 'error' ? 'red' :
@@ -2271,10 +2318,17 @@ function systemEventsRowsHtml(rows){
             <div class="system-event-head">
               <div>
                 <span class="badge ${esc(levelClass)}">${esc(levelText)}</span>
-                <span class="system-event-time">${esc(f.event_time || '-')}</span>
+                <span class="system-event-time">發生：${esc(formatTaipeiTimeWithAgo(eventTime))}</span>
               </div>
 
-              <button type="button" class="primary" onclick="diagnoseSystemEvent(${jsArg(eventId)}, ${jsArg(f.cart_token || '')}, ${jsArg(f.line_user_id || '')}, ${jsArg(eventType)}, this)">
+              <button
+                type="button"
+                class="primary js-diagnose-system-event"
+                data-event-id="${esc(eventId)}"
+                data-cart-token="${esc(f.cart_token || '')}"
+                data-line-user-id="${esc(f.line_user_id || '')}"
+                data-event-type="${esc(eventType)}"
+              >
                 檢查問題
               </button>
             </div>
@@ -2291,13 +2345,23 @@ function systemEventsRowsHtml(rows){
             </div>
 
             <div class="system-event-actions">
-              <button type="button" onclick="resolveSystemEvent('${esc(eventId)}', this)">
-                標記已處理
+              <label>
+                <input class="system-resolve-check" type="checkbox" />
+                <span>已人工確認完成</span>
+              </label>
+
+              <button
+                type="button"
+                class="js-resolve-system-event"
+                data-event-id="${esc(eventId)}"
+              >
+                儲存已處理
               </button>
 
               <details class="system-event-tech">
                 <summary style="cursor:pointer;">查看技術資料</summary>
                 <pre>event_type：${esc(eventType || '-')}
+event_time：${esc(formatTaipeiTimeWithAgo(eventTime))}
 cart_token：${esc(f.cart_token || '-')}
 line_user_id：${esc(f.line_user_id || '-')}
 page_url：${esc(f.page_url || '-')}
@@ -2491,6 +2555,9 @@ function readonlyIssueRowsHtml(issues = []){
         const levelClass = readonlyIssueLevelClass(issue);
         const levelText = readonlyIssueLevelText(issue);
         const safeClass = riskSummaryClass(levelClass);
+        const orderNo = String(issue.orderNo || '').trim();
+        const issueTime = readonlyIssueTime(issue);
+        const checkedAt = issue.generated_at || issue.generatedAt || '';
 
         return `
           <div class="risk-order-card ${esc(safeClass)}">
@@ -2499,9 +2566,31 @@ function readonlyIssueRowsHtml(issues = []){
                 <span class="badge ${esc(levelClass)}">${esc(levelText)}</span>
                 <div class="risk-card-title">${esc(issue.title || issue.type || '資料一致性問題')}</div>
                 <div class="risk-card-meta">
-                  訂單：${esc(issue.orderNo || '—')}<br>
-                  cart_token：${esc(issue.cartToken || '—')}
+                  訂單：${esc(orderNo || '—')}<br>
+                  cart_token：${esc(issue.cartToken || '—')}<br>
+                  依據時間：${esc(formatTaipeiTimeWithAgo(issueTime))}<br>
+                  檢查時間：${esc(formatTaipeiTimeWithAgo(checkedAt))}
                 </div>
+              </div>
+
+              <div class="risk-card-actions">
+                ${
+                  orderNo
+                    ? `
+                      <label>
+                        <input class="resolve-check" type="checkbox" />
+                        <span>已人工核對完成</span>
+                      </label>
+                      <button type="button" onclick="saveAbnormalResolved('${esc(orderNo)}', this)">
+                        儲存
+                      </button>
+                    `
+                    : `
+                      <span class="risk-release-warning">
+                        這筆沒有訂單編號，不能勾完成。請先處理 CartToken / 資料狀態，重新載入後會消失。
+                      </span>
+                    `
+                }
               </div>
             </div>
 
@@ -2533,6 +2622,8 @@ ${esc(issue.message || '-')}
                   <summary>查看來源資料</summary>
                   <pre>source：${esc(issue.source || '-')}
 recordId：${esc(issue.recordId || '-')}
+依據時間：${esc(formatTaipeiTimeWithAgo(issueTime))}
+檢查時間：${esc(formatTaipeiTimeWithAgo(checkedAt))}
 ${esc(issue.evidence ? JSON.stringify(issue.evidence, null, 2) : '')}</pre>
                 </details>
               </div>
@@ -2649,8 +2740,8 @@ async function loadReadonlyConsistencyIssues(){
   try {
     const params = new URLSearchParams();
     params.set('op_key', OP_KEY);
-    params.set('days', '7');
-    params.set('limit', '300');
+params.set('days', '90');
+params.set('limit', '500');
 
     const r = await fetch(`${API}/admin/readonly-consistency-check?` + params.toString(), {
       method: 'GET',
@@ -2664,8 +2755,13 @@ async function loadReadonlyConsistencyIssues(){
       throw new Error(j.message || j.error || ('HTTP ' + r.status));
     }
 
-    READONLY_ISSUES = (Array.isArray(j.issues) ? j.issues : [])
-      .filter(issue => READONLY_RISK_TYPES.has(String(issue.type || '').trim()));
+READONLY_ISSUES = (Array.isArray(j.issues) ? j.issues : [])
+  .filter(issue => READONLY_RISK_TYPES.has(String(issue.type || '').trim()))
+  .map(issue => ({
+    ...issue,
+    generated_at: j.generated_at || '',
+    range_days: j.range_days || ''
+  }));
 
     updateRiskSummary();
 
@@ -2732,6 +2828,14 @@ async function loadSystemEvents(){
 
 async function resolveSystemEvent(eventId, btn){
   if (!eventId) return;
+
+  const card = btn?.closest('.system-event-card');
+  const checked = !!card?.querySelector('.system-resolve-check')?.checked;
+
+  if (!checked) {
+    alert('請先勾選「已人工確認完成」再儲存。');
+    return;
+  }
 
   const ok = confirm('確定要把這筆系統事件紀錄標記為已處理嗎？');
   if (!ok) return;
@@ -3012,6 +3116,26 @@ $('#btnReloadSystemEvents')?.addEventListener('click', loadSystemEvents);
 $('#systemEventSearch')?.addEventListener('input', () => {
   const list = $('#systemEventsList');
   if (list) list.innerHTML = systemEventsRowsHtml(SYSTEM_EVENT_ROWS);
+});
+
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.js-diagnose-system-event');
+  if (!btn) return;
+
+  diagnoseSystemEvent(
+    btn.dataset.eventId || '',
+    btn.dataset.cartToken || '',
+    btn.dataset.lineUserId || '',
+    btn.dataset.eventType || '',
+    btn
+  );
+});
+
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.js-resolve-system-event');
+  if (!btn) return;
+
+  resolveSystemEvent(btn.dataset.eventId || '', btn);
 });
 
 window.addEventListener('DOMContentLoaded', loadRows);
