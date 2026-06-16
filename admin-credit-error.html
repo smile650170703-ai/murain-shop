@@ -60,28 +60,35 @@
     display:grid;
     grid-template-columns:repeat(3,minmax(0,1fr));
     gap:8px;
-    margin:12px 0 4px;
+    margin:10px 0 4px;
   }
 
   .risk-summary-card{
     border:1px solid rgba(148,163,184,.25);
     border-radius:14px;
-    padding:10px;
+    padding:10px 12px;
     background:rgba(2,6,23,.36);
+    min-height:54px;
+    display:grid;
+    grid-template-columns:auto auto minmax(0,1fr);
+    align-items:center;
+    column-gap:10px;
   }
 
   .risk-summary-num{
     font-size:24px;
     font-weight:900;
-    margin-top:6px;
+    margin:0;
     color:#e5e7eb;
+    line-height:1;
+    min-width:34px;
   }
 
   .risk-summary-label{
     color:#94a3b8;
     font-size:12px;
-    line-height:1.5;
-    margin-top:4px;
+    line-height:1.35;
+    margin:0;
   }
 
   @media(max-width:760px){
@@ -595,7 +602,83 @@
   line-height:1.55;
   max-width:260px;
 }
+.risk-order-card.compact,
+.system-event-card.compact{
+  padding:10px 12px;
+}
 
+.risk-order-card.compact .risk-card-head,
+.system-event-card.compact .system-event-head{
+  margin-bottom:0;
+  padding-bottom:8px;
+}
+
+.risk-compact-info{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px 10px;
+  margin-top:6px;
+  color:#cbd5e1;
+  font-size:12px;
+  line-height:1.45;
+}
+
+.risk-compact-info span{
+  border:1px solid rgba(148,163,184,.22);
+  border-radius:999px;
+  padding:3px 7px;
+  background:rgba(15,23,42,.55);
+}
+
+.risk-compact-note{
+  margin-top:8px;
+  color:#cbd5e1;
+  font-size:12px;
+  line-height:1.55;
+}
+
+.risk-compact-note.danger{
+  color:#fecaca;
+  font-weight:800;
+}
+
+.risk-compact-note.warn{
+  color:#fde68a;
+  font-weight:800;
+}
+
+.risk-compact-details{
+  margin-top:8px;
+  color:#cbd5e1;
+  font-size:12px;
+}
+
+.risk-compact-details summary{
+  cursor:pointer;
+  color:#bae6fd;
+  font-weight:900;
+}
+
+.risk-compact-details pre{
+  max-height:150px;
+  overflow:auto;
+  white-space:pre-wrap;
+  color:#cbd5e1;
+  background:rgba(15,23,42,.7);
+  border:1px solid rgba(148,163,184,.20);
+  border-radius:10px;
+  padding:8px;
+  margin-top:8px;
+}
+
+.system-event-card.compact .system-event-title{
+  margin:6px 0 0;
+  font-size:14px;
+}
+
+.system-event-card.compact .system-event-actions{
+  margin-top:8px;
+}
 @media(max-width:900px){
   .risk-card-main{
     grid-template-columns:1fr;
@@ -677,14 +760,6 @@
   </a>
 </div>
   <div class="card">
-<div class="top-hint">
-  <b>這頁只做三件事：</b><br>
-  🔴 紅色：先核對付款、庫存、重複訂單，不要直接出貨。<br>
-  🧪 只讀一致性：只顯示資料矛盾，不會自動改庫存；有訂單編號才可以勾選完成。<br>
-  🧾 系統事件：先按「檢查問題」，確認 Orders / CartToken / CartItems 後，再勾選完成並儲存。<br>
-  <b>時間：</b>下方全部改顯示台灣時間；只讀一致性會顯示「依據時間」和「檢查時間」。
-</div>
-
         <div class="toolbar">
       <button id="btnReload" type="button">重新載入</button>
       <input id="orderSearch" type="text" placeholder="搜尋訂單編號 / LINE名稱" />
@@ -2314,11 +2389,18 @@ function systemEventsRowsHtml(rows){
         const meaning = String(f.message_cn || '').trim() || displaySystemEventMeaning(eventType);
 
         return `
-          <div class="system-event-card">
+          <div class="system-event-card compact">
             <div class="system-event-head">
               <div>
                 <span class="badge ${esc(levelClass)}">${esc(levelText)}</span>
                 <span class="system-event-time">發生：${esc(formatTaipeiTimeWithAgo(eventTime))}</span>
+                <div class="system-event-title">${esc(typeCn)}</div>
+
+                <div class="risk-compact-info">
+                  <span>購物車：${esc(shortText(f.cart_token, 22))}</span>
+                  <span>訂單：${esc(f.order_id || '-')}</span>
+                  <span>LINE：${esc(shortText(f.line_user_id, 18))}</span>
+                </div>
               </div>
 
               <button
@@ -2333,16 +2415,7 @@ function systemEventsRowsHtml(rows){
               </button>
             </div>
 
-            <div class="system-event-title">${esc(typeCn)}</div>
-            <div class="system-event-meaning">${esc(meaning)}</div>
-
             <div id="diagnose-${esc(eventId)}"></div>
-
-            <div class="system-event-meta">
-              <span>購物車：${esc(shortText(f.cart_token, 22))}</span>
-              <span>訂單：${esc(f.order_id || '-')}</span>
-              <span>LINE：${esc(shortText(f.line_user_id, 18))}</span>
-            </div>
 
             <div class="system-event-actions">
               <label>
@@ -2357,10 +2430,16 @@ function systemEventsRowsHtml(rows){
               >
                 儲存已處理
               </button>
+            </div>
 
-              <details class="system-event-tech">
-                <summary style="cursor:pointer;">查看技術資料</summary>
-                <pre>event_type：${esc(eventType || '-')}
+            <details class="risk-compact-details">
+              <summary>查看說明 / 技術資料</summary>
+
+              <div class="risk-compact-note">
+                <b>說明：</b>${esc(meaning)}
+              </div>
+
+              <pre>event_type：${esc(eventType || '-')}
 event_time：${esc(formatTaipeiTimeWithAgo(eventTime))}
 cart_token：${esc(f.cart_token || '-')}
 line_user_id：${esc(f.line_user_id || '-')}
@@ -2368,8 +2447,7 @@ page_url：${esc(f.page_url || '-')}
 
 raw_detail：
 ${esc(f.raw_detail || '-')}</pre>
-              </details>
-            </div>
+            </details>
           </div>
         `;
       }).join('')}
@@ -2545,6 +2623,12 @@ function readonlyIssueAction(issue = {}){
 function readonlyIssueRowsHtml(issues = []){
   const rows = (issues || []).filter(issue => READONLY_RISK_TYPES.has(String(issue.type || '').trim()));
 
+  const shortText = (v, len = 30) => {
+    const s = String(v || '').trim();
+    if (!s) return '—';
+    return s.length > len ? s.slice(0, len) + '…' : s;
+  };
+
   if (!rows.length) {
     return '<div class="risk-empty">目前沒有只讀一致性高風險問題。</div>';
   }
@@ -2558,18 +2642,26 @@ function readonlyIssueRowsHtml(issues = []){
         const orderNo = String(issue.orderNo || '').trim();
         const issueTime = readonlyIssueTime(issue);
         const checkedAt = issue.generated_at || issue.generatedAt || '';
+        const code = String(issue.type || '').trim();
+        const title = issue.title || riskCodeZh(code) || '資料一致性問題';
+        const problemText = [
+          riskCodeZh(code),
+          issue.message
+        ].filter(Boolean).join('｜');
+
+        const noteClass = safeClass === 'red' ? 'danger' : 'warn';
 
         return `
-          <div class="risk-order-card ${esc(safeClass)}">
+          <div class="risk-order-card compact ${esc(safeClass)}">
             <div class="risk-card-head">
               <div>
                 <span class="badge ${esc(levelClass)}">${esc(levelText)}</span>
-                <div class="risk-card-title">${esc(issue.title || issue.type || '資料一致性問題')}</div>
-                <div class="risk-card-meta">
-                  訂單：${esc(orderNo || '—')}<br>
-                  cart_token：${esc(issue.cartToken || '—')}<br>
-                  依據時間：${esc(formatTaipeiTimeWithAgo(issueTime))}<br>
-                  檢查時間：${esc(formatTaipeiTimeWithAgo(checkedAt))}
+                <div class="risk-card-title">${esc(title)}</div>
+                <div class="risk-compact-info">
+                  <span>訂單：${esc(orderNo || '—')}</span>
+                  <span>cart：${esc(shortText(issue.cartToken, 26))}</span>
+                  <span>依據：${esc(formatTaipeiTimeWithAgo(issueTime))}</span>
+                  <span>檢查：${esc(formatTaipeiTimeWithAgo(checkedAt))}</span>
                 </div>
               </div>
 
@@ -2587,47 +2679,38 @@ function readonlyIssueRowsHtml(issues = []){
                     `
                     : `
                       <span class="risk-release-warning">
-                        這筆沒有訂單編號，不能勾完成。請先處理 CartToken / 資料狀態，重新載入後會消失。
+                        這筆沒有訂單編號，不能勾完成。請先處理 CartToken / 資料狀態。
                       </span>
                     `
                 }
               </div>
             </div>
 
-            <div class="risk-card-main">
-              <div class="risk-card-section">
-                <div class="risk-card-label">問題</div>
-                <div class="risk-card-text danger">
-異常類型：${esc(riskCodeZh(issue.type || '-'))}
+            <div class="risk-compact-note ${esc(noteClass)}">
+              <b>問題：</b>${esc(problemText || '-')}
+            </div>
 
-系統代碼：${esc(issue.type || '-')}
+            <details class="risk-compact-details">
+              <summary>查看處理說明 / 來源資料</summary>
 
-${esc(issue.message || '-')}
+              <div class="risk-card-main">
+                <div class="risk-card-section">
+                  <div class="risk-card-label">建議處理</div>
+                  <div class="risk-card-text strong">${esc(readonlyIssueAction(issue))}</div>
+                </div>
+
+                <div class="risk-card-section">
+                  <div class="risk-card-label">緊急 / 影響</div>
+                  <div class="risk-card-text warn">${esc(readonlyIssueImpact(issue))}</div>
                 </div>
               </div>
 
-              <div class="risk-card-section">
-                <div class="risk-card-label">建議處理</div>
-                <div class="risk-card-text strong">${esc(readonlyIssueAction(issue))}</div>
-              </div>
-
-              <div class="risk-card-section">
-                <div class="risk-card-label">緊急 / 影響</div>
-                <div class="risk-card-text warn">${esc(readonlyIssueImpact(issue))}</div>
-              </div>
-
-              <div class="risk-card-section">
-                <div class="risk-card-label">來源</div>
-                <details class="risk-card-tech" open>
-                  <summary>查看來源資料</summary>
-                  <pre>source：${esc(issue.source || '-')}
+              <pre>source：${esc(issue.source || '-')}
 recordId：${esc(issue.recordId || '-')}
 依據時間：${esc(formatTaipeiTimeWithAgo(issueTime))}
 檢查時間：${esc(formatTaipeiTimeWithAgo(checkedAt))}
 ${esc(issue.evidence ? JSON.stringify(issue.evidence, null, 2) : '')}</pre>
-                </details>
-              </div>
-            </div>
+            </details>
           </div>
         `;
       }).join('')}
