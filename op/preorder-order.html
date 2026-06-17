@@ -651,7 +651,27 @@ td{
 <a class="page-tab" href="/admin-line-message" target="_blank" rel="noopener noreferrer">LINE 客服推播</a>
   </div>
 </div>
+<section class="card" id="secOpKey" style="margin-bottom:16px;">
+  <h2>0. OP 權限</h2>
 
+  <div class="row-3">
+    <div>
+      <label for="op_key_input">OP Key / 後台操作密碼</label>
+      <input id="op_key_input" type="password" placeholder="請輸入後台操作密碼" autocomplete="off" />
+      <div class="hint" id="op_key_hint">輸入後會存在本分頁，重新開新分頁需要再輸入。</div>
+    </div>
+
+    <div>
+      <label>&nbsp;</label>
+      <button class="btn btn-gold" id="btnSaveOpKey" type="button">驗證並儲存</button>
+    </div>
+
+    <div>
+      <label>&nbsp;</label>
+      <button class="btn btn-dark" id="btnClearOpKey" type="button">清除 OP Key</button>
+    </div>
+  </div>
+</section>
 <div class="topbar">
   <div>
     <div class="brand">預購入庫＋發送</div>
@@ -932,11 +952,17 @@ async function apiJson(url, options = {}) {
 }
 
 async function getOpKey(force = false) {
+  const input = document.getElementById("op_key_input");
+  const hint = document.getElementById("op_key_hint");
+
   let opKey = force ? "" : String(sessionStorage.getItem("murain_op_key") || "").trim();
 
-  while (!opKey) {
-    opKey = String(window.prompt("請輸入 OP Key") || "").trim();
-    if (!opKey) throw new Error("未輸入 OP Key");
+  if (!opKey && input) {
+    opKey = String(input.value || "").trim();
+  }
+
+  if (!opKey) {
+    throw new Error("請先在上方輸入 OP Key / 後台操作密碼");
   }
 
   const data = await apiJson(apiUrl("/op/auth"), {
@@ -947,10 +973,15 @@ async function getOpKey(force = false) {
 
   if (!data?.ok) {
     sessionStorage.removeItem("murain_op_key");
+    if (input) input.value = "";
+    if (hint) hint.textContent = "OP Key 驗證失敗，請重新輸入。";
     throw new Error("OP Key 驗證失敗");
   }
 
   sessionStorage.setItem("murain_op_key", opKey);
+  if (input) input.value = opKey;
+  if (hint) hint.textContent = "OP Key 已驗證，可搜尋客人與發送預購卡片。";
+
   return opKey;
 }
 
@@ -1319,14 +1350,17 @@ async function mockSearchMembers() {
     return;
   }
 
-  try {
-   const data = await apiJson(apiUrl("/op/line-member/search"), {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({
-    keyword: kw
-  })
-});
+try {
+  const opKey = await getOpKey();
+
+  const data = await apiJson(apiUrl("/op/line-member/search"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      keyword: kw,
+      op_key: opKey
+    })
+  });
 
     const rawRows = []
       .concat(data?.items || [])
@@ -1499,6 +1533,29 @@ async function createPreProductLocal() {
 }
 
     document.getElementById("btnReloadPage")?.addEventListener("click", ()=>location.reload());
+
+    document.getElementById("btnSaveOpKey")?.addEventListener("click", async () => {
+  await withBtnLoading("btnSaveOpKey", "驗證中...", async () => {
+    try {
+      await getOpKey(true);
+      alert("OP Key 已驗證並儲存");
+    } catch (err) {
+      alert(String(err?.message || err || "OP Key 驗證失敗"));
+    }
+  });
+});
+
+document.getElementById("btnClearOpKey")?.addEventListener("click", () => {
+  sessionStorage.removeItem("murain_op_key");
+
+  const input = document.getElementById("op_key_input");
+  const hint = document.getElementById("op_key_hint");
+
+  if (input) input.value = "";
+  if (hint) hint.textContent = "已清除 OP Key，下一次操作前請重新輸入。";
+
+  alert("已清除 OP Key");
+});
 
     document.getElementById("btnClearPreProduct").addEventListener("click", async ()=>{
       await resetPreProductForm();
