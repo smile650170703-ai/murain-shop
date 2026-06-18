@@ -740,6 +740,10 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     🚫 棄標／沒收定金
   </button>
 
+ <button id="btnCancelPendingOrderTop" class="small-btn" type="button" style="display:none;">
+  🧹 取消未付款單（補回庫存）
+</button>
+
   <button id="btnDownloadForfeitLabelTop" class="small-btn" type="button" style="display:none;">
     🏷️ 下載棄標標籤 CSV
   </button>
@@ -4845,6 +4849,7 @@ const btnSendTailTop = $('#btnSendTailLinkTop');
 const btnMeetupDoneTop = $('#btnMeetupCashDoneTop');
 const btnMeetupNotifyTop = $('#btnMeetupNotifyTop');
 const btnCancelTopForfeit = $('#btnCancelOrderTop');
+const btnCancelPendingTop = $('#btnCancelPendingOrderTop');
 const btnDownloadForfeitLabelTop = $('#btnDownloadForfeitLabelTop');
 const btnSaveOnlyTop = $('#btnSaveDetailOnlyTop');
 
@@ -4856,6 +4861,7 @@ if (isForfeitOrder) {
   if (btnMeetupDoneTop) btnMeetupDoneTop.style.display = 'none';
   if (btnMeetupNotifyTop) btnMeetupNotifyTop.style.display = 'none';
   if (btnCancelTopForfeit) btnCancelTopForfeit.style.display = 'none';
+ if (btnCancelPendingTop) btnCancelPendingTop.style.display = 'none';
 
   // 已棄標：可補下載標籤，不再顯示棄標按鈕
   if (btnDownloadForfeitLabelTop) btnDownloadForfeitLabelTop.style.display = '';
@@ -4909,6 +4915,9 @@ if (btnFailTop) {
   if (btnConfirmPayTop) btnConfirmPayTop.style.display = '';
   if (btnSendTailTop) btnSendTailTop.style.display = '';
   if (btnCancelTopForfeit) btnCancelTopForfeit.style.display = '';
+ if (btnCancelPendingTop) {
+  btnCancelPendingTop.style.display = isOnlinePendingCancelableOrder(f) ? '' : 'none';
+}
   if (btnDownloadForfeitLabelTop) btnDownloadForfeitLabelTop.style.display = '';
   if (btnSaveOnlyTop) btnSaveOnlyTop.style.display = '';
 
@@ -5130,7 +5139,45 @@ function renderDepositRemind(payload){
   });
 }
 
+function isOnlinePendingCancelableOrder(f = {}) {
+  const pm = String(f.payment_method || '').trim().toLowerCase();
+  const ps = String(f.pay_status || '').trim().toLowerCase();
+  const st = String(f.status || '').trim().toLowerCase();
+  const notify = String(f.pay_notify_status || '').trim().toLowerCase();
+  const shipStatus = String(f.ship_status || f.shipping_status || '').trim().toLowerCase();
 
+  const isOnlinePay =
+    pm.startsWith('paid_') ||
+    pm === 'aftee_direct' ||
+    pm === 'paid_aftee_direct' ||
+    pm === 'paid_af';
+
+  const isPendingPay =
+    ps === 'pending' ||
+    ps === 'unpaid' ||
+    ps === 'submitted' ||
+    ps === '';
+
+  const isPendingStatus =
+    st === 'submitted' ||
+    st === 'pending' ||
+    st === '';
+
+  const isFinal =
+    st === 'paid' ||
+    st === 'cancelled' ||
+    st === 'canceled' ||
+    st === 'failed' ||
+    st === 'shipped' ||
+    st === 'completed' ||
+    ps === 'paid_ok' ||
+    ps === 'paid' ||
+    ps === 'failed' ||
+    notify === 'success' ||
+    shipStatus === 'shipped';
+
+  return isOnlinePay && isPendingPay && isPendingStatus && !isFinal;
+}
 /* ===== 取消訂單（補回庫存） ===== */
 async function cancelCurrentOrder() {
   if (!currentRecord) {
@@ -6607,6 +6654,26 @@ if (btnDepositForfeitRestock) {
 if (btnCancelTop) {
   btnCancelTop.addEventListener('click', async () => {
     await forfeitCurrentOrder();
+  });
+}
+
+ // ✅ 上方「取消未付款單（補回庫存）」：只給線上付款 pending 單使用
+const btnCancelPendingTopBind = $('#btnCancelPendingOrderTop');
+if (btnCancelPendingTopBind) {
+  btnCancelPendingTopBind.addEventListener('click', async () => {
+    if (!currentRecord) {
+      alert('請先在左邊選一筆訂單');
+      return;
+    }
+
+    const f = currentRecord.fields || currentRecord || {};
+
+    if (!isOnlinePendingCancelableOrder(f)) {
+      alert('這顆按鈕只適用於「線上付款未完成 pending」訂單。已收款、已出貨、棄標、匯款、訂金、現金分期請不要用這顆。');
+      return;
+    }
+
+    await cancelCurrentOrder();
   });
 }
  const btnDownloadForfeitLabelTopBind = $('#btnDownloadForfeitLabelTop');
