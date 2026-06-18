@@ -4654,8 +4654,86 @@ async function restoreOpenWebCartToken(){
       }
     }
 
+function productPendingCheckoutUrl(token){
+  return `${LIFF_CHECKOUT}?cart_token=${encodeURIComponent(token)}`;
+}
+
+function handleProductPendingOrderExists(res = {}){
+  const err = String(res.error || res.code || '').trim();
+  if (err !== 'pending_order_exists') return false;
+
+  const pendingToken = String(
+    res.pending_cart_token ||
+    res.cart_token ||
+    ''
+  ).trim();
+
+  if (pendingToken) {
+    setCartToken(pendingToken);
+    showToast(res.message || '你有一筆尚未完成付款的訂單，正在帶你回原結帳頁');
+
+    setTimeout(() => {
+      location.href = productPendingCheckoutUrl(pendingToken);
+    }, 500);
+
+    return true;
+  }
+
+  showToast(res.message || '你有一筆尚未完成付款的訂單，請先完成或取消原訂單。');
+  return true;
+}
+
 async function ensureCart(){
-  if(cartToken) return cartToken;
+  if(cartToken) {
+    try {
+      const r0 = await fetch(`${API_BASE}/cart/${encodeURIComponent(cartToken)}`, {
+        credentials:'include'
+      });
+
+      if (r0.ok) {
+        const j0 = await r0.json().catch(() => ({}));
+        const status = String(j0.cart_status || j0.status || '').trim().toLowerCase();
+        const customerType = String(j0.customer_type || '').trim().toLowerCase();
+        const cartOwner = String(j0.line_user_id || '').trim();
+        const uid = getProductPageLineUserId();
+        const activeOrder = j0.active_order || null;
+
+        const ownerOk = !cartOwner || !uid || cartOwner === uid;
+
+        if (
+          customerType === 'web' &&
+          status === 'open' &&
+          ownerOk
+        ) {
+          return cartToken;
+        }
+
+        const canContinuePending =
+          customerType === 'web' &&
+          status === 'submitted' &&
+          ownerOk &&
+          activeOrder &&
+          activeOrder.can_continue_payment === true;
+
+        if (canContinuePending) {
+          handleProductPendingOrderExists({
+            error: 'pending_order_exists',
+            pending_cart_token: cartToken,
+            pending_order_id: activeOrder.order_id || '',
+            message: '你有一筆尚未完成付款的訂單，請先繼續付款或取消原訂單後，再重新購買。'
+          });
+
+          throw new Error('pending_order_exists');
+        }
+      }
+    } catch(e) {
+      if (String(e?.message || e) === 'pending_order_exists') throw e;
+    }
+
+    // 不是 open，也不是可繼續付款的 pending，就清掉舊 token
+    try { localStorage.removeItem(CART_KEY); } catch(e) {}
+    cartToken = '';
+  }
 
   const customerName = getProductPageCustomerName();
 
@@ -4668,6 +4746,10 @@ async function ensureCart(){
       customer_name: customerName
     })
   });
+
+  if(res && res.ok === false && handleProductPendingOrderExists(res)){
+    throw new Error('pending_order_exists');
+  }
 
   if(res && res.cart_token){
     setCartToken(res.cart_token);
@@ -4690,7 +4772,6 @@ async function ensureCart(){
   showToast(res?.message || '建立購物車失敗，請稍後再試');
   throw new Error(err || 'cart_create_failed');
 }
-
 let productAddBusy = false;
 
 async function addToCartAndMaybeCheckout(goCheckoutAfter){
@@ -4760,6 +4841,11 @@ async function addToCartAndMaybeCheckout(goCheckoutAfter){
 
     const addErr = String(res?.error || res?.code || '').trim();
 
+        if (res && res.ok === false && addErr === 'pending_order_exists') {
+      handleProductPendingOrderExists(res);
+      return;
+    }
+
     if (
       res && res.ok === false &&
       (
@@ -4802,7 +4888,8 @@ async function addToCartAndMaybeCheckout(goCheckoutAfter){
     if (
       err !== 'member_required' &&
       err !== 'member_login_required' &&
-      err !== 'member_not_bound'
+      err !== 'member_not_bound' &&
+      err !== 'pending_order_exists'
     ) {
       showToast('加入失敗，請稍後再試');
     }
