@@ -4555,6 +4555,35 @@ function renderPreviewRelatedList(list, activeSku){
   });
 }
 
+function shopPendingCheckoutUrl(token){
+  return `${HOME_LIFF_CHECKOUT}?cart_token=${encodeURIComponent(token)}`;
+}
+
+function handleShopPendingOrderExists(json = {}){
+  const err = String(json.error || json.code || '').trim();
+  if (err !== 'pending_order_exists') return false;
+
+  const pendingToken = String(
+    json.pending_cart_token ||
+    json.cart_token ||
+    ''
+  ).trim();
+
+  if (pendingToken) {
+    try {
+      localStorage.setItem('MURAIN_WEB_CART_TOKEN', pendingToken);
+    } catch(e) {}
+
+    alert(json.message || '你有一筆尚未完成付款的訂單，請先繼續付款或取消原訂單後，再重新購買。');
+
+    location.href = shopPendingCheckoutUrl(pendingToken);
+    return true;
+  }
+
+  alert(json.message || '你有一筆尚未完成付款的訂單，請先回購物車完成或取消原訂單。');
+  return true;
+}
+
 async function previewEnsureCart(){
   const member = await requireShopMember();
 
@@ -4578,27 +4607,53 @@ async function previewEnsureCart(){
   const key = 'MURAIN_WEB_CART_TOKEN';
   let token = String(localStorage.getItem(key) || '').trim();
 
-  // ✅ 有舊 token 時，先確認它是不是還是 open 官網購物車
+  // ✅ 有舊 token 時，不只確認 open，也確認是否為 pending 未付款單
   if (token) {
     try {
-      const r0 = await fetch(`${shopApiBase()}/cart/${encodeURIComponent(token)}`);
+      const r0 = await fetch(`${shopApiBase()}/cart/${encodeURIComponent(token)}`, {
+        credentials:'include'
+      });
+
       if (r0.ok) {
         const j0 = await r0.json().catch(() => ({}));
         const status = String(j0.cart_status || j0.status || '').trim().toLowerCase();
         const customerType = String(j0.customer_type || '').trim().toLowerCase();
         const cartOwner = String(j0.line_user_id || '').trim();
+        const activeOrder = j0.active_order || null;
+
+        const ownerOk = !cartOwner || !uid || cartOwner === uid;
 
         if (
           customerType === 'web' &&
           status === 'open' &&
-          (!cartOwner || cartOwner === uid)
+          ownerOk
         ) {
           return token;
         }
-      }
-    } catch(e) {}
 
-    // 不是 open，或不是目前會員的車，就不要沿用舊購物車
+        const canContinuePending =
+          customerType === 'web' &&
+          status === 'submitted' &&
+          ownerOk &&
+          activeOrder &&
+          activeOrder.can_continue_payment === true;
+
+        if (canContinuePending) {
+          handleShopPendingOrderExists({
+            error: 'pending_order_exists',
+            pending_cart_token: token,
+            pending_order_id: activeOrder.order_id || '',
+            message: '你有一筆尚未完成付款的訂單，請先繼續付款或取消原訂單後，再重新購買。'
+          });
+
+          throw new Error('pending_order_exists');
+        }
+      }
+    } catch(e) {
+      if (String(e?.message || e) === 'pending_order_exists') throw e;
+    }
+
+    // 不是 open，也不是可繼續付款的 pending，就不要沿用舊購物車
     localStorage.removeItem(key);
     token = '';
   }
@@ -4608,15 +4663,19 @@ async function previewEnsureCart(){
     headers:{ 'content-type':'application/json' },
     credentials:'include',
     body: JSON.stringify({
-  streamer_name:'官網',
-  customer_type:'web',
-  customer_name: customerName
-})
+      streamer_name:'官網',
+      customer_type:'web',
+      customer_name: customerName
+    })
   });
 
   const json = await res.json().catch(() => ({}));
 
   if (!res.ok || json.ok === false) {
+    if (handleShopPendingOrderExists(json)) {
+      throw new Error('pending_order_exists');
+    }
+
     alert(json.message || '請先登入並完成會員綁定後再購買。');
     throw new Error(json.error || 'cart_create_failed');
   }
@@ -4870,6 +4929,15 @@ async function previewAddToCart(){
 
     if(json && json.ok === false){
       const err = String(json.error || json.code || '').trim();
+
+            if (err === 'pending_order_exists') {
+        handleShopPendingOrderExists(json);
+        return;
+      }
+
+          if (err === 'pending_order_exists') {
+      return;
+    }
 
       if (
         err === 'member_required' ||
