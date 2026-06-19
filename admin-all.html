@@ -368,6 +368,16 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   border-color:#22d3ee;
   box-shadow:0 8px 20px rgba(34,211,238,.35);
 }
+ #btnDepositForfeitRestock.active{
+  background:#22d3ee;
+  color:#0f172a;
+  border-color:#22d3ee;
+  box-shadow:0 8px 20px rgba(34,211,238,.35);
+}
+
+#btnDepositForfeitRestock.is-loading{
+  opacity:.72;
+}
 /* ===== 已收定金 / 現金分期右側明細小字版 ===== */
 .admin-fold{
   margin-top:10px;
@@ -1548,6 +1558,7 @@ async function applyAdminStatusDropdown(value){
 }
 async function applyFullView(mode = 'all', save = true){
   currentPanelMode = 'orders';
+  setDepositForfeitRestockButtonActive(false);
   await ensureOpKey();
 
   // ✅ 賣貨便月份統計只在「賣貨便登記」頁載入
@@ -2025,6 +2036,7 @@ if (ADMIN_PAGE_FILE === 'admin.html') {
 }
 async function loadDepositForfeitRestockList(){
   currentPanelMode = 'deposit_forfeit_restock';
+  setDepositForfeitRestockButtonActive(true);
   currentRecord = null;
   currentDepositForfeitRestockRecord = null;
   currentDepositForfeitRestockRows = [];
@@ -2062,8 +2074,10 @@ async function loadDepositForfeitRestockList(){
       throw new Error(j.message || j.error || ('HTTP ' + r.status));
     }
 
-    currentDepositForfeitRestockRows = Array.isArray(j.rows) ? j.rows : [];
-    renderDepositForfeitRestockList();
+currentDepositForfeitRestockRows = Array.isArray(j.rows) ? j.rows : [];
+setDepositForfeitRestockButtonCount(currentDepositForfeitRestockRows.length);
+setDepositForfeitRestockButtonActive(true);
+renderDepositForfeitRestockList();
 
     if (sumEl) {
       sumEl.innerHTML = `<span>待放回商品：${currentDepositForfeitRestockRows.length} 筆</span>`;
@@ -2403,6 +2417,58 @@ function updatePrintSlipsBtn(){
 
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+
+const DEPOSIT_FORFEIT_RESTOCK_BTN_BASE = '📦 訂金沒收／棄標待放回';
+
+function setDepositForfeitRestockButtonActive(active){
+  const btn = $('#btnDepositForfeitRestock');
+  if (!btn) return;
+
+  btn.classList.toggle('active', !!active);
+  btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+}
+
+function setDepositForfeitRestockButtonCount(count){
+  const btn = $('#btnDepositForfeitRestock');
+  if (!btn) return;
+
+  const n = Math.max(0, Number(count || 0) || 0);
+  btn.dataset.restockCount = String(n);
+  btn.textContent = n > 0
+    ? `${DEPOSIT_FORFEIT_RESTOCK_BTN_BASE}（${n}）`
+    : DEPOSIT_FORFEIT_RESTOCK_BTN_BASE;
+}
+
+async function refreshDepositForfeitRestockButtonCount(){
+  const btn = $('#btnDepositForfeitRestock');
+  if (!btn) return;
+
+  // 還沒登入後台密碼時不要跳提示，不要干擾全部訂單載入
+  if (!OP_KEY) return;
+
+  btn.classList.add('is-loading');
+
+  try {
+    const params = new URLSearchParams();
+    params.set('op_key', OP_KEY);
+    params.set('limit', '1000');
+
+    const r = await fetch(`${API}/admin/deposit-forfeit-restock/list?` + params.toString());
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || ('HTTP ' + r.status));
+    }
+
+    const rows = Array.isArray(j.rows) ? j.rows : [];
+    setDepositForfeitRestockButtonCount(rows.length);
+  } catch (e) {
+    console.warn('refreshDepositForfeitRestockButtonCount failed', e);
+  } finally {
+    btn.classList.remove('is-loading');
+  }
+}
+
 function updateCurrentSubTabCount(count){
   return;
 }
@@ -3115,12 +3181,17 @@ async function fetchBenefitPendingCount() {
 }
 
 async function refreshDashboardBadges() {
-  return;
+  if (ADMIN_PAGE_FILE !== 'admin-all.html') return;
+
+  // 不阻塞全部訂單載入，背景更新「待放回」數量
+  refreshDepositForfeitRestockButtonCount().catch(e => {
+    console.warn('refreshDashboardBadges restock count failed', e);
+  });
 }
 
 // ✅ 保留舊名稱，避免其他地方還在呼叫 refreshTopShortcutBadges()
 async function refreshTopShortcutBadges() {
-  return;
+  return refreshDashboardBadges();
 }
 
  async function loadBenefitRequests(){
