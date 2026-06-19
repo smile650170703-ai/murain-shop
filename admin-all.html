@@ -384,6 +384,55 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   color:#ef4444 !important;
   font-weight:900;
 }
+
+/* ✅ 訂金沒收／棄標待放回：左側勾選＋批次下載 */
+.forfeit-batch-toolbar{
+  position:sticky;
+  top:0;
+  z-index:5;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  padding:8px 8px 10px;
+  margin-bottom:8px;
+  border-bottom:1px solid rgba(148,163,184,.25);
+  background:rgba(15,23,42,.98);
+}
+
+.forfeit-check-all{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  margin:0;
+  color:#cbd5f5;
+  font-size:12px;
+  cursor:pointer;
+}
+
+.forfeit-check-all input,
+.forfeit-restock-cb{
+  width:18px;
+  height:18px;
+  cursor:pointer;
+}
+
+.forfeit-selected-hint{
+  color:#fca5a5;
+  font-size:12px;
+  font-weight:800;
+}
+
+#btnDownloadSelectedForfeitLabels:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+
+/* ✅ 訂金沒收／棄標待放回：只讓數量（5）變紅 */
+#btnDepositForfeitRestock .restock-count-red{
+  color:#ef4444 !important;
+  font-weight:900;
+}
 /* ===== 已收定金 / 現金分期右側明細小字版 ===== */
 .admin-fold{
   margin-top:10px;
@@ -988,8 +1037,9 @@ let currentConsignRows = [];
 let currentConsignRecord = null;
  let currentCartRows = [];
 let currentCartRecord = null;
- let currentDepositForfeitRestockRows = [];
+let currentDepositForfeitRestockRows = [];
 let currentDepositForfeitRestockRecord = null;
+const FORFEIT_RESTOCK_SELECTED = new Set();
 
  function getBiMonthLabel(dateLike){
   const s = String(dateLike || '').trim();
@@ -1565,6 +1615,7 @@ async function applyAdminStatusDropdown(value){
 async function applyFullView(mode = 'all', save = true){
   currentPanelMode = 'orders';
   setDepositForfeitRestockButtonActive(false);
+  setBatchActionMode('none');
   await ensureOpKey();
 
   // ✅ 賣貨便月份統計只在「賣貨便登記」頁載入
@@ -1736,6 +1787,15 @@ function fmtAdminDateTime(v){
 function setBatchActionMode(mode = 'none'){
   const btnCart = $('#btnCartRemindTop');
   if (btnCart) btnCart.style.display = (mode === 'cart') ? '' : 'none';
+
+  // ✅ 點「訂金沒收／棄標待放回」時，隱藏上方一般訂單操作列
+  const topActions =
+    document.querySelector('.toolbar-left > .top-order-actions') ||
+    document.querySelector('.toolbar-left .top-order-actions');
+
+  if (topActions) {
+    topActions.classList.toggle('hidden', mode === 'deposit_forfeit_restock');
+  }
 }
 
 async function loadOpenCartList(){
@@ -2043,9 +2103,11 @@ if (ADMIN_PAGE_FILE === 'admin.html') {
 async function loadDepositForfeitRestockList(){
   currentPanelMode = 'deposit_forfeit_restock';
   setDepositForfeitRestockButtonActive(true);
+  setBatchActionMode('deposit_forfeit_restock');
   currentRecord = null;
   currentDepositForfeitRestockRecord = null;
   currentDepositForfeitRestockRows = [];
+  FORFEIT_RESTOCK_SELECTED.clear();
 
   saveViewState('deposit_forfeit_restock', {
     filter: 'all',
@@ -2064,7 +2126,7 @@ async function loadDepositForfeitRestockList(){
   if (msgEl) msgEl.textContent = '';
   if (sumEl) sumEl.textContent = '';
 
-  setBatchActionMode('none');
+  setBatchActionMode('deposit_forfeit_restock');
 
   try {
     await ensureOpKey();
@@ -2101,6 +2163,43 @@ if (msgEl) {
   }
 }
 
+function cleanForfeitProductDetailText(v){
+  const raw = String(v || '-')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
+
+  const cleaned = raw
+    .split('\n')
+    .map(line => line.replace(/^[\t ]+/g, '').trimEnd())
+    .join('\n')
+    .trim();
+
+  return cleaned || '-';
+}
+
+function updateForfeitRestockSelectedUi(){
+  const n = FORFEIT_RESTOCK_SELECTED.size;
+
+  const hint = $('#forfeitRestockSelectedHint');
+  if (hint) hint.textContent = n ? `已勾選 ${n} 筆` : '尚未勾選';
+
+  const btn = $('#btnDownloadSelectedForfeitLabels');
+  if (btn) btn.disabled = n <= 0;
+
+  const all = $('#forfeitRestockCheckAll');
+  if (all) {
+    const total = currentDepositForfeitRestockRows.length;
+    all.checked = total > 0 && n === total;
+    all.indeterminate = n > 0 && n < total;
+  }
+}
+
+function getSelectedForfeitRestockRows(){
+  return (currentDepositForfeitRestockRows || []).filter(row => {
+    return FORFEIT_RESTOCK_SELECTED.has(String(row.id || ''));
+  });
+}
+
 function renderDepositForfeitRestockList(){
   const listEl = $('#orderList');
   const detailEl = $('#orderDetail');
@@ -2108,41 +2207,111 @@ function renderDepositForfeitRestockList(){
   if (!listEl) return;
 
   if (!currentDepositForfeitRestockRows.length) {
+    FORFEIT_RESTOCK_SELECTED.clear();
     listEl.innerHTML = '<div class="muted">目前沒有待放回商品的訂金沒收／棄標紀錄。</div>';
     if (detailEl) detailEl.innerHTML = '<div class="muted">目前沒有資料</div>';
     return;
   }
 
   const shortText = (s, n = 70) => {
-    const t = String(s || '').replace(/\s+/g, ' ').trim();
+    const t = cleanForfeitProductDetailText(s).replace(/\s+/g, ' ').trim();
     return t.length > n ? t.slice(0, n) + '…' : t;
   };
 
-  listEl.innerHTML = currentDepositForfeitRestockRows.map(row => {
-    return `
-      <div class="order-row" data-id="${escapeHtml(row.id || '')}">
-        <div class="ord-top">
-          <div class="ord-id">📦 ${escapeHtml(row.orderId || row.id || '-')}</div>
-          <div class="ord-right">
-            <div class="ord-amount">${money(row.amount || 0)}</div>
+  listEl.innerHTML = `
+    <div class="forfeit-batch-toolbar">
+      <label class="forfeit-check-all">
+        <input id="forfeitRestockCheckAll" type="checkbox">
+        全選
+      </label>
+
+      <button class="small-btn" id="btnDownloadSelectedForfeitLabels" type="button" disabled>
+        🏷️ 下載勾選棄標標籤 CSV
+      </button>
+
+      <span class="forfeit-selected-hint" id="forfeitRestockSelectedHint">尚未勾選</span>
+    </div>
+
+    ${(currentDepositForfeitRestockRows || []).map(row => {
+      const id = String(row.id || '');
+      const checked = FORFEIT_RESTOCK_SELECTED.has(id) ? 'checked' : '';
+
+      return `
+        <div class="order-row" data-id="${escapeHtml(id)}">
+          <div class="ord-top">
+            <div class="ord-check">
+              <input
+                class="forfeit-restock-cb"
+                type="checkbox"
+                data-id="${escapeHtml(id)}"
+                ${checked}
+                aria-label="勾選 ${escapeHtml(row.orderId || row.id || '')}"
+              >
+            </div>
+
+            <div class="ord-id">📦 ${escapeHtml(row.orderId || row.id || '-')}</div>
+
+            <div class="ord-right">
+              <div class="ord-amount">${money(row.amount || 0)}</div>
+            </div>
+          </div>
+
+          <div class="ord-sub">
+            ${escapeHtml(row.lineName || '-')}
+            ${row.paymentMethod ? ' ／ ' + escapeHtml(displayPaymentMethod(row.paymentMethod) || row.paymentMethod) : ''}
+          </div>
+
+          ${row.productDetail ? `<div class="ord-sub">${escapeHtml(shortText(row.productDetail))}</div>` : ''}
+
+          <div class="badges">
+            <span class="badge red">${escapeHtml(row.sourceType || '訂金沒收／棄標')}</span>
+            ${row.decision ? `<span class="badge yellow">${escapeHtml(row.decision)}</span>` : ''}
+            ${row.forfeitTime ? `<span class="badge">${escapeHtml(fmtAdminDateTime(row.forfeitTime) || row.forfeitTime)}</span>` : ''}
           </div>
         </div>
+      `;
+    }).join('')}
+  `;
 
-        <div class="ord-sub">
-          ${escapeHtml(row.lineName || '-')}
-          ${row.paymentMethod ? ' ／ ' + escapeHtml(displayPaymentMethod(row.paymentMethod) || row.paymentMethod) : ''}
-        </div>
+  $('#btnDownloadSelectedForfeitLabels')?.addEventListener('click', async () => {
+    await downloadSelectedForfeitRestockLabels();
+  });
 
-        ${row.productDetail ? `<div class="ord-sub">${escapeHtml(shortText(row.productDetail))}</div>` : ''}
+  $('#forfeitRestockCheckAll')?.addEventListener('change', e => {
+    const checked = !!e.target.checked;
 
-        <div class="badges">
-          <span class="badge red">${escapeHtml(row.sourceType || '訂金沒收／棄標')}</span>
-          ${row.decision ? `<span class="badge yellow">${escapeHtml(row.decision)}</span>` : ''}
-          ${row.forfeitTime ? `<span class="badge">${escapeHtml(fmtAdminDateTime(row.forfeitTime) || row.forfeitTime)}</span>` : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
+    FORFEIT_RESTOCK_SELECTED.clear();
+
+    if (checked) {
+      (currentDepositForfeitRestockRows || []).forEach(row => {
+        if (row?.id) FORFEIT_RESTOCK_SELECTED.add(String(row.id));
+      });
+    }
+
+    $$('#orderList .forfeit-restock-cb').forEach(cb => {
+      cb.checked = checked;
+    });
+
+    updateForfeitRestockSelectedUi();
+  });
+
+  $$('#orderList .forfeit-restock-cb').forEach(cb => {
+    cb.addEventListener('click', e => {
+      e.stopPropagation();
+    });
+
+    cb.addEventListener('change', () => {
+      const id = String(cb.getAttribute('data-id') || '');
+
+      if (cb.checked) {
+        FORFEIT_RESTOCK_SELECTED.add(id);
+      } else {
+        FORFEIT_RESTOCK_SELECTED.delete(id);
+      }
+
+      updateForfeitRestockSelectedUi();
+    });
+  });
 
   $$('#orderList .order-row').forEach(rowEl => {
     rowEl.addEventListener('click', () => {
@@ -2155,8 +2324,277 @@ function renderDepositForfeitRestockList(){
     });
   });
 
+  updateForfeitRestockSelectedUi();
+
   if (detailEl) {
-    detailEl.innerHTML = '<div class="muted">請從左邊選一筆紀錄</div>';
+    detailEl.innerHTML = '<div class="muted">請從左邊選一筆紀錄，或勾選多筆後下載標籤 CSV</div>';
+  }
+}
+
+function renderDepositForfeitRestockDetail(row){
+  currentDepositForfeitRestockRecord = row;
+
+  const detailEl = $('#orderDetail');
+  if (!detailEl) return;
+
+  const productDetailText = cleanForfeitProductDetailText(row.productDetail || '-');
+
+  detailEl.innerHTML = `
+    <div class="section-title">訂金沒收／棄標待放回商品</div>
+
+    <div class="tag-small" style="line-height:1.7;margin-bottom:10px;">
+      員工操作順序：先確認商品明細 → 需要標籤先下載 CSV → 商品實體放回可賣區後，按「商品已放回」。
+      <br>
+      這裡只會勾選 Orders 的「已放回商品」，不會再次補庫存、不會發 LINE、不會改金額。
+    </div>
+
+    <div class="top-order-actions" style="margin-top:10px;margin-bottom:12px;">
+      <button class="btn-secondary" id="btnDepositForfeitDownloadLabel" type="button">
+        🏷️ 下載這筆棄標標籤 CSV
+      </button>
+
+      <button class="btn-primary" id="btnMarkDepositForfeitRestockDone" type="button">
+        ✅ 商品已放回，從清單移除
+      </button>
+    </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>訂單編號</label>
+        <div class="ro-field">${escapeHtml(row.orderId || '-')}</div>
+      </div>
+      <div>
+        <label>LINE名稱</label>
+        <div class="ro-field">${escapeHtml(row.lineName || '-')}</div>
+      </div>
+    </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>付款方式</label>
+        <div class="ro-field">${escapeHtml(displayPaymentMethod(row.paymentMethod) || row.paymentMethod || '-')}</div>
+      </div>
+      <div>
+        <label>沒收／違約金額</label>
+        <div class="ro-field">${money(row.amount || 0)}</div>
+      </div>
+    </div>
+
+    <div class="row mt-2">
+      <div>
+        <label>沒收／棄標時間</label>
+        <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.forfeitTime) || row.forfeitTime || '-')}</div>
+      </div>
+      <div>
+        <label>取消原因</label>
+        <div class="ro-field">${escapeHtml(row.cancelReason || '-')}</div>
+      </div>
+    </div>
+
+    <label class="mt-2">商品明細</label>
+    <div class="ro-field" style="height:auto;min-height:100px;align-items:flex-start;padding:10px 12px;white-space:pre-line;word-break:break-word;">${escapeHtml(productDetailText)}</div>
+
+    <div class="muted mt-3" id="detailMsg"></div>
+  `;
+
+  $('#btnDepositForfeitDownloadLabel')?.addEventListener('click', async () => {
+    await downloadForfeitLabelCsvForDepositForfeitRow(row);
+  });
+
+  $('#btnMarkDepositForfeitRestockDone')?.addEventListener('click', async () => {
+    await markDepositForfeitRestockDone(row);
+  });
+}
+
+function downloadForfeitLabelCsv(labelCsv) {
+  try {
+    if (!labelCsv || !labelCsv.content) return false;
+
+    const filename = String(labelCsv.filename || `forfeit-label-${Date.now()}.csv`)
+      .replace(/[\\/:*?"<>|]/g, '_');
+
+    const content = String(labelCsv.content || '');
+
+    const blob = new Blob(['\uFEFF' + content], {
+      type: 'text/csv;charset=utf-8;'
+    });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+
+    document.body.appendChild(a);
+    a.click();
+
+    setTimeout(() => {
+      URL.revokeObjectURL(url);
+      a.remove();
+    }, 800);
+
+    return true;
+  } catch (e) {
+    console.error('downloadForfeitLabelCsv failed', e);
+    return false;
+  }
+}
+
+async function fetchForfeitLabelCsvForRestockRow(row){
+  const orderId = String(row?.orderId || '').trim();
+
+  if (!orderId) {
+    throw new Error('有一筆資料沒有訂單編號，無法下載棄標標籤。');
+  }
+
+  const r = await fetch(`${API}/admin/order/forfeit-label-csv`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      op_key: OP_KEY,
+      order_id: orderId,
+      reason: row.cancelReason || row.decision || '已棄標補下載'
+    })
+  });
+
+  const j = await r.json().catch(() => ({}));
+
+  if (!r.ok || !j.ok) {
+    throw new Error(`訂單 ${orderId} 下載棄標標籤失敗：${j.message || j.error || r.status}`);
+  }
+
+  if (!j.label_csv || !j.label_csv.content) {
+    throw new Error(`訂單 ${orderId} 後端沒有回傳標籤資料`);
+  }
+
+  return j.label_csv;
+}
+
+function mergeForfeitLabelCsvList(csvList){
+  const lines = [];
+  let header = '';
+
+  (csvList || []).forEach(item => {
+    const content = String(item?.content || '')
+      .replace(/^\uFEFF/, '')
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .trim();
+
+    if (!content) return;
+
+    const parts = content.split('\n').filter(Boolean);
+    if (!parts.length) return;
+
+    if (!header) {
+      header = parts[0];
+      lines.push(header);
+      lines.push(...parts.slice(1));
+      return;
+    }
+
+    // 每一筆後端都會有表頭，合併時只保留第一個表頭
+    if (parts[0] === header) {
+      lines.push(...parts.slice(1));
+    } else {
+      lines.push(...parts);
+    }
+  });
+
+  return lines.join('\n');
+}
+
+function forfeitLabelBatchFilename(){
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+
+  const y = d.getFullYear();
+  const m = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mm = pad(d.getMinutes());
+
+  return `forfeit-label-selected-${y}${m}${day}-${hh}${mm}.csv`;
+}
+
+async function downloadSelectedForfeitRestockLabels(){
+  const rows = getSelectedForfeitRestockRows();
+
+  if (!rows.length) {
+    alert('請先勾選要下載標籤的訂單。');
+    return;
+  }
+
+  if (!confirm(`確定要一次下載 ${rows.length} 筆棄標標籤 CSV 嗎？`)) {
+    return;
+  }
+
+  const btn = $('#btnDownloadSelectedForfeitLabels');
+  if (btn) {
+    btn.disabled = true;
+    btn.dataset.oldText = btn.textContent || '';
+    btn.textContent = '下載中…';
+  }
+
+  try {
+    await ensureOpKey();
+
+    const csvList = [];
+
+    for (const row of rows) {
+      const csv = await fetchForfeitLabelCsvForRestockRow(row);
+      csvList.push(csv);
+    }
+
+    const mergedContent = mergeForfeitLabelCsvList(csvList);
+
+    if (!mergedContent) {
+      alert('沒有可下載的標籤資料。');
+      return;
+    }
+
+    const ok = downloadForfeitLabelCsv({
+      filename: forfeitLabelBatchFilename(),
+      content: mergedContent
+    });
+
+    if (ok) {
+      alert(`已合併下載 ${rows.length} 筆棄標標籤 CSV，可用 Excel 開啟。`);
+    } else {
+      alert('後端有回傳標籤資料，但瀏覽器沒有成功下載，請再按一次。');
+    }
+  } catch (e) {
+    console.error(e);
+    alert('批次下載棄標標籤失敗：' + (e.message || e));
+  } finally {
+    if (btn) {
+      btn.disabled = FORFEIT_RESTOCK_SELECTED.size <= 0;
+      btn.textContent = btn.dataset.oldText || '🏷️ 下載勾選棄標標籤 CSV';
+    }
+
+    updateForfeitRestockSelectedUi();
+  }
+}
+
+async function downloadForfeitLabelCsvForDepositForfeitRow(row){
+  try {
+    await ensureOpKey();
+
+    const labelCsv = await fetchForfeitLabelCsvForRestockRow(row);
+    const ok = downloadForfeitLabelCsv(labelCsv);
+
+    if (ok) {
+      alert('已下載棄標標籤 CSV，可用 Excel 開啟。');
+      return true;
+    }
+
+    alert('後端有回傳標籤資料，但瀏覽器沒有成功下載，請再按一次。');
+    return false;
+  } catch (e) {
+    console.error(e);
+    alert('下載棄標標籤時發生錯誤：' + (e.message || e));
+    return false;
   }
 }
 
