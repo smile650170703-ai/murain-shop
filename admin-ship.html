@@ -5414,7 +5414,6 @@ function renderSlipItems(itemsText){
     <div class="item-row">
       <div class="item-name">${slipEscape(it.name || '-')}</div>
       <div class="item-qty">數量：${it.qty ? `x ${slipEscape(it.qty)}` : '-'}</div>
-      ${it.price ? `<div class="item-price">金額：${slipEscape(it.price)}</div>` : ``}
     </div>
   `).join('');
 }
@@ -5546,6 +5545,10 @@ const payableAmountText = slipMoney(amountInfo.net);
 const creditText = amountInfo.credit > 0 ? slipMoney(amountInfo.credit) : '';
 
 const meetupText = getSlipMeetupText(shipInfoObj, f);
+const isMeetupSlip =
+  rawShipType === 'meetup' ||
+  shipType === '面交' ||
+  String(paymentMethod || '').toLowerCase() === 'meetup_cash';
 
 const zip = firstNonEmpty(f['郵遞區號'], postObj.zip, shipObj.zip);
 const addr = firstNonEmpty(f['收件地址'], postObj.addr, shipObj.addr);
@@ -5566,14 +5569,6 @@ const storeName = firstNonEmpty(f['超商店名'], storeObj.name, shipObj.store_
   </div>
 ` : ``}
 
-          <div class="info-box">
-            <div>出貨方式：<b>${slipEscape(shipType || '-')}</b></div>
-            <div>付款方式：<b>${slipEscape(paymentText || '-')}</b></div>
-            <div>訂單金額：<b>${slipEscape(orderAmountText)}</b></div>
-            ${creditText ? `<div>購物金折抵：<b>-${slipEscape(creditText)}</b></div>` : ``}
-            <div class="payable">應付金額：<b>${slipEscape(payableAmountText)}</b></div>
-            ${meetupText ? `<div class="meetup">面交時間：<b>${slipEscape(meetupText)}</b></div>` : ``}
-          </div>
 
           <!-- ★ 商品編號、商品明細：標題一行，內容一行 ★ -->
    <div class="section-title">商品</div>
@@ -5594,17 +5589,25 @@ const storeName = firstNonEmpty(f['超商店名'], storeObj.name, shipObj.store_
 
           <!-- 下半部：收件資料（剪下用） -->
           <div class="shipbox">
-  ${storeName ? `
-    <div class="row"><div class="k">門市</div><div class="v">${storeName}</div></div>
-  ` : ``}
+  ${isMeetupSlip ? `
+    <div class="meetup-ship">
+      <div class="row"><div class="k">面交</div><div class="v">${slipEscape(meetupText || '-')}</div></div>
+      <div class="row"><div class="k">付款</div><div class="v">${slipEscape(paymentText || '面交現金')}</div></div>
+      <div class="row"><div class="k">應收</div><div class="v payable">${slipEscape(payableAmountText)}</div></div>
+    </div>
+  ` : `
+    ${storeName ? `
+      <div class="row"><div class="k">門市</div><div class="v">${slipEscape(storeName)}</div></div>
+    ` : ``}
 
-  ${(zip || addr) ? `
-    <div class="row"><div class="k">地址</div><div class="v">${[zip, addr].filter(Boolean).join(' ')}</div></div>
-  ` : ``}
+    ${(zip || addr) ? `
+      <div class="row"><div class="k">地址</div><div class="v">${slipEscape([zip, addr].filter(Boolean).join(' '))}</div></div>
+    ` : ``}
+  `}
 
   <div class="row">
   <div class="k">收件人</div>
-  <div class="v name">${name || ''}</div>
+  <div class="v name">${slipEscape(name || '')}</div>
 </div>
 
 ${phone ? `
@@ -5644,8 +5647,8 @@ ${phone ? `
     margin: 0 !important;
     padding: 0 !important;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 16px;
-    line-height: 1.25;
+    font-size: 15px;
+    line-height: 1.22;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
@@ -5655,7 +5658,7 @@ ${phone ? `
     min-width: 58mm;
     max-width: 58mm;
     margin: 0;
-    padding: 0.8mm 0.45mm 2mm 0.45mm;
+    padding: 0.6mm 0.15mm 2mm 0.15mm;
     box-sizing: border-box;
     overflow: visible;
     page-break-inside: avoid;
@@ -5690,8 +5693,10 @@ ${phone ? `
 }
 
 .block{
+  width:100%;
+  box-sizing:border-box;
   border:1px solid #000;
-  padding:4px 4px;
+  padding:3px 3px;
   margin-top:3px;
 }
 
@@ -5711,14 +5716,14 @@ ${phone ? `
 
 .total-qty{
   border:2px solid #000;
-  padding:3px 5px;
-  margin:3px 0 4px;
-  font-size:16px !important;
+  padding:2px 4px;
+  margin:2px 0 3px;
+  font-size:15px !important;
   font-weight:900;
   color:#000 !important;
 }
 .total-qty b{
-  font-size:19px;
+  font-size:18px;
 }
 
 .info-box{
@@ -5757,26 +5762,23 @@ ${phone ? `
   padding-top:4px;
 }
 .item-name{
-  font-size:15px;
-  line-height:1.25;
+  font-size:14px;
+  line-height:1.22;
   font-weight:900;
   word-break:normal;
   overflow-wrap:break-word;
 }
 .item-qty{
   display:inline-block;
-  margin-top:3px;
-  padding:1px 7px;
+  margin-top:2px;
+  padding:1px 6px;
   border:2px solid #000;
-  font-size:20px;
+  font-size:18px;
   line-height:1.05;
   font-weight:900;
 }
 .item-price{
-  margin-top:2px;
-  font-size:14px;
-  line-height:1.15;
-  font-weight:900;
+  display:none;
 }
 /* 備註：粗框+粗體更醒目 */
 .remark{
@@ -5804,10 +5806,12 @@ ${phone ? `
 }
 /* LINE 名稱框 */
 .badge{
+  width:100%;
+  box-sizing:border-box;
   border:1px solid #000;
-  padding:4px 5px;
-  margin-top:4px;
-  line-height:1.25;
+  padding:3px 4px;
+  margin-top:3px;
+  line-height:1.2;
 }
 .badge-line{
   white-space:nowrap;
@@ -5851,10 +5855,19 @@ ${phone ? `
   word-break:break-word;
 }
 .shipbox .name{
-  font-size:18px;
+  font-size:17px;
   font-weight:900;
 }
 .shipbox .phone{
+  font-size:16px;
+  font-weight:900;
+}
+.meetup-ship{
+  border:1px solid #000;
+  padding:3px 4px;
+  margin-bottom:4px;
+}
+.meetup-ship .payable{
   font-size:17px;
   font-weight:900;
 }
