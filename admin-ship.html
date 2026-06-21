@@ -5319,17 +5319,51 @@ async function printShipSlipsRange(){
   return '';
 };
 
-   function getItemTotalQty(itemsText){
-  const s = String(itemsText || '');
-  let total = 0;
+   const slipEscape = (v) => (typeof escapeHtml === 'function'
+  ? escapeHtml(v)
+  : String(v ?? '').replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]))
+);
 
-  // 抓 x 1 / x1 / X 2 / × 3
-  const matches = s.matchAll(/[xX×]\s*(\d+)/g);
-  for (const m of matches) {
-    total += Number(m[1] || 0);
+function parseSlipItems(itemsText){
+  const raw = String(itemsText || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim();
+
+  if (!raw) return [];
+
+  return raw
+    .split('\n')
+    .flatMap(line => String(line).split(/(?=・)/g))
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const m = line.match(/^(.*?)(?:\s*(?:[xX×＊*])\s*(\d+))\s*$/);
+      return {
+        name: (m ? m[1] : line).trim(),
+        qty: m ? Number(m[2] || 0) : 0
+      };
+    });
+}
+
+function getItemTotalQty(itemsText){
+  return parseSlipItems(itemsText).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+}
+
+function renderSlipItems(itemsText){
+  const items = parseSlipItems(itemsText);
+  if (!items.length) {
+    return '<div class="item-row"><div class="item-name">-</div></div>';
   }
 
-  return total;
+  return items.map(it => `
+    <div class="item-row">
+      <div class="item-name">${slipEscape(it.name || '-')}</div>
+      ${it.qty ? `<div class="item-qty">x ${slipEscape(it.qty)}</div>` : ``}
+    </div>
+  `).join('');
 }
 
     // ↓ 這裡完全照匯出中心的 printOrders 抄來 ↓
@@ -5365,8 +5399,10 @@ async function printShipSlipsRange(){
   }
 
       const orderId      = f['訂單編號']       || '';
-const product      = f['商品明細']       || '';
-const itemQty      = getItemTotalQty(product);
+const product      = firstNonEmpty(f['商品明細'], f.items_text, f['items_text']);
+const itemQtyField = Number(String(firstNonEmpty(f['商品總數量'], f.item_count, f.items_count)).replace(/[^\d.-]/g, ''));
+const itemQty      = Number.isFinite(itemQtyField) && itemQtyField > 0 ? itemQtyField : getItemTotalQty(product);
+const productHtml  = renderSlipItems(product);
 const customerNote = f['客戶備註']       || '';
       const shipType     = f['出貨方式']       || '';
       const note         = f['備註']           || '';
@@ -5380,7 +5416,7 @@ const customerNote = f['客戶備註']       || '';
         <div class="slip">
           <!-- 上半部：內部用資訊 -->
           <div class="line small">訂單編號：${orderId}</div>
-<div class="line small">商品總數量：${itemQty}</div>
+<div class="line total-qty">商品總數量：<b>${itemQty}</b> 件</div>
           ${lineName ? `
   <div class="badge">
     <div class="t">LINE 名稱</div>
@@ -5392,7 +5428,7 @@ const customerNote = f['客戶備註']       || '';
    <div class="section-title">商品</div>
       <div class="block items">
   ${sku ? `<div class="sku">SKU：${sku}</div>` : ``}
-  <div class="desc">${product || '-'}</div>
+  ${productHtml}
 </div>
 
       ${(customerNote || note) ? `
@@ -5437,22 +5473,32 @@ ${phone ? `
 <title>出貨明細列印</title>
 <style>
   @page {
-    size: 80mm auto;      /* 保持原本設定，讓瀏覽器知道是熱感紙寬度 */
-    margin: 3mm;
+    size: 80mm auto;
+    margin: 0;
+  }
+
+  html, body {
+    width: 80mm;
+    margin: 0;
+    padding: 0;
   }
 
   body {
-    margin: 0;
-    padding: 0;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 15px;      /* ★ 整體字體放大：原本 12 → 14 */
-    line-height: 1.5;     /* ★ 行距稍微拉開，字大一點也不擠 */
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   .slip {
-    width: 72mm;          /* 保持不動，避免重調寬度 */
+    width: 76mm;
+    margin: 0 auto;
     padding: 2mm 2mm 4mm;
     box-sizing: border-box;
+    overflow: hidden;
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 
   .line {
@@ -5492,8 +5538,41 @@ ${phone ? `
   margin-top:3px;
   font-size:15px;
   line-height:1.4;
-  white-space:pre-wrap;     /* 明細有換行就保留 */
+  white-space:pre-wrap;
   word-break:break-word;
+}
+
+.total-qty{
+  border:2px solid #000;
+  padding:4px 6px;
+  margin:4px 0 6px;
+  font-size:18px !important;
+  font-weight:900;
+  color:#000 !important;
+}
+.total-qty b{
+  font-size:22px;
+}
+.item-row{
+  padding:4px 0;
+}
+.item-row + .item-row{
+  border-top:1px dashed #000;
+  margin-top:5px;
+  padding-top:7px;
+}
+.item-name{
+  font-size:15px;
+  line-height:1.35;
+  font-weight:700;
+  word-break:break-word;
+}
+.item-qty{
+  margin-top:2px;
+  font-size:21px;
+  line-height:1.1;
+  font-weight:900;
+  text-align:right;
 }
 
 /* 備註：粗框+粗體更醒目 */
@@ -5582,8 +5661,10 @@ ${slipsHtml}
 </body>
 </html>`);
     doc.close();
-    win.focus();
-    win.print();
+    setTimeout(() => {
+      win.focus();
+      win.print();
+    }, 300);
   } catch (e) {
     console.error(e);
     alert('列印出貨明細時發生錯誤：' + (e.message || e));
