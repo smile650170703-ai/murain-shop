@@ -641,10 +641,15 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   <button class="small-btn" id="btnConsignAccounting" type="button">一時貿易</button>
 </div>
 
-  <div class="field">
-    <label>&nbsp;</label>
-    <button class="small-btn" id="btnPrintSlipsRange" type="button">⭐列印出貨單</button>
-  </div>
+<div class="field">
+  <label>&nbsp;</label>
+  <button class="small-btn" id="btnPrintSlipsRange" type="button">⭐列印出貨單</button>
+</div>
+
+<div class="field">
+  <label>&nbsp;</label>
+  <button class="small-btn" id="btnClearPrintSlipSelection" type="button" disabled>清除勾選</button>
+</div>
 
   <div class="field">
     <label>&nbsp;</label>
@@ -1796,11 +1801,20 @@ function getOrderKey(rec){
 }
 
 function updatePrintSlipsBtn(){
+  const count = PRINT_SLIP_SELECTED.size || 0;
+
   const btn = $('#btnPrintSlipsRange');
-  if(!btn) return;
-  btn.textContent = PRINT_SLIP_SELECTED.size
-    ? `⭐列印出貨單（勾選${PRINT_SLIP_SELECTED.size}）`
-    : '⭐列印出貨單';
+  if(btn){
+    btn.textContent = count
+      ? `⭐列印出貨單（勾選${count}）`
+      : '⭐列印出貨單';
+  }
+
+  const clearBtn = $('#btnClearPrintSlipSelection');
+  if(clearBtn){
+    clearBtn.disabled = !count;
+    clearBtn.textContent = count ? `清除勾選（${count}）` : '清除勾選';
+  }
 }
 
 const $  = (s,r=document)=>r.querySelector(s);
@@ -5319,17 +5333,29 @@ async function printShipSlipsRange(){
   return '';
 };
 
-   const slipEscape = (v) => (typeof escapeHtml === 'function'
+const slipEscape = (v) => (typeof escapeHtml === 'function'
   ? escapeHtml(v)
   : String(v ?? '').replace(/[&<>"']/g, (c) => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[c]))
 );
 
+const slipNum = (v) => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const s = String(v ?? '').replace(/[^\d.-]/g, '').trim();
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const slipMoney = (v) => {
+  return 'NT$ ' + Math.round(slipNum(v)).toLocaleString('zh-TW');
+};
+
 function parseSlipItems(itemsText){
   const raw = String(itemsText || '')
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
+    .replace(/([）)])\s*(?=・)/g, '$1\n')
     .trim();
 
   if (!raw) return [];
@@ -5337,19 +5363,45 @@ function parseSlipItems(itemsText){
   return raw
     .split('\n')
     .flatMap(line => String(line).split(/(?=・)/g))
-    .map(line => line.trim())
+    .map(line => line.replace(/\s+/g, ' ').trim())
     .filter(Boolean)
     .map(line => {
-      const m = line.match(/^(.*?)(?:\s*(?:[xX×＊*])\s*(\d+))\s*$/);
+      let work = line;
+
+      const priceMatch = work.match(/[（(]\s*(NT\$?\s*[\d,]+|\$?\s*[\d,]+)\s*[）)]\s*$/i);
+      let price = '';
+
+      if (priceMatch) {
+        price = String(priceMatch[1] || '').replace(/\s+/g, ' ').trim();
+        price = price.replace(/^NT\$\s*/i, 'NT$ ');
+        if (!/^NT\$/i.test(price)) {
+          price = 'NT$ ' + price.replace(/^\$?\s*/, '');
+        }
+        work = work.slice(0, priceMatch.index).trim();
+      }
+
+      // 只抓最後面的「 x 1 / x 2 / × 3」
+      // 不會誤抓 50ML×4包 這種容量文字
+      const qtyMatch = work.match(/(?:^|\s)([xX×＊*])\s*(\d+)\s*$/);
+      let qty = 0;
+
+      if (qtyMatch) {
+        qty = Number(qtyMatch[2] || 0);
+        work = work.slice(0, qtyMatch.index).trim();
+      }
+
       return {
-        name: (m ? m[1] : line).trim(),
-        qty: m ? Number(m[2] || 0) : 0
+        name: work.replace(/^・\s*/, '・ ').trim(),
+        qty,
+        price
       };
     });
 }
 
 function getItemTotalQty(itemsText){
-  return parseSlipItems(itemsText).reduce((sum, it) => sum + (Number(it.qty) || 0), 0);
+  return parseSlipItems(itemsText).reduce((sum, it) => {
+    return sum + (Number(it.qty) || 0);
+  }, 0);
 }
 
 function renderSlipItems(itemsText){
@@ -5361,11 +5413,73 @@ function renderSlipItems(itemsText){
   return items.map(it => `
     <div class="item-row">
       <div class="item-name">${slipEscape(it.name || '-')}</div>
-      ${it.qty ? `<div class="item-qty">x ${slipEscape(it.qty)}</div>` : ``}
+      <div class="item-qty">數量：${it.qty ? `x ${slipEscape(it.qty)}` : '-'}</div>
+      ${it.price ? `<div class="item-price">金額：${slipEscape(it.price)}</div>` : ``}
     </div>
   `).join('');
 }
 
+function getSlipAmountInfo(f){
+  const a = (typeof calcAmounts === 'function') ? calcAmounts(f) : null;
+
+  const base = slipNum(firstNonEmpty(
+    f['訂單金額'],
+    f['商品總金額'],
+    f.total_amount,
+    f.total,
+    a?.base
+  ));
+
+  const credit = slipNum(firstNonEmpty(
+    f['購物金折抵'],
+    f.credit_used,
+    f.CreditUsed,
+    f.credit,
+    a?.credit
+  ));
+
+  let net = slipNum(firstNonEmpty(
+    f['應付金額'],
+    f['付款金額'],
+    f.net_amount,
+    f.net,
+    a?.net
+  ));
+
+  if (!net && base) net = Math.max(base - credit, 0);
+
+  return { base, credit, net };
+}
+
+function getSlipMeetupText(shipInfoObj = {}, f = {}){
+  const ship = shipInfoObj.ship || {};
+  const meetup = shipInfoObj.meetup || ship.meetup || {};
+
+  const time = firstNonEmpty(
+    f['面交時間'],
+    f['預約面交時間'],
+    f.meetup_time,
+    f.meet_time,
+    ship.meetup_time,
+    ship.meetupTime,
+    ship.meet_time,
+    meetup.time,
+    shipInfoObj.meetup_time,
+    shipInfoObj.meetupTime
+  );
+
+  const place = firstNonEmpty(
+    f['面交地點'],
+    f.meetup_place,
+    f.meet_place,
+    ship.meetup_place,
+    ship.meet_place,
+    meetup.place,
+    shipInfoObj.meetup_place
+  );
+
+  return [time, place ? `地點：${place}` : ''].filter(Boolean).join('｜');
+}
     // ↓ 這裡完全照匯出中心的 printOrders 抄來 ↓
    const slipsHtml = records.map((rec) => {
   const f = rec.fields || {};
@@ -5398,32 +5512,70 @@ function renderSlipItems(itemsText){
     console.log("[slip] sample fields:", f);
   }
 
-      const orderId      = f['訂單編號']       || '';
-const product      = firstNonEmpty(f['商品明細'], f.items_text, f['items_text']);
-const itemQtyField = Number(String(firstNonEmpty(f['商品總數量'], f.item_count, f.items_count)).replace(/[^\d.-]/g, ''));
-const itemQty      = Number.isFinite(itemQtyField) && itemQtyField > 0 ? itemQtyField : getItemTotalQty(product);
-const productHtml  = renderSlipItems(product);
-const customerNote = f['客戶備註']       || '';
-      const shipType     = f['出貨方式']       || '';
-      const note         = f['備註']           || '';
-      const zip          = f['郵遞區號']       || '';
-      const addr         = f['收件地址']       || '';
-      const name         = f['收件人姓名']     || '';
-      const phone        = f['收件人電話']     || '';
-      const storeName    = f['超商店名']       || '';
+      const orderId = firstNonEmpty(f['訂單編號'], f.order_id);
+
+const product = firstNonEmpty(f['商品明細'], f.items_text, f['items_text']);
+const itemQtyField = slipNum(firstNonEmpty(f['商品總數量'], f.item_count, f.items_count));
+const itemQty = itemQtyField > 0 ? itemQtyField : getItemTotalQty(product);
+const productHtml = renderSlipItems(product);
+
+const customerNote = f['客戶備註'] || '';
+const note = f['備註'] || '';
+
+const shipObj = shipInfoObj.ship || {};
+const storeObj = shipObj.store || shipInfoObj.store || {};
+const postObj = shipObj.post || shipInfoObj.post || {};
+
+const rawShipType = firstNonEmpty(f['出貨方式'], f.shipping_type, shipObj.type);
+const shipType = rawShipType === '711'
+  ? '7-11 超商取貨'
+  : rawShipType === 'post'
+    ? '郵寄'
+    : rawShipType === 'meetup'
+      ? '面交'
+      : rawShipType;
+
+const paymentMethod = firstNonEmpty(f.payment_method, f['付款方式']);
+const paymentText = (typeof displayPaymentMethod === 'function')
+  ? (displayPaymentMethod(paymentMethod) || paymentMethod)
+  : paymentMethod;
+
+const amountInfo = getSlipAmountInfo(f);
+const orderAmountText = slipMoney(amountInfo.base);
+const payableAmountText = slipMoney(amountInfo.net);
+const creditText = amountInfo.credit > 0 ? slipMoney(amountInfo.credit) : '';
+
+const meetupText = getSlipMeetupText(shipInfoObj, f);
+
+const zip = firstNonEmpty(f['郵遞區號'], postObj.zip, shipObj.zip);
+const addr = firstNonEmpty(f['收件地址'], postObj.addr, shipObj.addr);
+const name = firstNonEmpty(f['收件人姓名'], shipObj.name, shipInfoObj.name);
+const phone = firstNonEmpty(f['收件人電話'], shipObj.phone, shipInfoObj.phone);
+const storeName = firstNonEmpty(f['超商店名'], storeObj.name, shipObj.store_name, shipInfoObj.store_name);
 
       return `
         <div class="slip">
           <!-- 上半部：內部用資訊 -->
-          <div class="line small">訂單編號：${orderId}</div>
-<div class="line total-qty">商品總數量：<b>${itemQty}</b> 件</div>
+          <div class="line small">訂單編號：${slipEscape(orderId)}</div>
+
+          <div class="line total-qty">商品總數量：<b>${slipEscape(itemQty)}</b> 件</div>
+
           ${lineName ? `
   <div class="badge">
     <div class="t">LINE 名稱</div>
-    <div class="v">${lineName}</div>
+    <div class="v">${slipEscape(lineName)}</div>
   </div>
 ` : ``}
-          <div class="line">出貨方式：${shipType}</div>
+
+          <div class="info-box">
+            <div>出貨方式：<b>${slipEscape(shipType || '-')}</b></div>
+            <div>付款方式：<b>${slipEscape(paymentText || '-')}</b></div>
+            <div>訂單金額：<b>${slipEscape(orderAmountText)}</b></div>
+            ${creditText ? `<div>購物金折抵：<b>-${slipEscape(creditText)}</b></div>` : ``}
+            <div class="payable">應付金額：<b>${slipEscape(payableAmountText)}</b></div>
+            ${meetupText ? `<div class="meetup">面交時間：<b>${slipEscape(meetupText)}</b></div>` : ``}
+          </div>
+
           <!-- ★ 商品編號、商品明細：標題一行，內容一行 ★ -->
    <div class="section-title">商品</div>
       <div class="block items">
@@ -5479,8 +5631,9 @@ ${phone ? `
 
   html, body {
     width: 80mm;
-    margin: 0;
-    padding: 0;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden;
   }
 
   body {
@@ -5492,9 +5645,9 @@ ${phone ? `
   }
 
   .slip {
-    width: 76mm;
-    margin: 0 auto;
-    padding: 2mm 2mm 4mm;
+    width: 78mm;
+    margin: 0;
+    padding: 1.5mm 2mm 4mm 0.4mm;
     box-sizing: border-box;
     overflow: hidden;
     page-break-inside: avoid;
@@ -5523,7 +5676,7 @@ ${phone ? `
 
 .block{
   border:1px solid #000;
-  padding:6px 6px;
+  padding:4px 4px;
   margin-top:4px;
 }
 
@@ -5553,8 +5706,29 @@ ${phone ? `
 .total-qty b{
   font-size:22px;
 }
+
+.info-box{
+  border:1px solid #000;
+  padding:5px 6px;
+  margin:5px 0 6px;
+  font-size:14px;
+  line-height:1.45;
+}
+.info-box .payable{
+  font-size:17px;
+  font-weight:900;
+  margin-top:2px;
+}
+.info-box .meetup{
+  border-top:1px dashed #000;
+  margin-top:4px;
+  padding-top:4px;
+  font-size:16px;
+  font-weight:900;
+}
+
 .item-row{
-  padding:4px 0;
+  padding:5px 0;
 }
 .item-row + .item-row{
   border-top:1px dashed #000;
@@ -5564,15 +5738,24 @@ ${phone ? `
 .item-name{
   font-size:15px;
   line-height:1.35;
-  font-weight:700;
+  font-weight:800;
   word-break:break-word;
+  overflow-wrap:anywhere;
 }
 .item-qty{
-  margin-top:2px;
-  font-size:21px;
+  display:inline-block;
+  margin-top:4px;
+  padding:2px 7px;
+  border:2px solid #000;
+  font-size:20px;
   line-height:1.1;
   font-weight:900;
-  text-align:right;
+}
+.item-price{
+  margin-top:4px;
+  font-size:15px;
+  line-height:1.2;
+  font-weight:800;
 }
 
 /* 備註：粗框+粗體更醒目 */
@@ -6043,6 +6226,18 @@ if (btnExportShip) btnExportShip.addEventListener('click', exportShipReport);
 
 const btnPrintSlips = $('#btnPrintSlipsRange');
 if (btnPrintSlips) btnPrintSlips.addEventListener('click', printShipSlipsRange);
+
+ const btnClearPrintSlipSelection = $('#btnClearPrintSlipSelection');
+if (btnClearPrintSlipSelection) {
+  btnClearPrintSlipSelection.addEventListener('click', () => {
+    PRINT_SLIP_SELECTED.clear();
+    $$('.ord-cb').forEach(cb => { cb.checked = false; });
+    updatePrintSlipsBtn();
+
+    const msgEl = $('#msg');
+    if (msgEl) msgEl.textContent = '已清除列印勾選。';
+  });
+}
   // ✅ 上方「棄標／沒收定金」按鈕：走專用 forfeit API，不走一般取消
   const btnCancelTop = $('#btnCancelOrderTop');
 if (btnCancelTop) {
