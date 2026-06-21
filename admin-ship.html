@@ -5414,6 +5414,7 @@ function renderSlipItems(itemsText){
     <div class="item-row">
       <div class="item-name">${slipEscape(it.name || '-')}</div>
       <div class="item-qty">數量：${it.qty ? `x ${slipEscape(it.qty)}` : '-'}</div>
+      ${it.price ? `<div class="item-price">金額：${slipEscape(it.price)}</div>` : ``}
     </div>
   `).join('');
 }
@@ -5454,7 +5455,7 @@ function getSlipMeetupText(shipInfoObj = {}, f = {}){
   const ship = shipInfoObj.ship || {};
   const meetup = shipInfoObj.meetup || ship.meetup || {};
 
-  return firstNonEmpty(
+  const time = firstNonEmpty(
     f['面交時間'],
     f['預約面交時間'],
     f.meetup_time,
@@ -5466,6 +5467,18 @@ function getSlipMeetupText(shipInfoObj = {}, f = {}){
     shipInfoObj.meetup_time,
     shipInfoObj.meetupTime
   );
+
+  const place = firstNonEmpty(
+    f['面交地點'],
+    f.meetup_place,
+    f.meet_place,
+    ship.meetup_place,
+    ship.meet_place,
+    meetup.place,
+    shipInfoObj.meetup_place
+  );
+
+  return [time, place ? `地點：${place}` : ''].filter(Boolean).join('｜');
 }
     // ↓ 這裡完全照匯出中心的 printOrders 抄來 ↓
    const slipsHtml = records.map((rec) => {
@@ -5533,10 +5546,6 @@ const payableAmountText = slipMoney(amountInfo.net);
 const creditText = amountInfo.credit > 0 ? slipMoney(amountInfo.credit) : '';
 
 const meetupText = getSlipMeetupText(shipInfoObj, f);
-const isMeetupSlip =
-  rawShipType === 'meetup' ||
-  shipType === '面交' ||
-  String(paymentMethod || '').toLowerCase() === 'meetup_cash';
 
 const zip = firstNonEmpty(f['郵遞區號'], postObj.zip, shipObj.zip);
 const addr = firstNonEmpty(f['收件地址'], postObj.addr, shipObj.addr);
@@ -5552,11 +5561,20 @@ const storeName = firstNonEmpty(f['超商店名'], storeObj.name, shipObj.store_
           <div class="line total-qty">商品總數量：<b>${slipEscape(itemQty)}</b> 件</div>
 
           ${lineName ? `
-  <div class="badge badge-line">
-    <span class="t">LINE 名稱：</span><span class="v">${slipEscape(lineName)}</span>
+  <div class="badge">
+    <div class="t">LINE 名稱</div>
+    <div class="v">${slipEscape(lineName)}</div>
   </div>
 ` : ``}
 
+          <div class="info-box">
+            <div>出貨方式：<b>${slipEscape(shipType || '-')}</b></div>
+            <div>付款方式：<b>${slipEscape(paymentText || '-')}</b></div>
+            <div>訂單金額：<b>${slipEscape(orderAmountText)}</b></div>
+            ${creditText ? `<div>購物金折抵：<b>-${slipEscape(creditText)}</b></div>` : ``}
+            <div class="payable">應付金額：<b>${slipEscape(payableAmountText)}</b></div>
+            ${meetupText ? `<div class="meetup">面交時間：<b>${slipEscape(meetupText)}</b></div>` : ``}
+          </div>
 
           <!-- ★ 商品編號、商品明細：標題一行，內容一行 ★ -->
    <div class="section-title">商品</div>
@@ -5573,29 +5591,21 @@ const storeName = firstNonEmpty(f['超商店名'], storeObj.name, shipObj.store_
         </div>
       ` : ``}
           <!-- 分隔線：下面這塊可以剪下來貼在包裹上 -->
-          <div class="cut-line"></div>
+          <div class="line">--------------------------------</div>
 
           <!-- 下半部：收件資料（剪下用） -->
           <div class="shipbox">
-  ${isMeetupSlip ? `
-    <div class="meetup-ship">
-      <div class="row"><div class="k">面交</div><div class="v">${slipEscape(meetupText || '-')}</div></div>
-      <div class="row"><div class="k">付款</div><div class="v">${slipEscape(paymentText || '面交現金')}</div></div>
-      <div class="row"><div class="k">應收</div><div class="v payable">${slipEscape(payableAmountText)}</div></div>
-    </div>
-  ` : `
-    ${storeName ? `
-      <div class="row"><div class="k">門市</div><div class="v">${slipEscape(storeName)}</div></div>
-    ` : ``}
+  ${storeName ? `
+    <div class="row"><div class="k">門市</div><div class="v">${storeName}</div></div>
+  ` : ``}
 
-    ${(zip || addr) ? `
-      <div class="row"><div class="k">地址</div><div class="v">${slipEscape([zip, addr].filter(Boolean).join(' '))}</div></div>
-    ` : ``}
-  `}
+  ${(zip || addr) ? `
+    <div class="row"><div class="k">地址</div><div class="v">${[zip, addr].filter(Boolean).join(' ')}</div></div>
+  ` : ``}
 
   <div class="row">
   <div class="k">收件人</div>
-  <div class="v name">${slipEscape(name || '')}</div>
+  <div class="v name">${name || ''}</div>
 </div>
 
 ${phone ? `
@@ -5605,10 +5615,8 @@ ${phone ? `
   </div>
 ` : ``}
 </div>
-
-</div>
        `;
-    }).join('');
+    }).join('<div class="page-break"></div>');
 
     doc.write(`<!doctype html>
 <html lang="zh-Hant">
@@ -5616,48 +5624,34 @@ ${phone ? `
 <meta charset="utf-8" />
 <title>出貨明細列印</title>
 <style>
-@page {
-  size: 80mm 200mm;
-  margin: 0;
-}
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
 
-html, body {
-  width: 80mm;
-  min-width: 80mm;
-  max-width: 80mm;
-  margin: 0 !important;
-  padding: 0 !important;
-  overflow: visible;
-}
+  html, body {
+    width: 80mm;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden;
+  }
 
-body {
-  width: 80mm;
-  margin: 0 !important;
-  padding: 0 !important;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 15px;
-  line-height: 1.18;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
+  body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 
-.slip {
-  width: 76mm;
-  min-width: 76mm;
-  max-width: 76mm;
-  margin: 0;
-  padding: 0.6mm 1mm 2mm 1mm;
-  box-sizing: border-box;
-  overflow: visible;
-  page-break-inside: avoid;
-  break-inside: avoid;
-  page-break-after: always;
-  break-after: page;
-}
-
-  .slip:last-child {
-    page-break-after: auto;
-    break-after: auto;
+  .slip {
+    width: 78mm;
+    margin: 0;
+    padding: 1.5mm 2mm 4mm 0.4mm;
+    box-sizing: border-box;
+    overflow: hidden;
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 
   .line {
@@ -5674,26 +5668,25 @@ body {
 
   /* ===== 商品區塊 + 備註醒目框 ===== */
 .section-title{
-  margin-top:4px;
-  font-size:15px;
+  margin-top:6px;
+  font-size:16px;
   font-weight:900;
-  letter-spacing:0.2px;
+  letter-spacing:0.5px;
 }
 
 .block{
-  width:100%;
-  box-sizing:border-box;
   border:1px solid #000;
-  padding:2px 2px;
-  margin-top:2px;
+  padding:4px 4px;
+  margin-top:4px;
 }
 
 .items .sku{
   font-weight:900;
-  font-size:13px;
-  line-height:1.15;
+  font-size:16px;
+  line-height:1.25;
   word-break:break-word;
 }
+
 .items .desc{
   margin-top:3px;
   font-size:15px;
@@ -5704,180 +5697,144 @@ body {
 
 .total-qty{
   border:2px solid #000;
-  padding:2px 4px;
-  margin:2px 0 2px;
-  font-size:14px !important;
+  padding:4px 6px;
+  margin:4px 0 6px;
+  font-size:18px !important;
   font-weight:900;
   color:#000 !important;
 }
 .total-qty b{
-  font-size:17px;
+  font-size:22px;
 }
 
 .info-box{
   border:1px solid #000;
-  padding:3px 5px;
-  margin:3px 0 4px;
+  padding:5px 6px;
+  margin:5px 0 6px;
   font-size:14px;
-  line-height:1.25;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}
-.info-box div{
-  white-space:nowrap;
+  line-height:1.45;
 }
 .info-box .payable{
-  font-size:16px;
+  font-size:17px;
   font-weight:900;
-  margin-top:1px;
+  margin-top:2px;
 }
 .info-box .meetup{
   border-top:1px dashed #000;
-  margin-top:3px;
-  padding-top:3px;
-  font-size:15px;
+  margin-top:4px;
+  padding-top:4px;
+  font-size:16px;
   font-weight:900;
-  white-space:normal;
 }
+
 .item-row{
-  padding:2px 0;
-  page-break-inside: avoid;
-  break-inside: avoid;
+  padding:5px 0;
 }
 .item-row + .item-row{
   border-top:1px dashed #000;
-  margin-top:2px;
-  padding-top:3px;
+  margin-top:5px;
+  padding-top:7px;
 }
 .item-name{
-  font-size:13px;
-  line-height:1.18;
-  font-weight:900;
-  word-break:break-all;
+  font-size:15px;
+  line-height:1.35;
+  font-weight:800;
+  word-break:break-word;
   overflow-wrap:anywhere;
-  letter-spacing:-0.3px;
 }
 .item-qty{
   display:inline-block;
-  margin-top:2px;
-  padding:1px 5px;
+  margin-top:4px;
+  padding:2px 7px;
   border:2px solid #000;
-  font-size:17px;
-  line-height:1.02;
+  font-size:20px;
+  line-height:1.1;
   font-weight:900;
 }
 .item-price{
-  display:none;
+  margin-top:4px;
+  font-size:15px;
+  line-height:1.2;
+  font-weight:800;
 }
+
 /* 備註：粗框+粗體更醒目 */
 .remark{
-  border:1px solid #000;
-  padding:3px 4px;
-  margin-top:3px;
+  border:2px solid #000;
+  padding:6px;
+  margin-top:6px;
 }
 .remark .title{
-  font-size:13px;
+  font-size:15px;
   font-weight:900;
-  margin-bottom:1px;
+  margin-bottom:2px;
 }
 .remark .text{
-  font-size:14px;
+  font-size:16px;
   font-weight:900;
   white-space:pre-wrap;
   word-break:break-word;
 }
 .remark .sub{
-  font-size:12px;
+  font-size:14px;
   font-weight:700;
   white-space:pre-wrap;
   word-break:break-word;
-  margin-top:1px;
+  margin-top:4px;
 }
 /* LINE 名稱框 */
 .badge{
-  width:100%;
-  box-sizing:border-box;
   border:1px solid #000;
-  padding:3px 4px;
-  margin-top:3px;
-  line-height:1.2;
-}
-.badge-line{
-  white-space:nowrap;
+  padding:6px;
+  margin-top:6px;
 }
 .badge .t{
-  display:inline;
   font-size:13px;
   font-weight:900;
-  margin:0;
+  margin-bottom:2px;
 }
 .badge .v{
-  display:inline;
-  font-size:14px;
+  font-size:16px;
   font-weight:900;
   word-break:break-word;
 }
 
+/* 收件資訊框（剪下用） */
 .shipbox{
-  border: none;
-  padding: 0;
+  border: none;          /* ✅ 不要框框 */
+  padding: 0;            /* ✅ 取消內距 */
   margin-top: 6px;
-  page-break-inside: avoid;
-  break-inside: avoid;
 }
 .shipbox .row{
   display:flex;
-  gap:6px;
+  gap:8px;
   margin-bottom:4px;
-  page-break-inside: avoid;
-  break-inside: avoid;
 }
 .shipbox .k{
-  width:34px;
-  font-size:14px;
+  width:44px;
   font-weight:900;
   white-space:nowrap;
 }
 .shipbox .v{
   flex:1;
-  font-size:14px;
   word-break:break-word;
 }
 .shipbox .name{
-  font-size:16px;
+  font-size:18px;
   font-weight:900;
 }
 .shipbox .phone{
-  font-size:15px;
-  font-weight:900;
-}
-.meetup-ship{
-  border:none;
-  padding:0;
-  margin:2px 0 4px;
-}
-.meetup-ship .row{
-  margin-bottom:3px;
-}
-.meetup-ship .payable{
   font-size:16px;
   font-weight:900;
 }
   /* 比較不重要的小字（例如時間、訂單編號）可以套 small */
   .line.small {
-    font-size: 11px;
+    font-size: 12px;      /* 跟 body 差一級，還是看得清楚 */
     color: #555;
   }
 
-  .cut-line{
-    width: 38mm;
-    border-top: 1px dashed #000;
-    margin: 5px 0 5px 0;
-    height: 1px;
-  }
-
   .page-break {
-    display: none;
+    page-break-after: always;
   }
 </style>
 <meta name="robots" content="noindex, nofollow">
