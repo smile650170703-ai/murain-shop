@@ -68,6 +68,15 @@
   .mt-4{margin-top:16px}
   .btn-primary{margin-top:8px;padding:10px 14px;border-radius:999px;border:none;background:#22d3ee;color:#0f172a;font-size:14px;font-weight:600;cursor:pointer;box-shadow:0 10px 30px rgba(34,211,238,.35)}
   .btn-secondary{margin-top:8px;padding:8px 12px;border-radius:999px;border:1px solid rgba(148,163,184,.7);background:transparent;color:#e5e7eb;font-size:13px;cursor:pointer}
+.vendor-save-row{
+  grid-template-columns:repeat(3,minmax(0,1fr));
+}
+
+@media (max-width:900px){
+  .vendor-save-row{
+    grid-template-columns:1fr;
+  }
+}
  .pickup-wrap{display:flex;gap:6px;align-items:center}
 .pickup-wrap input{flex:1}
 .btn-mini{
@@ -1288,11 +1297,10 @@ function renderVendorMonthSummary(){
     const m = monthKeyOfRecord(f);
     if (month && m !== month) return;
 
-    // 改成加總「應付金額」
-    const a = calcAmounts(f);
-    const amount = Number(a.net || 0);
+    // 改成加總「賣貨便金額」：手動金額優先，其次 Airtable 賣貨便金額
+const amount = vendorAmountForStats(f);
 
-    map.set(name, (map.get(name) || 0) + amount);
+map.set(name, (map.get(name) || 0) + amount);
   });
 
   const rows = Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
@@ -1884,6 +1892,22 @@ function calcAmounts(f){
   const netRaw = (f?.net_amount ?? f?.net ?? (base - credit));
   const net    = Number(netRaw ?? base) || 0;
   return { base, credit, net: Math.max(net, 0) };
+}
+ function vendorAmountForStats(f){
+  const manualRaw = String(f?.['手動輸入賣貨便金額'] ?? '').trim();
+  if (manualRaw !== '') {
+    const n = Number(manualRaw);
+    return Number.isFinite(n) ? Math.max(n, 0) : 0;
+  }
+
+  const vendorRaw = String(f?.['賣貨便金額'] ?? '').trim();
+  if (vendorRaw !== '') {
+    const n = Number(vendorRaw);
+    return Number.isFinite(n) ? Math.max(n, 0) : 0;
+  }
+
+  const a = calcAmounts(f);
+  return Number(a.net || 0) || 0;
 }
 // 訂單狀態英文代碼 → 中文
 function displayOrderStatus(st){
@@ -3800,8 +3824,8 @@ ${renderTailInfoBlock(f)}
 </div>
 
 
-<!-- ★ 新增：賣貨便名稱 + 取貨登記（同一排兩欄） -->
-<div class="row mt-1">
+<!-- ★ 新增：賣貨便名稱 + 手動賣貨便金額 + 取貨登記 -->
+<div class="row mt-1 vendor-save-row">
   <div>
     <label>賣貨便名稱</label>
     <select id="d_vendor_name">
@@ -3816,17 +3840,30 @@ ${renderTailInfoBlock(f)}
     <div class="tag-small" id="d_vendor_stats"></div>
   </div>
 
- <div>
-  <label>取貨登記</label>
-  <div class="pickup-wrap">
+  <div>
+    <label>手動賣貨便金額</label>
     <input
-      id="d_pickup_reg"
-      value="${String(f['取貨登記'] ?? '').trim()}"
-      placeholder=""
+      id="d_manual_vendor_amount"
+      type="number"
+      step="1"
+      min="0"
+      value="${escapeHtml(String(f['手動輸入賣貨便金額'] ?? '').trim())}"
+      placeholder="特殊金額才填"
     />
-    <button type="button" class="btn-mini" id="btnSavePickupReg">存</button>
+    <div class="tag-small">空白＝使用系統賣貨便金額</div>
   </div>
-</div>
+
+  <div>
+    <label>取貨登記</label>
+    <div class="pickup-wrap">
+      <input
+        id="d_pickup_reg"
+        value="${String(f['取貨登記'] ?? '').trim()}"
+        placeholder=""
+      />
+      <button type="button" class="btn-mini" id="btnSavePickupReg">存</button>
+    </div>
+  </div>
 </div>
 <!-- ★ 新增結束 -->
 
@@ -4478,12 +4515,11 @@ function updateVendorStats() {
     const ps = String(x.pay_status || '').trim().toLowerCase();
     if (ps !== 'paid_ok') return;
 
-    const a = calcAmounts(x);
-    sum += Number(a.net || 0);
-    count += 1;
+    sum += vendorAmountForStats(x);
+count += 1;
   });
 
-  infoEl.textContent = `${month}，${name} 已收款 ${count} 筆，應付金額合計 ${money(sum)}`;
+  infoEl.textContent = `${month}，${name} 已收款 ${count} 筆，賣貨便金額合計 ${money(sum)}`;
 }
 
 
@@ -4665,7 +4701,16 @@ const forcePayStatus = opts.forcePayStatus || '';
 
   const fields = {};
 
-  fields['賣貨便名稱'] = $('#d_vendor_name') ? $('#d_vendor_name').value || '' : '';
+fields['賣貨便名稱'] = $('#d_vendor_name') ? $('#d_vendor_name').value || '' : '';
+
+const manualVendorAmountRaw = $('#d_manual_vendor_amount')
+  ? String($('#d_manual_vendor_amount').value || '').trim()
+  : '';
+
+fields['手動輸入賣貨便金額'] = manualVendorAmountRaw === ''
+  ? null
+  : Number(manualVendorAmountRaw);
+
 fields['取貨登記'] = $('#d_pickup_reg') ? ($('#d_pickup_reg').value || '').trim() : '';
 
 const tracking = $('#d_ship_tracking').value.trim();
