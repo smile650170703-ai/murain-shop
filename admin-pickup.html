@@ -188,7 +188,19 @@
   font-weight:700;
 }
 
+/* ✅ 讓右上工具區浮在右上，不再把左邊訂單列表往下推 */
+.toolbar-main{
+  position:relative;
+}
+
+.toolbar-left{
+  max-width:calc(100% - 480px);
+}
+
 .toolbar-side{
+  position:absolute;
+  top:0;
+  right:0;
   width:460px;
   min-width:420px;
   max-width:460px;
@@ -196,6 +208,7 @@
   grid-template-columns:minmax(0,1fr) minmax(0,1fr);
   gap:8px;
   align-items:start;
+  z-index:2;
 }
 
 /* 登入文字放左上，棄標按鈕放右上 */
@@ -221,55 +234,69 @@
   grid-column:1 / -1;
 }
 
-/* 左欄：賣貨便月份；右欄：LINE 名稱搜尋 */
+/* ✅ 下面兩欄各自獨立：左邊月份，右邊 LINE 搜尋 + 違約費用 */
+.toolbar-side-columns{
+  grid-column:1 / -1;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:8px;
+  align-items:start;
+}
+
+.toolbar-side-col{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
 #vendorMonthBox,
-.toolbar-side .side-box:has(#line_search){
+#lineSearchBox{
   min-height:0;
 }
 
-/* ✅ 違約費用固定放在右欄，也就是 LINE 名稱搜尋下方 */
 #pickupPenaltyTopBox{
-  grid-column:2 / 3;
+  width:100%;
   margin-top:0;
-  align-self:start;
 }
 
-/* ✅ 避免左邊月份統計太長，把整排工具列撐高 */
-#vendorMonthBox{
-  align-self:start;
-}
-
-.toolbar-side .side-box:has(#line_search){
-  align-self:start;
+/* ✅ 右側訂單明細往下避開右上工具區；左側訂單列表不被影響 */
+#orderDetail{
+  margin-top:var(--pickup-detail-offset, 0px);
 }
 
 @media (max-width:1100px){
   .toolbar-main{
+    position:static;
     flex-direction:column;
   }
 
+  .toolbar-left{
+    max-width:none;
+  }
+
   .toolbar-side{
+    position:static;
     width:100%;
     min-width:0;
     max-width:none;
-    grid-template-columns:1fr 1fr;
   }
 
-  #pickupPenaltyTopBox{
-    grid-column:2 / 3;
+  #orderDetail{
+    margin-top:0;
   }
 }
 
 @media (max-width:700px){
-  .toolbar-side{
+  .toolbar-side,
+  .toolbar-side-columns{
     grid-template-columns:1fr;
   }
 
   .toolbar-side > .tag-small,
   .toolbar-side > #btnCancelOrderTop,
-  #vendorMonthBox,
-  .toolbar-side .side-box:has(#line_search),
-  #pickupPenaltyTopBox{
+  .toolbar-side > #benefitReviewPanel,
+  .toolbar-side-columns{
     grid-column:1 / -1;
   }
 
@@ -877,28 +904,34 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
     🚫 棄標／沒收定金
   </button>
 
-  <div class="side-box" id="vendorMonthBox">
-  <label>賣貨便月份</label>
-  <input id="vendor_month" type="month" />
-  <div id="vendor_month_summary" class="tag-small"></div>
-</div>
-
-    <div class="side-box">
-    <label>LINE 名稱搜尋</label>
-    <input id="line_search" type="text" placeholder="輸入 LINE 名稱" />
-  </div>
-
-  <div class="pickup-penalty-top hidden" id="pickupPenaltyTopBox">
-    <div class="field">
-      <label>違約費用 TWD</label>
-      <input id="d_cod_penalty_fee_top" type="number" min="0" step="1" placeholder="例：500">
+  <div class="toolbar-side-columns">
+    <div class="toolbar-side-col">
+      <div class="side-box" id="vendorMonthBox">
+        <label>賣貨便月份</label>
+        <input id="vendor_month" type="month" />
+        <div id="vendor_month_summary" class="tag-small"></div>
+      </div>
     </div>
 
-<button class="small-btn" id="btnSaveCodPenaltyTop" type="button">
-  存
-</button>
+    <div class="toolbar-side-col">
+      <div class="side-box" id="lineSearchBox">
+        <label>LINE 名稱搜尋</label>
+        <input id="line_search" type="text" placeholder="輸入 LINE 名稱" />
+      </div>
 
-    <div class="tag-small" id="codPenaltyMsgTop">請先點左邊訂單</div>
+      <div class="pickup-penalty-top hidden" id="pickupPenaltyTopBox">
+        <div class="field">
+          <label>違約費用 TWD</label>
+          <input id="d_cod_penalty_fee_top" type="number" min="0" step="1" placeholder="例：500">
+        </div>
+
+        <button class="small-btn" id="btnSaveCodPenaltyTop" type="button">
+          存
+        </button>
+
+        <div class="tag-small" id="codPenaltyMsgTop">請先點左邊訂單</div>
+      </div>
+    </div>
   </div>
 
 <div class="side-box hidden" id="benefitReviewPanel">
@@ -1140,9 +1173,31 @@ function setupAdminPageChrome(){
   if (vendorMonthBox && ADMIN_PAGE_FILE !== 'admin-pickup.html') {
     vendorMonthBox.classList.add('hidden');
   }
+
+  setTimeout(syncPickupLayoutOffset, 0);
 }
 
+function syncPickupLayoutOffset(){
+  if (ADMIN_PAGE_FILE !== 'admin-pickup.html') return;
 
+  const left = document.querySelector('.toolbar-left');
+  const side = document.querySelector('.toolbar-side');
+
+  if (!left || !side) return;
+
+  if (window.matchMedia('(max-width:1100px)').matches) {
+    document.documentElement.style.setProperty('--pickup-detail-offset', '0px');
+    return;
+  }
+
+  const leftBottom = left.getBoundingClientRect().bottom;
+  const sideBottom = side.getBoundingClientRect().bottom;
+
+  const offset = Math.max(0, Math.ceil(sideBottom - leftBottom + 12));
+  document.documentElement.style.setProperty('--pickup-detail-offset', `${offset}px`);
+}
+
+window.addEventListener('resize', syncPickupLayoutOffset);
 
 function shouldUseAdminLinkNav(el){
   const href = el?.getAttribute?.('href') || '';
@@ -1747,6 +1802,8 @@ function renderVendorMonthSummary(){
       return `${escapeHtml(name)}：${money(data.sum)}（${data.count}筆）`;
     })
   ].join('<br>');
+
+  setTimeout(syncPickupLayoutOffset, 0);
 }
 
 async function applyFullView(mode = 'all', save = true){
