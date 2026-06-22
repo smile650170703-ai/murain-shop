@@ -138,7 +138,7 @@ body{
 }
 
 .page{
-  max-width:1180px;
+  max-width:1280px;
   padding:12px 18px 40px;
 }
 
@@ -222,7 +222,8 @@ button.blue,
 button.gold,
 #btnQuickSave,
 #btnToggleDetails,
-#btnAutoAllocate{
+#btnAutoAllocate,
+.account-apply{
   background:linear-gradient(90deg,#1e90ff,#22d3ee);
   color:#fff;
   box-shadow:0 6px 14px rgba(34,211,238,.28);
@@ -233,7 +234,8 @@ button.blue:hover,
 button.gold:hover,
 #btnQuickSave:hover,
 #btnToggleDetails:hover,
-#btnAutoAllocate:hover{
+#btnAutoAllocate:hover,
+.account-apply:hover{
   filter:brightness(1.05);
 }
 
@@ -254,12 +256,15 @@ button.red{
 }
 
 .overview-row{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
   gap:10px;
-  padding-bottom:6px;
+  overflow:visible;
+  padding-bottom:0;
 }
 
 .overview-card{
-  flex:0 0 220px;
+  min-width:0;
   border:1px solid var(--line);
   border-radius:14px;
   background:#fff;
@@ -273,7 +278,7 @@ button.red{
 }
 
 .overview-card .big{
-  color:#0f766e;
+  color:#0369a1;
   font-size:20px;
   margin:6px 0 8px;
 }
@@ -287,14 +292,14 @@ button.red{
 }
 
 .badge{
-  background:#effcf6;
-  color:#0f766e;
-  border:1px solid #b7e4d7;
+  background:#eef6ff;
+  color:#0f3f8c;
+  border:1px solid #cfe3ff;
 }
 
 .badge.ok{
-  background:#effcf6;
-  color:#0f766e;
+  background:#eef6ff;
+  color:#0f3f8c;
 }
 
 .badge.warn{
@@ -449,7 +454,7 @@ tr:hover td{
           <div class="subtext">本次領款日期不用輸入，按「儲存輸入」當下會自動用今天日期。下方明細需要時再打開查詢。</div>
         </div>
         <div class="tiny-actions">
-          <button class="secondary" id="btnLoad" type="button">重新整理總覽</button>
+          <button class="secondary" id="btnLoad" type="button">載入賣貨便資料</button>
           <button class="red" id="btnResetKey" type="button">清除 OP_KEY</button>
         </div>
       </div>
@@ -492,7 +497,7 @@ tr:hover td{
         <span class="subtext">同一排顯示各帳號目前系統待核銷金額，用來判斷哪個帳號可能有錢可領。</span>
       </div>
       <div id="accountOverview" class="overview-row">
-        <div class="empty-state">輸入 OP_KEY 後按「重新整理總覽」。</div>
+        <div class="empty-state">輸入 OP_KEY 後按 Enter，或按「載入賣貨便資料」。</div>
       </div>
     </section>
 
@@ -633,11 +638,12 @@ tr:hover td{
       el.innerHTML = msg;
     }
     function clearNotice(){ const el = $("notice"); el.className = "notice"; el.innerHTML = ""; }
-    function setLoading(on){
-      state.loading = on;
-      $("btnLoad").disabled = on; $("btnQuickSave").disabled = on;
-      $("btnLoad").textContent = on ? "載入中..." : "重新整理總覽";
-    }
+function setLoading(on){
+  state.loading = on;
+  $("btnLoad").disabled = on;
+  $("btnQuickSave").disabled = on;
+  $("btnLoad").textContent = on ? "載入中..." : "載入賣貨便資料";
+}
     function getOpKey(){
       const key = String($("opKey").value || "").trim();
       if (key) localStorage.setItem("MURAIN_OP_KEY", key);
@@ -965,8 +971,14 @@ tr:hover td{
       lines.push(`備註：${$("note").value || ""}`);
       navigator.clipboard.writeText(lines.join("\n")).then(()=>showNotice("已複製核對明細。", "ok")).catch(()=>showNotice("複製失敗，瀏覽器沒有剪貼簿權限。", "err"));
     }
-    function bindEvents(){
-      $("btnLoad").addEventListener("click", loadList);
+  function bindEvents(){
+  $("btnLoad").addEventListener("click", loadList);
+
+  $("opKey").addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    await loadList();
+  });
       $("btnQuickSave").addEventListener("click", quickSave);
       $("btnResetKey").addEventListener("click", () => { localStorage.removeItem("MURAIN_OP_KEY"); $("opKey").value=""; showNotice("已清除本機 OP_KEY。", "ok"); });
       $("btnToggleDetails").addEventListener("click", () => { $("detailPanel").classList.toggle("show"); renderTable(); });
