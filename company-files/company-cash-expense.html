@@ -294,7 +294,22 @@
   font-size:12px;
   border-radius:8px;
 }
+/* 圖片網址不要顯示在清單上，但保留欄位給程式存值 */
+.rowPhoto.photo-edit-input{
+  display:none;
+}
 
+.rowPhotoPreview{
+  cursor:zoom-in;
+}
+
+.reviewDataRow{
+  cursor:pointer;
+}
+
+.reviewDataRow.is-picked td{
+  background:#eef6ff;
+}
     .msg{
       white-space:pre-wrap;
       line-height:1.7;
@@ -587,12 +602,14 @@ th{
         <thead>
           <tr>
             <th style="width:48px;">勾選</th>
-            <th style="width:210px;">交易明細備註</th>
-            <th style="width:120px;">拍照/截圖</th>
-            <th style="width:120px;">交易金額</th>
-            <th style="width:135px;">交易日期</th>
-            <th style="min-width:210px;">費用支出對象</th>
-            <th style="min-width:190px;">備註</th>
+<th style="width:210px;">交易明細備註</th>
+<th style="width:96px;">拍照/截圖</th>
+<th style="width:120px;">交易金額</th>
+<th style="width:135px;">交易日期</th>
+<th style="min-width:230px;">費用支出對象</th>
+<th style="width:105px;">送匯款對帳</th>
+<th style="width:130px;">發票金額</th>
+<th style="min-width:190px;">備註</th>
           </tr>
         </thead>
         <tbody id="unconfirmedRows"></tbody>
@@ -757,7 +774,7 @@ function categorySelect(id, value) {
   `;
 }
 
-    function renderPhotoPreview(target, url) {
+function renderPhotoPreview(target, url) {
   const box = typeof target === "string" ? $(target) : target;
   if (!box) return;
 
@@ -765,9 +782,13 @@ function categorySelect(id, value) {
 
   if (!s) {
     box.innerHTML = `貼上圖片<br>Ctrl+V`;
+    box.dataset.photoUrl = "";
+    box.style.cursor = "pointer";
     return;
   }
 
+  box.dataset.photoUrl = s;
+  box.style.cursor = "zoom-in";
   box.innerHTML = `<img src="${esc(s)}" alt="拍照/截圖" />`;
 }
 
@@ -829,8 +850,19 @@ function bindPasteImage(inputEl, previewEl) {
     renderPhotoPreview(previewEl, inputEl.value);
   });
 
-  if (previewEl) {
-    previewEl.addEventListener("click", () => inputEl.focus());
+   if (previewEl) {
+    previewEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+
+      const url = String(inputEl.value || previewEl.dataset.photoUrl || "").trim();
+
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      inputEl.focus();
+    });
   }
 }
 
@@ -841,6 +873,39 @@ function bindAllPhotoPasteInputs() {
     const id = input.dataset.id;
     const preview = document.querySelector(`.rowPhotoPreview[data-id="${id}"]`);
     bindPasteImage(input, preview);
+  });
+}
+
+    function bindReviewRowAutoPick() {
+  document.querySelectorAll(".reviewDataRow").forEach(tr => {
+    if (tr.dataset.rowPickBound === "1") return;
+    tr.dataset.rowPickBound = "1";
+
+    const ck = tr.querySelector(".rowPick");
+    if (!ck) return;
+
+    const sync = () => {
+      tr.classList.toggle("is-picked", ck.checked);
+    };
+
+    ck.addEventListener("change", sync);
+
+    tr.addEventListener("click", (e) => {
+      const tag = String(e.target?.tagName || "").toLowerCase();
+
+      if (tag === "input" || tag === "select" || tag === "button" || tag === "a") {
+        if (!ck.checked) {
+          ck.checked = true;
+          sync();
+        }
+        return;
+      }
+
+      ck.checked = !ck.checked;
+      sync();
+    });
+
+    sync();
   });
 }
 function fillNewCategorySelect() {
@@ -972,7 +1037,8 @@ async function renderUnconfirmedRows() {
       </tr>
     `).join("") : `<tr><td colspan="9" class="empty">目前沒有未確認現金支出。</td></tr>`;
 
-    bindAllPhotoPasteInputs();
+       bindAllPhotoPasteInputs();
+    bindReviewRowAutoPick();
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="9" class="empty">❌ ${esc(err.message || err)}</td></tr>`;
     $("unconfirmedCountTag").textContent = `0 筆`;
@@ -1130,6 +1196,7 @@ const payload = {
 
     $("newDetail").value = "";
     $("newPhoto").value = "";
+    renderPhotoPreview("newPhotoPreview", "");
     $("newAmount").value = "";
     $("newNote").value = "";
     $("newCategory").value = "";
