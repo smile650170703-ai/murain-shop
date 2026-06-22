@@ -1003,18 +1003,41 @@ function setupAdminPageChrome(){
       document.getElementById('summary').innerHTML = '';
     }
 
-    // 賣貨便頁：上方操作列只保留「💾 儲存資料」
+    // 賣貨便頁：上方操作列只保留「重寄出貨」＋「儲存資料」
     const topActions = document.querySelector('.top-order-actions');
     if (topActions) {
       topActions.classList.remove('hidden');
 
+      const showIds = new Set([
+        'btnSaveAndShipTop',
+        'btnSaveDetailOnlyTop'
+      ]);
+
       topActions.querySelectorAll('button').forEach(btn => {
-        btn.style.display = (btn.id === 'btnSaveDetailOnlyTop') ? '' : 'none';
+        btn.style.display = showIds.has(btn.id) ? '' : 'none';
       });
+
+      const shipTop = document.getElementById('btnSaveAndShipTop');
+      if (shipTop) {
+        shipTop.textContent = '🔁 重寄｜儲存+更新出貨時間+發LINE';
+      }
     }
 
-    // 移除：賣貨便月份 2026年05月 那個區塊
-    document.getElementById('vendorMonthBox')?.classList.add('hidden');
+    // 賣貨便登記頁：上方顯示月份統計
+    document.getElementById('vendorMonthBox')?.classList.remove('hidden');
+
+    const vendorMonthInput = document.getElementById('vendor_month');
+    if (vendorMonthInput && !vendorMonthInput.value) {
+      vendorMonthInput.value = new Date(Date.now() + 8 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 7);
+    }
+
+    if (vendorMonthInput && !vendorMonthInput.dataset.bound) {
+      vendorMonthInput.dataset.bound = '1';
+      vendorMonthInput.addEventListener('change', renderVendorMonthSummary);
+    }
+
     // 顯示：賣貨便頁上方違約費用欄位
     document.getElementById('pickupPenaltyTopBox')?.classList.remove('hidden');
     // 保險：強制第二排亮「賣貨便登記」，不要亮全部訂單
@@ -1607,23 +1630,30 @@ function renderVendorMonthSummary(){
     const m = monthKeyOfRecord(f);
     if (month && m !== month) return;
 
-    // 改成加總「應付金額」
-    const a = calcAmounts(f);
-    const amount = Number(a.net || 0);
+    const amount = vendorAmountForStats(f);
+    const old = map.get(name) || { count: 0, sum: 0 };
 
-    map.set(name, (map.get(name) || 0) + amount);
+    map.set(name, {
+      count: old.count + 1,
+      sum: old.sum + amount
+    });
   });
 
-  const rows = Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  const rows = Array.from(map.entries()).sort((a, b) => b[1].sum - a[1].sum);
 
   if (!rows.length) {
-    panel.textContent = month ? `${month} 尚無已收款資料` : '尚無已收款資料';
+    panel.innerHTML = month
+      ? `月份：${escapeHtml(month)}<br>尚無已收款賣貨便資料`
+      : '請先選擇賣貨便月份';
     return;
   }
 
-  panel.innerHTML = rows
-    .map(([name, sum]) => `${name}：${money(sum)}`)
-    .join('<br>');
+  panel.innerHTML = [
+    `月份：${escapeHtml(month || '全部月份')}`,
+    ...rows.map(([name, data]) => {
+      return `${escapeHtml(name)}：${money(data.sum)}（${data.count}筆）`;
+    })
+  ].join('<br>');
 }
 
 async function applyFullView(mode = 'all', save = true){
@@ -2190,12 +2220,31 @@ async function runButtonJob(btn, job, busyText = '處理中…'){
 }
 
 function money(n){ return 'NT$ ' + Number(n||0).toLocaleString(); }
+
 function calcAmounts(f){
   const base   = Number(f?.total_amount ?? f?.total ?? 0) || 0;
   const credit = Number(f?.credit_used ?? f?.CreditUsed ?? f?.credit ?? 0) || 0;
   const netRaw = (f?.net_amount ?? f?.net ?? (base - credit));
   const net    = Number(netRaw ?? base) || 0;
   return { base, credit, net: Math.max(net, 0) };
+}
+
+// ✅ 賣貨便統計金額：手動輸入優先，其次 Airtable「賣貨便金額」，最後才用應付金額
+function vendorAmountForStats(f){
+  const manualRaw = String(f?.['手動輸入賣貨便金額'] ?? '').replace(/,/g, '').trim();
+  if (manualRaw !== '') {
+    const n = Number(manualRaw);
+    if (Number.isFinite(n)) return Math.max(n, 0);
+  }
+
+  const vendorRaw = String(f?.['賣貨便金額'] ?? '').replace(/,/g, '').trim();
+  if (vendorRaw !== '') {
+    const n = Number(vendorRaw);
+    if (Number.isFinite(n)) return Math.max(n, 0);
+  }
+
+  const a = calcAmounts(f);
+  return Number(a.net || 0);
 }
 // 訂單狀態英文代碼 → 中文
 function displayOrderStatus(st){
@@ -3340,6 +3389,11 @@ async function reloadCurrentView(){
 
     await loadOrders('all', { view_key: ADMIN_PAGE.viewKey });
     ALL_ORDERS_CACHE = [...(currentOrders || [])];
+
+    if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+      await loadVendorSummaryCache();
+      renderVendorMonthSummary();
+    }
 
     updateCurrentSubTabCount(currentOrders.length);
 
@@ -4600,10 +4654,15 @@ if (isForfeitOrder) {
     btnMeetupDoneTop.style.display = (pm === 'meetup_cash') ? '' : 'none';
   }
 }
-// ✅ 賣貨便登記頁：不管訂單狀態，只保留上方「💾 儲存資料」
+// ✅ 賣貨便登記頁：只保留「重寄出貨」＋「儲存資料」
 if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
   const topActions = document.querySelector('.top-order-actions');
   if (topActions) topActions.classList.remove('hidden');
+
+  const showIds = new Set([
+    'btnSaveAndShipTop',
+    'btnSaveDetailOnlyTop'
+  ]);
 
   [
     'btnSaveAndShipTop',
@@ -4616,14 +4675,17 @@ if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
     'btnCashInstAllDoneTop',
     'btnMeetupCashDoneTop',
     'btnSendTailLinkTop',
-    'btnCartRemindTop'
+    'btnCartRemindTop',
+    'btnSaveDetailOnlyTop'
   ].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.style.display = 'none';
+    if (el) el.style.display = showIds.has(id) ? '' : 'none';
   });
 
-  const saveTop = document.getElementById('btnSaveDetailOnlyTop');
-  if (saveTop) saveTop.style.display = '';
+  const shipTop = document.getElementById('btnSaveAndShipTop');
+  if (shipTop) {
+    shipTop.textContent = '🔁 重寄｜儲存+更新出貨時間+發LINE';
+  }
 }
  // ✅ 顯示/綁定「同步尾款→主單」（只在 TL 才顯示）
 const syncTop = $('#btnSyncTailToParentTop');
@@ -4727,10 +4789,8 @@ function updateVendorStats() {
     return;
   }
 
-  // 目前這筆訂單的欄位
   const f = (currentRecord && (currentRecord.fields || currentRecord)) || {};
 
-  // 先用 Airtable 的「賣貨便月份」，沒有的話就用 shipped_at / ship_at 算 YYYY-MM
   let month = String(f['賣貨便月份'] || '').trim();
   if (!month) {
     const shipAt = String(f.shipped_at || f.ship_at || '').trim();
@@ -4742,7 +4802,10 @@ function updateVendorStats() {
     return;
   }
 
-  const source = ORDERS_CACHE || [];
+  const source = (VENDOR_SUMMARY_CACHE && VENDOR_SUMMARY_CACHE.length)
+    ? VENDOR_SUMMARY_CACHE
+    : (ORDERS_CACHE || []);
+
   let count = 0;
   let sum = 0;
 
@@ -4752,18 +4815,15 @@ function updateVendorStats() {
     if (String(x['賣貨便名稱'] || '').trim() !== name) return;
     if (monthKeyOfRecord(x) !== month) return;
 
-    // 只算已收款
     const ps = String(x.pay_status || '').trim().toLowerCase();
     if (ps !== 'paid_ok') return;
 
-    const a = calcAmounts(x);
-    sum += Number(a.net || 0);
+    sum += vendorAmountForStats(x);
     count += 1;
   });
 
-  infoEl.textContent = `${month}，${name} 已收款 ${count} 筆，應付金額合計 ${money(sum)}`;
+  infoEl.textContent = `${month}，${name} 已收款 ${count} 筆，賣貨便金額合計 ${money(sum)}`;
 }
-
 
  // ★★★ 新增「面交按鈕事件綁定」只加這兩行 ***
 const btnMeetup = $('#btnMeetupNotify');
@@ -6159,6 +6219,12 @@ async function loadAdminDefaultPage(){
   const sumEl = $('#summary');
   if (sumEl) {
     sumEl.innerHTML = `<span>${ADMIN_PAGE.title}：${currentOrders.length} 筆</span>`;
+  }
+
+  // ✅ 賣貨便登記頁：載入上方月份 / 名稱 / 金額統計
+  if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+    await loadVendorSummaryCache();
+    renderVendorMonthSummary();
   }
 
   return;
