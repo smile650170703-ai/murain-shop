@@ -5078,6 +5078,105 @@ const cleanPrintNote = (v) => {
     .trim();
 };
 
+const slipDate10 = (v) => {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  return s.slice(0, 10);
+};
+
+const pickPrintValue = (...vals) => {
+  for (const v of vals) {
+    if (v === 0 || v === '0') return v;
+    const s = String(v ?? '').trim();
+    if (s) return v;
+  }
+  return '';
+};
+
+const buildCashInstPrintInfo = (f = {}, shipInfoObj = {}) => {
+  const dep = shipInfoObj.deposit || {};
+  const cashInst = shipInfoObj.cash_inst || shipInfoObj.cashInstallment || shipInfoObj.installment || {};
+  const cashInstMeta = safeJsonParse(f.cash_inst_due_dates_json, {}) || {};
+  const cashInstSchedule = Array.isArray(cashInstMeta.schedule) ? cashInstMeta.schedule : [];
+
+  const cashInstDates = Array.isArray(cashInstMeta.payment_dates)
+    ? cashInstMeta.payment_dates
+    : (
+        Array.isArray(cashInst.payment_dates)
+          ? cashInst.payment_dates
+          : []
+      );
+
+  const holdUntil = slipDate10(
+    pickPrintValue(
+      f.hold_until,
+      dep.hold_until,
+      dep.holdUntil
+    )
+  );
+
+  const depositDue = slipDate10(
+    pickPrintValue(
+      f.cash_inst_deposit_due_date,
+      cashInst.deposit_due_date,
+      cashInstMeta.deposit_due_date,
+      f.deposit_expire_at,
+      dep.deposit_expire_at,
+      dep.expire_at,
+      holdUntil
+    )
+  );
+
+  const date1 = slipDate10(
+    pickPrintValue(
+      f.cash_inst_date_1,
+      cashInst.date_1,
+      cashInst.date1,
+      cashInst.inst1,
+      cashInst.first_date,
+      cashInstMeta.first_date,
+      cashInstDates[0],
+      cashInstSchedule?.[0]?.due_date
+    )
+  );
+
+  const date2 = slipDate10(
+    pickPrintValue(
+      f.cash_inst_date_2,
+      cashInst.date_2,
+      cashInst.date2,
+      cashInst.inst2,
+      cashInst.second_date,
+      cashInstMeta.second_date,
+      cashInstDates[1],
+      cashInstSchedule?.[1]?.due_date
+    )
+  );
+
+  const date3 = slipDate10(
+    pickPrintValue(
+      f.cash_inst_date_3,
+      cashInst.date_3,
+      cashInst.date3,
+      cashInst.inst3,
+      cashInst.third_date,
+      cashInstMeta.third_date,
+      cashInstDates[2],
+      cashInstSchedule?.[2]?.due_date
+    )
+  );
+
+  const rows = [];
+
+  if (holdUntil) rows.push(`保留到：${holdUntil}`);
+  if (depositDue && depositDue !== holdUntil) rows.push(`訂金期限：${depositDue}`);
+  if (date1) rows.push(`第 1 期：${date1}`);
+  if (date2) rows.push(`第 2 期：${date2}`);
+  if (date3) rows.push(`第 3 期：${date3}`);
+
+  return rows.join('\n');
+};
+
    function getItemTotalQty(itemsText){
   const s = String(itemsText || '');
   let total = 0;
@@ -5134,6 +5233,7 @@ const customerNote = f['客戶備註']       || '';
       const name         = f['收件人姓名']     || '';
       const phone        = f['收件人電話']     || '';
       const storeName    = f['超商店名']       || '';
+      const cashInstPrintInfo = buildCashInstPrintInfo(f, shipInfoObj);
 
       return `
         <div class="slip">
@@ -5147,6 +5247,14 @@ const customerNote = f['客戶備註']       || '';
   </div>
 ` : ``}
           <div class="line">出貨方式：${shipType}</div>
+
+          ${cashInstPrintInfo ? `
+            <div class="dates-box">
+              <div class="dates-title">保留 / 分期日期</div>
+              <div class="dates-text">${escapeHtml(cashInstPrintInfo)}</div>
+            </div>
+          ` : ``}
+
           <!-- ★ 商品編號、商品明細：標題一行，內容一行 ★ -->
    <div class="section-title">商品</div>
       <div class="block items">
@@ -5278,7 +5386,26 @@ body {
   white-space:pre-wrap;     /* 明細有換行就保留 */
   word-break:break-word;
 }
+/* 保留 / 分期日期 */
+.dates-box{
+  border:1px solid #000;
+  padding:5px 6px;
+  margin-top:5px;
+}
 
+.dates-title{
+  font-size:14px;
+  font-weight:900;
+  margin-bottom:2px;
+}
+
+.dates-text{
+  font-size:14px;
+  font-weight:800;
+  line-height:1.35;
+  white-space:pre-wrap;
+  word-break:break-word;
+}
 /* 備註：粗框+粗體更醒目 */
 .remark{
   border:2px solid #000;
