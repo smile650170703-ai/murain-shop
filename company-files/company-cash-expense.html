@@ -444,7 +444,59 @@ input, select, button{
   border-radius:8px;
   border:1px solid var(--line);
 }
+/* ===== 區塊標題：跟欄位標題分開辨識 ===== */
+.section-title{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:18px;
+  font-weight:900;
+}
 
+.section-title .no{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:26px;
+  height:26px;
+  padding:0 8px;
+  border-radius:999px;
+  color:#fff;
+  font-size:14px;
+  font-weight:900;
+}
+
+.section-title.create{
+  color:#0369a1;
+}
+
+.section-title.create .no{
+  background:linear-gradient(90deg,#1e90ff,#22d3ee);
+}
+
+.section-title.pending{
+  color:#b45309;
+}
+
+.section-title.pending .no{
+  background:#f59e0b;
+}
+
+.section-title.done{
+  color:#0f766e;
+}
+
+.section-title.done .no{
+  background:#10b981;
+}
+
+th{
+  background:#eef4ff;
+  color:#0f172a;
+  font-weight:900;
+  font-size:12px;
+  border-bottom:1px solid #c7d7ef;
+}
 @media (max-width: 900px){
   .cash-filter-bar{
     grid-template-columns:1fr;
@@ -480,7 +532,10 @@ input, select, button{
 
   <div class="card">
     <div class="split-head">
-      <h2 style="margin:0;">1. 新增現金支出</h2>
+      <h2 class="section-title create" style="margin:0;">
+  <span class="no">1</span>
+  <span>新增現金支出</span>
+</h2>
       <button class="btn hot small" type="button" id="btnCreateCashExpense">新增到未確認清單</button>
     </div>
 
@@ -529,7 +584,10 @@ input, select, button{
 
   <div class="card">
     <div class="split-head">
-      <h2 style="margin:0;">2. 未確認現金支出</h2>
+      <h2 class="section-title pending" style="margin:0;">
+  <span class="no">2</span>
+  <span>未確認現金支出</span>
+</h2>
       <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
         <span class="tag warn" id="unconfirmedCountTag">0 筆</span>
         <button class="btn hot small" type="button" id="btnBatchConfirm">儲存＋確認完成</button>
@@ -556,15 +614,20 @@ input, select, button{
 
   <div class="card">
     <div class="split-head">
-      <h2 style="margin:0;">3. 已確認現金支出</h2>
+      <h2 class="section-title done" style="margin:0;">
+  <span class="no">3</span>
+  <span>已確認現金支出</span>
+</h2>
       <span class="tag ok" id="confirmedCountTag">0 筆</span>
     </div>
 
     <div class="cash-filter-bar">
-      <div>
-        <label>月份</label>
-        <input id="confirmedMonth" placeholder="例如 2026-06" />
-      </div>
+     <div>
+  <label>月份</label>
+  <select id="confirmedMonth">
+    <option value="">全部月份</option>
+  </select>
+</div>
 
       <div>
         <label>費用支出對象</label>
@@ -793,7 +856,38 @@ function fillNewCategorySelect() {
     `;
   }
 }
+async function fillConfirmedMonthSelect() {
+  const sel = $("confirmedMonth");
+  if (!sel) return;
 
+  const oldValue = sel.value || "";
+
+  try {
+    const data = await apiGetWithQuery(API_LIST, {
+      checked: "yes",
+      max: 500
+    });
+
+    const list = Array.isArray(data.rows) ? data.rows : [];
+
+    const months = [...new Set(
+      list
+        .map(r => String(r.month || r.date || "").slice(0, 7))
+        .filter(v => /^\d{4}-\d{2}$/.test(v))
+    )].sort().reverse();
+
+    sel.innerHTML = `
+      <option value="">全部月份</option>
+      ${months.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join("")}
+    `;
+
+    if (oldValue && months.includes(oldValue)) {
+      sel.value = oldValue;
+    }
+  } catch (err) {
+    sel.innerHTML = `<option value="">全部月份</option>`;
+  }
+}
 function setTodayForNewDate() {
   const el = $("newDate");
   if (!el || el.value) return;
@@ -1031,7 +1125,10 @@ $("btnConfirmedReset").addEventListener("click", async () => {
 fillNewCategorySelect();
 setTodayForNewDate();
 bindAllPhotoPasteInputs();
-refreshAll();
+
+fillConfirmedMonthSelect().then(() => {
+  refreshAll();
+});
 </script>
 </body>
 </html>
