@@ -797,7 +797,6 @@ strong.amount-green{
 
     <div class="pending-mini-head-actions">
       <button class="btn-mini btn green" type="button" id="btnMiniConfirm">確認入帳</button>
-      <button class="btn-mini btn orange" type="button" id="btnMiniBalanceRepay">結餘轉還款</button>
     </div>
   </div>
 
@@ -1087,20 +1086,28 @@ function isMonthRow(r) {
   return /^\d{4}-\d{1,2}月?$/.test(m);
 }
 
+function companyMonthlySettlementValue(r) {
+  return getVal(r, [
+    "monthlyProfit",
+    "monthlyExpense",
+    "✅ 公司｜本月結算金額"
+  ], 0);
+}
+
 function monthlyExpenseValue(r) {
-  return getVal(r, ["monthlyExpense", "每月開銷支出費用"], 0);
+  return companyMonthlySettlementValue(r);
 }
 
 function sisterPersonalExpenseValue(r) {
-  const direct = getVal(r, ["monthlySisterPersonalExpense2", "sisterPersonalExpense2", "每個月妹妹個人開銷*2", "每個月妹妹個人開銷２"], null);
-  if (direct !== null && direct !== undefined) return direct;
-  return num(getVal(r, ["cardSisterExpense", "信用卡-妹妹個人支出"], 0)) +
-         num(getVal(r, ["cashBorrowSister", "現金-借支 [妹妹]", "現金-借支 [ 妹妹 ]"], 0)) +
-         num(getVal(r, ["sisterMortgage", "妹妹白河農會房貸"], 0));
+  return getVal(r, [
+    "monthlySisterPersonalExpense2",
+    "sisterPersonalExpense2",
+    "✅ 妹妹｜本月個人費用總額（×2）"
+  ], 0);
 }
 
 function transferMortgageAmountValue(r) {
-  return getVal(r, ["transferMortgageAmount", "transferRepayAmount", "轉房貸金額"], 0);
+  return 0;
 }
 
 function getRowByMonth(month) {
@@ -1109,6 +1116,42 @@ function getRowByMonth(month) {
 
 function getRowById(id) {
   return allRows.find(r => String(r.id || r.recordId || "") === String(id)) || null;
+}
+
+function breakdownItems(r, type) {
+  if (type === "monthlyExpense") {
+    return [
+      ["🏢 🔹淨利｜公司｜本月總額", getVal(r, ["companyNetProfit", "🏢 🔹淨利｜公司｜本月總額"], 0), "monthlyProfit"],
+      ["🏢 🔹定金｜公司｜沒收收入", getVal(r, ["depositForfeitProfit", "🏢 🔹定金｜公司｜沒收收入"], 0), "depositForfeitProfit"],
+      ["🏢🔻 現金｜公司｜支出總額", getVal(r, ["companyTotalExpense", "companyGoodsExpense", "🏢🔻 現金｜公司｜支出總額"], 0), "companyGoodsExpense"],
+      ["🏢🔻 信用卡｜公司｜刷卡支出", getVal(r, ["cardCompanyExpense", "🏢🔻 信用卡｜公司｜刷卡支出"], 0), "cardCompanyExpense"],
+      ["🏢 🔻退貨｜公司｜退貨扣款", getVal(r, ["monthlyReturnSettlement", "🏢 🔻退貨｜公司｜退貨扣款"], 0), "monthlyReturnSettlement"],
+      ["🏢 🔻購物金｜公司｜折抵扣款", getVal(r, ["useCompanySubsidy", "🏢 🔻購物金｜公司｜折抵扣款"], 0), "useCompanySubsidy"]
+    ];
+  }
+
+  if (type === "sisterPersonal") {
+    return [
+      ["👤🔻 現金｜妹妹｜借支", getVal(r, ["cashBorrowSister", "👤🔻 現金｜妹妹｜借支"], 0), "cashBorrowSister"],
+      ["👤🔻 信用卡｜妹妹｜個人費用", getVal(r, ["cardSisterExpense", "👤🔻 信用卡｜妹妹｜個人費用"], 0), "cardSisterExpense"],
+      ["👤🔻 房貸｜妹妹｜個人費用", getVal(r, ["sisterMortgage", "👤🔻 房貸｜妹妹｜個人費用"], 0), "sisterMortgage"]
+    ];
+  }
+
+  return [];
+}
+
+function breakdownValueMode(type, key){
+  if (type === "monthlyExpense") {
+    if (key === "monthlyProfit" || key === "depositForfeitProfit") return "income";
+    return "expense";
+  }
+
+  if (type === "sisterPersonal") {
+    return "expense";
+  }
+
+  return "auto";
 }
 
 function breakdownItems(r, type) {
@@ -1165,7 +1208,7 @@ function renderBreakdownRow(r, type) {
   const title = { monthlyExpense:"每月開銷支出費用", sisterPersonal:"每個月妹妹個人開銷*2", transferMortgage:"轉房貸金額" }[type] || "明細";
   return `
     <tr class="detail-row" data-detail-row="${escHtml(monthLabel(r))}-${type}">
-<td colspan="5">
+<td colspan="4">
 <strong>${escHtml(monthLabel(r))}｜${title}</strong>
         <div class="breakdown" style="margin-top:10px;">
           ${items.map(([label,value,key]) => `
@@ -1272,25 +1315,28 @@ function renderConfirmedProfitRowHtml(r){
   const month = monthLabel(r);
   const id = r.id || r.recordId || "";
 
-  const balance = getVal(r, ["balance", "結餘"], 0);
-  const monthlyProfit = getVal(r, ["monthlyProfit", "本月淨利"], 0);
-  const mExpense = monthlyExpenseValue(r);
-  const sExpense = sisterPersonalExpenseValue(r);
+  const balance = getVal(r, ["balance", "📌 大總結", "結餘"], 0);
+  const companySettlement = companyMonthlySettlementValue(r);
+  const sisterExpense = sisterPersonalExpenseValue(r);
 
   return `
     <tr data-row-id="${escHtml(id)}" data-month="${escHtml(month)}">
       <td><strong>${escHtml(month)}</strong></td>
-      <td class="balance-col">${amountLink(r, "balance", "結餘", balance)}</td>
-      <td>${amountLink(r, "monthlyProfit", "本月淨利", monthlyProfit)}</td>
+
+      <td class="balance-col">
+        ${amountLink(r, "balance", "📌 大總結", balance)}
+      </td>
+
       <td>
         <span class="money-inline">
-          ${amountLink(r, "monthlyExpense", "每月開銷支出費用", mExpense)}
+          ${amountLink(r, "monthlyExpense", "✅ 公司｜本月結算金額", companySettlement)}
           <button class="plus-btn" data-expand="monthlyExpense" data-id="${escHtml(id)}">＋</button>
         </span>
       </td>
+
       <td>
         <span class="money-inline">
-          ${amountLink(r, "sisterPersonalExpense", "每個月妹妹個人開銷*2", sExpense)}
+          ${amountLink(r, "sisterPersonalExpense", "✅ 妹妹｜本月個人費用總額（×2）", sisterExpense)}
           <button class="plus-btn" data-expand="sisterPersonal" data-id="${escHtml(id)}">＋</button>
         </span>
       </td>
@@ -1344,7 +1390,7 @@ function renderRows() {
 
   $("confirmedRows").innerHTML = confirmedRows.length
     ? confirmedRows.map(renderConfirmedProfitRowHtml).join("")
-    : `<tr><td colspan="5" class="empty">目前沒有已確認資料。</td></tr>`;
+    : `<tr><td colspan="4" class="empty">目前沒有已確認資料。</td></tr>`;
 
   $("unconfirmedMiniRows").innerHTML = unconfirmedRows.length
     ? unconfirmedRows.map(renderUnconfirmedMiniRowHtml).join("")
@@ -1366,7 +1412,7 @@ async function loadRows({ keepScroll = false } = {}) {
       setTimeout(() => { document.querySelector(".table-wrap").scrollTop = oldScroll; }, 0);
     }
   } catch (err) {
-    const errHtmlConfirmed = `<tr><td colspan="5" class="empty">❌ ${escHtml(err.message || err)}</td></tr>`;
+    const errHtmlConfirmed = `<tr><td colspan="4" class="empty">❌ ${escHtml(err.message || err)}</td></tr>`;
 const errHtmlUnconfirmed = `<div class="empty">❌ ${escHtml(err.message || err)}</div>`;
 $("confirmedRows").innerHTML = errHtmlConfirmed;
 $("unconfirmedMiniRows").innerHTML = errHtmlUnconfirmed;
@@ -1387,10 +1433,9 @@ function openModal(title, hint, html) {
   $("modalBackdrop").classList.add("show");
 }
 function renderBalanceDetailTable(r){
-  const monthlyProfit = num(getVal(r, ["monthlyProfit", "本月淨利"], 0));
-  const monthlyExpense = num(monthlyExpenseValue(r));
+  const companySettlement = num(companyMonthlySettlementValue(r));
   const sisterExpense = num(sisterPersonalExpenseValue(r));
-  const balance = num(getVal(r, ["balance", "結餘"], 0));
+  const balance = num(getVal(r, ["balance", "📌 大總結", "結餘"], 0));
 
   return `
     <div class="table-wrap" style="max-height:58vh;">
@@ -1403,19 +1448,15 @@ function renderBalanceDetailTable(r){
         </thead>
         <tbody>
           <tr>
-            <td>本月淨利</td>
-            <td>${signedMoneyHtml(monthlyProfit, "auto")}</td>
+            <td>✅ 公司｜本月結算金額</td>
+            <td>${signedMoneyHtml(companySettlement, "auto")}</td>
           </tr>
           <tr>
-            <td>每月開銷支出費用</td>
-            <td>${signedMoneyHtml(monthlyExpense, "expense")}</td>
-          </tr>
-          <tr>
-            <td>每個月妹妹個人開銷*2</td>
+            <td>✅ 妹妹｜本月個人費用總額（×2）</td>
             <td>${signedMoneyHtml(sisterExpense, "expense")}</td>
           </tr>
           <tr class="row-final-total">
-            <td>結餘</td>
+            <td>📌 大總結</td>
             <td>${signedMoneyHtml(balance, "auto")}</td>
           </tr>
         </tbody>
@@ -1425,6 +1466,15 @@ function renderBalanceDetailTable(r){
 }
 function renderMonthlyExpenseSummaryTable(items) {
   const safeItems = Array.isArray(items) ? items : [];
+
+  const modeByCategory = (category, idx) => {
+    const c = String(category || "");
+    const isLast = idx === safeItems.length - 1;
+
+    if (isLast) return "auto";
+    if (c.includes("淨利") || c.includes("定金")) return "income";
+    return "expense";
+  };
 
   return `
     <div class="table-wrap" style="max-height:58vh;">
@@ -1441,14 +1491,12 @@ function renderMonthlyExpenseSummaryTable(items) {
             const category = text(it.category || it["分類"] || it.label || "");
             const amount = num(it.amount ?? it["金額"]);
             const isLast = idx === safeItems.length - 1;
-            const isCompany8 = category.includes("定金沒收") || category.includes("[公司8]");
-            const mode = isLast ? "expense" : (isCompany8 ? "income" : "expense");
 
             return `
               <tr class="${isLast ? "row-final-total" : ""}">
                 <td>${escHtml(text(it.date || it["日期"] || ""))}</td>
                 <td>${escHtml(category)}</td>
-                <td>${signedMoneyHtml(amount, mode)}</td>
+                <td>${signedMoneyHtml(amount, modeByCategory(category, idx))}</td>
               </tr>
             `;
           }).join("")}
@@ -1524,15 +1572,14 @@ function renderSisterExpenseSummaryTable(items) {
   "accountantInvoiceCheck",
   "cashBorrowSister"
 ].includes(detailKey)) {
-    return keep([
-      "date",
-      "category",
-      "detail",
-      "photoUrls",
-      "amount",
-      "statusChecked",
-      "signedChecked"
-    ]);
+return keep([
+  "date",
+  "category",
+  "detail",
+  "photoUrls",
+  "amount",
+  "statusChecked"
+]);
   }
 
   // 公司2：退貨結算 / 取消訂單淨利表
@@ -1985,9 +2032,6 @@ $("btnMiniConfirm").addEventListener("click", () => {
   runPendingMiniBatchAction("confirm_company_account");
 });
 
-$("btnMiniBalanceRepay").addEventListener("click", () => {
-  runPendingMiniBatchAction("use_balance_repay");
-});
 $("btnReload").addEventListener("click", () => loadRows());
 $("btnLatest").addEventListener("click", () => {
   if (!allRows.length) return;
