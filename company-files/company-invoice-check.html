@@ -528,6 +528,51 @@ th{
     grid-template-columns:1fr !important;
   }
 }
+    /* ===== 進項發票登記區 ===== */
+.input-invoice-grid{
+  display:grid;
+  grid-template-columns:140px 150px 130px 130px 130px 170px;
+  gap:10px;
+  align-items:end;
+  margin-bottom:10px;
+}
+
+.input-invoice-grid label{
+  margin-bottom:5px !important;
+  font-size:12.5px !important;
+}
+
+.input-invoice-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:10px;
+}
+
+.input-invoice-table input,
+.input-invoice-table select{
+  min-width:100px;
+  padding:7px 8px !important;
+  font-size:12px !important;
+}
+
+.input-invoice-table input[type="checkbox"]{
+  width:18px;
+  min-width:18px;
+  height:18px;
+}
+
+@media (max-width:1180px){
+  .input-invoice-grid{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
+@media (max-width:720px){
+  .input-invoice-grid{
+    grid-template-columns:1fr;
+  }
+}
   </style>
 </head>
 <body>
@@ -607,10 +652,96 @@ th{
     </div>
  
 
-    <div class="card">
+      <div class="card">
       <div class="split-head">
         <h2 class="section-title" style="margin:0;">
           <span class="no">2</span>
+          <span>進項發票登記</span>
+        </h2>
+        <span class="tag">可扣抵 401 的進項發票</span>
+      </div>
+
+      <div class="input-invoice-grid">
+        <div>
+          <label for="inputInvDate">發票日期</label>
+          <input id="inputInvDate" type="date" />
+        </div>
+
+        <div>
+          <label for="inputInvNo">發票號碼</label>
+          <input id="inputInvNo" placeholder="例如 AB12345678" />
+        </div>
+
+        <div>
+          <label for="inputInvGross">含稅金額</label>
+          <input id="inputInvGross" type="number" inputmode="numeric" placeholder="例如 1050" />
+        </div>
+
+        <div>
+          <label for="inputInvNet">未稅金額</label>
+          <input id="inputInvNet" readonly placeholder="自動拆稅" />
+        </div>
+
+        <div>
+          <label for="inputInvTax">營業稅額</label>
+          <input id="inputInvTax" readonly placeholder="自動拆稅" />
+        </div>
+
+        <div>
+          <label for="inputInvDeduct">可扣抵401</label>
+          <select id="inputInvDeduct">
+            <option value="yes" selected>是</option>
+            <option value="no">否</option>
+          </select>
+        </div>
+
+        <div>
+          <label for="inputInvPeriod">401申報期別</label>
+          <select id="inputInvPeriod">
+            <option value="2025-11_2025-12">114年11-12月</option>
+            <option value="2026-01_2026-02">115年01-02月</option>
+            <option value="2026-03_2026-04">115年03-04月</option>
+            <option value="2026-05_2026-06">115年05-06月</option>
+            <option value="2026-07_2026-08">115年07-08月</option>
+            <option value="2026-09_2026-10">115年09-10月</option>
+            <option value="2026-11_2026-12">115年11-12月</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="input-invoice-actions">
+        <button class="btn hot" type="button" id="btnCreateInputInvoice">新增進項發票</button>
+        <button class="btn secondary" type="button" id="btnClearInputInvoice">清空</button>
+        <button class="btn hot" type="button" id="btnReloadInputInvoice">重新整理清單</button>
+      </div>
+
+      <div class="msg" id="inputInvoiceMsg">請先輸入進項發票資料。</div>
+
+      <div class="table-wrap" style="margin-top:12px;">
+        <table class="input-invoice-table">
+          <thead>
+            <tr>
+              <th>發票日期</th>
+              <th>發票號碼</th>
+              <th>含稅金額</th>
+              <th>未稅金額</th>
+              <th>營業稅額</th>
+              <th>可扣抵401</th>
+              <th>401申報期別</th>
+              <th>動作</th>
+            </tr>
+          </thead>
+          <tbody id="inputInvoiceRows">
+            <tr><td colspan="8" class="empty">尚未載入進項發票。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="split-head">
+        <h2 class="section-title" style="margin:0;">
+          <span class="no">3</span>
           <span>會計師401申報核對</span>
         </h2>
         <span class="tag">401 報表核對</span>
@@ -754,7 +885,9 @@ th{
     const API_401_CHECK = "https://api.murain.tw/op/company/tax401/check";
     const API_401_SAVE = "https://api.murain.tw/op/company/tax401/save";
     const API_401_CONFIRM = "https://api.murain.tw/op/company/tax401/confirm";
-
+    const API_INPUT_INVOICE_LIST = "https://api.murain.tw/op/company/input-invoices/list";
+    const API_INPUT_INVOICE_CREATE = "https://api.murain.tw/op/company/input-invoices/create";
+    const API_INPUT_INVOICE_UPDATE = "https://api.murain.tw/op/company/input-invoices/update";
 
     const $ = (id) => document.getElementById(id);
     const rowsEl = $("rows");
@@ -837,7 +970,189 @@ th{
       const el = $("tax401Period");
       return el.options[el.selectedIndex]?.textContent || "";
     }
+    function setInputInvoiceMsg(text, type) {
+      const el = $("inputInvoiceMsg");
+      if (!el) return;
 
+      el.textContent = text || "";
+      el.className = "msg";
+      if (type === "ok") el.classList.add("ok");
+      if (type === "err") el.classList.add("err");
+    }
+
+    function inputInvMonthFromDate(dateText) {
+      const s = String(dateText || "").trim();
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return "";
+      return `${m[1]}-${m[2]}`;
+    }
+
+    function inputInvPeriodFromMonth(monthText) {
+      const s = String(monthText || "").trim();
+      const m = s.match(/^(\d{4})-(\d{2})$/);
+      if (!m) return "";
+
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+
+      if (mo <= 2) return `${y}-01_${y}-02`;
+      if (mo <= 4) return `${y}-03_${y}-04`;
+      if (mo <= 6) return `${y}-05_${y}-06`;
+      if (mo <= 8) return `${y}-07_${y}-08`;
+      if (mo <= 10) return `${y}-09_${y}-10`;
+      return `${y}-11_${y}-12`;
+    }
+
+    function inputInvSplitGross() {
+      const gross = Number($("inputInvGross").value || 0) || 0;
+
+      if (!gross) {
+        $("inputInvNet").value = "";
+        $("inputInvTax").value = "";
+        return;
+      }
+
+      const tax = Math.round(gross / 21);
+      const net = Math.round(gross - tax);
+
+      $("inputInvNet").value = String(net);
+      $("inputInvTax").value = String(tax);
+    }
+
+    function inputInvSyncPeriod() {
+      const date = $("inputInvDate").value;
+      const month = inputInvMonthFromDate(date);
+      const period = inputInvPeriodFromMonth(month);
+
+      if (period) {
+        $("inputInvPeriod").value = period;
+      }
+    }
+
+    function clearInputInvoiceForm() {
+      $("inputInvDate").value = "";
+      $("inputInvNo").value = "";
+      $("inputInvGross").value = "";
+      $("inputInvNet").value = "";
+      $("inputInvTax").value = "";
+      $("inputInvDeduct").value = "yes";
+      $("inputInvPeriod").value = "2025-11_2025-12";
+      setInputInvoiceMsg("已清空進項發票輸入欄位。", "ok");
+    }
+
+    async function createInputInvoice() {
+      inputInvSplitGross();
+
+      const payload = {
+        date: $("inputInvDate").value,
+        invoiceNo: $("inputInvNo").value.trim(),
+        grossAmount: Number($("inputInvGross").value || 0) || 0,
+        deduct401: $("inputInvDeduct").value === "yes",
+        periodKey: $("inputInvPeriod").value
+      };
+
+      if (!payload.date || !payload.invoiceNo || !payload.grossAmount) {
+        setInputInvoiceMsg("❌ 請至少填：發票日期、發票號碼、含稅金額", "err");
+        return;
+      }
+
+      setInputInvoiceMsg("新增進項發票中...");
+
+      try {
+        await apiPost(API_INPUT_INVOICE_CREATE, payload);
+
+        setInputInvoiceMsg("✅ 進項發票已新增", "ok");
+
+        $("inputInvNo").value = "";
+        $("inputInvGross").value = "";
+        $("inputInvNet").value = "";
+        $("inputInvTax").value = "";
+
+        $("tax401Period").value = payload.periodKey;
+
+        await loadInputInvoices();
+        await load401SystemAmount();
+      } catch (err) {
+        setInputInvoiceMsg(`❌ ${err.message || err}`, "err");
+      }
+    }
+
+    async function loadInputInvoices() {
+      const periodKey = $("inputInvPeriod")?.value || $("tax401Period")?.value || "";
+
+      $("inputInvoiceRows").innerHTML = `<tr><td colspan="8" class="empty">載入中...</td></tr>`;
+
+      try {
+        const url = `${API_INPUT_INVOICE_LIST}?periodKey=${encodeURIComponent(periodKey)}&max=300`;
+        const data = await apiGet(url);
+        const list = Array.isArray(data.rows) ? data.rows : [];
+
+        if (!list.length) {
+          $("inputInvoiceRows").innerHTML = `<tr><td colspan="8" class="empty">目前沒有這一期的進項發票。</td></tr>`;
+          return;
+        }
+
+        $("inputInvoiceRows").innerHTML = list.map(r => `
+          <tr data-id="${escapeHtml(r.id)}">
+            <td><input class="rowInputInvDate" data-id="${escapeHtml(r.id)}" type="date" value="${escapeHtml(String(r.date || "").slice(0,10))}" /></td>
+            <td><input class="rowInputInvNo" data-id="${escapeHtml(r.id)}" value="${escapeHtml(r.invoiceNo || "")}" /></td>
+            <td><input class="rowInputInvGross" data-id="${escapeHtml(r.id)}" type="number" value="${Number(r.grossAmount || 0)}" /></td>
+            <td>${fmtMoney(r.netAmount || 0)}</td>
+            <td>${fmtMoney(r.taxAmount || 0)}</td>
+            <td style="text-align:center;">
+              <input class="rowInputInvDeduct" data-id="${escapeHtml(r.id)}" type="checkbox" ${r.deduct401 ? "checked" : ""} />
+            </td>
+            <td>
+              <select class="rowInputInvPeriod" data-id="${escapeHtml(r.id)}">
+                <option value="2025-11_2025-12" ${r.periodKey === "2025-11_2025-12" ? "selected" : ""}>114年11-12月</option>
+                <option value="2026-01_2026-02" ${r.periodKey === "2026-01_2026-02" ? "selected" : ""}>115年01-02月</option>
+                <option value="2026-03_2026-04" ${r.periodKey === "2026-03_2026-04" ? "selected" : ""}>115年03-04月</option>
+                <option value="2026-05_2026-06" ${r.periodKey === "2026-05_2026-06" ? "selected" : ""}>115年05-06月</option>
+                <option value="2026-07_2026-08" ${r.periodKey === "2026-07_2026-08" ? "selected" : ""}>115年07-08月</option>
+                <option value="2026-09_2026-10" ${r.periodKey === "2026-09_2026-10" ? "selected" : ""}>115年09-10月</option>
+                <option value="2026-11_2026-12" ${r.periodKey === "2026-11_2026-12" ? "selected" : ""}>115年11-12月</option>
+              </select>
+            </td>
+            <td>
+              <button class="btn hot small btnUpdateInputInvoice" type="button" data-id="${escapeHtml(r.id)}">儲存</button>
+            </td>
+          </tr>
+        `).join("");
+
+        document.querySelectorAll(".btnUpdateInputInvoice").forEach(btn => {
+          btn.addEventListener("click", async () => {
+            const id = btn.dataset.id;
+            if (!id) return;
+
+            const payload = {
+              id,
+              date: document.querySelector(`.rowInputInvDate[data-id="${CSS.escape(id)}"]`)?.value || "",
+              invoiceNo: document.querySelector(`.rowInputInvNo[data-id="${CSS.escape(id)}"]`)?.value || "",
+              grossAmount: Number(document.querySelector(`.rowInputInvGross[data-id="${CSS.escape(id)}"]`)?.value || 0) || 0,
+              deduct401: !!document.querySelector(`.rowInputInvDeduct[data-id="${CSS.escape(id)}"]`)?.checked,
+              periodKey: document.querySelector(`.rowInputInvPeriod[data-id="${CSS.escape(id)}"]`)?.value || ""
+            };
+
+            btn.disabled = true;
+            const oldText = btn.textContent;
+            btn.textContent = "儲存中...";
+
+            try {
+              await apiPost(API_INPUT_INVOICE_UPDATE, payload);
+              setInputInvoiceMsg("✅ 進項發票已更新", "ok");
+              await loadInputInvoices();
+              await load401SystemAmount();
+            } catch (err) {
+              setInputInvoiceMsg(`❌ ${err.message || err}`, "err");
+              btn.disabled = false;
+              btn.textContent = oldText;
+            }
+          });
+        });
+      } catch (err) {
+        $("inputInvoiceRows").innerHTML = `<tr><td colspan="8" class="empty">❌ ${escapeHtml(err.message || String(err))}</td></tr>`;
+      }
+    }
     function refresh401Result() {
       const declaredSales = moneyNum("declaredSalesAmount");
       const declaredOutputTax = moneyNum("declaredOutputTax");
@@ -1069,10 +1384,26 @@ $("viewDiffInputAmount").textContent = fmtMoney(diffInputAmount);
     $("btnTax401Check").addEventListener("click", load401SystemAmount);
     $("btnTax401Save").addEventListener("click", save401Report);
     $("btnTax401Confirm").addEventListener("click", confirm401Report);
+    $("inputInvDate").addEventListener("change", inputInvSyncPeriod);
+    $("inputInvGross").addEventListener("blur", inputInvSplitGross);
 
-    refresh401Result();
+    $("btnCreateInputInvoice").addEventListener("click", createInputInvoice);
+    $("btnClearInputInvoice").addEventListener("click", clearInputInvoiceForm);
+    $("btnReloadInputInvoice").addEventListener("click", loadInputInvoices);
+
+    $("inputInvPeriod").addEventListener("change", async () => {
+      $("tax401Period").value = $("inputInvPeriod").value;
+      await loadInputInvoices();
+    });
+
+    $("tax401Period").addEventListener("change", async () => {
+      $("inputInvPeriod").value = $("tax401Period").value;
+      await loadInputInvoices();
+    });
+       refresh401Result();
 
     loadList();
+    loadInputInvoices();
   </script>
 </body>
 </html>
