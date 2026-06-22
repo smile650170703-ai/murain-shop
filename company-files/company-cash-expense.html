@@ -665,16 +665,17 @@ const API_PHOTO_UPLOAD = "https://api.murain.tw/op/company/cash-expense/photo-up
 const API_REVIEW = "https://api.murain.tw/op/company/cash-expense/review-list";
 const API_UPDATE = "https://api.murain.tw/op/company/cash-expense/update";
 const API_LIST = "https://api.murain.tw/op/company/cash-expense/list";
+    const API_CATEGORY_OPTIONS = "https://api.murain.tw/op/company/cash-expense/category-options";
 
-const CATEGORY_OPTIONS = [
-  "公司 🟥 - 妹妹",
-  "公司 🟫 - LUMI",
-  "公司🟫 - 貨款",
+let CATEGORY_OPTIONS = [
+  "🟫 💸 公司入帳｜妹妹代墊｜要請款",
+  "🟫 公司雜項｜公司付款｜扣公司費用",
   "借支 💰 - 妹妹",
-  "借支 💰 - LUMI",
-  "✨ 不用入 對帳用",
-  "✨ 不用入台中貨款",
-  "公司 - 妹妹 - 運費"
+  "🚫 不入帳｜對帳排除",
+  "🚚 💸 不入公司帳｜妹妹運費｜要請款",
+  "🚫 不入貨款｜台中匯款｜貨款排除",
+  "🟫 💼 髮品｜公司入帳｜公司貨款",
+  "🧾 待確認｜會計師申報核對"
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -716,7 +717,22 @@ async function apiGetWithQuery(url, params = {}) {
   }
   return data;
 }
+async function loadCategoryOptions() {
+  try {
+    const data = await apiGet(API_CATEGORY_OPTIONS);
+    const list = Array.isArray(data.options) ? data.options : [];
 
+    if (list.length) {
+      CATEGORY_OPTIONS = list;
+    }
+
+    if (data.source !== "airtable_metadata") {
+      console.warn("費用支出對象目前使用備用選項，若要完全跟 Airtable 欄位同步，請確認 Airtable Token 有 schema.bases:read 權限。", data);
+    }
+  } catch (err) {
+    console.warn("讀取費用支出對象選項失敗，改用前端備用選項：", err);
+  }
+}
 async function apiPost(url, payload) {
   const r = await fetch(url, {
     method: "POST",
@@ -1110,13 +1126,18 @@ $("btnConfirmedReset").addEventListener("click", async () => {
   await renderConfirmedRows();
 });
 
-fillNewCategorySelect();
-setTodayForNewDate();
-bindAllPhotoPasteInputs();
+async function initCashExpensePage() {
+  await loadCategoryOptions();
 
-fillConfirmedMonthSelect().then(() => {
-  refreshAll();
-});
+  fillNewCategorySelect();
+  setTodayForNewDate();
+  bindAllPhotoPasteInputs();
+
+  await fillConfirmedMonthSelect();
+  await refreshAll();
+}
+
+initCashExpensePage();
 </script>
 </body>
 </html>
