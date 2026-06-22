@@ -261,13 +261,29 @@
 .reviewPick{
   accent-color:#1e90ff;
 }
+.thumb-cell{
+  width:96px;
+  min-width:96px;
+}
+
+.thumb-cell a{
+  display:inline-block;
+}
+
 .thumb-cell img{
-  width:54px;
-  height:54px;
+  width:62px;
+  height:62px;
   object-fit:cover;
   border-radius:10px;
   border:1px solid var(--line);
   display:block;
+}
+
+.photo-edit-input{
+  margin-top:6px;
+  padding:7px 8px;
+  font-size:12px;
+  border-radius:8px;
 }
 
     .msg{
@@ -341,7 +357,51 @@
 
 <div class="card">
   <div class="split-head">
-    <h2 style="margin:0;">1. 未確認現金支出</h2>
+    <h2 style="margin:0;">1. 新增現金支出</h2>
+    <button class="btn brown small" type="button" id="btnCreateCashExpense">新增到未確認清單</button>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:220px;">交易明細備註</th>
+          <th style="width:180px;">拍照/截圖</th>
+          <th style="width:140px;">交易金額</th>
+          <th style="width:150px;">交易日期</th>
+          <th style="min-width:220px;">費用支出對象</th>
+          <th style="min-width:220px;">備註</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <input id="newDetail" placeholder="例如 7-11運費 / 文具 / 郵局" />
+          </td>
+          <td>
+            <input id="newPhoto" placeholder="圖片網址，可空白" />
+          </td>
+          <td>
+            <input id="newAmount" type="number" placeholder="金額" />
+          </td>
+          <td>
+            <input id="newDate" type="date" />
+          </td>
+          <td>
+            <select id="newCategory">
+              <option value="">請選擇</option>
+            </select>
+          </td>
+          <td>
+            <input id="newNote" placeholder="備註，可空白" />
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="msg" id="createMsg"></div>
+</div>
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <span class="tag warn" id="unconfirmedCountTag">0 筆</span>
       <button class="btn brown small" type="button" id="btnBatchConfirm">儲存＋確認完成</button>
@@ -353,7 +413,7 @@
       <thead>
         <tr>
           <th style="width:56px;">勾選</th>
-          <th style="min-width:260px;">交易明細備註</th>
+          <th style="width:220px;">交易明細備註</th>
           <th style="width:160px;">拍照/截圖</th>
           <th style="width:140px;">交易金額</th>
           <th style="width:150px;">交易日期</th>
@@ -368,7 +428,7 @@
 
 <div class="card">
   <div class="split-head">
-    <h2 style="margin:0;">2. 已確認現金支出</h2>
+    <h2 style="margin:0;">3. 已確認現金支出</h2>
     <span class="tag ok" id="confirmedCountTag">0 筆</span>
   </div>
 
@@ -396,6 +456,7 @@
     location.href = "/company-files/company-index.html";
   }
 
+const API_CREATE = "https://api.murain.tw/op/company/cash-expense/create";
 const API_REVIEW = "https://api.murain.tw/op/company/cash-expense/review-list";
 const API_UPDATE = "https://api.murain.tw/op/company/cash-expense/update";
 const API_LIST = "https://api.murain.tw/op/company/cash-expense/list";
@@ -474,7 +535,26 @@ function categorySelect(id, value) {
     </select>
   `;
 }
+function fillNewCategorySelect() {
+  const sel = $("newCategory");
+  if (!sel) return;
 
+  sel.innerHTML = `
+    <option value="">請選擇</option>
+    ${CATEGORY_OPTIONS.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join("")}
+  `;
+}
+
+function setTodayForNewDate() {
+  const el = $("newDate");
+  if (!el || el.value) return;
+
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  el.value = `${y}-${m}-${day}`;
+}
 async function renderUnconfirmedRows() {
   const tbody = $("unconfirmedRows");
   tbody.innerHTML = `<tr><td colspan="7" class="empty">載入中...</td></tr>`;
@@ -495,10 +575,15 @@ async function renderUnconfirmedRows() {
           <input class="rowDetail" data-id="${esc(r.id)}" value="${esc(r.detail)}" />
         </td>
 
-        <td>
-          <input class="rowPhoto" data-id="${esc(r.id)}" value="${esc(r.photo)}" placeholder="圖片網址" />
-          ${r.photo ? `<a href="${esc(r.photo)}" target="_blank" rel="noopener" style="display:block;margin-top:6px;">查看圖片</a>` : ""}
-        </td>
+<td class="thumb-cell">
+  ${r.photo ? `
+    <a href="${esc(r.photo)}" target="_blank" rel="noopener">
+      <img src="${esc(r.photo)}" alt="拍照/截圖" />
+    </a>
+  ` : `<span class="empty">無圖片</span>`}
+
+  <input class="rowPhoto photo-edit-input" data-id="${esc(r.id)}" value="${esc(r.photo)}" placeholder="圖片網址" />
+</td>
 
         <td>
           <input class="rowAmount" data-id="${esc(r.id)}" type="number" value="${Number(r.amount || 0)}" />
@@ -541,9 +626,13 @@ async function renderConfirmedRows() {
     tbody.innerHTML = list.length ? list.map(r => `
       <tr>
         <td>${esc(r.detail)}</td>
-        <td>
-          ${r.photo ? `<a href="${esc(r.photo)}" target="_blank" rel="noopener">查看圖片</a>` : ""}
-        </td>
+<td class="thumb-cell">
+  ${r.photo ? `
+    <a href="${esc(r.photo)}" target="_blank" rel="noopener">
+      <img src="${esc(r.photo)}" alt="拍照/截圖" />
+    </a>
+  ` : ""}
+</td>
         <td>${money(r.amount)}</td>
         <td>${esc(r.date)}</td>
         <td>${esc(r.category)}</td>
@@ -609,7 +698,69 @@ $("btnBatchConfirm").addEventListener("click", async () => {
     btn.textContent = oldText;
   }
 });
+$("btnCreateCashExpense").addEventListener("click", async () => {
+  const payload = {
+    detail: $("newDetail")?.value || "",
+    photo: $("newPhoto")?.value || "",
+    amount: $("newAmount")?.value || "",
+    date: $("newDate")?.value || "",
+    category: $("newCategory")?.value || "",
+    note: $("newNote")?.value || ""
+  };
 
+  if (!String(payload.detail).trim()) {
+    alert("請輸入交易明細備註。");
+    return;
+  }
+
+  if (!String(payload.amount).trim()) {
+    alert("請輸入交易金額。");
+    return;
+  }
+
+  if (!String(payload.date).trim()) {
+    alert("請選擇交易日期。");
+    return;
+  }
+
+  if (!String(payload.category).trim()) {
+    alert("請選擇費用支出對象。");
+    return;
+  }
+
+  const btn = $("btnCreateCashExpense");
+  const msg = $("createMsg");
+  const oldText = btn.textContent;
+
+  btn.disabled = true;
+  btn.textContent = "新增中...";
+  msg.textContent = "";
+  msg.className = "msg";
+
+  try {
+    await apiPost(API_CREATE, payload);
+
+    $("newDetail").value = "";
+    $("newPhoto").value = "";
+    $("newAmount").value = "";
+    $("newNote").value = "";
+    $("newCategory").value = "";
+    setTodayForNewDate();
+
+    msg.textContent = "✅ 已新增到未確認現金支出。";
+    msg.className = "msg ok";
+
+    await refreshAll();
+  } catch (err) {
+    msg.textContent = `❌ 新增失敗：${err.message || err}`;
+    msg.className = "msg err";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText;
+  }
+});
+fillNewCategorySelect();
+setTodayForNewDate();
 refreshAll();
 </script>
 </body>
