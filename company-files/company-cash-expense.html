@@ -536,7 +536,9 @@ th{
             <th style="width:120px;">交易金額</th>
             <th style="width:135px;">交易日期</th>
             <th style="min-width:210px;">費用支出對象</th>
-            <th style="min-width:190px;">備註</th>
+<th style="width:120px;">手動送匯款</th>
+<th style="width:145px;">發票金額</th>
+<th style="min-width:190px;">備註</th>
           </tr>
         </thead>
         <tbody>
@@ -904,7 +906,7 @@ function setTodayForNewDate() {
 }
 async function renderUnconfirmedRows() {
   const tbody = $("unconfirmedRows");
-  tbody.innerHTML = `<tr><td colspan="7" class="empty">載入中...</td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="9" class="empty">載入中...</td></tr>`;
 
   try {
     const data = await apiGet(API_REVIEW);
@@ -922,13 +924,13 @@ async function renderUnconfirmedRows() {
           <input class="rowDetail" data-id="${esc(r.id)}" value="${esc(r.detail)}" />
         </td>
 
-<td class="thumb-cell">
-  <div class="paste-preview rowPhotoPreview" data-id="${esc(r.id)}">
-    ${r.photo ? `<img src="${esc(r.photo)}" alt="拍照/截圖" />` : `貼上圖片<br>Ctrl+V`}
-  </div>
+        <td class="thumb-cell">
+          <div class="paste-preview rowPhotoPreview" data-id="${esc(r.id)}">
+            ${r.photo ? `<img src="${esc(r.photo)}" alt="拍照/截圖" />` : `貼上圖片<br>Ctrl+V`}
+          </div>
 
-  <input class="rowPhoto photo-edit-input" data-id="${esc(r.id)}" value="${esc(r.photo)}" placeholder="圖片網址 / 可貼圖" />
-</td>
+          <input class="rowPhoto photo-edit-input" data-id="${esc(r.id)}" value="${esc(r.photo)}" placeholder="圖片網址 / 可貼圖" />
+        </td>
 
         <td>
           <input class="rowAmount" data-id="${esc(r.id)}" type="number" value="${Number(r.amount || 0)}" />
@@ -942,15 +944,39 @@ async function renderUnconfirmedRows() {
           ${categorySelect(r.id, r.category || "")}
         </td>
 
+        <td style="text-align:center;">
+          <label style="display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;font-weight:800;margin:0;">
+            <input
+              type="checkbox"
+              class="rowManualBank"
+              data-id="${esc(r.id)}"
+              ${r.manualBank ? "checked" : ""}
+              style="width:18px;height:18px;"
+            />
+            送對帳
+          </label>
+        </td>
+
+        <td>
+          <input
+            class="rowInputInvoiceAmount"
+            data-id="${esc(r.id)}"
+            type="number"
+            min="0"
+            value="${Number(r.inputInvoiceAmount || 0) > 0 ? Number(r.inputInvoiceAmount || 0) : ""}"
+            placeholder="有發票才填"
+          />
+        </td>
+
         <td>
           <input class="rowNote" data-id="${esc(r.id)}" value="${esc(r.note)}" />
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="7" class="empty">目前沒有未確認現金支出。</td></tr>`;
+    `).join("") : `<tr><td colspan="9" class="empty">目前沒有未確認現金支出。</td></tr>`;
 
     bindAllPhotoPasteInputs();
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="7" class="empty">❌ ${esc(err.message || err)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">❌ ${esc(err.message || err)}</td></tr>`;
     $("unconfirmedCountTag").textContent = `0 筆`;
   }
 }
@@ -1018,26 +1044,41 @@ $("btnBatchConfirm").addEventListener("click", async () => {
   }
 
   const payloads = picked.map(ck => {
-    const id = ck.dataset.id;
+  const id = ck.dataset.id;
 
-    return {
-      id,
-      detail: document.querySelector(`.rowDetail[data-id="${id}"]`)?.value || "",
-      photo: document.querySelector(`.rowPhoto[data-id="${id}"]`)?.value || "",
-      amount: document.querySelector(`.rowAmount[data-id="${id}"]`)?.value || "",
-      date: document.querySelector(`.rowDate[data-id="${id}"]`)?.value || "",
-      category: document.querySelector(`.rowCategory[data-id="${id}"]`)?.value || "",
-      note: document.querySelector(`.rowNote[data-id="${id}"]`)?.value || "",
-      checked: true
-    };
-  });
+  return {
+    id,
+    detail: document.querySelector(`.rowDetail[data-id="${id}"]`)?.value || "",
+    photo: document.querySelector(`.rowPhoto[data-id="${id}"]`)?.value || "",
+    amount: document.querySelector(`.rowAmount[data-id="${id}"]`)?.value || "",
+    date: document.querySelector(`.rowDate[data-id="${id}"]`)?.value || "",
+    category: document.querySelector(`.rowCategory[data-id="${id}"]`)?.value || "",
+    manualBank: !!document.querySelector(`.rowManualBank[data-id="${id}"]`)?.checked,
+    inputInvoiceAmount: document.querySelector(`.rowInputInvoiceAmount[data-id="${id}"]`)?.value || "",
+    note: document.querySelector(`.rowNote[data-id="${id}"]`)?.value || "",
+    checked: true
+  };
+});
 
   for (const p of payloads) {
-    if (!p.category) {
-      alert("有勾選的資料還沒選費用支出對象。");
-      return;
-    }
+  if (!p.category) {
+    alert("有勾選的資料還沒選費用支出對象。");
+    return;
   }
+
+  const amount = Number(String(p.amount || "").replace(/,/g, "").trim()) || 0;
+  const invoiceAmount = Number(String(p.inputInvoiceAmount || "").replace(/,/g, "").trim()) || 0;
+
+  if (invoiceAmount < 0) {
+    alert("發票金額不能小於 0。");
+    return;
+  }
+
+  if (invoiceAmount > amount) {
+    alert("發票金額不能大於交易金額。");
+    return;
+  }
+}
 
   const btn = $("btnBatchConfirm");
   const oldText = btn.textContent;
