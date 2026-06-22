@@ -186,8 +186,14 @@ h2{
 }
 
 .quick-form{
-  grid-template-columns:115px minmax(150px,1.1fr) repeat(3,120px) minmax(180px,1.4fr) auto;
+  grid-template-columns:100px 100px minmax(145px,1fr) repeat(3,110px) minmax(170px,1.3fr) auto;
   gap:8px;
+  align-items:end;
+}
+
+.load-cell{
+  display:flex;
+  align-items:end;
 }
 
 input,
@@ -220,6 +226,7 @@ button{
 button.green,
 button.blue,
 button.gold,
+#btnLoad,
 #btnQuickSave,
 #btnToggleDetails,
 #btnAutoAllocate,
@@ -232,6 +239,7 @@ button.gold,
 button.green:hover,
 button.blue:hover,
 button.gold:hover,
+#btnLoad:hover,
 #btnQuickSave:hover,
 #btnToggleDetails:hover,
 #btnAutoAllocate:hover,
@@ -451,12 +459,10 @@ tr:hover td{
       <div class="panel-title">
         <div>
           <h1>賣貨便結算快速登記</h1>
-          <div class="subtext">本次領款日期不用輸入，按「儲存輸入」當下會自動用今天日期。下方明細需要時再打開查詢。</div>
         </div>
         <div class="tiny-actions">
-          <button class="secondary" id="btnLoad" type="button">載入賣貨便資料</button>
-          <button class="red" id="btnResetKey" type="button">清除 OP_KEY</button>
-        </div>
+  <button class="red" id="btnResetKey" type="button">清除 OP_KEY</button>
+</div>
       </div>
 
       <div class="quick-form">
@@ -464,6 +470,9 @@ tr:hover td{
           <label for="opKey">OP_KEY</label>
           <input id="opKey" type="password" placeholder="後台密碼" autocomplete="off" />
         </div>
+        <div class="load-cell">
+  <button class="secondary" id="btnLoad" type="button">載入資料</button>
+</div>
         <div class="field">
           <label for="accountName">賣貨便帳號</label>
           <select id="accountName"><option value="">請先載入</option></select>
@@ -494,7 +503,6 @@ tr:hover td{
     <section class="panel">
       <div class="panel-title">
         <h2>賣貨便帳號總覽</h2>
-        <span class="subtext">同一排顯示各帳號目前系統待核銷金額，用來判斷哪個帳號可能有錢可領。</span>
       </div>
       <div id="accountOverview" class="overview-row">
         <div class="empty-state">輸入 OP_KEY 後按 Enter，或按「載入賣貨便資料」。</div>
@@ -515,7 +523,6 @@ tr:hover td{
       <div class="panel-title">
         <div>
           <h2>訂單明細核銷</h2>
-          <div class="subtext">平常不用打開；需要確認分配到哪些訂單時再查詢。</div>
         </div>
         <div class="tiny-actions">
           <button class="blue" id="btnToggleDetails" type="button">查詢／隱藏明細</button>
@@ -553,7 +560,6 @@ tr:hover td{
             </tbody>
           </table>
         </div>
-        <div class="footer-note">儲存時會把「實際領回、手續費、領後帳上餘額、備註」寫入賣貨便總結，並把本次核銷分配回 Orders 的每筆訂單。</div>
       </div>
     </section>
   </div>
@@ -563,6 +569,13 @@ tr:hover td{
     const $ = (id) => document.getElementById(id);
     const state = { rows: [], selected: new Map(), loading:false };
     const ACCOUNT_LEDGER_KEY = "MURAIN_SHIP711_ACCOUNT_LEDGER_V2";
+
+    const EXCLUDED_ACCOUNT_KEYWORDS = ["潘羿如"];
+
+function isExcludedAccountName(name){
+  const s = String(name || "").trim();
+  return EXCLUDED_ACCOUNT_KEYWORDS.some(k => s.includes(k));
+}
 
     const FIELD_NAMES = {
       id:["id","record_id","recId"],
@@ -660,7 +673,14 @@ function setLoading(on){
       localStorage.setItem(ACCOUNT_LEDGER_KEY, JSON.stringify(data));
     }
 
-    function rowsOpen(){ return state.rows.filter(r => r.account && logicalStatus(r) !== "已核銷" && r.remain > 0); }
+    function rowsOpen(){
+  return state.rows.filter(r =>
+    r.account &&
+    !isExcludedAccountName(r.account) &&
+    logicalStatus(r) !== "已核銷" &&
+    r.remain > 0
+  );
+}
     function currentAccountRows(){
       const account = String($("accountName").value || "").trim();
       const kw = String($("keyword")?.value || "").trim().toLowerCase();
@@ -685,7 +705,8 @@ function setLoading(on){
           if (!item.lastMonth || r.month > item.lastMonth) item.lastMonth = r.month;
         }
       });
-      Object.entries(ledger).forEach(([name, info]) => {
+     Object.entries(ledger).forEach(([name, info]) => {
+  if (isExcludedAccountName(name)) return;
         if (!map.has(name)) map.set(name, { account:name, count:0, systemRemain:0, firstMonth:"", lastMonth:"" });
         map.get(name).ledger = info || {};
       });
@@ -847,7 +868,10 @@ function setLoading(on){
       try {
         const data = await apiGet("/op/company/ship711-settlement/list", { op_key:opKey, status:"all", max:500 });
         const list = data.records || data.items || data.list || data.rows || [];
-        state.rows = (Array.isArray(list) ? list : []).map(normalizeRecord).filter(r => r.order_id);
+        state.rows = (Array.isArray(list) ? list : [])
+  .map(normalizeRecord)
+  .filter(r => r.order_id)
+  .filter(r => !isExcludedAccountName(r.account));
         renderAccountOptions();
         state.selected.clear();
         renderOverview();
