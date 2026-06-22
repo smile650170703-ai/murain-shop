@@ -5047,12 +5047,35 @@ async function printShipSlipsRange(){
     const win = window.open('', '_blank');
     const doc = win.document;
 
-   const firstNonEmpty = (...vals) => {
-  for (const v of vals) {
-    const s = String(v ?? '').trim();
-    if (s) return s;
-  }
-  return '';
+const cleanPrintNote = (v) => {
+  const lines = String(v || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n');
+
+  return lines
+    .map(x => String(x || '').trim())
+    .filter(line => {
+      if (!line) return false;
+
+      const upper = line.toUpperCase();
+
+      // ✅ 這種系統自動記錄不要印：
+      // [CASH_INST_DEPOSIT_OK] ...
+      // [CASH_INST_DUE_REMIND_TODAY] ...
+      // [ADMIN_CASH_INST_DUE_NOTIFY:...] ...
+      // [CASH_INST_PERIOD_OK:1] ...
+      if (
+        /^\[[A-Z0-9_:-]+[^\]]*\]/.test(line) &&
+        /(CASH_INST|ADMIN_|PAYMENT_|DEPOSIT_|TAIL_|LINE_|YUFU_|CREDIT_|ORDER_|NOTIFY|REMIND|PERIOD|SYSTEM)/.test(upper)
+      ) {
+        return false;
+      }
+
+      return true;
+    })
+    .join('\n')
+    .trim();
 };
 
    function getItemTotalQty(itemsText){
@@ -5105,7 +5128,7 @@ const product      = f['商品明細']       || '';
 const itemQty      = getItemTotalQty(product);
 const customerNote = f['客戶備註']       || '';
       const shipType     = f['出貨方式']       || '';
-      const note         = f['備註']           || '';
+      const note         = cleanPrintNote(f['備註'] || f.internal_note || '');
       const zip          = f['郵遞區號']       || '';
       const addr         = f['收件地址']       || '';
       const name         = f['收件人姓名']     || '';
@@ -5139,7 +5162,7 @@ const customerNote = f['客戶備註']       || '';
         </div>
       ` : ``}
           <!-- 分隔線：下面這塊可以剪下來貼在包裹上 -->
-          <div class="line">--------------------------------</div>
+          <div class="cut-line"></div>
 
           <!-- 下半部：收件資料（剪下用） -->
           <div class="shipbox">
@@ -5163,8 +5186,9 @@ ${phone ? `
   </div>
 ` : ``}
 </div>
+</div>
        `;
-    }).join('<div class="page-break"></div>');
+    }).join('');
 
     doc.write(`<!doctype html>
 <html lang="zh-Hant">
@@ -5172,24 +5196,47 @@ ${phone ? `
 <meta charset="utf-8" />
 <title>出貨明細列印</title>
 <style>
-  @page {
-    size: 80mm auto;      /* 保持原本設定，讓瀏覽器知道是熱感紙寬度 */
-    margin: 3mm;
-  }
+ @page {
+  size: 80mm 200mm;
+  margin: 0;
+}
 
-  body {
-    margin: 0;
-    padding: 0;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 15px;      /* ★ 整體字體放大：原本 12 → 14 */
-    line-height: 1.5;     /* ★ 行距稍微拉開，字大一點也不擠 */
-  }
+html, body {
+  width: 80mm;
+  min-width: 80mm;
+  max-width: 80mm;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: visible;
+}
 
-  .slip {
-    width: 72mm;          /* 保持不動，避免重調寬度 */
-    padding: 2mm 2mm 4mm;
-    box-sizing: border-box;
-  }
+body {
+  width: 80mm;
+  margin: 0 !important;
+  padding: 0 !important;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.18;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.slip {
+  width: 75mm;
+  min-width: 75mm;
+  max-width: 75mm;
+  box-sizing: border-box;
+  overflow: visible;
+  page-break-inside: avoid;
+  break-inside: avoid;
+  page-break-after: always;
+  break-after: page;
+}
+
+.slip:last-child {
+  page-break-after: auto;
+  break-after: auto;
+}
 
   .line {
     margin-bottom: 3px;   /* 原本 2px，稍微拉開一點比較好讀 */
@@ -5307,8 +5354,15 @@ ${phone ? `
     color: #555;
   }
 
+   .cut-line{
+    width: 38mm;
+    border-top: 1px dashed #000;
+    margin: 5px 0 5px 0;
+    height: 1px;
+  }
+
   .page-break {
-    page-break-after: always;
+    display: none;
   }
 </style>
 <meta name="robots" content="noindex, nofollow">
@@ -5318,8 +5372,10 @@ ${slipsHtml}
 </body>
 </html>`);
     doc.close();
-    win.focus();
-    win.print();
+    setTimeout(() => {
+      win.focus();
+      win.print();
+    }, 300);
   } catch (e) {
     console.error(e);
     alert('列印出貨明細時發生錯誤：' + (e.message || e));
