@@ -1404,27 +1404,152 @@ async function renderGoodsPending() {
   return `${m[1]}-${String(m[2]).padStart(2, "0")}`;
 }
 
-function normalizeDateValue(v) {
-  const s = String(v || "").trim().replace(/\./g, "/").replace(/-/g, "/");
-  if (!s) return "";
-
-  const m1 = s.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
-  if (m1) {
-    return `${m1[1]}-${String(m1[2]).padStart(2, "0")}-${String(m1[3]).padStart(2, "0")}`;
-  }
-
-  const m2 = s.match(/^(\d{4})(\d{2})(\d{2})$/);
-  if (m2) {
-    return `${m2[1]}-${m2[2]}-${m2[3]}`;
-  }
-
-  return s;
+function toHalfWidthText(v) {
+  return String(v == null ? "" : v)
+    .replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+    .replace(/　/g, " ")
+    .replace(/[−－–—]/g, "-")
+    .replace(/\u00a0/g, " ");
 }
 
-function parseMoneyValue(v) {
-  const s = String(v || "").replace(/[^\d.-]/g, "").trim();
-  const n = Number(s);
+function cleanBillCell(v) {
+  return toHalfWidthText(v)
+    .replace(/^"|"$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeDateValue(v, monthContext = "") {
+  let s = toHalfWidthText(v)
+    .trim()
+    .replace(/[年月.\-]/g, "/")
+    .replace(/日/g, "")
+    .replace(/\s+/g, "");
+
+  if (!s || s === "-" || s === "−") return "";
+
+  let m = s.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m) {
+    return `${m[1]}-${m[2]}-${m[3]}`;
+  }
+
+  m = s.match(/^(\d{2,4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (m) {
+    let y = Number(m[1]);
+    if (y > 0 && y < 1911) y += 1911; // 民國年，例如 114/12/16
+    return `${y}-${String(m[2]).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`;
+  }
+
+  m = s.match(/^(\d{1,2})\/(\d{1,2})$/);
+  if (m) {
+    const billMonth = normalizeMonthValue(monthContext);
+    const bm = billMonth.match(/^(\d{4})-(\d{2})$/);
+    if (!bm) return "";
+
+    const txMonth = Number(m[1]);
+    const txDay = Number(m[2]);
+    let y = Number(bm[1]);
+    const billM = Number(bm[2]);
+
+    // 例如帳單月是 2026-01，但消費日是 12/xx，代表前一年 2025-12。
+    if (txMonth > billM) y -= 1;
+
+    return `${y}-${String(txMonth).padStart(2, "0")}-${String(txDay).padStart(2, "0")}`;
+  }
+
+  return "";
+}
+
+function parseMoneyValue(v, pick = "first") {
+  let s = toHalfWidthText(v)
+    .replace(/\(([^)]+)\)/g, "-$1")
+    .replace(/\bTWD\b|\bNTD\b|新臺幣|新台幣|台幣|元/gi, " ");
+
+  const matches = s.match(/-?\d[\d,]*(?:\.\d+)?/g);
+  if (!matches || !matches.length) return 0;
+
+  const target = pick === "last" ? matches[matches.length - 1] : matches[0];
+  const n = Number(String(target).replace(/,/g, ""));
   return Number.isFinite(n) ? n : 0;
+}
+
+function splitCsvLine(line) {
+  const out = [];
+  let cur = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    const next = line[i + 1];
+
+    if (ch === '"') {
+      if (inQuotes && next === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (ch === "," && !inQuotes) {
+      out.push(cleanBillCell(cur));
+      cur = "";
+      continue;
+    }
+
+    cur += ch;
+  }
+
+  out.push(cleanBillCell(cur));
+  return out;
+}
+
+function splitBillLine(line) {
+  const raw = String(line || "").trim();
+  if (!raw) return [];
+
+  const tabCols = raw.split("\t").map(cleanBillCell);
+  if (tabCols.length > 1) return tabCols;
+
+  const csvCols = splitCsvLine(raw);
+  const commaCount = (raw.match(/,/g) || []).length;
+  const looksCsv = raw.includes('","') || raw.startsWith('"') || commaCount >= 5;
+
+  if (looksCsv && csvCols.length > 1) return csvCols;
+
+  return [cleanBillCell(raw)];
+}
+
+function isBillNoiseLine(line) {
+  const s = cleanBillCell(line);
+  if (!s) return true;
+
+  return /^(帳單明細查詢|資料時間|單位|帳單資訊|應繳總金額計算|我的額度|信用卡回饋|本月最新消息|列印|關閉)$/.test(s) ||
+    /^(消費日|消費日期|交易日期|交易日|入帳日|入帳起息日|交易說明|交易項目|信用額度|預借現金額度|繳款截止日|帳款結帳日|帳單結帳日|最低應繳|本期合計|小計)/.test(s) ||
+    /^(本期消費明細|消費明細|其他交易明細|卡號|序號|姓名|信用卡分類|Richart卡|新臺幣|台幣)/.test(s) ||
+    /^(上期未繳餘額|上期待繳總額|本期新增|本期應繳總金額|本期帳單金額|本期應繳總額)/.test(s);
+}
+
+function shouldSkipCardBillRow(detail, line = "") {
+  const d = cleanBillCell(detail);
+  const s = cleanBillCell(line || detail);
+  if (!d) return true;
+
+  if (/^(上期帳單總額|上期應繳金額|上期待繳總額|本期應繳總金額|本期付款總金額|本期合計|小計)$/.test(d)) return true;
+
+  // 這些是「繳信用卡款」本身，不是公司刷卡支出，匯入會造成金額被沖掉。
+  if (/網銀行動繳|繳卡費|信用卡款|跨轉繳款|全國繳費網繳款|本期付款總金額|感謝您使用.*繳/.test(s)) return true;
+
+  return false;
+}
+
+function autoCategoryFromDetail(detail) {
+  const s = cleanBillCell(detail).toUpperCase();
+  if (/BUYFORYOU|BUYFOR\s*YOU|BUYANDSHIP|BUY\s*AND\s*SHIP/.test(s)) {
+    return "🟫 - 貨款";
+  }
+  return "";
 }
 
 function renderPastePreview() {
@@ -1458,8 +1583,181 @@ function normalizeCategoryValue(v) {
   if (["公司花費", "🏢 公司花費"].includes(s)) return "🏢 公司花費";
   if (s === "自己") return "自己";
   if (["妹妹個人", "🎀 妹妹個人"].includes(s)) return "🎀 妹妹個人";
+  if (["退款登記", "▪️退款登記", "▪️ 退款登記"].includes(s)) return "▪️退款登記";
 
   return s;
+}
+
+function makePastedBillRow({ bank, month, date, detail, amount, category = "", note = "" }) {
+  const d = normalizeDateValue(date, month);
+  const det = cleanBillCell(detail);
+  const amt = typeof amount === "number" ? amount : parseMoneyValue(amount);
+
+  if (!d || !det || !amt) return null;
+  if (shouldSkipCardBillRow(det, `${date} ${detail} ${amount} ${note}`)) return null;
+
+  return {
+    id: String(Date.now()) + Math.random().toString(36).slice(2, 7),
+    bank,
+    month,
+    date: d,
+    detail: det,
+    amount: amt,
+    category: normalizeCategoryValue(category) || autoCategoryFromDetail(det),
+    purchaseLink: "",
+    transferLink: "",
+    refundLink: "",
+    note: cleanBillCell(note)
+  };
+}
+
+function parseStructuredBillCols(cols, bank, month) {
+  const c = cols.map(cleanBillCell);
+  const joined = c.join(" ");
+  if (isBillNoiseLine(joined)) return null;
+
+  // 中國信託：
+  // 消費日, 入帳起息日, 摘要, 幣別, 消費地金額, 外幣折算日, 消費地, 末四碼, 新臺幣金額
+  if (bank === "中國信託" && c.length >= 9 && normalizeDateValue(c[0], month)) {
+    return makePastedBillRow({
+      bank,
+      month,
+      date: c[0],
+      detail: c[2],
+      amount: c[8],
+      note: [
+        c[3],
+        c[4],
+        c[5] ? `折算日 ${c[5]}` : "",
+        c[6],
+        c[7] ? `末四碼 ${c[7]}` : ""
+      ].filter(Boolean).join(" / ")
+    });
+  }
+
+  // 國泰世華：
+  // 消費日, 交易說明, 新臺幣金額, 卡號/行動末四碼, 消費國家/幣別, 消費金額, 入帳起息日, 折算日
+  if (bank === "國泰世華" && c.length >= 3 && normalizeDateValue(c[0], month)) {
+    return makePastedBillRow({
+      bank,
+      month,
+      date: c[0],
+      detail: c[1],
+      amount: c[2],
+      note: [
+        c[3] && c[3] !== "-" ? `末四碼 ${c[3]}` : "",
+        c[4],
+        c[5] && c[5] !== "-" ? c[5] : "",
+        c[6] && c[6] !== "-" ? `入帳 ${c[6]}` : "",
+        c[7] && c[7] !== "-" ? `折算 ${c[7]}` : ""
+      ].filter(Boolean).join(" / ")
+    });
+  }
+
+  // 台新銀行：
+  // 消費日期, 入帳起息日, 消費明細(含消費地), 約定幣別, 消費金額, 外幣折算日, 消費地, 外幣幣別/金額
+  if (bank === "台新銀行" && c.length >= 5 && normalizeDateValue(c[0], month)) {
+    return makePastedBillRow({
+      bank,
+      month,
+      date: c[0],
+      detail: c[2],
+      amount: c[4],
+      note: [
+        c[3],
+        c[5] ? `折算日 ${c[5]}` : "",
+        c[6],
+        c[7]
+      ].filter(Boolean).join(" / ")
+    });
+  }
+
+  // 玉山銀行：
+  // 交易日期, 入帳日期, 交易項目, 幣別/交易金額, 折算新臺幣金額
+  if (bank === "玉山銀行" && c.length >= 5 && normalizeDateValue(c[0], month)) {
+    return makePastedBillRow({
+      bank,
+      month,
+      date: c[0],
+      detail: c[2],
+      amount: c[4] || parseMoneyValue(c[3], "last"),
+      note: [
+        c[1] ? `入帳 ${c[1]}` : "",
+        c[3]
+      ].filter(Boolean).join(" / ")
+    });
+  }
+
+  // 兆豐銀行：
+  // 消費日, 入帳日, 消費說明, 消費國家, 消費金額, 結算金額
+  if (bank === "兆豐銀行" && c.length >= 6 && normalizeDateValue(c[0], month)) {
+    return makePastedBillRow({
+      bank,
+      month,
+      date: c[0],
+      detail: c[2],
+      amount: c[5] || c[4],
+      note: [
+        c[1] ? `入帳 ${c[1]}` : "",
+        c[3],
+        c[4] ? `消費金額 ${c[4]}` : ""
+      ].filter(Boolean).join(" / ")
+    });
+  }
+
+  // 原本手動整理格式：
+  // 交易日期 TAB 交易明細 TAB 交易金額 TAB 費用支出歸類 TAB 備註
+  if (c.length >= 3 && normalizeDateValue(c[0], month)) {
+    return makePastedBillRow({
+      bank,
+      month,
+      date: c[0],
+      detail: c[1],
+      amount: c[2],
+      category: c[3] || "",
+      note: c[4] || ""
+    });
+  }
+
+  return null;
+}
+
+function parseBillTextLine(line, bank, month) {
+  const s = cleanBillCell(line);
+  if (!s || isBillNoiseLine(s)) return null;
+
+  // PDF / 網頁貼上：完整日期
+  // 例如：114/12/16 114/12/17 Buyforyou HKG TWD 18,206 TWD 18,206
+  let m = s.match(/^(\d{2,4}[\/.-]\d{1,2}[\/.-]\d{1,2})(?:\s+\d{2,4}[\/.-]\d{1,2}[\/.-]\d{1,2})?\s+(.+)$/);
+
+  // PDF / 網頁貼上：月/日
+  // 例如：09/03 04/13 PCHOME 分10期之第08期 TWD 11,588 1,158
+  if (!m) {
+    m = s.match(/^(\d{1,2}\/\d{1,2})(?:\s+\d{1,2}\/\d{1,2})?\s+(.+)$/);
+  }
+
+  if (!m) return null;
+
+  const date = m[1];
+  const rest = m[2] || "";
+  const amount = parseMoneyValue(rest, "last");
+  if (!amount) return null;
+
+  let detail = rest
+    .replace(/\b(TWD|NTD|USD|JPY|HKD|CNY|SGD)\b/gi, " ")
+    .replace(/\b(TW|HK|HKG|US|JP|SG|CN)\b/g, " ")
+    .replace(/\s+-?\d[\d,]*(?:\.\d+)?/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return makePastedBillRow({
+    bank,
+    month,
+    date,
+    detail,
+    amount,
+    note: rest
+  });
 }
 
 function buildRowsFromPaste() {
@@ -1477,33 +1775,21 @@ function buildRowsFromPaste() {
     .filter(Boolean);
 
   const parsed = [];
+  const seen = new Set();
 
   for (const line of lines) {
-    const cols = line.split("\t").map(s => s.trim());
+    const cols = splitBillLine(line);
+    const row =
+      parseStructuredBillCols(cols, bank, month) ||
+      parseBillTextLine(line, bank, month);
 
-    if (cols.length < 3) continue;
+    if (!row) continue;
 
-    const date = normalizeDateValue(cols[0]);
-    const detail = cols[1] || "";
-    const amount = parseMoneyValue(cols[2]);
-    const rowCategory = normalizeCategoryValue(cols[3] || "");
-    const rowNote = cols[4] || "";
+    const key = `${row.bank}|${row.month}|${row.date}|${row.detail}|${row.amount}`;
+    if (seen.has(key)) continue;
 
-    if (!date || !detail || !amount) continue;
-
-    parsed.push({
-  id: String(Date.now()) + Math.random().toString(36).slice(2, 7),
-  bank,
-  month,
-  date,
-  detail,
-  amount,
-  category: rowCategory,
-  purchaseLink: "",
-  transferLink: "",
-  refundLink: "",
-  note: rowNote
-});
+    seen.add(key);
+    parsed.push(row);
   }
 
   return parsed;
