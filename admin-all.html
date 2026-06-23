@@ -2472,6 +2472,78 @@ async function fetchForfeitLabelCsvForRestockRow(row){
 }
 
 function mergeForfeitLabelCsvList(csvList){
+  const ownHeaders = ['標籤碼', '名稱', '售價', '數量', '品牌'];
+  const consignHeaders = ['SKU', '寄賣人', '商品名稱', '起標價格', '一標多少', '入庫日期'];
+
+  const csvCell = (v) => {
+    let s = '';
+
+    if (Array.isArray(v)) {
+      s = v.map(x => {
+        if (x == null) return '';
+        if (typeof x === 'object') return String(x.name || x.value || x.id || x.recordId || '');
+        return String(x);
+      }).filter(Boolean).join(' / ');
+    } else if (v && typeof v === 'object') {
+      s = String(v.name || v.value || v.id || v.recordId || '');
+    } else {
+      s = String(v ?? '');
+    }
+
+    if (/^[=+\-@]/.test(s)) s = "'" + s;
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+
+  const toCsv = (rows) => rows.map(row => row.map(csvCell).join(',')).join('\r\n');
+  const uniqueRows = (rows, keyIndex = 0) => {
+    const seen = new Set();
+    const out = [];
+
+    (rows || []).forEach(row => {
+      const arr = Array.isArray(row) ? row : [];
+      const mainKey = String(arr[keyIndex] ?? '').trim();
+      const key = mainKey || JSON.stringify(arr);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      out.push(arr);
+    });
+
+    return out;
+  };
+
+  const ownRowsRaw = [];
+  const consignRowsRaw = [];
+  let hasStructuredRows = false;
+
+  (csvList || []).forEach(item => {
+    if (Array.isArray(item?.own_rows) || Array.isArray(item?.consign_rows)) {
+      hasStructuredRows = true;
+      ownRowsRaw.push(...(Array.isArray(item?.own_rows) ? item.own_rows : []));
+      consignRowsRaw.push(...(Array.isArray(item?.consign_rows) ? item.consign_rows : []));
+    }
+  });
+
+  if (hasStructuredRows) {
+    const ownRows = uniqueRows(ownRowsRaw, 0);
+    const consignRows = uniqueRows(consignRowsRaw, 0);
+
+    if (ownRows.length && consignRows.length) {
+      return toCsv([
+        ['自有入庫'],
+        ownHeaders,
+        ...ownRows,
+        [],
+        ['寄賣'],
+        consignHeaders,
+        ...consignRows
+      ]);
+    }
+
+    if (ownRows.length) return toCsv([ownHeaders, ...ownRows]);
+    if (consignRows.length) return toCsv([consignHeaders, ...consignRows]);
+    return '';
+  }
+
   const lines = [];
   let header = '';
 
@@ -2494,7 +2566,6 @@ function mergeForfeitLabelCsvList(csvList){
       return;
     }
 
-    // 每一筆後端都會有表頭，合併時只保留第一個表頭
     if (parts[0] === header) {
       lines.push(...parts.slice(1));
     } else {
