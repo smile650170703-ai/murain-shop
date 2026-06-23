@@ -636,6 +636,46 @@ div[style*="grid-template-columns:160px 1fr 140px 120px"]{
 .table-wrap thead tr{
   box-shadow:inset 0 -1px 0 #c7d7ef;
 }
+    /* ===== 信用卡帳單：批次預覽可編輯 ===== */
+#pastePreviewRows .pasteEdit{
+  width:100%;
+  min-width:100px;
+  padding:7px 8px !important;
+  border-radius:8px !important;
+  font-size:12.5px !important;
+}
+
+#pastePreviewRows .pasteEdit.detail{
+  min-width:220px;
+}
+
+#pastePreviewRows .pasteEdit.note{
+  min-width:240px;
+}
+
+#pastePreviewRows .pasteEdit.amount{
+  min-width:110px;
+  text-align:right;
+}
+
+.previewActionCell{
+  min-width:150px;
+}
+
+.previewActionBtns{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+}
+
+.previewTotalRow td{
+  background:#fff7ed !important;
+  font-weight:900;
+}
+
+.previewTotalAmount{
+  color:#b45309 !important;
+}
   </style>
 </head>
 <body>
@@ -723,8 +763,9 @@ div[style*="grid-template-columns:160px 1fr 140px 120px"]{
     </div>
   </div>
 
-  <div class="toolbar">
+<div class="toolbar">
    <button class="btn hot" type="button" id="btnPreviewPaste">預覽貼上結果</button>
+   <button class="btn secondary" type="button" id="btnAddPasteRow">新增空白列</button>
     <button class="btn hot" type="button" id="btnAddMock">送出寫入 Airtable</button>
     <button class="btn secondary" type="button" id="btnClearForm">清空</button>
   </div>
@@ -733,7 +774,7 @@ div[style*="grid-template-columns:160px 1fr 140px 120px"]{
 
   <div class="table-wrap" style="margin-top:14px;">
   <table>
-    <thead>
+   <thead>
       <tr>
         <th>銀行</th>
         <th>帳單月份</th>
@@ -742,10 +783,11 @@ div[style*="grid-template-columns:160px 1fr 140px 120px"]{
         <th>交易金額</th>
         <th>費用支出歸類</th>
         <th>備註</th>
+        <th>操作</th>
       </tr>
     </thead>
     <tbody id="pastePreviewRows">
-      <tr><td colspan="7" class="empty">尚未貼上資料。</td></tr>
+      <tr><td colspan="8" class="empty">尚未貼上資料。</td></tr>
     </tbody>
   </table>
 </div>
@@ -1395,7 +1437,7 @@ async function renderGoodsPending() {
   $("formMonth").value = "";
   $("pasteBox").value = "";
   pastedRows = [];
-  $("pastePreviewRows").innerHTML = `<tr><td colspan="7" class="empty">尚未貼上資料。</td></tr>`;
+  $("pastePreviewRows").innerHTML = `<tr><td colspan="8" class="empty">尚未貼上資料。</td></tr>`;
 }
     function normalizeMonthValue(v) {
   const s = String(v || "").trim();
@@ -1551,11 +1593,114 @@ function autoCategoryFromDetail(detail) {
   }
   return "";
 }
+const PREVIEW_BANK_OPTIONS = [
+  "國泰世華",
+  "中國信託",
+  "玉山銀行",
+  "兆豐銀行",
+  "台新銀行"
+];
+
+const PREVIEW_CATEGORY_OPTIONS = [
+  ["", "未歸類 / 待核對"],
+  ["🟫 - 貨款", "🟫 - 貨款"],
+  ["🏢 公司花費", "🏢 公司花費"],
+  ["自己", "自己"],
+  ["🎀 妹妹個人", "🎀 妹妹個人"],
+  ["▪️退款登記", "▪️退款登記"]
+];
+
+function escapeHtml(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function escapeAttr(v) {
+  return escapeHtml(v).replace(/`/g, "&#096;");
+}
+
+function previewOptionHtml(options, currentValue) {
+  const cur = String(currentValue || "").trim();
+
+  return options.map(item => {
+    const value = Array.isArray(item) ? item[0] : item;
+    const label = Array.isArray(item) ? item[1] : item;
+    const selected = String(value || "") === cur ? " selected" : "";
+
+    return `<option value="${escapeAttr(value)}"${selected}>${escapeHtml(label)}</option>`;
+  }).join("");
+}
+
+function makeBlankPreviewRow(base = {}) {
+  return {
+    id: String(Date.now()) + Math.random().toString(36).slice(2, 7),
+    bank: base.bank || $("formBank").value.trim(),
+    month: base.month || normalizeMonthValue($("formMonth").value.trim()),
+    date: "",
+    detail: "",
+    amount: 0,
+    category: "",
+    purchaseLink: "",
+    transferLink: "",
+    refundLink: "",
+    note: ""
+  };
+}
+
+function isPreviewRowReady(r) {
+  const bank = cleanBillCell(r.bank);
+  const month = normalizeMonthValue(r.month);
+  const date = normalizeDateValue(r.date, month);
+  const detail = cleanBillCell(r.detail);
+  const amount = parseMoneyValue(r.amount);
+
+  return Boolean(bank && month && date && detail && amount);
+}
+
+function syncPreviewRowsFromDom() {
+  const trs = Array.from(document.querySelectorAll("#pastePreviewRows tr.pastePreviewRow"));
+  if (!trs.length) return pastedRows;
+
+  pastedRows = trs.map((tr) => {
+    const old = pastedRows[Number(tr.dataset.idx)] || {};
+
+    const get = (field) => {
+      const el = tr.querySelector(`[data-field="${field}"]`);
+      return el ? el.value : "";
+    };
+
+    const bank = cleanBillCell(get("bank"));
+    const month = normalizeMonthValue(get("month"));
+    const rawDate = cleanBillCell(get("date"));
+    const normalizedDate = normalizeDateValue(rawDate, month) || rawDate;
+
+    return {
+      ...old,
+      bank,
+      month,
+      date: normalizedDate,
+      detail: cleanBillCell(get("detail")),
+      amount: parseMoneyValue(get("amount")),
+      category: normalizeCategoryValue(get("category")),
+      purchaseLink: old.purchaseLink || "",
+      transferLink: old.transferLink || "",
+      refundLink: old.refundLink || "",
+      note: cleanBillCell(get("note"))
+    };
+  });
+
+  return pastedRows;
+}
+
 function renderPastePreview() {
   const wrap = $("pastePreviewRows");
 
   if (!pastedRows.length) {
-    wrap.innerHTML = `<tr><td colspan="7" class="empty">尚未貼上資料。</td></tr>`;
+    wrap.innerHTML = `<tr><td colspan="8" class="empty">尚未貼上資料。</td></tr>`;
     return;
   }
 
@@ -1563,28 +1708,64 @@ function renderPastePreview() {
     return sum + (Number(r.amount || 0) || 0);
   }, 0);
 
-  const rowsHtml = pastedRows.map(r => `
-    <tr>
-      <td>${r.bank}</td>
-      <td>${r.month}</td>
-      <td>${r.date}</td>
-      <td>${r.detail}</td>
-      <td>${money(r.amount)}</td>
-      <td>${r.category || ""}</td>
-      <td>${r.note || ""}</td>
-    </tr>
-  `).join("");
+  const readyCount = pastedRows.filter(isPreviewRowReady).length;
+
+  const rowsHtml = pastedRows.map((r, idx) => {
+    const bank = cleanBillCell(r.bank);
+    const month = normalizeMonthValue(r.month);
+    const date = cleanBillCell(r.date);
+    const detail = cleanBillCell(r.detail);
+    const amountValue = Number(r.amount || 0) ? String(r.amount) : "";
+    const category = normalizeCategoryValue(r.category);
+    const note = cleanBillCell(r.note);
+
+    return `
+      <tr class="pastePreviewRow" data-idx="${idx}">
+        <td>
+          <select class="pasteEdit" data-field="bank">
+            ${previewOptionHtml(PREVIEW_BANK_OPTIONS, bank)}
+          </select>
+        </td>
+        <td>
+          <input class="pasteEdit" data-field="month" value="${escapeAttr(month)}" placeholder="2026-03" />
+        </td>
+        <td>
+          <input class="pasteEdit" data-field="date" value="${escapeAttr(date)}" placeholder="2026-02-25" />
+        </td>
+        <td>
+          <input class="pasteEdit detail" data-field="detail" value="${escapeAttr(detail)}" placeholder="交易明細" />
+        </td>
+        <td>
+          <input class="pasteEdit amount" data-field="amount" value="${escapeAttr(amountValue)}" placeholder="金額" />
+        </td>
+        <td>
+          <select class="pasteEdit" data-field="category">
+            ${previewOptionHtml(PREVIEW_CATEGORY_OPTIONS, category)}
+          </select>
+        </td>
+        <td>
+          <input class="pasteEdit note" data-field="note" value="${escapeAttr(note)}" placeholder="備註，可留空" />
+        </td>
+        <td class="previewActionCell">
+          <div class="previewActionBtns">
+            <button class="btn small secondary btnInsertPreviewRow" type="button" data-idx="${idx}">插入下方</button>
+            <button class="btn small danger btnDeletePreviewRow" type="button" data-idx="${idx}">刪除</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
 
   const totalHtml = `
-    <tr>
-      <td colspan="4" style="text-align:right; font-weight:900; background:#fff7ed;">
-        預覽合計｜共 ${pastedRows.length} 筆
+    <tr class="previewTotalRow">
+      <td colspan="4" style="text-align:right;">
+        預覽合計｜可送出 ${readyCount} 筆 / 表格 ${pastedRows.length} 列
       </td>
-      <td style="font-weight:900; background:#fff7ed; color:#b45309;">
+      <td class="previewTotalAmount">
         ${money(total)}
       </td>
-      <td colspan="2" style="background:#fff7ed; color:#92400e; font-weight:800;">
-        請用這個金額核對帳單，確認沒有少抓
+      <td colspan="3" style="color:#92400e;">
+        分類留空＝送出後會進第 3 區「未歸類清單」
       </td>
     </tr>
   `;
@@ -1840,9 +2021,111 @@ $("btnPreviewPaste").addEventListener("click", () => {
   $("formMsg").className = "msg ok";
 });
 
+$("btnAddPasteRow").addEventListener("click", () => {
+  syncPreviewRowsFromDom();
+
+  const base = pastedRows[pastedRows.length - 1] || {};
+  pastedRows.push(makeBlankPreviewRow(base));
+
+  renderPastePreview();
+
+  $("formMsg").textContent = "✅ 已新增一列空白資料，請填寫後再送出。分類留空會進第 3 區未歸類清單。";
+  $("formMsg").className = "msg ok";
+});
+
+$("pastePreviewRows").addEventListener("click", (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+
+  if (btn.classList.contains("btnDeletePreviewRow")) {
+    syncPreviewRowsFromDom();
+
+    const idx = Number(btn.dataset.idx);
+    if (Number.isFinite(idx)) {
+      pastedRows.splice(idx, 1);
+      renderPastePreview();
+
+      $("formMsg").textContent = "✅ 已刪除該列，請再次核對預覽合計。";
+      $("formMsg").className = "msg ok";
+    }
+  }
+
+  if (btn.classList.contains("btnInsertPreviewRow")) {
+    syncPreviewRowsFromDom();
+
+    const idx = Number(btn.dataset.idx);
+    const base = pastedRows[idx] || pastedRows[pastedRows.length - 1] || {};
+
+    if (Number.isFinite(idx)) {
+      pastedRows.splice(idx + 1, 0, makeBlankPreviewRow(base));
+      renderPastePreview();
+
+      $("formMsg").textContent = "✅ 已插入一列空白資料，請填寫後再送出。";
+      $("formMsg").className = "msg ok";
+    }
+  }
+});
+
+$("pastePreviewRows").addEventListener("change", (e) => {
+  if (!e.target.classList.contains("pasteEdit")) return;
+
+  syncPreviewRowsFromDom();
+  renderPastePreview();
+
+  $("formMsg").textContent = "✅ 已更新預覽資料，送出前請再次核對合計。";
+  $("formMsg").className = "msg ok";
+});
+
 $("btnAddMock").addEventListener("click", async () => {
+  syncPreviewRowsFromDom();
+
   if (!pastedRows.length) {
-    $("formMsg").textContent = "❌ 請先按「預覽貼上結果」";
+    $("formMsg").textContent = "❌ 請先按「預覽貼上結果」或「新增空白列」";
+    $("formMsg").className = "msg err";
+    return;
+  }
+
+  const payloadRows = [];
+  const invalidRows = [];
+
+  pastedRows.forEach((r, idx) => {
+    const bank = cleanBillCell(r.bank);
+    const month = normalizeMonthValue(r.month);
+    const date = normalizeDateValue(r.date, month);
+    const detail = cleanBillCell(r.detail);
+    const amount = parseMoneyValue(r.amount);
+    const category = normalizeCategoryValue(r.category);
+    const note = cleanBillCell(r.note);
+
+    // 只有銀行 / 月份，但日期、明細、金額都沒填，視為空白列，直接忽略。
+    const hasTransactionData = Boolean(date || detail || amount || category || note);
+    if (!hasTransactionData) return;
+
+    if (!bank || !month || !date || !detail || !amount) {
+      invalidRows.push(idx + 1);
+      return;
+    }
+
+    payloadRows.push({
+      bank,
+      month,
+      date,
+      detail,
+      amount,
+      category,
+      note
+    });
+  });
+
+  if (invalidRows.length) {
+    $("formMsg").textContent =
+      `❌ 第 ${invalidRows.join("、")} 列資料不完整。\n請確認：銀行、帳單月份、交易日期、交易明細、交易金額都有填。`;
+    $("formMsg").className = "msg err";
+    return;
+  }
+
+  if (!payloadRows.length) {
+    $("formMsg").textContent = "❌ 沒有可送出的資料。請至少填一筆完整明細。";
     $("formMsg").className = "msg err";
     return;
   }
@@ -1852,16 +2135,6 @@ $("btnAddMock").addEventListener("click", async () => {
   $("formMsg").className = "msg";
 
   try {
-    const payloadRows = pastedRows.map(r => ({
-      bank: r.bank,
-      month: r.month,
-      date: r.date,
-      detail: r.detail,
-      amount: r.amount,
-      category: r.category,
-      note: r.note
-    }));
-
     const data = await apiPost(API_CREATE, {
       rows: payloadRows
     });
@@ -1875,12 +2148,9 @@ $("btnAddMock").addEventListener("click", async () => {
       `✅ 已寫入 Airtable\n成功：${createdCount} 筆\n失敗：${failedCount} 筆`;
     $("formMsg").className = failedCount > 0 ? "msg err" : "msg ok";
 
-    // 重刷上面三區真資料
     await buildSummary();
     await renderUnclassified();
     await renderGoodsPending();
-
-    // 下面查詢區先維持你目前前端示意 rows，不自動混入
   } catch (err) {
     $("formMsg").textContent = `❌ ${err.message || err}`;
     $("formMsg").className = "msg err";
