@@ -814,7 +814,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 </button>
 
   <button id="btnDownloadForfeitLabelTop" class="small-btn" type="button" style="display:none;">
-    🏷️ 下載棄標標籤 CSV
+    🏷️ 下載棄標標籤 Excel
   </button>
 
   <div class="side-box" id="vendorMonthBox">
@@ -2157,7 +2157,7 @@ renderDepositForfeitRestockList();
 
 if (msgEl) {
   msgEl.textContent = currentDepositForfeitRestockRows.length
-    ? `目前顯示「訂金沒收進利」＋人工按過「🚫 棄標／沒收定金」且尚未勾選已放回商品的紀錄，共 ${currentDepositForfeitRestockRows.length} 筆。操作方式：先點左邊一筆；需要標籤先按「下載棄標標籤 CSV」；商品實體放回後再按「商品已放回，從清單移除」。`
+    ? `目前顯示「訂金沒收進利」＋人工按過「🚫 棄標／沒收定金」且尚未勾選已放回商品的紀錄，共 ${currentDepositForfeitRestockRows.length} 筆。操作方式：先點左邊一筆；需要標籤先按「下載棄標標籤 Excel」；商品實體放回後再按「商品已放回，從清單移除」。`
     : '目前沒有待放回商品的訂金沒收／棄標紀錄。';
 }
   } catch (e) {
@@ -2230,7 +2230,7 @@ function renderDepositForfeitRestockList(){
       </label>
 
       <button class="small-btn" id="btnDownloadSelectedForfeitLabels" type="button" disabled>
-        🏷️ 下載勾選棄標標籤 CSV
+        🏷️ 下載勾選棄標標籤 Excel
       </button>
 
       <span class="forfeit-selected-hint" id="forfeitRestockSelectedHint">尚未勾選</span>
@@ -2331,7 +2331,7 @@ function renderDepositForfeitRestockList(){
   updateForfeitRestockSelectedUi();
 
   if (detailEl) {
-    detailEl.innerHTML = '<div class="muted">請從左邊選一筆紀錄，或勾選多筆後下載標籤 CSV</div>';
+    detailEl.innerHTML = '<div class="muted">請從左邊選一筆紀錄，或勾選多筆後下載標籤 Excel</div>';
   }
 }
 
@@ -2354,7 +2354,7 @@ function renderDepositForfeitRestockDetail(row){
 
     <div class="top-order-actions" style="margin-top:10px;margin-bottom:12px;">
       <button class="btn-secondary" id="btnDepositForfeitDownloadLabel" type="button">
-        🏷️ 下載這筆棄標標籤 CSV
+        🏷️ 下載這筆棄標標籤 Excel
       </button>
 
       <button class="btn-primary" id="btnMarkDepositForfeitRestockDone" type="button">
@@ -2616,7 +2616,7 @@ async function downloadSelectedForfeitRestockLabels(){
     return;
   }
 
-  if (!confirm(`確定要一次下載 ${rows.length} 筆棄標標籤 CSV 嗎？`)) {
+  if (!confirm(`確定要一次下載 ${rows.length} 筆棄標標籤 Excel 嗎？`)) {
     return;
   }
 
@@ -2630,43 +2630,53 @@ async function downloadSelectedForfeitRestockLabels(){
   try {
     await ensureOpKey();
 
-    const csvList = [];
+    const orderIds = rows
+      .map(row => String(row.orderId || '').trim())
+      .filter(Boolean);
 
-    for (const row of rows) {
-      const csv = await fetchForfeitLabelCsvForRestockRow(row);
-      csvList.push(csv);
-    }
-
-    const mergedContent = mergeForfeitLabelCsvList(csvList);
-
-    if (!mergedContent) {
-      alert('沒有可下載的標籤資料。');
+    if (!orderIds.length) {
+      alert('勾選資料沒有訂單編號，無法下載。');
       return;
     }
 
-    const ok = downloadForfeitLabelCsv({
-      filename: forfeitLabelBatchFilename(),
-      content: mergedContent
+    const r = await fetch(`${API}/admin/order/forfeit-label-batch-xlsx`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        order_ids: orderIds
+      })
     });
 
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      throw new Error(j.message || j.error || r.status);
+    }
+
+    const ok = downloadForfeitLabelCsv(j.label_xlsx);
+
     if (ok) {
-      alert(`已合併下載 ${rows.length} 筆棄標標籤 CSV，可用 Excel 開啟。`);
+      const errNote = Array.isArray(j.label_xlsx?.errors) && j.label_xlsx.errors.length
+        ? `\n\n提醒：有 ${j.label_xlsx.errors.length} 筆無法產生，請檢查資料。`
+        : '';
+
+      alert(`已合併下載 ${rows.length} 筆棄標標籤 Excel。${errNote}`);
     } else {
-      alert('後端有回傳標籤資料，但瀏覽器沒有成功下載，請再按一次。');
+      alert('後端有產生 Excel，但瀏覽器沒有成功下載，請再按一次。');
     }
   } catch (e) {
     console.error(e);
-    alert('批次下載棄標標籤失敗：' + (e.message || e));
+    alert('批次下載棄標標籤 Excel 失敗：' + (e.message || e));
   } finally {
     if (btn) {
       btn.disabled = FORFEIT_RESTOCK_SELECTED.size <= 0;
-      btn.textContent = btn.dataset.oldText || '🏷️ 下載勾選棄標標籤 CSV';
+      btn.textContent = btn.dataset.oldText || '🏷️ 下載勾選棄標標籤 Excel';
     }
 
     updateForfeitRestockSelectedUi();
   }
 }
-
 async function downloadForfeitLabelCsvForDepositForfeitRow(row){
   try {
     await ensureOpKey();
@@ -2675,7 +2685,7 @@ async function downloadForfeitLabelCsvForDepositForfeitRow(row){
     const ok = downloadForfeitLabelCsv(labelCsv);
 
     if (ok) {
-      alert('已下載棄標標籤 CSV，可用 Excel 開啟。');
+      alert('已下載棄標標籤 Excel，已下載真正 Excel 檔。');
       return true;
     }
 
@@ -2705,7 +2715,7 @@ function renderDepositForfeitRestockDetail(row){
 
     <div class="top-order-actions" style="margin-top:10px;margin-bottom:12px;">
       <button class="btn-secondary" id="btnDepositForfeitDownloadLabel" type="button">
-        🏷️ 下載棄標標籤 CSV
+        🏷️ 下載棄標標籤 Excel
       </button>
 
       <button class="btn-primary" id="btnMarkDepositForfeitRestockDone" type="button">
@@ -2762,40 +2772,7 @@ function renderDepositForfeitRestockDetail(row){
     await markDepositForfeitRestockDone(row);
   });
 }
-function downloadForfeitLabelCsv(labelCsv) {
-  try {
-    if (!labelCsv || !labelCsv.content) return false;
 
-    const filename = String(labelCsv.filename || `forfeit-label-${Date.now()}.csv`)
-      .replace(/[\\/:*?"<>|]/g, '_');
-
-    const content = String(labelCsv.content || '');
-
-    const blob = new Blob(['\uFEFF' + content], {
-      type: 'text/csv;charset=utf-8;'
-    });
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-
-    a.href = url;
-    a.download = filename;
-    a.style.display = 'none';
-
-    document.body.appendChild(a);
-    a.click();
-
-    setTimeout(() => {
-      URL.revokeObjectURL(url);
-      a.remove();
-    }, 800);
-
-    return true;
-  } catch (e) {
-    console.error('downloadForfeitLabelCsv failed', e);
-    return false;
-  }
-}
 async function downloadForfeitLabelCsvForDepositForfeitRow(row){
   const orderId = String(row?.orderId || '').trim();
 
@@ -2827,7 +2804,7 @@ async function downloadForfeitLabelCsvForDepositForfeitRow(row){
     const ok = downloadForfeitLabelCsv(j.label_csv);
 
     if (ok) {
-      alert('已下載棄標標籤 CSV，可用 Excel 開啟。');
+      alert('已下載棄標標籤 Excel，已下載真正 Excel 檔。');
       return true;
     }
 
@@ -7660,8 +7637,8 @@ async function downloadForfeitLabelCsvForCurrentOrder(reason = '') {
     if (ok) {
       alert(
         isForfeited
-          ? '已下載棄標標籤 CSV，可用 Excel 開啟。'
-          : '已下載棄標標籤 CSV。\n\n提醒：這只是下載標籤資料，訂單尚未被棄標；若確定要沒收定金，仍要按「🚫 棄標／沒收定金」。'
+          ? '已下載棄標標籤 Excel，已下載真正 Excel 檔。'
+          : '已下載棄標標籤 Excel。\n\n提醒：這只是下載標籤資料，訂單尚未被棄標；若確定要沒收定金，仍要按「🚫 棄標／沒收定金」。'
       );
       return true;
     }
@@ -7748,10 +7725,10 @@ async function forfeitCurrentOrder() {
     : false;
 
   const labelNote = labelDownloaded
-    ? '\n\n已自動下載棄標標籤 CSV，可用 Excel 開啟。'
+    ? '\n\n已自動下載棄標標籤 Excel，已下載真正 Excel 檔。'
     : (j.already === 'cancelled'
         ? ''
-        : '\n\n⚠️ 這次沒有收到棄標標籤 CSV，可選回這筆訂單後按「🏷️ 下載棄標標籤 CSV」補下載。');
+        : '\n\n⚠️ 這次沒有收到棄標標籤 Excel，可選回這筆訂單後按「🏷️ 下載棄標標籤 Excel」補下載。');
 
   if (j.already === 'forfeited') {
     alert('這筆訂單已經是棄標／沒收定金狀態。' + labelNote);
