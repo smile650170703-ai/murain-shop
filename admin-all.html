@@ -2347,7 +2347,7 @@ function renderDepositForfeitRestockDetail(row){
     <div class="section-title">訂金沒收／棄標待放回商品</div>
 
     <div class="tag-small" style="line-height:1.7;margin-bottom:10px;">
-      員工操作順序：先確認商品明細 → 需要標籤先下載 CSV → 商品實體放回可賣區後，按「商品已放回」。
+      員工操作順序：先確認商品明細 → 需要標籤先下載 Excel → 商品實體放回可賣區後，按「商品已放回」。
       <br>
       這裡只會勾選 Orders 的「已放回商品」，不會再次補庫存、不會發 LINE、不會改金額。
     </div>
@@ -2683,125 +2683,6 @@ async function downloadForfeitLabelCsvForDepositForfeitRow(row){
 
     const labelCsv = await fetchForfeitLabelCsvForRestockRow(row);
     const ok = downloadForfeitLabelCsv(labelCsv);
-
-    if (ok) {
-      alert('已下載棄標標籤 Excel，已下載真正 Excel 檔。');
-      return true;
-    }
-
-    alert('後端有回傳標籤資料，但瀏覽器沒有成功下載，請再按一次。');
-    return false;
-  } catch (e) {
-    console.error(e);
-    alert('下載棄標標籤時發生錯誤：' + (e.message || e));
-    return false;
-  }
-}
-
-function renderDepositForfeitRestockDetail(row){
-  currentDepositForfeitRestockRecord = row;
-
-  const detailEl = $('#orderDetail');
-  if (!detailEl) return;
-
-  detailEl.innerHTML = `
-    <div class="section-title">訂金沒收／棄標待放回商品</div>
-
-    <div class="tag-small" style="line-height:1.7;margin-bottom:10px;">
-      員工操作順序：先確認商品明細 → 需要標籤先下載 CSV → 商品實體放回可賣區後，按「商品已放回」。
-      <br>
-      這裡只會勾選 Orders 的「已放回商品」，不會再次補庫存、不會發 LINE、不會改金額。
-    </div>
-
-    <div class="top-order-actions" style="margin-top:10px;margin-bottom:12px;">
-      <button class="btn-secondary" id="btnDepositForfeitDownloadLabel" type="button">
-        🏷️ 下載棄標標籤 Excel
-      </button>
-
-      <button class="btn-primary" id="btnMarkDepositForfeitRestockDone" type="button">
-        ✅ 商品已放回，從清單移除
-      </button>
-    </div>
-
-    <div class="row mt-2">
-      <div>
-        <label>訂單編號</label>
-        <div class="ro-field">${escapeHtml(row.orderId || '-')}</div>
-      </div>
-      <div>
-        <label>LINE名稱</label>
-        <div class="ro-field">${escapeHtml(row.lineName || '-')}</div>
-      </div>
-    </div>
-
-    <div class="row mt-2">
-      <div>
-        <label>付款方式</label>
-        <div class="ro-field">${escapeHtml(displayPaymentMethod(row.paymentMethod) || row.paymentMethod || '-')}</div>
-      </div>
-      <div>
-        <label>沒收／違約金額</label>
-        <div class="ro-field">${money(row.amount || 0)}</div>
-      </div>
-    </div>
-
-    <div class="row mt-2">
-      <div>
-        <label>沒收／棄標時間</label>
-        <div class="ro-field">${escapeHtml(fmtAdminDateTime(row.forfeitTime) || row.forfeitTime || '-')}</div>
-      </div>
-      <div>
-        <label>取消原因</label>
-        <div class="ro-field">${escapeHtml(row.cancelReason || '-')}</div>
-      </div>
-    </div>
-
-    <label class="mt-2">商品明細</label>
-    <div class="ro-field" style="height:auto;min-height:100px;align-items:flex-start;padding-top:10px;white-space:pre-wrap;">
-      ${escapeHtml(row.productDetail || '-')}
-    </div>
-
-    <div class="muted mt-3" id="detailMsg"></div>
-  `;
-
-  $('#btnDepositForfeitDownloadLabel')?.addEventListener('click', async () => {
-    await downloadForfeitLabelCsvForDepositForfeitRow(row);
-  });
-
-  $('#btnMarkDepositForfeitRestockDone')?.addEventListener('click', async () => {
-    await markDepositForfeitRestockDone(row);
-  });
-}
-
-async function downloadForfeitLabelCsvForDepositForfeitRow(row){
-  const orderId = String(row?.orderId || '').trim();
-
-  if (!orderId) {
-    alert('這筆資料沒有訂單編號，無法下載棄標標籤。');
-    return false;
-  }
-
-  try {
-    await ensureOpKey();
-
-    const r = await fetch(`${API}/admin/order/forfeit-label-csv`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        op_key: OP_KEY,
-        order_id: orderId,
-        reason: row.cancelReason || row.decision || '已棄標補下載'
-      })
-    });
-
-    const j = await r.json().catch(() => ({}));
-
-    if (!r.ok || !j.ok) {
-      alert('下載棄標標籤失敗：' + (j.message || j.error || r.status));
-      return false;
-    }
-
-    const ok = downloadForfeitLabelCsv(j.label_csv);
 
     if (ok) {
       alert('已下載棄標標籤 Excel，已下載真正 Excel 檔。');
