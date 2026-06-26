@@ -3076,7 +3076,7 @@ function exportCSV(){
   const params = new URLSearchParams();
   params.set('key', OP_KEY);
   params.set('kind', 'orders');
-  params.set('format', 'csv');
+  params.set('format', 'xlsx');
 
   const stEl = $('#status');
   const st = stEl ? stEl.value : '';
@@ -3100,6 +3100,7 @@ function exportShipReport(){
   const params = new URLSearchParams();
   params.set('key', OP_KEY);
   params.set('kind', 'ship');
+ params.set('format', 'xlsx');
 
   const url = `${API}/admin/export-view?` + params.toString();
   window.open(url, '_blank');
@@ -3114,6 +3115,7 @@ function exportZeroReport(){
   const params = new URLSearchParams();
   params.set('key', OP_KEY);
   params.set('kind', 'zero');
+ params.set('format', 'xlsx');
 
   const url = `${API}/admin/export-view?` + params.toString();
   window.open(url, '_blank');
@@ -6301,17 +6303,32 @@ if (btnRefundCancelTopBind) {
     });
   });
 }
- function downloadForfeitLabelCsv(labelCsv) {
+function downloadForfeitLabelCsv(labelCsv) {
   try {
-    if (!labelCsv || !labelCsv.content) return false;
+    if (!labelCsv) return false;
 
-    const filename = String(labelCsv.filename || `forfeit-label-${Date.now()}.csv`)
-      .replace(/[\\/:*?"<>|]/g, '_');
+    const base64 = String(labelCsv.xlsx_base64 || labelCsv.base64 || '').trim();
+    if (!base64) return false;
 
-    const content = String(labelCsv.content || '');
+    const filename = String(
+      labelCsv.xlsx_filename ||
+      labelCsv.filename ||
+      `棄標標籤_${Date.now()}.xlsx`
+    )
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .replace(/\.csv$/i, '.xlsx')
+      .replace(/\.xls$/i, '.xlsx');
 
-    const blob = new Blob(['\uFEFF' + content], {
-      type: 'text/csv;charset=utf-8;'
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+
+    const blob = new Blob([bytes], {
+      type: labelCsv.xlsx_content_type ||
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     });
 
     const url = URL.createObjectURL(blob);
@@ -6331,7 +6348,7 @@ if (btnRefundCancelTopBind) {
 
     return true;
   } catch (e) {
-    console.error('downloadForfeitLabelCsv failed', e);
+    console.error('downloadForfeitLabelXlsx failed', e);
     return false;
   }
 }
