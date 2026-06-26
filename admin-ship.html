@@ -1994,22 +1994,27 @@ function displayInternalNoteChinese(raw){
 
   return lines.length ? lines.join('\n') : s;
 }
- function isDepositForfeitOrder(f = {}) {
+function isDepositForfeitOrder(f = {}) {
   const st = String(f.status || '').trim().toLowerCase();
   const ps = String(f.pay_status || '').trim().toLowerCase();
   const cancelReason = String(f['取消原因'] || f.cancel_reason || '').trim();
   const note = String(f.internal_note || '').trim();
+  const noteUpper = note.toUpperCase();
   const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
+
+  const hasForfeitSignal =
+    cancelReason.includes('訂金沒收') ||
+    cancelReason.includes('購物金沒收') ||
+    cancelReason.includes('棄標') ||
+    note.includes('[TAIL_OVERDUE_DEPOSIT_FORFEIT]') ||
+    note.includes('[CASH_INST_OVERDUE_CANCEL]') ||
+    noteUpper.includes('[MANUAL_ORDER_FORFEIT]') ||
+    cashStatus === 'cancelled_forfeit';
 
   return (
     st === 'cancelled' &&
     ps === 'deposit_ok' &&
-    (
-      cancelReason.includes('訂金沒收') ||
-      note.includes('[TAIL_OVERDUE_DEPOSIT_FORFEIT]') ||
-      note.includes('[CASH_INST_OVERDUE_CANCEL]') ||
-      cashStatus === 'cancelled_forfeit'
-    )
+    hasForfeitSignal
   );
 }
 function adminActionLower(v) {
@@ -4435,6 +4440,7 @@ const isFinalOrder =
   btnSaveAndShipTop,
   btnConfirmPayTop,
   btnFailTop,
+  btnRefundCancelTop,
   btnSendTailTop,
   btnMeetupDoneTop,
   btnMeetupNotifyTop,
@@ -4451,14 +4457,19 @@ if (isForfeitOrder) {
   showTopBtn(btnMeetupDoneTop);
   showTopBtn(btnFailTop);
   showTopBtn(btnSaveOnlyTop);
+  hideTopBtn(btnRefundCancelTop);
 
 } else if (ADMIN_PAGE_FILE === 'admin-ship.html') {
   // ✅ 待出貨頁：只做出貨 / 取消重結 / 儲存，不做收款或尾款
   showTopBtn(btnSaveAndShipTop);
   showTopBtn(btnSaveOnlyTop);
 
+  if (isPaidRefundCancelableOrder(f)) {
+    showTopBtn(btnRefundCancelTop);
+  }
+
   if (btnCancelTopForfeit) {
-    btnCancelTopForfeit.style.display = '';
+    btnCancelTopForfeit.style.display = isPaidRefundCancelableOrder(f) ? 'none' : '';
   }
 
   if (btnFailTop) {
@@ -6816,10 +6827,10 @@ function proxyButton(topId, originalId){
       'btnCancelOrderTop'
     ];
 
-    if (dangerousForfeitButtons.includes(topId) && isDepositForfeitOrder(f)) {
-      alert('這筆訂單已棄標，訂金已沒收，不能再收款、出貨、發尾款單或重新結帳。');
-      return;
-    }
+  if (dangerousForfeitButtons.includes(topId) && isInactiveAdminOrder(f)) {
+  alert('這筆訂單已取消、失敗、退款或棄標，不能再收款、出貨、發尾款單或重新結帳。');
+  return;
+}
 
     await runButtonJob(top, async () => {
       const orig = $('#' + originalId);
@@ -6852,10 +6863,10 @@ if (btnConfirmPayOkTopBind) {
       return;
     }
 
-    if (isDepositForfeitOrder(f)) {
-      alert('這筆訂單已棄標，訂金已沒收，不能再收款、出貨、發尾款單或重新結帳。');
-      return;
-    }
+ if (isInactiveAdminOrder(f)) {
+  alert('這筆訂單已取消、失敗、退款或棄標，不能再收款、出貨、發尾款單或重新結帳。');
+  return;
+}
 
     const pm = String(f.payment_method || '').trim().toLowerCase();
     const cashStatus = String(f.cash_inst_status || '').trim().toLowerCase();
