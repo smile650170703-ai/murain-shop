@@ -680,6 +680,10 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
         <button class="btn-secondary" id="btnMarkZcFailTop" type="button">
           🔁 取消原單＋發重新結帳
         </button>
+
+        <button class="btn-secondary" id="btnRefundCancelTop" type="button" style="display:none;">
+          💳 已付款退款取消
+        </button>
        <button class="btn-secondary" id="btnDepositPayAndNoticeTop" type="button">
   ✅ 已收定金+發保留通知
 </button>
@@ -2008,7 +2012,116 @@ function displayInternalNoteChinese(raw){
     )
   );
 }
+function adminActionLower(v) {
+  return String(v ?? '').trim().toLowerCase();
+}
 
+function adminActionUpper(v) {
+  return String(v ?? '').trim().toUpperCase();
+}
+
+function isInactiveAdminOrder(f = {}) {
+  const st = adminActionLower(f.status);
+  const ps = adminActionLower(f.pay_status);
+  const ss = adminActionLower(f.ship_status || f.shipping_status);
+  const cashStatus = adminActionLower(f.cash_inst_status);
+  const note = adminActionUpper(f.internal_note || '');
+  const reason = String(f['取消原因'] || f.cancel_reason || '').trim();
+
+  if (isDepositForfeitOrder(f)) return true;
+
+  if (['cancelled', 'canceled', 'failed', 'void', 'expired', 'abandoned'].includes(st)) return true;
+  if (['failed', 'cancelled', 'canceled', 'refunded', 'void', 'expired', 'abandoned'].includes(ps)) return true;
+  if (ss === 'cancelled') return true;
+  if (cashStatus === 'cancelled_forfeit') return true;
+
+  if (
+    note.includes('[MANUAL_ORDER_FORFEIT]') ||
+    note.includes('[TAIL_OVERDUE_DEPOSIT_FORFEIT]') ||
+    note.includes('[CASH_INST_OVERDUE_CANCEL]') ||
+    note.includes('[ADMIN_REFUND_CANCEL]')
+  ) return true;
+
+  if (
+    reason.includes('棄標') ||
+    reason.includes('訂金沒收') ||
+    reason.includes('購物金沒收') ||
+    reason.includes('已退款') ||
+    reason.includes('發票已作廢')
+  ) return true;
+
+  return false;
+}
+
+function isPaidRefundCancelableOrder(f = {}) {
+  if (isInactiveAdminOrder(f)) return false;
+
+  const pm = adminActionLower(f.payment_method);
+  const ps = adminActionLower(f.pay_status);
+  const st = adminActionLower(f.status);
+  const notify = adminActionLower(f.pay_notify_status);
+  const ss = adminActionLower(f.ship_status || f.shipping_status);
+
+  const isExternalPay =
+    pm.startsWith('paid_') ||
+    pm.startsWith('zero_card_') ||
+    pm.startsWith('yufu_inst_') ||
+    pm === 'aftee_direct' ||
+    pm === 'paid_aftee_direct' ||
+    pm === 'paid_af';
+
+  const isPaid =
+    ps === 'paid_ok' ||
+    st === 'paid' ||
+    notify === 'success';
+
+  const alreadyShipped =
+    st === 'shipped' ||
+    st === 'completed' ||
+    ss === 'shipped';
+
+  return isExternalPay && isPaid && !alreadyShipped;
+}
+
+function isRetryCheckoutAllowedOrder(f = {}) {
+  if (isInactiveAdminOrder(f)) return false;
+
+  const pm = adminActionLower(f.payment_method);
+  const ps = adminActionLower(f.pay_status);
+  const st = adminActionLower(f.status);
+  const ss = adminActionLower(f.ship_status || f.shipping_status);
+  const cashStatus = adminActionLower(f.cash_inst_status);
+  const cashPaidCount = Number(f.cash_inst_paid_count || f.cash_inst_paid_parts || 0) || 0;
+
+  const isRealPaidMethod =
+    pm.startsWith('paid_') ||
+    pm.startsWith('zero_card_') ||
+    pm.startsWith('yufu_inst_') ||
+    pm === 'aftee_direct' ||
+    pm === 'paid_aftee_direct' ||
+    pm === 'paid_af' ||
+    pm === 'bank_transfer' ||
+    pm === 'atm_full' ||
+    pm === 'meetup_cash' ||
+    pm.startsWith('deposit_new_full') ||
+    pm.startsWith('deposit_old_full');
+
+  const alreadyActuallyPaid =
+    (ps === 'paid_ok' || st === 'paid') && isRealPaidMethod;
+
+  const hasReceivedDepositOrInstallment =
+    ps === 'deposit_ok' ||
+    cashStatus === 'active' ||
+    cashStatus === 'completed' ||
+    cashPaidCount > 0;
+
+  const alreadyShippedOrDone =
+    st === 'shipped' ||
+    st === 'completed' ||
+    ss === 'shipped';
+
+  return !alreadyActuallyPaid && !hasReceivedDepositOrInstallment && !alreadyShippedOrDone;
+}
 function isRestockNeedsAttention(f = {}) {
   const note = String(f.internal_note || '').trim();
 
@@ -4211,7 +4324,7 @@ if (btnTail) {
   const btnDepNotice = $('#btnDepositPayAndNotice');
   if (btnDepNotice) btnDepNotice.addEventListener('click', depositReceivedAndNotify);
 
-  const btnZcFail = $('#btnMarkZcFail');
+const btnZcFail = $('#btnMarkZcFail');
 if (btnZcFail) {
   btnZcFail.addEventListener('click', () => {
     if (!currentRecord) {
@@ -4221,8 +4334,8 @@ if (btnZcFail) {
 
     const f = currentRecord.fields || currentRecord || {};
 
-    if (isDepositForfeitOrder(f)) {
-      alert('這筆訂單已棄標，訂金已沒收，不能再取消原單或重新結帳。');
+    if (!isRetryCheckoutAllowedOrder(f)) {
+      alert('這筆訂單不適合使用「取消原單＋重新結帳」。\n\n已收款、已收定金、已出貨、已取消、已退款、棄標單，都不能用這顆。\n\n已付款要取消請用「已付款退款取消」。');
       return;
     }
 
@@ -4239,6 +4352,7 @@ const isForfeitOrder = isDepositForfeitOrder(f);
 const btnSaveAndShipTop = $('#btnSaveAndShipTop');
 const btnConfirmPayTop = $('#btnConfirmPayOkTop');
 const btnFailTop = $('#btnMarkZcFailTop');
+ const btnRefundCancelTop = $('#btnRefundCancelTop');
 const btnSendTailTop = $('#btnSendTailLinkTop');
 const btnMeetupDoneTop = $('#btnMeetupCashDoneTop');
 const btnMeetupNotifyTop = $('#btnMeetupNotifyTop');
@@ -5146,7 +5260,68 @@ try {
     newMsgEl.textContent = '✅ 已收到訂金，已寫入 pay_status = deposit_ok，並已儲存保留通知' + lineText;
   }
 }
- 
+ async function refundCancelCurrentOrder() {
+  if (!currentRecord) {
+    alert('請先在左邊選一筆訂單');
+    return;
+  }
+
+  const f = currentRecord.fields || currentRecord || {};
+  const orderId = String(f.order_id || f['訂單編號'] || '').trim();
+
+  if (!orderId) {
+    alert('這筆訂單沒有 order_id，無法執行退款取消。');
+    return;
+  }
+
+  if (!isPaidRefundCancelableOrder(f)) {
+    alert('這顆按鈕只適用於「已付款成功、尚未出貨」的線上付款訂單。\n\n未付款請用取消未付款單。\n棄標/未取貨請用棄標流程。\n已出貨請不要用這顆。');
+    return;
+  }
+
+  const reason = prompt(
+    '請確認你已經完成：\n1. 金流退款或取消\n2. 發票作廢或折讓處理\n\n請輸入取消原因：',
+    '取消訂單，已退金流＋發票'
+  );
+
+  if (!reason) {
+    alert('未輸入原因，已取消操作。');
+    return;
+  }
+
+  const confirmText = prompt('請輸入「已退款」確認執行：', '');
+
+  if (confirmText !== '已退款') {
+    alert('未輸入「已退款」，已取消操作。');
+    return;
+  }
+
+  try {
+    const r = await fetch(`${API}/admin/order/refund-cancel`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        op_key: OP_KEY,
+        order_id: orderId,
+        confirm_text: '已退款',
+        reason
+      })
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok || !j.ok) {
+      alert('退款取消失敗：' + (j.message || j.error || ('HTTP ' + r.status)));
+      return;
+    }
+
+    alert(j.message || '已標記為已付款退款取消。');
+    await reloadCurrentView();
+  } catch (e) {
+    console.error(e);
+    alert('退款取消時發生錯誤：' + (e.message || e));
+  }
+}
 async function markMeetupCashDone(){
   if (!currentRecord) {
     alert('請先在左邊選一筆訂單');
@@ -5156,6 +5331,11 @@ async function markMeetupCashDone(){
   const f = currentRecord.fields || currentRecord || {};
   const pm = String(f.payment_method || '');
 
+   if (isInactiveAdminOrder(f)) {
+    alert('這筆訂單已取消、失敗、退款或棄標，不能再完成面交收款。');
+    return;
+  }
+ 
   if (pm !== 'meetup_cash') {
     alert('這顆按鈕只給「面交付現」訂單使用。');
     return;
@@ -6320,6 +6500,12 @@ if (btnCancelTop) {
     await forfeitCurrentOrder();
   });
 }
+ const btnRefundCancelTopBind = $('#btnRefundCancelTop');
+if (btnRefundCancelTopBind) {
+  btnRefundCancelTopBind.addEventListener('click', async () => {
+    await refundCancelCurrentOrder();
+  });
+}
 
  function chooseForfeitReason(defaultReason = '7-11未取貨退回／棄標／購物金沒收') {
   return new Promise((resolve) => {
@@ -6538,7 +6724,10 @@ async function forfeitCurrentOrder() {
     alert('這筆訂單已經是棄標／訂金沒收狀態，不需要再按。');
     return;
   }
-
+  if (isPaidRefundCancelableOrder(f)) {
+    alert('這筆是已付款成功的線上付款訂單，不能使用「棄標／沒收定金」。\n\n請先到金流與發票系統退款/作廢，再按「已付款退款取消」。');
+    return;
+  }
   const warning = [
     '這會執行：棄標／沒收定金',
     '',
