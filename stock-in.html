@@ -2964,14 +2964,57 @@ function openConsignLedgerPdfWindow(data, fileBaseName) {
     w.document.title = fileBaseName || '寄賣清冊';
   } catch {}
 }
+async function fetchConsignorForCurrentPdf(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const first = list.find(row => String(row.商品來源 || '') === '寄賣') || {};
+  const current = state.selectedConsignor || {};
 
-function buildCurrentConsignPdfDownloadHtml(rows) {
+  if (
+    current &&
+    (
+      current.name ||
+      current.phone ||
+      current.email ||
+      current.bankName ||
+      current.accountNo
+    )
+  ) {
+    return current;
+  }
+
+  const consignorRecordId = String(
+    first.consignorRecordId ||
+    state.selectedConsignorRecordId ||
+    ''
+  ).trim();
+
+  if (!consignorRecordId || !CONFIG.consignLedgerDataUrl) {
+    return current || {};
+  }
+
+  try {
+    const apiUrl =
+      `${CONFIG.consignLedgerDataUrl}?op_key=${encodeURIComponent(CONFIG.opKey)}&consignorRecordId=${encodeURIComponent(consignorRecordId)}`;
+
+    const resp = await fetch(apiUrl, { method: 'GET' });
+    const data = await resp.json().catch(() => ({}));
+
+    if (resp.ok && data.ok && data.consignor) {
+      return data.consignor;
+    }
+  } catch (err) {
+    console.warn('fetchConsignorForCurrentPdf failed', err);
+  }
+
+  return current || {};
+}
+function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
   const consignRows = Array.isArray(rows)
     ? rows.filter(row => String(row.商品來源 || '') === '寄賣')
     : [];
 
   const first = consignRows[0] || {};
-  const consignor = state.selectedConsignor || {};
+    const consignor = consignorOverride || state.selectedConsignor || {};
 
   const consignorName = String(
     consignor.name ||
@@ -3023,7 +3066,7 @@ function buildCurrentConsignPdfDownloadHtml(rows) {
           <td class="photo-cell">
             ${
               photoUrl
-                ? `<img class="ledger-photo" src="${excelEscape(photoUrl)}" alt="直播截圖">`
+                ? `<img class="ledger-photo" crossorigin="anonymous" src="${excelEscape(photoUrl)}" alt="直播截圖">`
                 : '<span class="muted">無</span>'
             }
           </td>
@@ -3196,7 +3239,8 @@ async function downloadCurrentConsignPdf(rowsOverride = null, options = {}) {
   container.style.left = '-99999px';
   container.style.top = '0';
   container.style.background = '#ffffff';
-  container.innerHTML = buildCurrentConsignPdfDownloadHtml(consignRows);
+  const consignorForPdf = await fetchConsignorForCurrentPdf(consignRows);
+  container.innerHTML = buildCurrentConsignPdfDownloadHtml(consignRows, consignorForPdf);
 
   document.body.appendChild(container);
 
@@ -3570,6 +3614,29 @@ async function submitAll(options = {}) {
 
   if (!state.drafts.length) {
     showError(el.submitError, '目前沒有可送出的資料');
+    return;
+  }
+
+  const currentSource = state.mode === 'consign'
+    ? '寄賣'
+    : state.mode === 'own'
+      ? '自有'
+      : '';
+
+  if (!currentSource) {
+    showError(el.submitError, '目前模式不是自有入庫或寄賣入庫，不能確認送出。');
+    return;
+  }
+
+  const wrongModeRows = state.drafts.filter(row => {
+    return String(row.商品來源 || '').trim() !== currentSource;
+  });
+
+  if (wrongModeRows.length) {
+    showError(
+      el.submitError,
+      `本次清單混到 ${wrongModeRows.length} 筆不是「${currentSource}」的資料。請先清空本次清單，分開自有入庫 / 寄賣入庫送出。`
+    );
     return;
   }
 
