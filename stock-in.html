@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>入庫表｜自有 / 寄賣</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" referrerpolicy="no-referrer"></script>
   <style>
     :root {
       --bg: #f5f6f8;
@@ -871,7 +872,7 @@
   <div class="actions" style="margin-top:0;">
   <button id="btnAddRow" class="btn btn-secondary" type="button">新增一列</button>
 <button id="btnExportAndSubmit" class="btn btn-success" type="button">確認送出</button>
-<button id="btnPrintCurrentConsign" class="btn btn-secondary hidden" type="button">列印當次寄賣PDF</button>
+<button id="btnPrintCurrentConsign" class="btn btn-secondary hidden" type="button">下載當次寄賣PDF</button>
 <button id="btnDownloadCurrentConsignImages" class="btn btn-secondary hidden" type="button">下載當次圖片</button>
 <button id="btnClearDrafts" class="btn btn-danger" type="button">清空本次清單</button>
 </div>
@@ -2215,20 +2216,27 @@ async function downloadImageByUrl(url, filename) {
   setTimeout(() => URL.revokeObjectURL(blobUrl), 1500);
 }
 
-async function downloadCurrentConsignImages() {
+async function downloadCurrentConsignImages(rowsOverride = null, options = {}) {
   showError(el.submitError, '');
 
-  const rows = state.drafts.filter(row => {
+  const auto = options?.auto === true;
+  const silent = options?.silent === true;
+
+  const sourceRows = Array.isArray(rowsOverride) ? rowsOverride : state.drafts;
+
+  const rows = sourceRows.filter(row => {
     return String(row.商品來源 || '').trim() === '寄賣' &&
       String(row['直播截圖Url'] || '').trim();
   });
 
   if (!rows.length) {
-    showError(el.submitError, '目前沒有可下載的寄賣圖片，請先在「直播截圖」欄位貼上或上傳圖片');
+    if (!silent) {
+      showError(el.submitError, '目前沒有可下載的寄賣圖片，請先在「直播截圖」欄位貼上或上傳圖片');
+    }
     return false;
   }
 
-  if (!window.confirm(`確定要下載當次寄賣圖片嗎？共 ${rows.length} 張`)) {
+  if (!auto && !window.confirm(`確定要下載當次寄賣圖片嗎？共 ${rows.length} 張`)) {
     return false;
   }
 
@@ -2265,13 +2273,17 @@ async function downloadCurrentConsignImages() {
     if (failed.length) {
       showError(
         el.submitError,
-        `已下載 ${successCount} 張，${failed.length} 張失敗。若失敗原因是圖片跨網域限制，需改成後端打包下載。`
+        `已下載 ${successCount} 張，${failed.length} 張失敗。若瀏覽器詢問是否允許多個檔案下載，請選允許後再補下載。`
       );
       return false;
     }
 
     showError(el.submitError, '');
-    alert(`已下載 ${successCount} 張寄賣圖片`);
+
+    if (!silent) {
+      alert(`已下載 ${successCount} 張寄賣圖片`);
+    }
+
     return true;
 
   } finally {
@@ -2305,46 +2317,273 @@ function buildConsignLabelRows(rows) {
   return rows.map((row) => ({
     SKU: String(row.SKU || '').trim(),
     商品名稱: String(row.Name || '').trim(),
-    直播截圖: String(row['直播截圖Url'] || '').trim(),
     起標價格: normalizeNumber(row['起標價格'], 0),
     一標多少: normalizeNumber(row['一標多少'], 0),
-    分類: String(row.sub_category || '寄賣').trim()
+    寄賣人: String(row.寄賣人 || '').trim()
   }));
 }
 
-function buildExcelHtml(headers, rows, title) {
-  const csvCell = (value) => {
-    let s = String(value ?? '');
-    if (/^[=+\-@]/.test(s.trim())) s = "'" + s;
-    return `"${s.replace(/"/g, '""')}"`;
-  };
-
-  const csvRows = [
-    headers,
-    ...rows.map(row => headers.map(h => row[h] ?? ''))
-  ];
-
-  return csvRows
-    .map(row => row.map(csvCell).join(','))
-    .join('\r\n');
+function xlsxXmlEscape(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
 
-function downloadExcelFile(filename, html) {
-  const csvFilename = String(filename || 'download.csv').replace(/\.xls$/i, '.csv');
+function xlsxColName(n) {
+  let s = '';
+  let x = Number(n || 0);
 
-  const blob = new Blob(
-    ['\ufeff' + html],
-    { type: 'text/csv;charset=utf-8;' }
-  );
+  while (x >= 0) {
+    s = String.fromCharCode((x % 26) + 65) + s;
+    x = Math.floor(x / 26) - 1;
+  }
+
+  return s;
+}
+
+function xlsxSheetXml(rows) {
+  const safeRows = Array.isArray(rows) ? rows : [];
+
+  const rowsXml = safeRows.map((row, rIdx) => {
+    const arr = Array.isArray(row) ? row : [];
+    const cells = arr.map((value, cIdx) => {
+      const ref = `${xlsxColName(cIdx)}${rIdx + 1}`;
+
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return `<c r="${ref}"><v>${value}</v></c>`;
+      }
+
+      const text = String(value ?? '');
+
+      return `<c r="${ref}" t="inlineStr"><is><t>${xlsxXmlEscape(text)}</t></is></c>`;
+    }).join('');
+
+    return `<row r="${rIdx + 1}">${cells}</row>`;
+  }).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>${rowsXml}</sheetData>
+</worksheet>`;
+}
+
+function xlsxU16(n) {
+  const v = Number(n || 0) & 0xffff;
+  return new Uint8Array([v & 0xff, (v >>> 8) & 0xff]);
+}
+
+function xlsxU32(n) {
+  const v = Number(n || 0) >>> 0;
+  return new Uint8Array([
+    v & 0xff,
+    (v >>> 8) & 0xff,
+    (v >>> 16) & 0xff,
+    (v >>> 24) & 0xff
+  ]);
+}
+
+function xlsxConcat(parts) {
+  const list = (parts || []).filter(Boolean);
+  const total = list.reduce((sum, x) => sum + x.length, 0);
+  const out = new Uint8Array(total);
+
+  let offset = 0;
+  for (const part of list) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+
+  return out;
+}
+
+let STOCK_IN_XLSX_CRC32_TABLE = null;
+
+function xlsxCrc32(bytes) {
+  if (!STOCK_IN_XLSX_CRC32_TABLE) {
+    const table = new Uint32Array(256);
+
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let k = 0; k < 8; k++) {
+        c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      }
+      table[i] = c >>> 0;
+    }
+
+    STOCK_IN_XLSX_CRC32_TABLE = table;
+  }
+
+  const table = STOCK_IN_XLSX_CRC32_TABLE;
+  let crc = 0xFFFFFFFF;
+
+  for (let i = 0; i < bytes.length; i++) {
+    crc = table[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+  }
+
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function xlsxZipStore(files) {
+  const enc = new TextEncoder();
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const nameBytes = enc.encode(file.name);
+    const data = file.data instanceof Uint8Array ? file.data : enc.encode(String(file.data || ''));
+    const crc = xlsxCrc32(data);
+    const size = data.length;
+    const flags = 0x0800; // UTF-8 file names
+
+    const localHeader = xlsxConcat([
+      xlsxU32(0x04034b50),
+      xlsxU16(20),
+      xlsxU16(flags),
+      xlsxU16(0),
+      xlsxU16(0),
+      xlsxU16(0),
+      xlsxU32(crc),
+      xlsxU32(size),
+      xlsxU32(size),
+      xlsxU16(nameBytes.length),
+      xlsxU16(0)
+    ]);
+
+    localParts.push(localHeader, nameBytes, data);
+
+    const centralHeader = xlsxConcat([
+      xlsxU32(0x02014b50),
+      xlsxU16(20),
+      xlsxU16(20),
+      xlsxU16(flags),
+      xlsxU16(0),
+      xlsxU16(0),
+      xlsxU16(0),
+      xlsxU32(crc),
+      xlsxU32(size),
+      xlsxU32(size),
+      xlsxU16(nameBytes.length),
+      xlsxU16(0),
+      xlsxU16(0),
+      xlsxU16(0),
+      xlsxU16(0),
+      xlsxU32(0),
+      xlsxU32(offset)
+    ]);
+
+    centralParts.push(centralHeader, nameBytes);
+
+    offset += localHeader.length + nameBytes.length + data.length;
+  }
+
+  const centralDir = xlsxConcat(centralParts);
+  const localData = xlsxConcat(localParts);
+
+  const eocd = xlsxConcat([
+    xlsxU32(0x06054b50),
+    xlsxU16(0),
+    xlsxU16(0),
+    xlsxU16(files.length),
+    xlsxU16(files.length),
+    xlsxU32(centralDir.length),
+    xlsxU32(localData.length),
+    xlsxU16(0)
+  ]);
+
+  return xlsxConcat([localData, centralDir, eocd]);
+}
+
+function buildSimpleXlsxForBrowser(sheets) {
+  const enc = new TextEncoder();
+
+  const safeSheets = (Array.isArray(sheets) ? sheets : [])
+    .map((sheet, idx) => ({
+      name: String(sheet.name || `Sheet${idx + 1}`).slice(0, 31),
+      rows: Array.isArray(sheet.rows) ? sheet.rows : []
+    }))
+    .filter(sheet => sheet.rows.length);
+
+  if (!safeSheets.length) {
+    safeSheets.push({
+      name: 'Sheet1',
+      rows: [['']]
+    });
+  }
+
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  ${safeSheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}
+</Types>`;
+
+  const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`;
+
+  const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    ${safeSheets.map((s, i) => `<sheet name="${xlsxXmlEscape(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}
+  </sheets>
+</workbook>`;
+
+  const workbookRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  ${safeSheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}
+</Relationships>`;
+
+  const files = [
+    { name: '[Content_Types].xml', data: enc.encode(contentTypes) },
+    { name: '_rels/.rels', data: enc.encode(rels) },
+    { name: 'xl/workbook.xml', data: enc.encode(workbook) },
+    { name: 'xl/_rels/workbook.xml.rels', data: enc.encode(workbookRels) },
+    ...safeSheets.map((sheet, i) => ({
+      name: `xl/worksheets/sheet${i + 1}.xml`,
+      data: enc.encode(xlsxSheetXml(sheet.rows))
+    }))
+  ];
+
+  return xlsxZipStore(files);
+}
+
+function safeXlsxFilename(filename) {
+  return String(filename || 'download.xlsx')
+    .replace(/[\\/:*?"<>|#%{}^~[\]`]/g, '_')
+    .replace(/\.csv$/i, '.xlsx')
+    .replace(/\.xls$/i, '.xlsx')
+    .replace(/\.xlsx$/i, '') + '.xlsx';
+}
+
+function downloadXlsxFile(filename, sheets) {
+  const bytes = buildSimpleXlsxForBrowser(sheets);
+
+  const blob = new Blob([bytes], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
 
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
+
   a.href = url;
-  a.download = csvFilename;
+  a.download = safeXlsxFilename(filename);
+  a.style.display = 'none';
+
   document.body.appendChild(a);
   a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    a.remove();
+  }, 800);
+
+  return true;
 }
 function safeFilePart(value) {
   return String(value || '')
@@ -2995,15 +3234,287 @@ function openCurrentConsignStockInPdfWindow(rows) {
   return true;
 }
 
-function printCurrentConsignStockInPdf() {
+function buildCurrentConsignPdfDownloadHtml(rows) {
+  const consignRows = Array.isArray(rows)
+    ? rows.filter(row => String(row.商品來源 || '') === '寄賣')
+    : [];
+
+  const first = consignRows[0] || {};
+  const consignor = state.selectedConsignor || {};
+
+  const consignorName = String(
+    consignor.name ||
+    first.寄賣人 ||
+    ''
+  ).trim();
+
+  const lineName = String(
+    consignor.lineName ||
+    consignor.displayName ||
+    state.selectedLineMember?.displayName ||
+    state.selectedLineMember?.name ||
+    ''
+  ).trim();
+
+  const infoRows = [
+    ['姓名', consignorName || '-'],
+    ['LINE名稱', lineName || '-'],
+    ['身分證證號', consignor.nationalId || '-'],
+    ['手機', consignor.phone || '-'],
+    ['Email', consignor.email || '-'],
+    [
+      '匯款資料',
+      [
+        consignor.bankCode || '',
+        consignor.bankName || '',
+        consignor.accountName || ''
+      ].filter(Boolean).join(' ') || '-'
+    ],
+    ['匯款帳號', consignor.accountNo || '-'],
+    ['匯款代號', consignor.bankCode || '-'],
+    ['匯款銀行名稱', consignor.bankName || '-']
+  ];
+
+  const infoHtml = infoRows.map(([k, v]) => `
+    <tr>
+      <th>${excelEscape(k)}</th>
+      <td>${excelEscape(v || '-')}</td>
+    </tr>
+  `).join('');
+
+  const itemHtml = consignRows.length
+    ? consignRows.map((row, index) => {
+      const photoUrl = String(row['直播截圖Url'] || '').trim();
+
+      return `
+        <tr>
+          <td class="center">${index + 1}</td>
+          <td class="photo-cell">
+            ${
+              photoUrl
+                ? `<img class="ledger-photo" src="${excelEscape(photoUrl)}" alt="直播截圖">`
+                : '<span class="muted">無</span>'
+            }
+          </td>
+          <td>${excelEscape(row.Name || '')}</td>
+          <td class="center">${Number(row.StockQty || 0) || 0}</td>
+          <td class="center">直播競標</td>
+          <td class="right">${excelEscape(moneyText(row['起標價格']) || '')}</td>
+          <td class="right">${excelEscape(moneyText(row['一標多少']) || '')}</td>
+        </tr>
+      `;
+    }).join('')
+    : `
+      <tr>
+        <td colspan="7" class="center muted">目前沒有當次寄賣入庫資料</td>
+      </tr>
+    `;
+
+  return `
+    <div class="current-consign-pdf">
+      <style>
+        .current-consign-pdf {
+          width: 1120px;
+          padding: 24px;
+          background: #ffffff;
+          color: #111827;
+          font-family: "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif;
+          font-size: 12px;
+        }
+
+        .current-consign-pdf .title {
+          text-align: center;
+          font-size: 22px;
+          font-weight: 900;
+          margin: 0 0 8px;
+        }
+
+        .current-consign-pdf .sub {
+          text-align: center;
+          color: #6b7280;
+          margin-bottom: 14px;
+        }
+
+        .current-consign-pdf table {
+          width: 100%;
+          border-collapse: collapse;
+          table-layout: fixed;
+        }
+
+        .current-consign-pdf .info-table {
+          margin-bottom: 14px;
+        }
+
+        .current-consign-pdf .info-table th {
+          width: 120px;
+          background: #111827;
+          color: #ffffff;
+          text-align: left;
+          font-weight: 800;
+        }
+
+        .current-consign-pdf th,
+        .current-consign-pdf td {
+          border: 1px solid #111827;
+          padding: 7px;
+          vertical-align: middle;
+          word-break: break-word;
+        }
+
+        .current-consign-pdf .items-table thead th {
+          background: #e8dfcf;
+          color: #111827;
+          font-weight: 900;
+          text-align: center;
+        }
+
+        .current-consign-pdf .center {
+          text-align: center;
+        }
+
+        .current-consign-pdf .right {
+          text-align: right;
+        }
+
+        .current-consign-pdf .muted {
+          color: #6b7280;
+        }
+
+        .current-consign-pdf .photo-cell {
+          width: 130px;
+          text-align: center;
+        }
+
+        .current-consign-pdf .ledger-photo {
+          display: block;
+          width: 110px;
+          height: 110px;
+          object-fit: cover;
+          margin: 0 auto;
+          border: 1px solid #d1d5db;
+          background: #f9fafb;
+        }
+
+        .current-consign-pdf .col-no { width: 52px; }
+        .current-consign-pdf .col-photo { width: 135px; }
+        .current-consign-pdf .col-name { width: 260px; }
+        .current-consign-pdf .col-qty { width: 64px; }
+        .current-consign-pdf .col-method { width: 95px; }
+        .current-consign-pdf .col-price { width: 100px; }
+        .current-consign-pdf .col-step { width: 100px; }
+      </style>
+
+      <h1 class="title">當次寄賣入庫確認單</h1>
+      <div class="sub">產生日期：${excelEscape(todayFileDate())}</div>
+
+      <table class="info-table">
+        <tbody>
+          ${infoHtml}
+        </tbody>
+      </table>
+
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th class="col-no">序號</th>
+            <th class="col-photo">直播截圖</th>
+            <th class="col-name">商品名稱</th>
+            <th class="col-qty">數量</th>
+            <th class="col-method">寄賣方式</th>
+            <th class="col-price">競標底價</th>
+            <th class="col-step">每標加價</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${itemHtml}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function downloadCurrentConsignPdf(rowsOverride = null, options = {}) {
   showError(el.submitError, '');
 
-  try {
-    return openCurrentConsignStockInPdfWindow(state.drafts);
-  } catch (err) {
-    showError(el.submitError, err.message || '產生當次寄賣入庫 PDF 失敗');
+  const silent = options?.silent === true;
+  const sourceRows = Array.isArray(rowsOverride) ? rowsOverride : state.drafts;
+
+  const consignRows = sourceRows.filter(row => String(row.商品來源 || '') === '寄賣');
+
+  if (!consignRows.length) {
+    if (!silent) {
+      showError(el.submitError, '目前沒有當次寄賣入庫資料可下載 PDF');
+    }
     return false;
   }
+
+  if (!window.html2pdf) {
+    showError(el.submitError, 'PDF 下載套件尚未載入，請重新整理頁面後再試。');
+    return false;
+  }
+
+  const first = consignRows[0] || {};
+  const fileBaseName = [
+    safeFilePart(first.寄賣人 || '未命名寄賣人'),
+    todayFileDate(),
+    '當次寄賣入庫確認單'
+  ].filter(Boolean).join('_');
+
+  const container = document.createElement('div');
+  container.style.position = 'fixed';
+  container.style.left = '-99999px';
+  container.style.top = '0';
+  container.style.background = '#ffffff';
+  container.innerHTML = buildCurrentConsignPdfDownloadHtml(consignRows);
+
+  document.body.appendChild(container);
+
+  try {
+    await html2pdf()
+      .set({
+        margin: 8,
+        filename: `${fileBaseName}.pdf`,
+        image: {
+          type: 'jpeg',
+          quality: 0.98
+        },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          allowTaint: false,
+          backgroundColor: '#ffffff'
+        },
+        jsPDF: {
+          unit: 'mm',
+          format: 'a4',
+          orientation: 'landscape'
+        },
+        pagebreak: {
+          mode: ['avoid-all', 'css', 'legacy']
+        }
+      })
+      .from(container)
+      .save();
+
+    if (!silent) {
+      alert('已下載當次寄賣 PDF');
+    }
+
+    return true;
+  } catch (err) {
+    console.error(err);
+    showError(el.submitError, '下載當次寄賣 PDF 失敗：' + (err.message || err));
+    return false;
+  } finally {
+    container.remove();
+  }
+}
+
+async function printCurrentConsignStockInPdf() {
+  await downloadCurrentConsignPdf(state.drafts, {
+    auto: false,
+    silent: false
+  });
 }
 async function loadConsignLedgerConsignors() {
   showError(el.consignLedgerError, '');
@@ -3110,97 +3621,128 @@ openConsignLedgerPdfWindow(data, fileBaseName);
     el.btnDownloadConsignLedger.textContent = '列印 / 另存 PDF';
   }
 }
-    function downloadConsignStockInExcel() {
+function downloadLabelExcelForRows(rowsOverride = null, modeOverride = state.mode) {
   showError(el.submitError, '');
 
-  const consignRows = state.drafts.filter(row => String(row.商品來源 || '') === '寄賣');
+  const rows = Array.isArray(rowsOverride) ? rowsOverride : state.drafts;
+  const mode = String(modeOverride || state.mode || '').trim();
 
-  if (!consignRows.length) {
-    showError(el.submitError, '目前沒有寄賣入庫資料可產出 CSV');
-    return false;
-  }
-
-  const exportRows = consignRows.map(row => ({
-    SKU: String(row.SKU || '').trim(),
-    寄賣人: String(row.寄賣人 || '').trim(),
-    商品名稱: String(row.Name || '').trim(),
-    起標價格: normalizeNumber(row['起標價格'], 0),
-    一標多少: normalizeNumber(row['一標多少'], 0),
-    入庫日期: String(row.入庫日期 || '').trim()
-  }));
-
-  const headers = ['SKU', '寄賣人', '商品名稱', '起標價格', '一標多少', '入庫日期'];
-  const html = buildExcelHtml(headers, exportRows, '寄賣入庫明細');
-
-  downloadExcelFile(`寄賣入庫明細_${labelFileDate()}.csv`, html);
-  return true;
-}
-function downloadLabelExcel() {
-  showError(el.submitError, '');
-
-  if (!state.drafts.length) {
+  if (!rows.length) {
     showError(el.submitError, '目前沒有可下載的標籤資料');
     return false;
   }
 
-  const isOwnMode = state.mode === 'own';
+  if (mode === 'own') {
+    const ownRows = rows.filter(row => String(row.商品來源 || '') === '自有');
 
-  if (isOwnMode) {
-    const ownRows = state.drafts.filter(row => String(row.商品來源 || '') === '自有');
     if (!ownRows.length) {
       showError(el.submitError, '目前沒有自有入庫資料可下載');
       return false;
     }
 
     const expandedRows = buildOwnLabelRows(ownRows);
+
     if (!expandedRows.length) {
       showError(el.submitError, '自有入庫的數量需大於 0 才能產生標籤');
       return false;
     }
 
-    const exportRows = expandedRows.map(row => ({
-  標籤碼: String(row.SKU || '').trim(),
-  名稱: String(row.Name || '').trim(),
-  售價: normalizeNumber(row.Price, 0),
-  數量: normalizeNumber(row.StockQty, 0),
-  品牌: String(row.sub_category || '').trim()
-}));
+    const headers = ['標籤碼', '名稱', '售價', '數量', '品牌'];
 
-const headers = ['標籤碼', '名稱', '售價', '數量', '品牌'];
-const html = buildExcelHtml(headers, exportRows, '');
-downloadExcelFile(`自有入庫標籤_${labelFileDate()}.csv`, html);
+    const outputRows = [
+      headers,
+      ...expandedRows.map(row => [
+        String(row.SKU || '').trim(),
+        String(row.Name || '').trim(),
+        normalizeNumber(row.Price, 0),
+        normalizeNumber(row.StockQty, 0),
+        String(row.sub_category || '').trim()
+      ])
+    ];
+
+    downloadXlsxFile(`自有入庫標籤_${labelFileDate()}.xlsx`, [
+      {
+        name: '自有入庫標籤',
+        rows: outputRows
+      }
+    ]);
+
     return true;
   }
 
-  const consignRows = state.drafts.filter(row => String(row.商品來源 || '') === '寄賣');
-  if (!consignRows.length) {
-    showError(el.submitError, '目前沒有寄賣入庫資料可下載');
-    return false;
+  if (mode === 'consign') {
+    const consignRows = rows.filter(row => String(row.商品來源 || '') === '寄賣');
+
+    if (!consignRows.length) {
+      showError(el.submitError, '目前沒有寄賣入庫資料可下載');
+      return false;
+    }
+
+    const exportRows = buildConsignLabelRows(consignRows);
+    const headers = ['SKU', '商品名稱', '起標價格', '一標多少', '寄賣人'];
+
+    const outputRows = [
+      headers,
+      ...exportRows.map(row => [
+        String(row.SKU || '').trim(),
+        String(row.商品名稱 || '').trim(),
+        normalizeNumber(row.起標價格, 0),
+        normalizeNumber(row.一標多少, 0),
+        String(row.寄賣人 || '').trim()
+      ])
+    ];
+
+    downloadXlsxFile(`寄賣入庫標籤_${labelFileDate()}.xlsx`, [
+      {
+        name: '寄賣入庫標籤',
+        rows: outputRows
+      }
+    ]);
+
+    return true;
   }
 
-  const exportRows = buildConsignLabelRows(consignRows);
-    const headers = ['SKU', '商品名稱', '直播截圖', '起標價格', '一標多少', '分類'];
-  const html = buildExcelHtml(headers, exportRows, '寄賣入庫標籤');
-  downloadExcelFile(`寄賣入庫標籤_${labelFileDate()}.csv`, html);
-  return true;
+  showError(el.submitError, '目前模式不支援下載標籤');
+  return false;
+}
+
+// 保留舊函式名稱，避免其他地方還有呼叫
+function downloadConsignStockInExcel(rowsOverride = null) {
+  return downloadLabelExcelForRows(rowsOverride || state.drafts, 'consign');
+}
+
+// 保留舊函式名稱，避免其他地方還有呼叫
+function downloadLabelExcel() {
+  return downloadLabelExcelForRows(state.drafts, state.mode);
 }
 
 async function exportAndSubmit() {
   showError(el.submitError, '');
 
-  // 自有入庫：完全維持原本功能，照原本產生自有標籤 Excel
-  if (state.mode === 'own') {
-    const ok = downloadLabelExcel();
-    if (!ok) return;
-  }
+  await submitAll({
+    afterSuccess: async (submittedRows, submittedMode) => {
+      if (submittedMode === 'own') {
+        downloadLabelExcelForRows(submittedRows, 'own');
+        return;
+      }
 
-  // 寄賣入庫：送出時額外產出寄賣入庫明細 Excel
-  if (state.mode === 'consign') {
-    const ok = downloadConsignStockInExcel();
-    if (!ok) return;
-  }
+      if (submittedMode === 'consign') {
+        downloadLabelExcelForRows(submittedRows, 'consign');
 
-  await submitAll();
+        // 直接下載當次圖片，不開啟圖片
+        await downloadCurrentConsignImages(submittedRows, {
+          auto: true,
+          silent: true
+        });
+
+        // 直接下載真正 PDF，不開新視窗
+        await downloadCurrentConsignPdf(submittedRows, {
+          auto: true,
+          silent: true
+        });
+      }
+    }
+  });
 }
 
 const STOCK_IN_BATCH_SIZE = 6;
@@ -3270,7 +3812,7 @@ async function postStockInBatch(rows, batchNo, batchTotal) {
   throw new Error('尚未設定 createBatchUrl 或 createItemUrl');
 }
 
-async function submitAll() {
+async function submitAll(options = {}) {
   showError(el.submitError, '');
 
   if (!state.drafts.length) {
@@ -3291,8 +3833,11 @@ async function submitAll() {
     }
   }
 
-  const total = state.drafts.length;
-  const batches = chunkArray(state.drafts, STOCK_IN_BATCH_SIZE);
+  const submittedRowsSnapshot = state.drafts.map(row => ({ ...row }));
+  const submittedMode = String(state.mode || '').trim();
+
+  const total = submittedRowsSnapshot.length;
+  const batches = chunkArray(submittedRowsSnapshot, STOCK_IN_BATCH_SIZE);
 
   const ok = window.confirm(
     `確定要送出 ${total} 筆入庫資料嗎？\n\n` +
@@ -3321,6 +3866,18 @@ async function submitAll() {
       // 避免連續太快打 API
       if (batchNo < batches.length) {
         await wait(250);
+      }
+    }
+
+    if (typeof options.afterSuccess === 'function') {
+      try {
+        await options.afterSuccess(submittedRowsSnapshot, submittedMode);
+      } catch (downloadErr) {
+        console.error(downloadErr);
+        showError(
+          el.submitError,
+          'Airtable 已寫入成功，但檔案下載有一段失敗：' + (downloadErr.message || downloadErr)
+        );
       }
     }
 
