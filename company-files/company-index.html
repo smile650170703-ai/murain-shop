@@ -377,6 +377,11 @@
   }
 
   function logout() {
+    if (window.MURAIN_AUTH && typeof window.MURAIN_AUTH.logout === "function") {
+      window.MURAIN_AUTH.logout();
+      return;
+    }
+
     sessionStorage.removeItem(STORAGE_OK);
     sessionStorage.removeItem(STORAGE_TOKEN);
     showLocked();
@@ -390,7 +395,22 @@
     if (e.key === "Enter") checkPassword();
   });
 
+  function hasSharedAdminAuth() {
+    const auth = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.get === "function"
+      ? window.MURAIN_AUTH.get()
+      : null;
+
+    return !!auth && auth.role === "admin";
+  }
+
   function forceLockEveryOpen() {
+    if (hasSharedAdminAuth()) {
+      sessionStorage.setItem(STORAGE_OK, "1");
+      sessionStorage.setItem(STORAGE_TOKEN, "shared-admin-ok");
+      showUnlocked();
+      return;
+    }
+
     sessionStorage.removeItem(STORAGE_OK);
     sessionStorage.removeItem(STORAGE_TOKEN);
     inputPassword.value = "";
