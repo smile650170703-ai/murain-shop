@@ -197,9 +197,7 @@
         el.dispatchEvent(new Event("input", { bubbles: true }));
       } catch (_) {}
 
-      try {
-        el.dispatchEvent(new Event("change", { bubbles: true }));
-      } catch (_) {}
+      // 不自動觸發 change，避免像 stock.html 的隱藏 #op 造成重複打 API 或循環觸發。
     });
   }
 
@@ -367,30 +365,43 @@
         display:flex;
         gap:8px;
         align-items:center;
-        flex-wrap:wrap;
-        padding:8px 14px;
+        flex-wrap:nowrap;
+        padding:6px 10px;
+        min-height:44px;
         background:#071226;
         color:#fff;
         border-bottom:1px solid rgba(255,255,255,.12);
         box-shadow:0 8px 22px rgba(15,23,42,.18);
-        font-size:14px;
+        font-size:13px;
       }
       #murainSharedAuthBar input{
         width:220px;
-        max-width:56vw;
+        max-width:42vw;
+        min-height:34px;
+        height:34px;
         border:1px solid rgba(255,255,255,.22);
         border-radius:999px;
-        padding:8px 12px;
+        padding:6px 12px;
         background:#fff;
         color:#111827;
         outline:none;
+        box-sizing:border-box;
+        flex:0 0 220px;
       }
       #murainSharedAuthBar button{
+        width:auto !important;
+        min-width:54px;
+        max-width:none;
+        min-height:34px;
+        height:34px;
         border:0;
         border-radius:999px;
-        padding:8px 14px;
+        padding:0 14px;
         font-weight:800;
         cursor:pointer;
+        flex:0 0 auto;
+        box-sizing:border-box;
+        line-height:1;
       }
       #murainSharedAuthBar .login{
         background:#22c55e;
@@ -413,12 +424,12 @@
       #murainSharedAuthLock{
         position:fixed;
         z-index:99990;
-        inset:48px 0 0 0;
-        background:rgba(248,250,252,.92);
+        inset:44px 0 0 0;
+        background:rgba(248,250,252,.86);
         display:flex;
         align-items:flex-start;
         justify-content:center;
-        padding-top:90px;
+        padding-top:32px;
         backdrop-filter:blur(2px);
       }
       #murainSharedAuthLock .murain-auth-lock-card{
