@@ -1045,8 +1045,9 @@ th{
     const API_401_SAVE = "https://api.murain.tw/op/company/tax401/save";
     const API_401_CONFIRM = "https://api.murain.tw/op/company/tax401/confirm";
     const API_INPUT_INVOICE_LIST = "https://api.murain.tw/op/company/input-invoices/list";
-    const API_INPUT_INVOICE_CREATE = "https://api.murain.tw/op/company/input-invoices/create";
-    const API_OUTPUT_INVOICE_LIST = "https://api.murain.tw/op/company/output-invoices/list";
+const API_INPUT_INVOICE_CREATE = "https://api.murain.tw/op/company/input-invoices/create";
+const API_INPUT_INVOICE_UPDATE = "https://api.murain.tw/op/company/input-invoices/update";
+const API_OUTPUT_INVOICE_LIST = "https://api.murain.tw/op/company/output-invoices/list";
 
     const $ = (id) => document.getElementById(id);
     const rowsEl = $("rows");
@@ -1195,7 +1196,7 @@ th{
       $("inputInvNet").value = "";
       $("inputInvTax").value = "";
       $("inputInvDeduct").value = "yes";
-      $("inputInvPeriod").value = "2025-11_2025-12";
+      $("inputInvPeriod").value = $("tax401Period")?.value || "2026-05_2026-06";
       setInputInvoiceMsg("已清空進項發票輸入欄位。", "ok");
     }
 
@@ -1599,52 +1600,63 @@ $("viewDiffInputAmount").textContent = fmtMoney(diffInputAmount);
     });
 
 
-    ["declaredSalesAmount", "declaredOutputTax", "declaredInputAmount", "declaredInputTax", "declaredPayableTax"].forEach(id => {
-      $(id).addEventListener("input", refresh401Result);
-    });
+["declaredSalesAmount", "declaredOutputTax", "declaredInputAmount", "declaredInputTax", "declaredPayableTax"].forEach(id => {
+  $(id).addEventListener("input", refresh401Result);
+});
 
-    $("tax401Period").addEventListener("change", () => {
-      $("tax401RecordId").value = "";
-      set401Msg("已切換申報期別，請重新查詢系統金額或上傳存檔。");
-      refresh401Result();
-    });
+$("btnTax401Check").addEventListener("click", load401SystemAmount);
+$("btnTax401Save").addEventListener("click", save401Report);
+$("btnTax401Confirm").addEventListener("click", confirm401Report);
 
-    $("btnTax401Check").addEventListener("click", load401SystemAmount);
-    $("btnTax401Save").addEventListener("click", save401Report);
-    $("btnTax401Confirm").addEventListener("click", confirm401Report);
-    $("inputInvDate").addEventListener("change", inputInvSyncPeriod);
-    $("inputInvGross").addEventListener("blur", inputInvSplitGross);
+$("inputInvDate").addEventListener("change", inputInvSyncPeriod);
+$("inputInvGross").addEventListener("blur", inputInvSplitGross);
 
-    $("btnCreateInputInvoice").addEventListener("click", createInputInvoice);
-    $("btnClearInputInvoice").addEventListener("click", clearInputInvoiceForm);
-    $("btnReloadInputInvoice").addEventListener("click", loadInputInvoices);
-        $("btnReloadOutputInvoice").addEventListener("click", loadOutputInvoices);
+$("btnCreateInputInvoice").addEventListener("click", createInputInvoice);
+$("btnClearInputInvoice").addEventListener("click", clearInputInvoiceForm);
+$("btnReloadInputInvoice").addEventListener("click", loadInputInvoices);
+$("btnReloadOutputInvoice").addEventListener("click", loadOutputInvoices);
 
-    $("btnOutput401Check").addEventListener("click", async () => {
-      $("tax401Period").value = $("outputInvPeriod").value;
-      $("inputInvPeriod").value = $("outputInvPeriod").value;
-      await loadOutputInvoices();
-      await load401SystemAmount();
-    });
+$("btnOutput401Check").addEventListener("click", async () => {
+  $("tax401Period").value = $("outputInvPeriod").value;
+  $("inputInvPeriod").value = $("outputInvPeriod").value;
 
-    $("outputInvPeriod").addEventListener("change", loadOutputInvoices);
+  $("tax401RecordId").value = "";
+  await loadOutputInvoices();
+  await loadInputInvoices();
+  await load401SystemAmount();
+});
 
-    $("inputInvPeriod").addEventListener("change", async () => {
-      $("tax401Period").value = $("inputInvPeriod").value;
-      await loadInputInvoices();
-    });
+$("outputInvPeriod").addEventListener("change", async () => {
+  await loadOutputInvoices();
+});
 
-       $("tax401Period").addEventListener("change", async () => {
-      $("inputInvPeriod").value = $("tax401Period").value;
-      $("outputInvPeriod").value = $("tax401Period").value;
-      await loadInputInvoices();
-      await loadOutputInvoices();
-    });
-       refresh401Result();
+$("inputInvPeriod").addEventListener("change", async () => {
+  $("tax401Period").value = $("inputInvPeriod").value;
+  $("outputInvPeriod").value = $("inputInvPeriod").value;
 
-       loadList();
-    loadInputInvoices();
-    loadOutputInvoices();
+  $("tax401RecordId").value = "";
+  await loadInputInvoices();
+  await loadOutputInvoices();
+  refresh401Result();
+});
+
+$("tax401Period").addEventListener("change", async () => {
+  $("inputInvPeriod").value = $("tax401Period").value;
+  $("outputInvPeriod").value = $("tax401Period").value;
+
+  $("tax401RecordId").value = "";
+  set401Msg("已切換申報期別，請重新查詢系統金額或上傳存檔。");
+
+  await loadInputInvoices();
+  await loadOutputInvoices();
+  refresh401Result();
+});
+
+refresh401Result();
+
+loadList();
+loadInputInvoices();
+loadOutputInvoices();
   </script>
 </body>
 </html>
