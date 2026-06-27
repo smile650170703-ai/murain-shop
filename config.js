@@ -37,3 +37,439 @@
 
   console.log('[MURAIN_ENV]', window.MURAIN_ENV, window.API_BASE);
 })();
+
+(function () {
+  const AUTH_STORE = "MURAIN_BACKOFFICE_AUTH_V1";
+  const AUTH_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+
+  const LOCAL_KEYS = [
+    "OP_KEY",
+    "murain_admin_key",
+    "MURAIN_ADMIN_OP_KEY",
+    "stock_op",
+    "MURAIN_OP_KEY",
+    "murain_admin_line_message_op_key"
+  ];
+
+  const SESSION_KEYS = [
+    "murain_op_key",
+    "SHOP_ADMIN_OP_KEY",
+    "company_entry_ok",
+    "company_entry_token",
+    "procurement_entry_ok",
+    "procurement_entry_token"
+  ];
+
+  function apiBase() {
+    return String(window.API_BASE || "https://api.murain.tw").replace(/\/$/, "");
+  }
+
+  function readAuth() {
+    try {
+      const raw = localStorage.getItem(AUTH_STORE) || "";
+      if (!raw) return null;
+
+      const a = JSON.parse(raw);
+      if (!a || !a.key || !a.role) return null;
+
+      if (Date.now() - Number(a.at || 0) > AUTH_MAX_AGE_MS) {
+        clearAuth(false);
+        return null;
+      }
+
+      return a;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function canUse(required, auth) {
+    const role = String(auth?.role || "").toLowerCase();
+    const need = String(required || "").toLowerCase();
+
+    if (!need) return true;
+    if (!auth?.key) return false;
+
+    if (need === "staff") return role === "staff" || role === "admin";
+    if (need === "admin") return role === "admin";
+
+    return false;
+  }
+
+  function inferRequiredRole(pathname) {
+    const p = String(pathname || location.pathname || "").toLowerCase();
+
+    if (p === "/op.html" || p.endsWith("/op.html")) return "staff";
+    if (p === "/admin-streamer-performance.html" || p.endsWith("/admin-streamer-performance.html")) return "staff";
+
+    if (p.startsWith("/company-files/")) return "admin";
+    if (p.startsWith("/procurement-center/")) return "admin";
+    if (p.startsWith("/op/preorder-")) return "admin";
+    if (p.startsWith("/admin")) return "admin";
+    if (p.includes("shop-product-admin")) return "admin";
+    if (p === "/stock.html" || p.endsWith("/stock.html")) return "admin";
+    if (p === "/stock-in.html" || p.endsWith("/stock-in.html")) return "admin";
+
+    return "";
+  }
+
+  function inferLinkRole(href) {
+    let p = "";
+    try {
+      p = new URL(href, location.origin).pathname.toLowerCase();
+    } catch (_) {
+      p = String(href || "").toLowerCase();
+    }
+    return inferRequiredRole(p);
+  }
+
+  function fillLegacyInputs(key) {
+    if (!key) return;
+
+    const ids = [
+      "op_key",
+      "opKey",
+      "op",
+      "op_key_input",
+      "opKeyInput",
+      "adminEntryPassword",
+      "entryPassword"
+    ];
+
+    ids.forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el || !("value" in el)) return;
+
+      el.value = key;
+
+      try {
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      } catch (_) {}
+
+      try {
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      } catch (_) {}
+    });
+  }
+
+  function seedLegacy(auth) {
+    if (!auth?.key) return;
+
+    const key = String(auth.key || "");
+    const role = String(auth.role || "").toLowerCase();
+
+    try {
+      localStorage.setItem("OP_KEY", key);
+      localStorage.setItem("murain_admin_key", key);
+
+      if (role === "admin") {
+        localStorage.setItem("MURAIN_ADMIN_OP_KEY", key);
+        localStorage.setItem("stock_op", key);
+        localStorage.setItem("MURAIN_OP_KEY", key);
+        localStorage.setItem("murain_admin_line_message_op_key", key);
+
+        sessionStorage.setItem("murain_op_key", key);
+        sessionStorage.setItem("SHOP_ADMIN_OP_KEY", key);
+
+        sessionStorage.setItem("company_entry_ok", "1");
+        sessionStorage.setItem("company_entry_token", "shared-admin-ok");
+
+        sessionStorage.setItem("procurement_entry_ok", "1");
+        sessionStorage.setItem("procurement_entry_token", "shared-admin-ok");
+      } else {
+        localStorage.removeItem("MURAIN_ADMIN_OP_KEY");
+        localStorage.removeItem("stock_op");
+        localStorage.removeItem("MURAIN_OP_KEY");
+        localStorage.removeItem("murain_admin_line_message_op_key");
+
+        sessionStorage.removeItem("murain_op_key");
+        sessionStorage.removeItem("SHOP_ADMIN_OP_KEY");
+
+        sessionStorage.removeItem("company_entry_ok");
+        sessionStorage.removeItem("company_entry_token");
+
+        sessionStorage.removeItem("procurement_entry_ok");
+        sessionStorage.removeItem("procurement_entry_token");
+      }
+    } catch (_) {}
+
+    if (document.readyState !== "loading") {
+      fillLegacyInputs(key);
+    }
+  }
+
+  function saveAuth(key, role) {
+    const auth = {
+      key: String(key || ""),
+      role: String(role || "staff"),
+      at: Date.now()
+    };
+
+    localStorage.setItem(AUTH_STORE, JSON.stringify(auth));
+    seedLegacy(auth);
+    return auth;
+  }
+
+  function clearAuth(reload) {
+    try {
+      localStorage.removeItem(AUTH_STORE);
+    } catch (_) {}
+
+    try {
+      LOCAL_KEYS.forEach((k) => localStorage.removeItem(k));
+    } catch (_) {}
+
+    try {
+      SESSION_KEYS.forEach((k) => sessionStorage.removeItem(k));
+    } catch (_) {}
+
+    if (reload) location.reload();
+  }
+
+  async function verifyAndSave(key) {
+    const opKey = String(key || "").trim();
+    if (!opKey) throw new Error("請先輸入密碼");
+
+    const r = await fetch(apiBase() + "/op/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ op_key: opKey })
+    });
+
+    const data = await r.json().catch(() => ({}));
+
+    if (!r.ok || data.ok !== true) {
+      throw new Error(data.message || data.error || "密碼錯誤");
+    }
+
+    const role = String(data.role || (data.is_admin ? "admin" : "staff")).toLowerCase();
+
+    if (role !== "admin" && role !== "staff") {
+      throw new Error("權限回傳異常");
+    }
+
+    return saveAuth(opKey, role);
+  }
+
+  function roleLabel(auth) {
+    if (!auth?.key) return "未登入";
+    return auth.role === "admin" ? "主管" : "統一";
+  }
+
+  function applyTabPermission(auth) {
+    document.querySelectorAll("a.page-tab, a.tab").forEach((a) => {
+      const need = inferLinkRole(a.getAttribute("href") || a.href || "");
+      if (!need) return;
+
+      const ok = canUse(need, auth);
+
+      a.dataset.authNeed = need;
+      a.style.opacity = ok ? "" : "0.38";
+      a.style.pointerEvents = ok ? "" : "auto";
+      a.title = ok ? "" : (need === "admin" ? "主管密碼才可使用" : "請先登入");
+
+      a.onclick = ok ? null : function (e) {
+        e.preventDefault();
+
+        const input = document.getElementById("murainSharedAuthInput");
+        if (input) input.focus();
+
+        alert(need === "admin" ? "這個功能需要主管密碼。" : "請先登入後再使用。");
+      };
+    });
+  }
+
+  function showLock(required, auth) {
+    let lock = document.getElementById("murainSharedAuthLock");
+
+    if (canUse(required, auth)) {
+      if (lock) lock.remove();
+      document.documentElement.classList.remove("murain-auth-locked");
+      return;
+    }
+
+    document.documentElement.classList.add("murain-auth-locked");
+
+    if (!lock) {
+      lock = document.createElement("div");
+      lock.id = "murainSharedAuthLock";
+      lock.innerHTML = `
+        <div class="murain-auth-lock-card">
+          <h2>請先登入</h2>
+          <p>統一密碼只能使用「直播主開單、直播主業績」。主管密碼可以使用全部後台功能。</p>
+        </div>
+      `;
+      document.body.appendChild(lock);
+    }
+  }
+
+  function ensureStyle() {
+    if (document.getElementById("murainSharedAuthStyle")) return;
+
+    const style = document.createElement("style");
+    style.id = "murainSharedAuthStyle";
+    style.textContent = `
+      #murainSharedAuthBar{
+        position:sticky;
+        top:0;
+        z-index:100000;
+        display:flex;
+        gap:8px;
+        align-items:center;
+        flex-wrap:wrap;
+        padding:8px 14px;
+        background:#071226;
+        color:#fff;
+        border-bottom:1px solid rgba(255,255,255,.12);
+        box-shadow:0 8px 22px rgba(15,23,42,.18);
+        font-size:14px;
+      }
+      #murainSharedAuthBar input{
+        width:220px;
+        max-width:56vw;
+        border:1px solid rgba(255,255,255,.22);
+        border-radius:999px;
+        padding:8px 12px;
+        background:#fff;
+        color:#111827;
+        outline:none;
+      }
+      #murainSharedAuthBar button{
+        border:0;
+        border-radius:999px;
+        padding:8px 14px;
+        font-weight:800;
+        cursor:pointer;
+      }
+      #murainSharedAuthBar .login{
+        background:#22c55e;
+        color:#052e16;
+      }
+      #murainSharedAuthBar .logout{
+        background:#fee2e2;
+        color:#991b1b;
+      }
+      #murainSharedAuthBar .role{
+        padding:6px 10px;
+        border-radius:999px;
+        background:rgba(255,255,255,.12);
+        font-weight:800;
+      }
+      #murainSharedAuthBar .msg{
+        color:#fecaca;
+        font-weight:700;
+      }
+      #murainSharedAuthLock{
+        position:fixed;
+        z-index:99990;
+        inset:48px 0 0 0;
+        background:rgba(248,250,252,.92);
+        display:flex;
+        align-items:flex-start;
+        justify-content:center;
+        padding-top:90px;
+        backdrop-filter:blur(2px);
+      }
+      #murainSharedAuthLock .murain-auth-lock-card{
+        width:min(520px,calc(100vw - 32px));
+        background:#fff;
+        border:1px solid #cbd5e1;
+        border-radius:20px;
+        padding:24px;
+        box-shadow:0 18px 50px rgba(15,23,42,.16);
+        color:#0f172a;
+      }
+      #murainSharedAuthLock h2{
+        margin:0 0 10px;
+        font-size:24px;
+      }
+      #murainSharedAuthLock p{
+        margin:0;
+        line-height:1.7;
+        color:#475569;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function renderBar() {
+    const required = inferRequiredRole(location.pathname);
+    if (!required) return;
+
+    ensureStyle();
+
+    let auth = readAuth();
+    seedLegacy(auth);
+
+    let bar = document.getElementById("murainSharedAuthBar");
+
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "murainSharedAuthBar";
+      bar.innerHTML = `
+        <strong>後台共用登入</strong>
+        <input id="murainSharedAuthInput" type="password" placeholder="輸入統一密碼或主管密碼" autocomplete="current-password">
+        <button class="login" id="murainSharedAuthLogin" type="button">登入</button>
+        <button class="logout" id="murainSharedAuthLogout" type="button">登出</button>
+        <span class="role" id="murainSharedAuthRole">未登入</span>
+        <span class="msg" id="murainSharedAuthMsg"></span>
+      `;
+      document.body.insertBefore(bar, document.body.firstChild);
+    }
+
+    const input = document.getElementById("murainSharedAuthInput");
+    const loginBtn = document.getElementById("murainSharedAuthLogin");
+    const logoutBtn = document.getElementById("murainSharedAuthLogout");
+    const roleEl = document.getElementById("murainSharedAuthRole");
+    const msgEl = document.getElementById("murainSharedAuthMsg");
+
+    function refresh() {
+      auth = readAuth();
+
+      roleEl.textContent = "目前權限：" + roleLabel(auth);
+      logoutBtn.style.display = auth?.key ? "inline-block" : "none";
+
+      applyTabPermission(auth);
+      showLock(required, auth);
+
+      if (auth?.key) fillLegacyInputs(auth.key);
+    }
+
+    loginBtn.onclick = async () => {
+      msgEl.textContent = "登入中...";
+      loginBtn.disabled = true;
+
+      try {
+        const saved = await verifyAndSave(input.value);
+        msgEl.textContent = "登入成功，重新整理中...";
+        seedLegacy(saved);
+
+        // 重新整理一次，讓每個舊頁面原本的 OP_KEY 變數都吃到共用登入狀態
+        location.reload();
+      } catch (e) {
+        msgEl.textContent = e.message || String(e);
+      } finally {
+        loginBtn.disabled = false;
+      }
+    };
+
+    logoutBtn.onclick = () => clearAuth(true);
+
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") loginBtn.click();
+    });
+
+    refresh();
+  }
+
+  window.MURAIN_AUTH = {
+    get: readAuth,
+    canUse,
+    login: verifyAndSave,
+    logout: () => clearAuth(true),
+    seedLegacy: () => seedLegacy(readAuth())
+  };
+
+  seedLegacy(readAuth());
+  document.addEventListener("DOMContentLoaded", renderBar);
+})();
