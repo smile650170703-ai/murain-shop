@@ -382,7 +382,7 @@ th {
 </div>
 
 <div class="row">
-  <input id="op" type="password" style="flex:1; min-width:150px" placeholder="OP_KEY (網頁密碼)" />
+  <input id="op" type="password" style="display:none" autocomplete="current-password" />
   <input id="costPw" type="password" style="flex:1; min-width:150px" placeholder="成本查看密碼" />
   <input id="q" type="text" style="flex:2; min-width:200px" placeholder="可輸入 SKU / 關鍵字；若已選寄賣人可留空" />
   <select id="consignor" style="flex:1; min-width:180px">
@@ -448,13 +448,70 @@ th {
   // ✅ 固定後端：不再顯示/允許修改
   const DEFAULT_API = "https://api.murain.tw";
 
+function getSharedStockAdminKey(){
+  try {
+    if (window.MURAIN_AUTH && typeof window.MURAIN_AUTH.seedLegacy === "function") {
+      window.MURAIN_AUTH.seedLegacy();
+    }
+  } catch(e) {}
+
+  try {
+    const auth = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.get === "function"
+      ? window.MURAIN_AUTH.get()
+      : null;
+
+    if (auth && auth.key && String(auth.role || "").toLowerCase() === "admin") {
+      return String(auth.key || "").trim();
+    }
+  } catch(e) {}
+
+  try {
+    const raw = localStorage.getItem("MURAIN_BACKOFFICE_AUTH_V1") || "";
+    const auth = raw ? JSON.parse(raw) : null;
+
+    if (auth && auth.key && String(auth.role || "").toLowerCase() === "admin") {
+      return String(auth.key || "").trim();
+    }
+  } catch(e) {}
+
+  // 庫存是主管功能：只吃主管登入同步出來的 key
+  try {
+    return String(localStorage.getItem("MURAIN_ADMIN_OP_KEY") || "").trim();
+  } catch(e) {
+    return "";
+  }
+}
+
   const $ = (id)=>document.getElementById(id);
 
 const opEl = $("op"), costPwEl = $("costPw"), qEl = $("q"), consignorEl = $("consignor");
 const onlyStockEl = $("onlyStock"), limitEl = $("limit"), consignOutDateEl = $("consignOutDate");
 const tb = $("tb"), msg = $("msg"), stat = $("stat"), stockTotalEl = $("stockTotal");
 
-  opEl.value = localStorage.getItem("stock_op") || "";
+function syncSharedStockAdminKey(){
+  const key = getSharedStockAdminKey();
+
+  if (key) {
+    opEl.value = key;
+
+    try {
+      localStorage.setItem("stock_op", key);
+      localStorage.setItem("MURAIN_ADMIN_OP_KEY", key);
+    } catch(e) {}
+
+    return key;
+  }
+
+  opEl.value = "";
+
+  try {
+    localStorage.removeItem("stock_op");
+  } catch(e) {}
+
+  return "";
+}
+
+  syncSharedStockAdminKey();
   qEl.value  = localStorage.getItem("stock_q")  || "";
 
   let rows = [];
@@ -492,9 +549,7 @@ const tb = $("tb"), msg = $("msg"), stat = $("stat"), stockTotalEl = $("stockTot
   }
 
   function normOp(){
-    const v = (opEl.value || "").trim();
-    localStorage.setItem("stock_op", v);
-    return v;
+    return syncSharedStockAdminKey();
   }
 
   function badgeStock(n){
@@ -553,7 +608,7 @@ function canUseConsignOut(){
   async function fetchList(q){
     const api = normApi();
     const op  = normOp();
-    if (!op) throw new Error("請先輸入 OP_KEY（網頁密碼）");
+    if (!op) throw new Error("請先在最上方「後台共用登入」輸入主管密碼");
 
     const in_stock = onlyStockEl.checked ? "1" : "0";
     const limit = String(limitEl.value || "2000");
@@ -711,6 +766,7 @@ $("btnSearch").addEventListener("click", async ()=>{
 });
 
 opEl.addEventListener("change", ()=> {
+  syncSharedStockAdminKey();
   loadConsignors().catch(()=>{});
 });
 
@@ -1081,11 +1137,13 @@ $("btnCSV").addEventListener("click", async ()=>{
 consignOutDateEl.value = todayLocal();
 (async ()=>{
   try{
-    if (!opEl.value.trim()) throw new Error("need op_key");
+    const key = syncSharedStockAdminKey();
+    if (!key) throw new Error("need admin key");
+
     await loadConsignors().catch(()=>{});
-    setMsg("muted", "已記住 OP_KEY，可直接按「全部庫存」或輸入關鍵字搜尋。");
+    setMsg("muted", "已使用最上方共用主管登入，可直接按「全部庫存」或輸入關鍵字搜尋。");
   } catch {
-    setMsg("muted", "請輸入 OP_KEY（網頁密碼），再按「全部庫存」或輸入關鍵字搜尋。");
+    setMsg("muted", "請先在最上方「後台共用登入」輸入主管密碼，再按「全部庫存」或輸入關鍵字搜尋。");
   }
 })();
 </script>
