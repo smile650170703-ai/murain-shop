@@ -97,18 +97,69 @@
   }
 
   function inferRequiredRole(pathname) {
-    const p = String(pathname || location.pathname || "").toLowerCase();
+    let p = String(pathname || location.pathname || "").toLowerCase();
 
-    if (p === "/op.html" || p.endsWith("/op.html")) return "staff";
-    if (p === "/admin-streamer-performance.html" || p.endsWith("/admin-streamer-performance.html")) return "staff";
+    try {
+      p = decodeURIComponent(p);
+    } catch (_) {}
 
-    if (p.startsWith("/company-files/")) return "admin";
-    if (p.startsWith("/procurement-center/")) return "admin";
-    if (p.startsWith("/op/preorder-")) return "admin";
-    if (p.startsWith("/admin")) return "admin";
-    if (p.includes("shop-product-admin")) return "admin";
-    if (p === "/stock.html" || p.endsWith("/stock.html")) return "admin";
-    if (p === "/stock-in.html" || p.endsWith("/stock-in.html")) return "admin";
+    p = p
+      .split("?")[0]
+      .split("#")[0]
+      .replace(/\/+$/, "");
+
+    if (!p) p = "/";
+
+    // 同時支援 /xxx.html 與 /xxx
+    const pNoHtml = p.replace(/\.html$/i, "");
+
+    const parts = pNoHtml.split("/").filter(Boolean);
+    const base = parts[parts.length - 1] || "";
+
+    // 本機測試檔常會變成 op (2)(9)、stock (1)、stock-in (1)(3)
+    const baseStarts = (name) => {
+      return (
+        base === name ||
+        base.startsWith(name + " ") ||
+        base.startsWith(name + "(")
+      );
+    };
+
+    // 統一密碼可用
+    if (pNoHtml === "/op" || pNoHtml.endsWith("/op") || baseStarts("op")) {
+      return "staff";
+    }
+
+    if (
+      pNoHtml === "/admin-streamer-performance" ||
+      pNoHtml.endsWith("/admin-streamer-performance") ||
+      baseStarts("admin-streamer-performance")
+    ) {
+      return "staff";
+    }
+
+    // 主管密碼才可用
+    if (pNoHtml === "/company-files" || pNoHtml.startsWith("/company-files/")) return "admin";
+    if (pNoHtml === "/procurement-center" || pNoHtml.startsWith("/procurement-center/")) return "admin";
+    if (pNoHtml.startsWith("/op/preorder-")) return "admin";
+    if (pNoHtml.startsWith("/admin")) return "admin";
+    if (pNoHtml.includes("shop-product-admin")) return "admin";
+
+    if (
+      pNoHtml === "/stock" ||
+      pNoHtml.endsWith("/stock") ||
+      baseStarts("stock")
+    ) {
+      return "admin";
+    }
+
+    if (
+      pNoHtml === "/stock-in" ||
+      pNoHtml.endsWith("/stock-in") ||
+      baseStarts("stock-in")
+    ) {
+      return "admin";
+    }
 
     return "";
   }
@@ -471,5 +522,10 @@
   };
 
   seedLegacy(readAuth());
-  document.addEventListener("DOMContentLoaded", renderBar);
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", renderBar);
+  } else {
+    renderBar();
+  }
 })();
