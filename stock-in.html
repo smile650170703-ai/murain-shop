@@ -607,10 +607,10 @@
 </div>
     </div>
 
-    <div class="card">
+    <div class="card hidden" id="stockInLegacyKeyCard">
       <div class="field span-4">
-        <label for="opKeyInput">OP_KEY</label>
-        <input id="opKeyInput" type="password" placeholder="請輸入正式 OP_KEY" autocomplete="off" />
+        <label for="opKeyInput">共用後台密碼</label>
+        <input id="opKeyInput" type="password" placeholder="主管密碼會由最上方共用登入自動帶入" autocomplete="current-password" />
       </div>
     </div>
 
@@ -982,6 +982,44 @@
 </datalist>
 
   <script>
+function getSharedStockInAdminKey() {
+  try {
+    if (window.MURAIN_AUTH && typeof window.MURAIN_AUTH.seedLegacy === 'function') {
+      window.MURAIN_AUTH.seedLegacy();
+    }
+  } catch (e) {}
+
+  try {
+    const auth = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.get === 'function'
+      ? window.MURAIN_AUTH.get()
+      : null;
+
+    if (auth && auth.key && String(auth.role || '').toLowerCase() === 'admin') {
+      return String(auth.key || '').trim();
+    }
+  } catch (e) {}
+
+  try {
+    const raw = localStorage.getItem('MURAIN_BACKOFFICE_AUTH_V1') || '';
+    const auth = raw ? JSON.parse(raw) : null;
+
+    if (auth && auth.key && String(auth.role || '').toLowerCase() === 'admin') {
+      return String(auth.key || '').trim();
+    }
+  } catch (e) {}
+
+  // 入庫是主管功能：這裡故意不吃 OP_KEY，避免統一密碼誤用入庫
+  try {
+    return String(
+      localStorage.getItem('MURAIN_ADMIN_OP_KEY') ||
+      localStorage.getItem('stock_op') ||
+      ''
+    ).trim();
+  } catch (e) {
+    return '';
+  }
+}
+
     /**
      * 你只要先改這裡就好
      * 1. memberSearchUrl：寄賣查詢會員 API
@@ -992,7 +1030,7 @@
      * SKU, 庫存位置, Name, Price, StockQty, Cost, 商品來源, 寄賣人, 入庫日期, sub_category
      */
 const CONFIG = {
-  opKey: '',
+  opKey: getSharedStockInAdminKey(),
   memberSearchUrl: 'https://api.murain.tw/op/line-member/search',
   consignorByMemberUrl: 'https://api.murain.tw/op/consignor/by-member',
   consignorUpsertUrl: 'https://api.murain.tw/op/consignor/upsert',
@@ -4020,11 +4058,42 @@ window.__handleDraftKeydown = (e) => {
 };
 
     el.btnModeOwn.addEventListener('click', () => setMode('own'));
+function syncSharedStockInAdminKey() {
+  const key = getSharedStockInAdminKey();
+
+  if (!key) {
+    return '';
+  }
+
+  CONFIG.opKey = key;
+
+  if (el.opKeyInput) {
+    el.opKeyInput.value = key;
+  }
+
+  try {
+    localStorage.setItem('MURAIN_ADMIN_OP_KEY', key);
+    localStorage.setItem('stock_op', key);
+  } catch (e) {}
+
+  return key;
+}
+
 if (el.opKeyInput) {
   el.opKeyInput.addEventListener('input', () => {
     CONFIG.opKey = el.opKeyInput.value.trim();
+
+    if (CONFIG.opKey) {
+      try {
+        localStorage.setItem('MURAIN_ADMIN_OP_KEY', CONFIG.opKey);
+        localStorage.setItem('stock_op', CONFIG.opKey);
+      } catch (e) {}
+    }
   });
 }
+
+syncSharedStockInAdminKey();
+setTimeout(syncSharedStockInAdminKey, 120);
 el.btnModeConsign.addEventListener('click', () => setMode('consign'));
 el.btnModePatch.addEventListener('click', () => setMode('patch'));
 el.btnOpenConsignLedger.addEventListener('click', openConsignLedgerCard);
