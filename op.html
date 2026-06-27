@@ -288,8 +288,8 @@ button.is-busy {
     <h2>主播開單登入</h2>
     <div class="row">
       <div style="flex:2">
-        <label class="muted">OP 密碼</label>
-        <input id="op_key" class="mono" placeholder="輸入 OP Key" />
+<label class="muted">統一密碼 / 主管密碼</label>
+<input id="op_key" class="mono" placeholder="輸入統一密碼或主管密碼" />
       </div>
       <div style="align-self:end; flex:1">
         <button id="btn-login">登入</button>
@@ -513,6 +513,33 @@ if (!API) throw new Error("API_BASE missing");
 
 let OP = '';
 let CART = '';
+
+function getSharedOpKey(){
+  try {
+    if (window.MURAIN_AUTH && typeof window.MURAIN_AUTH.seedLegacy === 'function') {
+      window.MURAIN_AUTH.seedLegacy();
+    }
+
+    const auth = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.get === 'function'
+      ? window.MURAIN_AUTH.get()
+      : null;
+
+    if (auth && auth.key && (auth.role === 'staff' || auth.role === 'admin')) {
+      return String(auth.key || '').trim();
+    }
+  } catch(e) {}
+
+  try {
+    const raw = localStorage.getItem('MURAIN_BACKOFFICE_AUTH_V1') || '';
+    const auth = raw ? JSON.parse(raw) : null;
+
+    if (auth && auth.key && (auth.role === 'staff' || auth.role === 'admin')) {
+      return String(auth.key || '').trim();
+    }
+  } catch(e) {}
+
+  return String(localStorage.getItem('OP_KEY') || '').trim();
+}
 
 let CURRENT_MODE = 'simple';
 let CURRENT_MEMBER_PHONE = '';
@@ -1085,12 +1112,42 @@ if ($('#btn-clear')) $('#btn-clear').disabled = !hasCart;
 
   // ---------- actions ----------
   async function doLogin() {
-    const v = ($('#op_key').value||'').trim();
-    if(!v) return alert('請輸入 OP Key');
-    const res = await jfetch(API+'/op/auth', { method:'POST', body: JSON.stringify({ op_key: v }) });
-    if(!res || res.ok!==true) return alert('OP Key 錯誤');
-    OP = v; localStorage.setItem('OP_KEY', v);
-    setLoginUI(true);
+    const v = ($('#op_key').value || '').trim();
+    if (!v) return alert('請輸入統一密碼或主管密碼');
+
+    try {
+      if (window.MURAIN_AUTH && typeof window.MURAIN_AUTH.login === 'function') {
+        const auth = await window.MURAIN_AUTH.login(v);
+        if (!auth || !auth.key) throw new Error('密碼錯誤');
+      } else {
+        const res = await jfetch(API + '/op/auth', {
+          method: 'POST',
+          body: JSON.stringify({ op_key: v })
+        });
+
+        if (!res || res.ok !== true) throw new Error('密碼錯誤');
+
+        const role = String(res.role || (res.is_admin ? 'admin' : 'staff') || 'staff').toLowerCase();
+
+        localStorage.setItem('MURAIN_BACKOFFICE_AUTH_V1', JSON.stringify({
+          key: v,
+          role,
+          at: Date.now()
+        }));
+      }
+
+      OP = v;
+      localStorage.setItem('OP_KEY', v);
+      localStorage.setItem('murain_admin_key', v);
+
+      if (window.MURAIN_AUTH && typeof window.MURAIN_AUTH.seedLegacy === 'function') {
+        window.MURAIN_AUTH.seedLegacy();
+      }
+
+      setLoginUI(true);
+    } catch (e) {
+      alert((e && e.message) || '密碼錯誤');
+    }
   }
 
 async function createCart() {
@@ -2045,9 +2102,17 @@ if (btnNextCustomer) {
       const v = quick[sel];
       document.querySelector(sel).addEventListener('click', ()=>applyQuick(v));
     });
-    // 自動帶回 OP（若有存）
-    const saved = localStorage.getItem('OP_KEY');
-if(saved) { $('#op_key').value = saved; OP = saved; setLoginUI(true); }
+    // 自動帶回共用後台登入：統一密碼 / 主管密碼
+    const saved = getSharedOpKey();
+
+if(saved) {
+  $('#op_key').value = saved;
+  OP = saved;
+  localStorage.setItem('OP_KEY', saved);
+  localStorage.setItem('murain_admin_key', saved);
+  setLoginUI(true);
+}
+
 updateCurrentCustomerInfo();
 syncMainButtons();
 syncBenefitPanel();
