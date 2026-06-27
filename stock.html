@@ -357,7 +357,7 @@ th {
   }
 }
   </style>
-<script src="/config.js?v=20260627-auth"></script>
+<script src="/config.js?v=20260627-auth-fix"></script>
 </head>
 <body>
 
@@ -449,11 +449,8 @@ th {
   const DEFAULT_API = "https://api.murain.tw";
 
 function getSharedStockAdminKey(){
-  try {
-    if (window.MURAIN_AUTH && typeof window.MURAIN_AUTH.seedLegacy === "function") {
-      window.MURAIN_AUTH.seedLegacy();
-    }
-  } catch(e) {}
+  // 這裡不要呼叫 MURAIN_AUTH.seedLegacy()
+  // 否則 config.js 會寫入隱藏 #op 並觸發 change，造成 stock 頁重複載入或卡住。
 
   try {
     const auth = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.get === "function"
@@ -474,9 +471,12 @@ function getSharedStockAdminKey(){
     }
   } catch(e) {}
 
-  // 庫存是主管功能：只吃主管登入同步出來的 key
   try {
-    return String(localStorage.getItem("MURAIN_ADMIN_OP_KEY") || "").trim();
+    return String(
+      localStorage.getItem("MURAIN_ADMIN_OP_KEY") ||
+      localStorage.getItem("stock_op") ||
+      ""
+    ).trim();
   } catch(e) {
     return "";
   }
@@ -766,8 +766,8 @@ $("btnSearch").addEventListener("click", async ()=>{
 });
 
 opEl.addEventListener("change", ()=> {
+  // 隱藏欄位只同步密碼，不在這裡自動打 API，避免共用登入寫入時重複載入。
   syncSharedStockAdminKey();
-  loadConsignors().catch(()=>{});
 });
 
 qEl.addEventListener("input", ()=> {
