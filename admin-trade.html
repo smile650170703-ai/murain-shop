@@ -676,10 +676,21 @@ async function loadConsignAccountingList(){
     }
 
     currentConsignAccountingRows = (j.items || []).filter(row => {
-      const st = String(row.status || '').trim().toLowerCase();
-      const method = String(row.method || '').trim().toLowerCase();
-      return st === 'settled' && (method === 'bank_transfer' || method === 'store_credit');
-    });
+  const st = String(row.status || '').trim().toLowerCase();
+  const method = String(row.method || '').trim().toLowerCase();
+  const invoiceNo = String(
+    row.invoiceNo ||
+    row.invoice_no ||
+    row.invoice?.invoiceNo ||
+    ''
+  ).trim();
+
+  return (
+    st === 'settled' &&
+    (method === 'bank_transfer' || method === 'store_credit') &&
+    !!invoiceNo
+  );
+});
 
     renderConsignAccountingBuckets();
 updateCurrentSubTabCount(currentConsignAccountingRows.length);
@@ -687,8 +698,8 @@ setTopFilterActive('consign_accounting');
 
     if (msgEl) {
       msgEl.textContent = currentConsignAccountingRows.length
-        ? `僅顯示已完成匯款／購物金的一時貿易資料，共 ${currentConsignAccountingRows.length} 筆。`
-        : '目前沒有可列印的一時貿易資料。';
+        ? `僅顯示「已完成匯款／購物金＋有發票號碼」的一時貿易資料，共 ${currentConsignAccountingRows.length} 筆。`
+: '目前沒有「已完成且有發票號碼」的一時貿易資料。';
     }
   }catch(e){
     console.error(e);
@@ -2527,11 +2538,22 @@ async function refreshTopShortcutBadges(){
         }).length;
 
         // 一時貿易：已完成匯款／購物金
-        tradeCount = items.filter(x => {
-          const st = String(x.status || '').trim().toLowerCase();
-          const method = String(x.method || '').trim().toLowerCase();
-          return st === 'settled' && (method === 'bank_transfer' || method === 'store_credit');
-        }).length;
+       tradeCount = items.filter(x => {
+  const st = String(x.status || '').trim().toLowerCase();
+  const method = String(x.method || '').trim().toLowerCase();
+  const invoiceNo = String(
+    x.invoiceNo ||
+    x.invoice_no ||
+    x.invoice?.invoiceNo ||
+    ''
+  ).trim();
+
+  return (
+    st === 'settled' &&
+    (method === 'bank_transfer' || method === 'store_credit') &&
+    !!invoiceNo
+  );
+}).length;
       }
     }
   } catch (e) {
