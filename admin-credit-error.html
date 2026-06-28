@@ -881,6 +881,45 @@ if (!API) throw new Error('API_BASE missing');
 const STORAGE_KEY = 'MURAIN_ADMIN_OP_KEY';
 
 let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
+
+function getSharedAdminKey(){
+  try {
+    if (window.MURAIN_AUTH && typeof window.MURAIN_AUTH.getKey === 'function') {
+      const k = window.MURAIN_AUTH.getKey('admin');
+      if (k) return String(k || '').trim();
+    }
+  } catch(e) {}
+
+  try {
+    const auth = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.get === 'function'
+      ? window.MURAIN_AUTH.get()
+      : null;
+
+    if (auth && auth.key && String(auth.role || '').toLowerCase() === 'admin') {
+      return String(auth.key || '').trim();
+    }
+  } catch(e) {}
+
+  try {
+    const raw = localStorage.getItem('MURAIN_BACKOFFICE_AUTH_V1') || '';
+    const auth = raw ? JSON.parse(raw) : null;
+
+    if (auth && auth.key && String(auth.role || '').toLowerCase() === 'admin') {
+      return String(auth.key || '').trim();
+    }
+  } catch(e) {}
+
+  try {
+    return String(
+      localStorage.getItem(STORAGE_KEY) ||
+      localStorage.getItem('MURAIN_ADMIN_OP_KEY') ||
+      localStorage.getItem('stock_op') ||
+      ''
+    ).trim();
+  } catch(e) {
+    return '';
+  }
+}
 let ALL_ROWS = [];
 let ERROR_ROWS = [];
 
@@ -901,9 +940,7 @@ const RISK_LISTS = [
 const $ = (s, r=document) => r.querySelector(s);
 /* ===== 共用後台登入驗證 ===== */
 async function ensureOpKey(){
-  const key = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.getKey === 'function'
-    ? window.MURAIN_AUTH.getKey('admin')
-    : '';
+  const key = getSharedAdminKey();
 
   if (!key) {
     const label = $('#opLabel');
@@ -915,6 +952,7 @@ async function ensureOpKey(){
 
   OP_KEY = key;
   localStorage.setItem(STORAGE_KEY, OP_KEY);
+  localStorage.setItem('MURAIN_ADMIN_OP_KEY', OP_KEY);
 
   const label = $('#opLabel');
   if (label) label.textContent = '已登入主管權限';
