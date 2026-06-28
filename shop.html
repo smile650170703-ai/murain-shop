@@ -909,7 +909,25 @@
   -webkit-box-orient:vertical !important;
   overflow:hidden !important;
 }
+/* 前台已售數 */
+.shop-page .p-sold-count{
+  margin:4px 0 8px !important;
+  color:#9b6b52 !important;
+  font-size:10.8px !important;
+  font-weight:700 !important;
+  letter-spacing:.08em !important;
+  line-height:1.25 !important;
+  text-align:center !important;
+}
 
+.shop-preview-sold{
+  margin-top:5px !important;
+  color:#9b6b52 !important;
+  font-size:11px !important;
+  font-weight:700 !important;
+  letter-spacing:.08em !important;
+  line-height:1.3 !important;
+}
 /* 價格區 */
 .shop-page .p-price-panel{
   width:100% !important;
@@ -2528,6 +2546,7 @@ nav.page-breadcrumb .current,
 
   <h3 class="shop-preview-title" id="previewTitle"></h3>
   <div class="shop-preview-price" id="previewPrice"></div>
+  <div class="shop-preview-sold" id="previewSold"></div>
 </div>
 
       <div class="shop-preview-actions">
@@ -3946,6 +3965,63 @@ function previewCat(p){
 function previewSub(p){
   return String(p?.subcategory || p?.subcategory_code || p?.brand || p?.fields?.subcategory || '').trim();
 }
+
+  function previewSoldValue(p){
+  const candidates = [
+    p?.front_sold_qty,
+    p?.sold_qty,
+    p?.soldQty,
+    p?.已售數,
+    p?.前台已售數,
+    p?.fields?.front_sold_qty,
+    p?.fields?.sold_qty,
+    p?.fields?.soldQty,
+    p?.fields?.已售數,
+    p?.fields?.前台已售數
+  ];
+
+  for (const v of candidates){
+    if (v !== undefined && v !== null && String(v).trim() !== ''){
+      const n = Number(String(v).replace(/[^\d.-]/g, ''));
+      if (Number.isFinite(n)) return Math.max(0, Math.round(n));
+    }
+  }
+
+  const original = Number(String(
+    p?.original_stock_qty ??
+    p?.original_stock ??
+    p?.OriginalStockQty ??
+    p?.原始庫存 ??
+    p?.fields?.original_stock_qty ??
+    p?.fields?.original_stock ??
+    p?.fields?.OriginalStockQty ??
+    p?.fields?.原始庫存 ??
+    0
+  ).replace(/[^\d.-]/g, ''));
+
+  const stock = previewStockValue(p);
+
+  if (Number.isFinite(original) && original > 0) {
+    return Math.max(0, Math.round(original - stock));
+  }
+
+  return 0;
+}
+
+function soldCountHtml(p){
+  const sold = previewSoldValue(p);
+  if (sold <= 0) return '';
+  return `<div class="p-sold-count">🔥 已售 ${sold.toLocaleString()} 件</div>`;
+}
+
+function updatePreviewSoldDisplay(p){
+  const el = $('previewSold');
+  if (!el) return;
+
+  const sold = previewSoldValue(p);
+  el.style.display = sold > 0 ? '' : 'none';
+  el.textContent = sold > 0 ? `🔥 已售 ${sold.toLocaleString()} 件` : '';
+}
   function previewStockValue(p){
   const candidates = [
     p?.stock,
@@ -4308,6 +4384,8 @@ async function loadPreviewImages(product){
           `;
         }
       }
+
+      updatePreviewSoldDisplay(merged);
     }
 
     const imgs = collectPreviewImages(merged);
@@ -4436,6 +4514,7 @@ function openProductPreview(p){
   }
 }
 
+  updatePreviewSoldDisplay(p);
   loadPreviewRelated(p);
 
   const page = $('shopPreviewPage');
@@ -5226,6 +5305,7 @@ const hasMultiImages = cardImages.length > 1;
 const showListPrice = listPrice > 0;
 const showMemberPrice = productCanSeeMemberPrice(p) && price > 0;
 const hasDiscount = showListPrice && showMemberPrice && listPrice > price;
+const soldHtml = soldCountHtml(p);
 
       const eager = idx < 4 ? 'eager' : 'lazy';
       const priority = idx < 4 ? 'high' : 'low';
@@ -5266,6 +5346,7 @@ ${hasImage ? `
 
   <div class="card-info">
           <div class="p-title">${titleHtml}</div>
+          ${soldHtml}
           ${safeIntro ? `<div class="p-desc">${safeIntro}</div>` : ``}
 
 <div class="p-price-panel">
