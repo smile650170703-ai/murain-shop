@@ -524,8 +524,21 @@
     refresh();
   }
 
+  function getKey(requiredRole) {
+    const auth = readAuth();
+    if (!auth?.key) return "";
+
+    const need = String(requiredRole || "").toLowerCase();
+
+    if (need === "admin" && auth.role !== "admin") return "";
+    if (need === "staff" && auth.role !== "staff" && auth.role !== "admin") return "";
+
+    return String(auth.key || "").trim();
+  }
+
   window.MURAIN_AUTH = {
     get: readAuth,
+    getKey,
     canUse,
     login: verifyAndSave,
     logout: () => clearAuth(true),
