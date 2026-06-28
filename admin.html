@@ -443,7 +443,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 </head>
 <body>
 
-<div id="adminEntryLock">
+<div id="adminEntryLock" style="display:none;">
   <h2>後台入口驗證</h2>
   <p class="hint">請先輸入後台管理密碼，通過後才會顯示後台按鈕、清單數量與訂單資料。</p>
   <input id="adminEntryPassword" type="password" placeholder="請輸入後台密碼" autocomplete="off">
@@ -927,79 +927,31 @@ function setupAdminEntryGate(){
   return new Promise((resolve) => {
     const lockBox = document.getElementById('adminEntryLock');
     const protectedRoot = document.getElementById('adminProtectedRoot');
-    const passInput = document.getElementById('adminEntryPassword');
-    const btn = document.getElementById('adminEntryUnlockBtn');
-    const msg = document.getElementById('adminEntryMsg');
 
-    if (!lockBox || !protectedRoot) {
+    const key = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.getKey === 'function'
+      ? window.MURAIN_AUTH.getKey('admin')
+      : '';
+
+    if (!protectedRoot) {
       resolve(true);
       return;
     }
 
-    function showAdmin(){
-      sessionStorage.setItem(ADMIN_ENTRY_UNLOCK_KEY, '1');
-      lockBox.style.display = 'none';
-      protectedRoot.hidden = false;
-      resolve(true);
-    }
-
-    // 同一個分頁已驗證過，就不用重打；換分頁 / 重開瀏覽器會再要求輸入
-    if (sessionStorage.getItem(ADMIN_ENTRY_UNLOCK_KEY) === '1' && OP_KEY) {
-      showAdmin();
+    if (!key) {
+      protectedRoot.hidden = true;
+      if (lockBox) lockBox.style.display = 'none';
+      resolve(false);
       return;
     }
 
-    protectedRoot.hidden = true;
-    lockBox.style.display = 'block';
+    OP_KEY = key;
+    localStorage.setItem(STORAGE_KEY, OP_KEY);
+    sessionStorage.setItem(ADMIN_ENTRY_UNLOCK_KEY, '1');
 
-    async function checkPassword(){
-      const k = String(passInput?.value || '').trim();
+    if (lockBox) lockBox.style.display = 'none';
+    protectedRoot.hidden = false;
 
-      if (!k) {
-        if (msg) msg.textContent = '請輸入後台密碼';
-        return;
-      }
-
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = '驗證中...';
-      }
-
-      if (msg) msg.textContent = '';
-
-      try {
-        const r = await fetch(`${API}/op/auth`, {
-          method:'POST',
-          headers:{ 'Content-Type':'application/json' },
-          body: JSON.stringify({ op_key: k })
-        });
-
-        const j = await r.json().catch(() => ({}));
-
-        if (!r.ok || !j.ok) {
-          if (msg) msg.textContent = '密碼錯誤，請重新輸入';
-          return;
-        }
-
-        OP_KEY = k;
-        localStorage.setItem(STORAGE_KEY, OP_KEY);
-        showAdmin();
-
-      } catch (e) {
-        console.error(e);
-        if (msg) msg.textContent = '驗證失敗，請稍後再試';
-      } finally {
-        if (btn) {
-          btn.disabled = false;
-          btn.textContent = '進入後台';
-        }
-      }
-    }
-
-    btn?.addEventListener('click', checkPassword);
-    passInput?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') checkPassword();
-    });
+    resolve(true);
   });
 }
 
@@ -2365,32 +2317,25 @@ function escapeCSV(v){
   }
   return s;
 }
-/* ===== OP_KEY 驗證 ===== */
+/* ===== 共用後台登入驗證 ===== */
 async function ensureOpKey(){
-  $('#opLabel').textContent = OP_KEY ? '已登入後台' : '尚未登入';
-  while(!OP_KEY){
-    const k = prompt('請輸入管理密碼 (OP_KEY)');
-    if(!k){ alert('沒有密碼就無法進入後台喔'); continue; }
-    try{
-      const r = await fetch(`${API}/op/auth`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ op_key:k })
-      });
-      const j = await r.json();
-      if(!r.ok || !j.ok){
-        alert('密碼錯誤，請再試一次');
-        continue;
-      }
-      OP_KEY = k;
-      localStorage.setItem(STORAGE_KEY, OP_KEY);
-      $('#opLabel').textContent = '已登入後台';
-      break;
-    }catch(e){
-      console.error(e);
-      alert('驗證失敗，請稍後再試');
-    }
+  const key = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.getKey === 'function'
+    ? window.MURAIN_AUTH.getKey('admin')
+    : '';
+
+  if (!key) {
+    const label = $('#opLabel');
+    if (label) label.textContent = '尚未登入主管權限';
+
+    alert('請先在最上方「後台共用登入」輸入主管密碼。');
+    throw new Error('missing_shared_admin_key');
   }
+
+  OP_KEY = key;
+  localStorage.setItem(STORAGE_KEY, OP_KEY);
+
+  const label = $('#opLabel');
+  if (label) label.textContent = '已登入主管權限';
 }
 
  async function refreshBenefitBadge(){
