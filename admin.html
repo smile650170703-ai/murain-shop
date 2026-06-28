@@ -451,7 +451,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   <div id="adminEntryMsg"></div>
 </div>
 
-<div id="adminProtectedRoot" hidden>
+<div id="adminProtectedRoot">
 <div class="wrap">
   <h1>訂單後台</h1>
 
@@ -923,23 +923,59 @@ let OP_KEY = localStorage.getItem(STORAGE_KEY) || '';
 
 const ADMIN_ENTRY_UNLOCK_KEY = 'MURAIN_ADMIN_ENTRY_UNLOCKED';
 
+function getSharedAdminKey(){
+  try {
+    if (window.MURAIN_AUTH && typeof window.MURAIN_AUTH.getKey === 'function') {
+      const k = window.MURAIN_AUTH.getKey('admin');
+      if (k) return String(k || '').trim();
+    }
+  } catch(e) {}
+
+  try {
+    const auth = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.get === 'function'
+      ? window.MURAIN_AUTH.get()
+      : null;
+
+    if (auth && auth.key && String(auth.role || '').toLowerCase() === 'admin') {
+      return String(auth.key || '').trim();
+    }
+  } catch(e) {}
+
+  try {
+    const raw = localStorage.getItem('MURAIN_BACKOFFICE_AUTH_V1') || '';
+    const auth = raw ? JSON.parse(raw) : null;
+
+    if (auth && auth.key && String(auth.role || '').toLowerCase() === 'admin') {
+      return String(auth.key || '').trim();
+    }
+  } catch(e) {}
+
+  try {
+    return String(
+      localStorage.getItem(STORAGE_KEY) ||
+      localStorage.getItem('MURAIN_ADMIN_OP_KEY') ||
+      ''
+    ).trim();
+  } catch(e) {
+    return '';
+  }
+}
+
 function setupAdminEntryGate(){
   return new Promise((resolve) => {
     const lockBox = document.getElementById('adminEntryLock');
     const protectedRoot = document.getElementById('adminProtectedRoot');
 
-    const key = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.getKey === 'function'
-      ? window.MURAIN_AUTH.getKey('admin')
-      : '';
+    const key = getSharedAdminKey();
 
-    if (!protectedRoot) {
-      resolve(true);
-      return;
-    }
+    // 舊入口框固定不顯示，登入統一交給最上方「後台共用登入」
+    if (lockBox) lockBox.style.display = 'none';
+
+    // 主內容不要再被舊入口鎖藏住，避免已登入主管卻空白
+    if (protectedRoot) protectedRoot.hidden = false;
 
     if (!key) {
-      protectedRoot.hidden = true;
-      if (lockBox) lockBox.style.display = 'none';
+      OP_KEY = '';
       resolve(false);
       return;
     }
@@ -947,9 +983,6 @@ function setupAdminEntryGate(){
     OP_KEY = key;
     localStorage.setItem(STORAGE_KEY, OP_KEY);
     sessionStorage.setItem(ADMIN_ENTRY_UNLOCK_KEY, '1');
-
-    if (lockBox) lockBox.style.display = 'none';
-    protectedRoot.hidden = false;
 
     resolve(true);
   });
@@ -2319,9 +2352,7 @@ function escapeCSV(v){
 }
 /* ===== 共用後台登入驗證 ===== */
 async function ensureOpKey(){
-  const key = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.getKey === 'function'
-    ? window.MURAIN_AUTH.getKey('admin')
-    : '';
+  const key = getSharedAdminKey();
 
   if (!key) {
     const label = $('#opLabel');
@@ -2333,6 +2364,9 @@ async function ensureOpKey(){
 
   OP_KEY = key;
   localStorage.setItem(STORAGE_KEY, OP_KEY);
+
+  const protectedRoot = document.getElementById('adminProtectedRoot');
+  if (protectedRoot) protectedRoot.hidden = false;
 
   const label = $('#opLabel');
   if (label) label.textContent = '已登入主管權限';
