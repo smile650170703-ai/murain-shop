@@ -383,7 +383,7 @@ th {
 
 <div class="row">
   <input id="op" type="password" style="display:none" autocomplete="current-password" />
-  <input id="costPw" type="password" style="flex:1; min-width:150px" placeholder="成本查看密碼" />
+  <input id="costPw" type="hidden" value="" />
   <input id="q" type="text" style="flex:2; min-width:200px" placeholder="可輸入 SKU / 關鍵字；若已選寄賣人可留空" />
   <select id="consignor" style="flex:1; min-width:180px">
     <option value="">全部寄賣人</option>
@@ -582,7 +582,7 @@ function syncSharedStockAdminKey(){
 }
 
 function canUseConsignOut(){
-  return String(costPwEl?.value || "").trim().length > 0;
+  return true;
 }
 
   function esc(s){
@@ -613,14 +613,12 @@ function canUseConsignOut(){
     const in_stock = onlyStockEl.checked ? "1" : "0";
     const limit = String(limitEl.value || "2000");
 
-const cost_key = String(costPwEl?.value || "").trim();
 const consignor = String(consignorEl?.value || "").trim();
 
 const url =
   `${api}/op/stock/search?op_key=${encodeURIComponent(op)}&in_stock=${in_stock}&limit=${encodeURIComponent(limit)}`
   + (q ? `&q=${encodeURIComponent(q)}` : "")
-  + (consignor ? `&consignor=${encodeURIComponent(consignor)}` : "")
-  + (cost_key ? `&cost_key=${encodeURIComponent(cost_key)}` : "");
+  + (consignor ? `&consignor=${encodeURIComponent(consignor)}` : "");
 
     const r = await fetch(url, { method:"GET" });
     const data = await r.json().catch(()=> ({}));
@@ -643,7 +641,7 @@ function render(){
       <td>${esc(r.location || "-")}</td>
       <td class="right">${badgeStock(r.stock)}</td>
       <td class="right" style="font-family: monospace; font-size: 15px;">
-  ${(String(costPwEl?.value || "").trim() && r.cost != null) ? esc(money(r.cost)) : "🔒"}
+  ${(r.cost != null) ? esc(money(r.cost)) : "-"}
 </td>
       <td class="right" style="font-family: monospace; font-size: 15px;">${esc(money(r.start_price))}</td>
       <td class="right" style="font-family: monospace; font-size: 15px;">${esc(money(r.bid_step))}</td>
@@ -659,17 +657,16 @@ function render(){
 
   stat.textContent = `顯示：${rows.length} 筆資料`;
 
-  const hasCostPw = String(costPwEl?.value || "").trim().length > 0;
-  const canSeeTotal = hasCostPw && Array.isArray(rows) && rows.some(r => r.cost !== null);
+  const canSeeTotal = Array.isArray(rows) && rows.some(r => r.cost !== null);
 
-  if (canSeeTotal) {
-    const totalAmount = calcTotalInventoryAmount(rows);
-    stockTotalEl.textContent = `總庫存成本：${money(totalAmount)}`;
-    stockTotalEl.classList.remove("is-locked");
-  } else {
-    stockTotalEl.textContent = "總庫存成本：🔒";
-    stockTotalEl.classList.add("is-locked");
-  }
+if (canSeeTotal) {
+  const totalAmount = calcTotalInventoryAmount(rows);
+  stockTotalEl.textContent = `總庫存成本：${money(totalAmount)}`;
+  stockTotalEl.classList.remove("is-locked");
+} else {
+  stockTotalEl.textContent = "總庫存成本：-";
+  stockTotalEl.classList.add("is-locked");
+}
 }
 
   async function run(q){
@@ -686,22 +683,19 @@ function render(){
   async function consignOutSku(sku){
   const api = normApi();
   const op = normOp();
-  const cost_key = String(costPwEl?.value || "").trim();
   const out_date = String(consignOutDateEl?.value || "").trim() || todayLocal();
 
-  if (!op) throw new Error("請先在最上方「後台共用登入」輸入主管密碼");
-  if (!cost_key) throw new Error("請先輸入成本查看密碼");
-  if (!sku) throw new Error("缺少 SKU");
+if (!op) throw new Error("請先在最上方「後台共用登入」輸入主管密碼");
+if (!sku) throw new Error("缺少 SKU");
 
   const r = await fetch(`${api}/op/stock/consign-out`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      op_key: op,
-      cost_key,
-      sku,
-      out_date
-    })
+  op_key: op,
+  sku,
+  out_date
+})
   });
 
   const data = await r.json().catch(()=>({}));
@@ -805,25 +799,7 @@ consignOutDateEl.addEventListener("keydown", (e) => {
   $("btnSearch").click();
 });
 
-costPwEl.addEventListener("input", ()=> {
-  rows = rows.map(r => ({ ...r, cost: null }));
-  render();
-});
-
-costPwEl.addEventListener("change", ()=> {
-  const q = (qEl.value || "").trim();
-  const consignor = String(consignorEl?.value || "").trim();
-
-  if (q.length >= 2) {
-    run(q).catch(()=>{});
-  } else if (consignor) {
-    run("").catch(()=>{});
-  } else if (rows.length) {
-    run("").catch(()=>{});
-  } else {
-    render();
-  }
-});
+// 成本查看密碼已整併到共用主管登入，不再監聽 costPw。
 
 tb.addEventListener("click", async (e) => {
   const btn = e.target.closest(".btn-consign-out");
