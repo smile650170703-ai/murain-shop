@@ -86,7 +86,7 @@
 <a class="tab" href="admin-credit-error.html">⚠️ 異常中心</a>
 </div>
 
-  <section class="card login-card" id="loginCard">
+  <section class="card login-card hidden" id="loginCard">
     <h2 style="margin:0 0 4px;font-size:18px;">進入審核頁</h2>
     <div class="hint">請輸入購物金審核頁密碼。密碼可在本檔案上方的 <b>BENEFIT_PAGE_PASSWORD</b> 修改。</div>
 
@@ -365,22 +365,19 @@ async function reviewBenefitRequest(btn, recordId, action, approvedAmount, revie
 }
 
 $('#btnLogin').addEventListener('click', async () => {
-  const pass = String($('#pagePassInput').value || '').trim();
+  const key = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.getKey === 'function'
+    ? window.MURAIN_AUTH.getKey('admin')
+    : '';
 
-  if (!isValidBenefitPagePassword(pass)) {
-  alert('購物金審核頁密碼錯誤');
-  return;
-}
-
-  OP_KEY = localStorage.getItem(OP_STORAGE_KEY) || '';
-
-  if (!OP_KEY) {
-    alert('尚未取得後台 OP_KEY，請先進入「訂單後台」登入一次，再回來購物金審核頁。');
-    location.href = 'admin.html';
+  if (!key) {
+    alert('請先在最上方「後台共用登入」輸入主管密碼。');
     return;
   }
 
-  PAGE_PASS = pass;
+  OP_KEY = key;
+  PAGE_PASS = 'shared-admin-ok';
+
+  localStorage.setItem(OP_STORAGE_KEY, OP_KEY);
   sessionStorage.setItem(PAGE_UNLOCK_KEY, '1');
 
   showApp();
@@ -412,15 +409,22 @@ $('#btnLogout').addEventListener('click', () => {
 });
 
 (function init(){
-  if (isUnlocked()) {
-    showApp();
-    // 重新整理後仍需重新輸入本頁密碼，避免頁面密碼長期留在記憶體。
-    sessionStorage.removeItem(PAGE_UNLOCK_KEY);
+  const key = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.getKey === 'function'
+    ? window.MURAIN_AUTH.getKey('admin')
+    : '';
+
+  if (!key) {
     showLogin();
-    $('#pagePassInput').focus();
-  } else {
-    showLogin();
+    return;
   }
+
+  OP_KEY = key;
+  PAGE_PASS = 'shared-admin-ok';
+  localStorage.setItem(OP_STORAGE_KEY, OP_KEY);
+  sessionStorage.setItem(PAGE_UNLOCK_KEY, '1');
+
+  showApp();
+  loadBenefitRequests();
 })();
 </script>
 </body>
