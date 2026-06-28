@@ -2347,32 +2347,25 @@ function escapeCSV(v){
   }
   return s;
 }
-/* ===== OP_KEY 驗證 ===== */
+/* ===== 共用後台登入驗證 ===== */
 async function ensureOpKey(){
-  $('#opLabel').textContent = OP_KEY ? '已登入後台' : '尚未登入';
-  while(!OP_KEY){
-    const k = prompt('請輸入管理密碼 (OP_KEY)');
-    if(!k){ alert('沒有密碼就無法進入後台喔'); continue; }
-    try{
-      const r = await fetch(`${API}/op/auth`,{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({ op_key:k })
-      });
-      const j = await r.json();
-      if(!r.ok || !j.ok){
-        alert('密碼錯誤，請再試一次');
-        continue;
-      }
-      OP_KEY = k;
-      localStorage.setItem(STORAGE_KEY, OP_KEY);
-      $('#opLabel').textContent = '已登入後台';
-      break;
-    }catch(e){
-      console.error(e);
-      alert('驗證失敗，請稍後再試');
-    }
+  const key = window.MURAIN_AUTH && typeof window.MURAIN_AUTH.getKey === 'function'
+    ? window.MURAIN_AUTH.getKey('admin')
+    : '';
+
+  if (!key) {
+    const label = $('#opLabel');
+    if (label) label.textContent = '尚未登入主管權限';
+
+    alert('請先在最上方「後台共用登入」輸入主管密碼。');
+    throw new Error('missing_shared_admin_key');
   }
+
+  OP_KEY = key;
+  localStorage.setItem(STORAGE_KEY, OP_KEY);
+
+  const label = $('#opLabel');
+  if (label) label.textContent = '已登入主管權限';
 }
 
  async function refreshBenefitBadge(){
