@@ -9,7 +9,7 @@
   *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC",Roboto}
   body{margin:0;background:#020617;color:#e2e8f0}
   .wrap{max-width:1200px;margin:0 auto;padding:16px}
-  h1{margin:0 0 6px;font-size:24px}
+  h1{display:none;}
 
   /* 新版上方工具列（含快速 filter + 日期/狀態 + 匯出） */
   .toolbar-main{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
@@ -27,7 +27,21 @@
 
   .summary-row{font-size:12px;color:#cbd5f5;display:flex;flex-wrap:wrap;gap:10px;margin-top:2px}
   .summary-row span{white-space:nowrap}
-  #msg{font-size:12px;color:#94a3b8;margin-top:2px}
+   #msg{
+    display:block;
+    width:100%;
+    margin-top:10px;
+    margin-bottom:4px;
+    color:#93c5fd;
+    font-size:12px;
+    font-weight:800;
+  }
+
+  #msg.status-action{
+    color:#bae6fd;
+    font-size:12px;
+    font-weight:800;
+  }
 
   .layout{display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr);gap:12px}
   @media (max-width:900px){.layout{grid-template-columns:1fr;}}
@@ -896,13 +910,8 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 }
 
 .top-order-actions::before{
-  content:"賣貨便操作" !important;
-  display:block !important;
-  width:100% !important;
-  margin-bottom:4px !important;
-  color:#93c5fd !important;
-  font-size:12px !important;
-  font-weight:800 !important;
+  content:none !important;
+  display:none !important;
 }
 
 .top-order-actions > button{
@@ -2572,6 +2581,65 @@ function updatePrintSlipsBtn(){
 
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+
+let ADMIN_ACTION_MSG_UNTIL = 0;
+
+function defaultTopMsg(){
+  if (ADMIN_PAGE_FILE === 'admin-pickup.html') return '賣貨便操作';
+  return ADMIN_PAGE?.viewName
+    ? `目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`
+    : '';
+}
+
+function setActionMsg(text){
+  const msg = String(text ?? '');
+  ADMIN_ACTION_MSG_UNTIL = Date.now() + 12000;
+
+  const topMsg = $('#msg');
+  const detailMsg = $('#detailMsg');
+
+  if (topMsg) {
+    topMsg.textContent = msg;
+    topMsg.classList.toggle('status-action', !!msg.trim());
+  }
+
+  // 清空右側原本訊息，避免上下重複
+  if (detailMsg) detailMsg.textContent = '';
+}
+
+function setViewMsg(text){
+  const topMsg = $('#msg');
+  if (!topMsg) return;
+
+  // 按鈕剛執行完 12 秒內，不要被預設文字蓋掉
+  if (Date.now() < ADMIN_ACTION_MSG_UNTIL) return;
+
+  topMsg.classList.remove('status-action');
+
+  if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
+    topMsg.textContent = '賣貨便操作';
+  } else {
+    topMsg.textContent = text || defaultTopMsg();
+  }
+}
+
+function getActionMsgEl(){
+  const topMsg = $('#msg');
+
+  if (topMsg) {
+    return {
+      get textContent(){
+        return topMsg.textContent;
+      },
+      set textContent(v){
+        setActionMsg(v);
+      }
+    };
+  }
+
+  return $('#detailMsg');
+}
+
 function updateCurrentSubTabCount(count){
   const n = Number(count || 0);
 
@@ -3565,7 +3633,7 @@ async function loadOrders(filter='all', extra = {}){
   currentFilter = filter;
   const listEl = $('#orderList');
   listEl.innerHTML = '<div class="muted">載入中…</div>';
-  $('#msg').textContent = '';
+  setViewMsg();
 
   const view_key = String(extra.view_key || extra.viewKey || '').trim();
   const allowDate = !view_key && ADMIN_PAGE.useDate !== false;
@@ -3922,10 +3990,7 @@ async function reloadCurrentView(){
 
     updateCurrentSubTabCount(currentOrders.length);
 
-    const msgEl = $('#msg');
-    if (msgEl) {
-      msgEl.textContent = `目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`;
-    }
+        setViewMsg(`目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`);
 
     return;
   }
@@ -5324,7 +5389,7 @@ if (btnSaveOnly) {
       alert('請先在左邊選一筆訂單');
       return;
     }
-    const msgEl = $('#detailMsg');
+    const msgEl = getActionMsgEl();
     if (msgEl) msgEl.textContent = '儲存中…';
 
     try {
@@ -5523,7 +5588,7 @@ async function savePickupRegOnly(){
     fields: { '取貨登記': v }
   };
 
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
   if (msgEl) msgEl.textContent = '儲存取貨登記中…';
 
   try{
@@ -5598,7 +5663,7 @@ async function saveCodPenaltyFeeOnly(){
     }
   };
 
-  const msgEl = $('#codPenaltyMsgTop') || $('#detailMsg');
+  const msgEl = getActionMsgEl();
   if (msgEl) msgEl.textContent = '儲存違約費用中…';
 
   try {
@@ -5642,7 +5707,7 @@ async function saveDetail(opts = {}){
 
   const skipReload = !!opts.skipReload;
 const forcePayStatus = opts.forcePayStatus || '';
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
   msgEl.textContent = '儲存中…';
 
   const fields = {};
@@ -5943,7 +6008,7 @@ async function saveDetailAndShip(){
     return;
   }
 
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
   if (msgEl) msgEl.textContent = '儲存出貨 / 付款資料中…';
 
   const ok = await saveDetail({ skipReload: true });
@@ -5956,7 +6021,7 @@ async function saveDetailAndShip(){
 /* ===== 一鍵：標記出貨 ＋ LINE 通知（整合 admin_ship_orderid 版） ===== */
 async function shipAndLine(){
   if(!currentRecord) return;
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
   const f = currentRecord.fields || currentRecord || {};
   const orderId = f.order_id;
   if (!orderId){
@@ -6018,7 +6083,7 @@ async function saveAndShipAndLine() {
     return;
   }
 
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
   if (msgEl) msgEl.textContent = '儲存出貨 / 付款資料中…';
 
   const ok = await saveDetail({ skipReload: true });
@@ -6030,7 +6095,7 @@ async function saveAndShipAndLine() {
  /* ===== 確認收款 / 中租審核 ＋ 發 LINE ===== */
 async function confirmPay(mode){
   if (!currentRecord) return;
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
 
   const ok = await saveDetail({ skipReload: true });
   if (!ok) return;
@@ -6098,7 +6163,7 @@ async function depositReceivedAndNotify() {
 
   const depChk    = $('#d_deposit_received');
   const noticeChk = $('#d_pay_notice_sent');
-  const msgEl     = $('#detailMsg');
+  const msgEl     = getActionMsgEl();
 
   if (depChk) depChk.checked = true;
   if (noticeChk) noticeChk.checked = true;
@@ -6127,7 +6192,7 @@ try {
   await reloadCurrentView();
   restoreSelectedOrder(keepKey);
 
-  const newMsgEl = $('#detailMsg');
+  const newMsgEl = getActionMsgEl();
   if (newMsgEl) {
     newMsgEl.textContent = '✅ 已收到訂金，已寫入 pay_status = deposit_ok，並已儲存保留通知' + lineText;
   }
@@ -6223,7 +6288,7 @@ async function markMeetupCashDone(){
     return;
   }
 
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
 
   // 面交固定運費 0
   const feeEl = $('#d_ship_fee');
@@ -6314,7 +6379,7 @@ async function sendMeetupNotify(){
     return;
   }
 
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
   if (msgEl) msgEl.textContent = '發送面交通知中…';
 
   // 把「內部備註」當成面交補充說明一起傳給後端（選填）
@@ -6902,10 +6967,7 @@ async function loadAdminDefaultPage(){
   // ✅ 補：固定子頁載入後，更新當頁小圓圈
   updateCurrentSubTabCount(currentOrders.length);
 
-  const msgEl = $('#msg');
-  if (msgEl) {
-    msgEl.textContent = `目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`;
-  }
+      setViewMsg(`目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`);
 
   const sumEl = $('#summary');
   if (sumEl) {
