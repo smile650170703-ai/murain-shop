@@ -932,12 +932,12 @@ strong.amount-green{
       <span class="tag ok" id="confirmedCountTag">0 筆</span>
     </div>
 <div class="confirmed-card-tools">
-  <button class="btn toggle-section-btn" type="button" id="btnToggleConfirmed">－ 收合</button>
+  <button class="btn toggle-section-btn is-collapsed" type="button" id="btnToggleConfirmed">＋ 展開</button>
   <button class="btn" type="button" id="btnReload">重新整理</button>
 </div>
   </div>
 
-  <div class="table-wrap confirmed-table-wrap collapsible-body" id="confirmedListBody">
+  <div class="table-wrap confirmed-table-wrap collapsible-body is-collapsed" id="confirmedListBody">
   <table class="confirmed-table">
      <thead>
   <tr>
@@ -1033,10 +1033,10 @@ strong.amount-green{
       <table class="summary-extra-table">
         <thead>
           <tr>
-            <th>還款日期</th>
-            <th>還款金額</th>
-            <th>公司進利總結</th>
-            <th>備註</th>
+<th>月份 / 來源</th>
+<th>本月還款總額</th>
+<th>公司進利總結</th>
+<th>來源備註</th>
           </tr>
         </thead>
         <tbody id="loanSummaryRows">
@@ -1339,15 +1339,43 @@ async function loadTax401Overview() {
 function normalizeLoanMortgageMaster(rec, repayments = []) {
   const f = rec?.fields || rec || {};
 
-  const principal = firstFieldNum(f, ["原始本金", "本金", "loan_principal", "principal"]);
-  const paidFromField = firstFieldNum(f, ["已退總額", "已還總額", "已還金額", "repaid_total", "paidTotal"]);
+  const principal = firstFieldNum(f, [
+    "原始本金",
+    "本金",
+    "loan_principal",
+    "principal"
+  ]);
+
+  const paidFromField = firstFieldNum(f, [
+    "已還總額",
+    "已退總額",
+    "已還金額",
+    "repaid_total",
+    "paidTotal"
+  ]);
+
   const paidFromRows = repayments.reduce((sum, r) => {
     const rf = r?.fields || r || {};
-    return sum + firstFieldNum(rf, ["還款金額", "金額", "amount", "repayAmount", "自動帶入還款金額"]);
+    return sum + firstFieldNum(rf, [
+      "本月還款總額",
+      "還款金額",
+      "金額",
+      "amount",
+      "repayAmount",
+      "自動帶入還款金額",
+      "現金支出｜妹妹積款總額",
+      "淨利結算｜妹妹個人業績"
+    ]);
   }, 0);
 
   const paidTotal = paidFromField || paidFromRows;
-  const remain = firstFieldNum(f, ["剩餘本金", "剩餘金額", "remaining", "remain"]) || Math.max(0, principal - paidTotal);
+
+  const remain = firstFieldNum(f, [
+    "剩餘本金",
+    "剩餘金額",
+    "remaining",
+    "remain"
+  ]) || Math.max(0, principal - paidTotal);
 
   return {
     principal,
@@ -1358,11 +1386,48 @@ function normalizeLoanMortgageMaster(rec, repayments = []) {
 
 function normalizeLoanRepaymentRow(rec) {
   const f = rec?.fields || rec || {};
+
+  const profitText = firstFieldText(f, [
+    "公司進利總結顯示",
+    "公司進利總結名稱",
+    "公司進利總結",
+    "淨利結算",
+    "月份",
+    "profitSummary"
+  ]);
+
   return {
-    date: firstFieldText(f, ["還款日期", "日期", "repayDate", "date"]),
-    amount: firstFieldNum(f, ["還款金額", "金額", "amount", "repayAmount", "自動帶入還款金額"]),
-    profit: firstFieldText(f, ["公司進利總結顯示", "公司進利總結名稱", "公司進利總結", "月份", "profitSummary"]),
-    note: firstFieldText(f, ["備註", "note", "Note"])
+    date: firstFieldText(f, [
+      "公司進利總結",
+      "淨利結算",
+      "還款日期",
+      "日期",
+      "repayDate",
+      "date"
+    ]) || profitText,
+
+    amount: firstFieldNum(f, [
+      "本月還款總額",
+      "還款金額",
+      "金額",
+      "amount",
+      "repayAmount",
+      "自動帶入還款金額",
+      "現金支出｜妹妹積款總額",
+      "淨利結算｜妹妹個人業績"
+    ]),
+
+    profit: profitText,
+
+    note: firstFieldText(f, [
+      "現金支出｜妹妹積款總額",
+      "淨利結算｜妹妹個人業績",
+      "現金支出",
+      "淨利結算",
+      "備註",
+      "note",
+      "Note"
+    ])
   };
 }
 
