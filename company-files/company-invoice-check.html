@@ -659,17 +659,30 @@ th{
 }
 
 .section-collapse-btn{
-  min-width:88px !important;
-  padding:7px 10px !important;
+  width:auto !important;
+  min-width:86px !important;
+  flex:0 0 auto !important;
+  padding:7px 12px !important;
   font-size:12px !important;
+  line-height:1.2 !important;
   border:none !important;
   background:#0f172a !important;
   color:#fff !important;
   border-radius:999px !important;
+  box-shadow:none !important;
 }
 
 .section-collapse-btn.is-collapsed{
   background:#0ea5e9 !important;
+}
+
+.invoice-section-head{
+  align-items:center !important;
+}
+
+.invoice-section-head .section-title{
+  flex:1 1 auto;
+  min-width:0;
 }
 
 .tax401-main-card{
@@ -746,6 +759,36 @@ th{
   color:#0b4a9e !important;
   font-weight:900 !important;
   border-top:1px solid #c7d7ef;
+}
+
+.period-group-row{
+  cursor:pointer;
+}
+
+.period-group-line{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.period-toggle-btn{
+  width:auto !important;
+  min-width:72px !important;
+  padding:5px 10px !important;
+  font-size:12px !important;
+  border-radius:999px !important;
+  border:none !important;
+  background:#0ea5e9 !important;
+  color:#fff !important;
+}
+
+.period-toggle-btn.is-open{
+  background:#0f172a !important;
+}
+
+.period-child-row.is-collapsed{
+  display:none !important;
 }
 
 .invoice-check-card-muted{
@@ -923,24 +966,8 @@ th{
         <span class="tag">待收發票</span>
       </div>
 
-      <div class="invoice-filter-bar">
-        <div>
-          <label for="keyword">關鍵字</label>
-          <input id="keyword" placeholder="搜尋發票號碼 / 備註 / 金額" />
-        </div>
-
-        <div>
-          <label for="limit">顯示筆數</label>
-          <select id="limit">
-            <option value="50">50 筆</option>
-            <option value="100">100 筆</option>
-            <option value="200">200 筆</option>
-          </select>
-        </div>
-
-        <button class="btn hot" type="button" id="btnSearch">查詢</button>
-        <button class="btn secondary" type="button" id="btnReset">清除</button>
-        <div class="msg" id="msg">尚未查詢</div>
+      <div class="invoice-toolbar-compact">
+        <div class="msg" id="msg">待收發票清單載入中...</div>
       </div>
 
       <div class="table-wrap">
@@ -963,7 +990,7 @@ th{
     </div>
 
     <div class="card invoice-check-card-muted">
-      <div class="split-head">
+            <div class="split-head invoice-section-head">
         <h2 class="section-title" style="margin:0;">
           <span class="no">2</span>
           <span>進項發票查詢</span>
@@ -1003,7 +1030,7 @@ th{
       </div>
     </div>
 
-    <div class="card invoice-check-card-muted">
+         <div class="split-head invoice-section-head">
       <div class="split-head">
         <h2 class="section-title" style="margin:0;">
           <span class="no">3</span>
@@ -1296,7 +1323,10 @@ const API_OUTPUT_INVOICE_LIST = "https://api.murain.tw/op/company/output-invoice
       let totalCount = 0;
       const html = [];
 
-      for (const p of periods) {
+      for (let i = 0; i < periods.length; i++) {
+        const p = periods[i];
+        const groupKey = `input-period-${i}`;
+
         try {
           const url = `${API_INPUT_INVOICE_LIST}?periodKey=${encodeURIComponent(p.key)}&max=300`;
           const data = await apiGet(url);
@@ -1304,18 +1334,27 @@ const API_OUTPUT_INVOICE_LIST = "https://api.murain.tw/op/company/output-invoice
           totalCount += list.length;
 
           html.push(`
-            <tr class="period-group-row">
-              <td colspan="8">${escapeHtml(p.label)}｜進項發票 ${list.length} 筆</td>
+            <tr class="period-group-row" data-toggle-period="${groupKey}">
+              <td colspan="8">
+                <div class="period-group-line">
+                  <span>${escapeHtml(p.label)}｜進項發票 ${list.length} 筆</span>
+                  <button class="period-toggle-btn" type="button" data-toggle-period="${groupKey}">＋ 展開</button>
+                </div>
+              </td>
             </tr>
           `);
 
           if (!list.length) {
-            html.push(`<tr><td colspan="8" class="empty">本期沒有進項發票。</td></tr>`);
+            html.push(`
+              <tr class="period-child-row is-collapsed" data-period="${groupKey}">
+                <td colspan="8" class="empty">本期沒有進項發票。</td>
+              </tr>
+            `);
             continue;
           }
 
           html.push(list.map(r => `
-            <tr>
+            <tr class="period-child-row is-collapsed" data-period="${groupKey}">
               <td>${escapeHtml(String(r.date || "").slice(0,10))}</td>
               <td>${escapeHtml(r.invoiceNo || "")}</td>
               <td>${fmtMoney(r.grossAmount || 0)}</td>
@@ -1328,15 +1367,23 @@ const API_OUTPUT_INVOICE_LIST = "https://api.murain.tw/op/company/output-invoice
           `).join(""));
         } catch (err) {
           html.push(`
-            <tr class="period-group-row">
-              <td colspan="8">${escapeHtml(p.label)}｜讀取失敗</td>
+            <tr class="period-group-row" data-toggle-period="${groupKey}">
+              <td colspan="8">
+                <div class="period-group-line">
+                  <span>${escapeHtml(p.label)}｜讀取失敗</span>
+                  <button class="period-toggle-btn" type="button" data-toggle-period="${groupKey}">＋ 展開</button>
+                </div>
+              </td>
             </tr>
-            <tr><td colspan="8" class="empty">❌ ${escapeHtml(err.message || String(err))}</td></tr>
+            <tr class="period-child-row is-collapsed" data-period="${groupKey}">
+              <td colspan="8" class="empty">❌ ${escapeHtml(err.message || String(err))}</td>
+            </tr>
           `);
         }
       }
 
       $("inputInvoiceRows").innerHTML = html.join("") || `<tr><td colspan="8" class="empty">目前沒有進項發票。</td></tr>`;
+      bindPeriodToggles("inputInvoiceRows");
       setInputInvoiceMsg(`✅ 進項發票已載入，共 ${totalCount} 筆。`, "ok");
     }
         function setOutputInvoiceMsg(text, type) {
@@ -1359,7 +1406,7 @@ const API_OUTPUT_INVOICE_LIST = "https://api.murain.tw/op/company/output-invoice
       return `<span class="output-status ${cls}">${escapeHtml(s)}</span>`;
     }
 
-     async function loadOutputInvoices() {
+    async function loadOutputInvoices() {
       const periods = all401Periods().slice().reverse();
 
       $("outputInvoiceRows").innerHTML = `<tr><td colspan="11" class="empty">載入中...</td></tr>`;
@@ -1376,7 +1423,10 @@ const API_OUTPUT_INVOICE_LIST = "https://api.murain.tw/op/company/output-invoice
 
       const html = [];
 
-      for (const p of periods) {
+      for (let i = 0; i < periods.length; i++) {
+        const p = periods[i];
+        const groupKey = `output-period-${i}`;
+
         try {
           const url = `${API_OUTPUT_INVOICE_LIST}?periodKey=${encodeURIComponent(p.key)}&max=500`;
           const data = await apiGet(url);
@@ -1391,21 +1441,30 @@ const API_OUTPUT_INVOICE_LIST = "https://api.murain.tw/op/company/output-invoice
           total.rowCount += list.length;
 
           html.push(`
-            <tr class="period-group-row">
+            <tr class="period-group-row" data-toggle-period="${groupKey}">
               <td colspan="11">
-                ${escapeHtml(p.label)}｜銷項 ${list.length} 筆｜計入401 ${Number(totals.countedCount || 0)} 筆｜
-                未稅 ${fmtMoney(totals.salesAmount || 0)}｜銷項稅 ${fmtMoney(totals.outputTax || 0)}
+                <div class="period-group-line">
+                  <span>
+                    ${escapeHtml(p.label)}｜銷項 ${list.length} 筆｜計入401 ${Number(totals.countedCount || 0)} 筆｜
+                    未稅 ${fmtMoney(totals.salesAmount || 0)}｜銷項稅 ${fmtMoney(totals.outputTax || 0)}
+                  </span>
+                  <button class="period-toggle-btn" type="button" data-toggle-period="${groupKey}">＋ 展開</button>
+                </div>
               </td>
             </tr>
           `);
 
           if (!list.length) {
-            html.push(`<tr><td colspan="11" class="empty">本期沒有銷項發票。</td></tr>`);
+            html.push(`
+              <tr class="period-child-row is-collapsed" data-period="${groupKey}">
+                <td colspan="11" class="empty">本期沒有銷項發票。</td>
+              </tr>
+            `);
             continue;
           }
 
           html.push(list.map(r => `
-            <tr>
+            <tr class="period-child-row is-collapsed" data-period="${groupKey}">
               <td>${escapeHtml(r.invoiceMonth || "")}</td>
               <td>${escapeHtml(r.invoiceDateSimple || r.invoiceDate || "")}</td>
               <td>${escapeHtml(r.invoiceNo || "")}</td>
@@ -1424,10 +1483,17 @@ const API_OUTPUT_INVOICE_LIST = "https://api.murain.tw/op/company/output-invoice
           `).join(""));
         } catch (err) {
           html.push(`
-            <tr class="period-group-row">
-              <td colspan="11">${escapeHtml(p.label)}｜讀取失敗</td>
+            <tr class="period-group-row" data-toggle-period="${groupKey}">
+              <td colspan="11">
+                <div class="period-group-line">
+                  <span>${escapeHtml(p.label)}｜讀取失敗</span>
+                  <button class="period-toggle-btn" type="button" data-toggle-period="${groupKey}">＋ 展開</button>
+                </div>
+              </td>
             </tr>
-            <tr><td colspan="11" class="empty">❌ ${escapeHtml(err.message || String(err))}</td></tr>
+            <tr class="period-child-row is-collapsed" data-period="${groupKey}">
+              <td colspan="11" class="empty">❌ ${escapeHtml(err.message || String(err))}</td>
+            </tr>
           `);
         }
       }
@@ -1439,6 +1505,7 @@ const API_OUTPUT_INVOICE_LIST = "https://api.murain.tw/op/company/output-invoice
       $("outputAbnormalCount").textContent = String(total.abnormalCount);
 
       $("outputInvoiceRows").innerHTML = html.join("") || `<tr><td colspan="11" class="empty">目前沒有銷項發票。</td></tr>`;
+      bindPeriodToggles("outputInvoiceRows");
       setOutputInvoiceMsg(`✅ 銷項發票已載入，共 ${total.rowCount} 筆，計入401 ${total.countedCount} 筆。`, "ok");
     }
     function refresh401Result() {
@@ -1677,39 +1744,50 @@ const API_OUTPUT_INVOICE_LIST = "https://api.murain.tw/op/company/output-invoice
     }
 
     async function loadList() {
-      const keyword = $("keyword").value.trim();
-      const limit = $("limit").value.trim() || "50";
-
-      setMsg("查詢中...");
+      setMsg("待收發票清單載入中...");
 
       try {
-        const url = `${API_LIST}?keyword=${encodeURIComponent(keyword)}&limit=${encodeURIComponent(limit)}`;
+        const url = `${API_LIST}?limit=100`;
         const data = await apiGet(url);
         renderRows(data.rows || []);
-        setMsg("✅ 清單已更新", "ok");
+        setMsg(`✅ 待收發票 ${Array.isArray(data.rows) ? data.rows.length : 0} 筆`, "ok");
       } catch (err) {
         rowsEl.innerHTML = `<tr><td colspan="6" class="empty">❌ ${escapeHtml(err.message || String(err))}</td></tr>`;
         setMsg(`❌ ${err.message || err}`, "err");
       }
     }
 
-    $("btnSearch").addEventListener("click", loadList);
-
-    $("btnReset").addEventListener("click", () => {
-      $("keyword").value = "";
-      $("limit").value = "50";
-      loadList();
-    });
-
-    $("keyword").addEventListener("keydown", (e) => {
-      if (e.key === "Enter") loadList();
-    });
+    // 待收發票清單改為進頁面自動載入，不再需要關鍵字 / 筆數 / 查詢 / 清除。
 
 
 ["declaredSalesAmount", "declaredOutputTax", "declaredInputAmount", "declaredInputTax", "declaredPayableTax"].forEach(id => {
   $(id)?.addEventListener("input", refresh401Result);
 });
+function bindPeriodToggles(tbodyId) {
+  const tbody = $(tbodyId);
+  if (!tbody) return;
 
+  tbody.querySelectorAll("[data-toggle-period]").forEach(el => {
+    el.addEventListener("click", (e) => {
+      const key = el.getAttribute("data-toggle-period") || "";
+      if (!key) return;
+
+      const btn = tbody.querySelector(`button[data-toggle-period="${CSS.escape(key)}"]`);
+      const rows = tbody.querySelectorAll(`tr[data-period="${CSS.escape(key)}"]`);
+
+      const willOpen = Array.from(rows).some(r => r.classList.contains("is-collapsed"));
+
+      rows.forEach(r => r.classList.toggle("is-collapsed", !willOpen));
+
+      if (btn) {
+        btn.textContent = willOpen ? "－ 收合" : "＋ 展開";
+        btn.classList.toggle("is-open", willOpen);
+      }
+
+      e.stopPropagation();
+    });
+  });
+}
 function bindCollapseButton(btnId, bodyId) {
   const btn = $(btnId);
   const body = $(bodyId);
