@@ -27,7 +27,11 @@
 
   .summary-row{font-size:12px;color:#cbd5f5;display:flex;flex-wrap:wrap;gap:10px;margin-top:2px}
   .summary-row span{white-space:nowrap}
-  #msg{font-size:12px;color:#94a3b8;margin-top:2px}
+   #msg{font-size:12px;color:#94a3b8;margin-top:2px}
+  #msg.status-action{
+    color:#bae6fd;
+    font-weight:700;
+  }
 
   .layout{display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr);gap:12px}
   @media (max-width:900px){.layout{grid-template-columns:1fr;}}
@@ -1870,6 +1874,53 @@ function updatePrintSlipsBtn(){
 
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
+
+let ADMIN_ACTION_MSG_UNTIL = 0;
+
+function setActionMsg(text){
+  const msg = String(text ?? '');
+  ADMIN_ACTION_MSG_UNTIL = Date.now() + 12000;
+
+  const topMsg = $('#msg');
+  const detailMsg = $('#detailMsg');
+
+  if (topMsg) {
+    topMsg.textContent = msg;
+    topMsg.classList.toggle('status-action', !!msg.trim());
+  }
+
+  // 右側原本的位置清空，避免同一段文字上下重複顯示
+  if (detailMsg) detailMsg.textContent = '';
+}
+
+function setViewMsg(text){
+  const topMsg = $('#msg');
+  if (!topMsg) return;
+
+  // 按鈕剛執行完 12 秒內，不要被「目前顯示 Airtable View」蓋掉
+  if (Date.now() < ADMIN_ACTION_MSG_UNTIL) return;
+
+  topMsg.classList.remove('status-action');
+  topMsg.textContent = text || '';
+}
+
+function getActionMsgEl(){
+  const topMsg = $('#msg');
+
+  if (topMsg) {
+    return {
+      get textContent(){
+        return topMsg.textContent;
+      },
+      set textContent(v){
+        setActionMsg(v);
+      }
+    };
+  }
+
+  return $('#detailMsg');
+}
+const $$ = (s,r=document)=>Array.from(r.querySelectorAll(s));
 function updateCurrentSubTabCount(count){
   const btn = document.querySelector(`.admin-sub-tabs [data-admin-file="${ADMIN_PAGE_FILE}"]`);
   if (!btn) return;
@@ -2851,7 +2902,7 @@ async function loadOrders(filter='all', extra = {}){
   currentFilter = filter;
   const listEl = $('#orderList');
   listEl.innerHTML = '<div class="muted">載入中…</div>';
-  $('#msg').textContent = '';
+  setViewMsg('');
 
   const view_key = String(extra.view_key || extra.viewKey || '').trim();
   const allowDate = !view_key && ADMIN_PAGE.useDate !== false;
@@ -3213,10 +3264,7 @@ async function reloadCurrentView(){
       renderVendorMonthSummary();
     }
 
-    const msgEl = $('#msg');
-    if (msgEl) {
-      msgEl.textContent = `目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`;
-    }
+       setViewMsg(`目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`);
 
     return;
   }
@@ -4612,7 +4660,7 @@ if (btnSaveOnly) {
       alert('請先在左邊選一筆訂單');
       return;
     }
-    const msgEl = $('#detailMsg');
+    const msgEl = getActionMsgEl();
     if (msgEl) msgEl.textContent = '儲存中…';
 
     try {
@@ -4809,7 +4857,7 @@ async function savePickupRegOnly(){
     fields: { '取貨登記': v }
   };
 
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
   if (msgEl) msgEl.textContent = '儲存取貨登記中…';
 
   try{
@@ -4852,7 +4900,7 @@ async function saveDetail(opts = {}){
 
   const skipReload = !!opts.skipReload;
 const forcePayStatus = opts.forcePayStatus || '';
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
   msgEl.textContent = '儲存中…';
 
   const fields = {};
@@ -5125,7 +5173,7 @@ async function saveDetailAndShip(){
     return;
   }
 
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
   if (msgEl) msgEl.textContent = '儲存出貨 / 付款資料中…';
 
   const ok = await saveDetail({ skipReload: true });
@@ -5138,7 +5186,7 @@ async function saveDetailAndShip(){
 /* ===== 一鍵：標記出貨 ＋ LINE 通知（整合 admin_ship_orderid 版） ===== */
 async function shipAndLine(){
   if(!currentRecord) return;
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
   const f = currentRecord.fields || currentRecord || {};
   const orderId = f.order_id;
   if (!orderId){
@@ -5200,7 +5248,7 @@ async function saveAndShipAndLine() {
     return;
   }
 
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
   if (msgEl) msgEl.textContent = '儲存出貨 / 付款資料中…';
 
   const ok = await saveDetail({ skipReload: true });
@@ -5212,7 +5260,7 @@ async function saveAndShipAndLine() {
  /* ===== 確認收款 / 中租審核 ＋ 發 LINE ===== */
 async function confirmPay(mode){
   if (!currentRecord) return;
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
 
   const ok = await saveDetail({ skipReload: true });
   if (!ok) return;
@@ -5280,7 +5328,7 @@ async function depositReceivedAndNotify() {
 
   const depChk    = $('#d_deposit_received');
   const noticeChk = $('#d_pay_notice_sent');
-  const msgEl     = $('#detailMsg');
+  const msgEl     = getActionMsgEl();
 
   if (depChk) depChk.checked = true;
   if (noticeChk) noticeChk.checked = true;
@@ -5309,7 +5357,7 @@ try {
   await reloadCurrentView();
   restoreSelectedOrder(keepKey);
 
-  const newMsgEl = $('#detailMsg');
+  const newMsgEl = getActionMsgEl();
   if (newMsgEl) {
     newMsgEl.textContent = '✅ 已收到訂金，已寫入 pay_status = deposit_ok，並已儲存保留通知' + lineText;
   }
@@ -5405,7 +5453,7 @@ async function markMeetupCashDone(){
     return;
   }
 
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
 
   // 面交固定運費 0
   const feeEl = $('#d_ship_fee');
@@ -5496,7 +5544,7 @@ async function sendMeetupNotify(){
     return;
   }
 
-  const msgEl = $('#detailMsg');
+  const msgEl = getActionMsgEl();
   if (msgEl) msgEl.textContent = '發送面交通知中…';
 
   // 把「內部備註」當成面交補充說明一起傳給後端（選填）
@@ -6300,10 +6348,7 @@ async function loadAdminDefaultPage(){
     renderVendorMonthSummary();
   }
 
-  const msgEl = $('#msg');
-  if (msgEl) {
-    msgEl.textContent = `目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`;
-  }
+    setViewMsg(`目前顯示 Airtable View：${ADMIN_PAGE.viewName}。`);
 
   const sumEl = $('#summary');
   if (sumEl) {
