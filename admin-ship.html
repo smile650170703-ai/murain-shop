@@ -977,6 +977,7 @@ let currentRecord = null;
 let ORDERS_CACHE = []; // ← 匯出用，存純欄位物件
 let ALL_ORDERS_CACHE = [];
 let VENDOR_SUMMARY_CACHE = [];
+let VENDOR_SUMMARY_REQUEST_SEQ = 0;
 let LINE_SEARCH_TERM = '';
  let currentConsignAccountingRows = [];
 let currentConsignAccountingBucket = '';
@@ -1325,13 +1326,34 @@ function getCurrentDateRange(){
   };
 }
 
+function normalizeVendorMonthText(v){
+  const s = String(v || '').replace(/\s+/g, '').trim();
+  if (!s) return '';
+
+  let m = s.match(/^(\d{4})-(\d{1,2})$/);
+  if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}`;
+
+  m = s.match(/^(\d{4})-(\d{1,2})月$/);
+  if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}`;
+
+  m = s.match(/^(\d{4})年(\d{1,2})月$/);
+  if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}`;
+
+  m = s.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+  if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}`;
+
+  return s.replace(/月$/g, '').trim();
+}
+
 function monthKeyOfRecord(f){
   let month = String(f['賣貨便月份'] || '').trim();
+
   if (!month) {
     const shipAt = String(f.shipped_at || f.ship_at || '').trim();
-    if (shipAt) month = shipAt.slice(0, 7);
+    if (shipAt) month = shipAt;
   }
-  return month;
+
+  return normalizeVendorMonthText(month);
 }
 
 function applyLineNameSearch(rows){
@@ -2991,13 +3013,20 @@ async function loadOrders(filter='all', extra = {}){
 }
 
  async function loadVendorSummaryCache(monthOverride = ''){
-  try{
-    const month = String(
-      monthOverride ||
-      ($('#vendor_month') ? $('#vendor_month').value : '') ||
-      ''
-    ).trim();
+  const requestSeq = ++VENDOR_SUMMARY_REQUEST_SEQ;
 
+  const month = normalizeVendorMonthText(
+    monthOverride ||
+    ($('#vendor_month') ? $('#vendor_month').value : '') ||
+    ''
+  );
+
+  const panel = $('#vendor_month_summary');
+  if (panel && month) {
+    panel.textContent = `${month} 載入中…`;
+  }
+
+  try{
     const params = new URLSearchParams();
     params.set('filter', 'all');
     params.set('op_key', OP_KEY);
@@ -3012,13 +3041,29 @@ async function loadOrders(filter='all', extra = {}){
     const j = await r.json();
 
     if (!r.ok || !j.ok) {
-      throw new Error(j.error || 'vendor_summary_load_failed');
+      throw new Error(j.error || j.message || 'vendor_summary_load_failed');
+    }
+
+    // ✅ 防止舊月份請求比較晚回來，把新月份資料蓋掉
+    if (requestSeq !== VENDOR_SUMMARY_REQUEST_SEQ) {
+      return false;
+    }
+
+    const currentMonth = normalizeVendorMonthText($('#vendor_month') ? $('#vendor_month').value : '');
+    if (month && currentMonth && currentMonth !== month) {
+      return false;
     }
 
     VENDOR_SUMMARY_CACHE = j.orders || j.records || [];
+    return true;
   }catch(e){
     console.error('loadVendorSummaryCache failed', e);
-    VENDOR_SUMMARY_CACHE = [];
+
+    if (requestSeq === VENDOR_SUMMARY_REQUEST_SEQ) {
+      VENDOR_SUMMARY_CACHE = [];
+    }
+
+    return false;
   }
 }
 
@@ -3310,9 +3355,9 @@ async function reloadCurrentView(){
 
     updateCurrentSubTabCount(currentOrders.length);
 
-    if (shouldShowVendorMonthStats()) {
-      await loadVendorSummaryCache();
-      renderVendorMonthSummary();
+  if (shouldShowVendorMonthStats()) {
+      const loaded = await loadVendorSummaryCache();
+      if (loaded) renderVendorMonthSummary();
     }
 
        setViewMsg('匯款確認操作');
@@ -6394,10 +6439,10 @@ async function loadAdminDefaultPage(){
   // ✅ 補：固定子頁載入後，更新當頁小圓圈
   updateCurrentSubTabCount(currentOrders.length);
 
-  if (shouldShowVendorMonthStats()) {
-    await loadVendorSummaryCache();
-    renderVendorMonthSummary();
-  }
+if (shouldShowVendorMonthStats()) {
+      const loaded = await loadVendorSummaryCache();
+      if (loaded) renderVendorMonthSummary();
+    }
 
     setViewMsg('匯款確認操作');
 
@@ -6617,8 +6662,8 @@ if (vendorMonthEl){
   vendorMonthEl.value = `${yyyy}-${mm}`;
 vendorMonthEl.addEventListener('change', async ()=>{
   if (shouldShowVendorMonthStats()) {
-    await loadVendorSummaryCache(vendorMonthEl.value);
-    renderVendorMonthSummary();
+    const loaded = await loadVendorSummaryCache(vendorMonthEl.value);
+    if (loaded) renderVendorMonthSummary();
   }
 });
 }
