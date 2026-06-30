@@ -2990,11 +2990,23 @@ async function loadOrders(filter='all', extra = {}){
   }
 }
 
- async function loadVendorSummaryCache(){
+ async function loadVendorSummaryCache(monthOverride = ''){
   try{
+    const month = String(
+      monthOverride ||
+      ($('#vendor_month') ? $('#vendor_month').value : '') ||
+      ''
+    ).trim();
+
     const params = new URLSearchParams();
     params.set('filter', 'all');
     params.set('op_key', OP_KEY);
+
+    // ✅ 賣貨便月份統計專用：後端直接依月份查，不再只抓最新 300 筆
+    if (month) {
+      params.set('vendor_month', month);
+      params.set('limit', '3000');
+    }
 
     const r = await fetch(`${API}/admin/orders?` + params.toString());
     const j = await r.json();
@@ -6603,11 +6615,12 @@ if (vendorMonthEl){
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   vendorMonthEl.value = `${yyyy}-${mm}`;
-  vendorMonthEl.addEventListener('change', ()=>{
-    if (shouldShowVendorMonthStats()) {
-      renderVendorMonthSummary();
-    }
-  });
+vendorMonthEl.addEventListener('change', async ()=>{
+  if (shouldShowVendorMonthStats()) {
+    await loadVendorSummaryCache(vendorMonthEl.value);
+    renderVendorMonthSummary();
+  }
+});
 }
 
 // 匯出 / 列印維持原本
