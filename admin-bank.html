@@ -3838,6 +3838,63 @@ const totalBase = money(a.base);
 const creditUse = money(a.credit);
 const totalNet  = money(a.net);
 
+// ✅ 右側明細顯示用：判斷這筆是不是 TL 尾款單
+const detailOrderId = String(f.order_id || '').trim();
+const detailParentOrderId = String(f.parent_order_id || '').trim();
+
+const isActualTailOrderForDetail =
+  !!f.is_tail ||
+  String(f.order_type || '').trim().toLowerCase() === 'tail' ||
+  detailOrderId.toUpperCase().startsWith('TL') ||
+  !!detailParentOrderId;
+
+// ✅ TL 尾款單顯示「尾款應付金額」；一般訂金單仍顯示訂金金額
+const tailPayAmountForDetail = Number(f.net_amount ?? f.total_amount ?? f.total ?? 0) || 0;
+
+const depositSectionTitle = isActualTailOrderForDetail
+  ? '尾款 / 匯款資訊'
+  : '訂金 / 匯款資訊';
+
+const depositAmountLabel = isActualTailOrderForDetail
+  ? '尾款應付金額'
+  : (isCashInstOrder ? '現金分期訂金金額' : '訂金金額');
+
+const depositAmountDisplay = isActualTailOrderForDetail
+  ? (tailPayAmountForDetail ? money(tailPayAmountForDetail) : '—')
+  : (depAmount ? `NT$ ${Number(depAmount || 0).toLocaleString('zh-TW')}` : '—');
+
+const depositAmountEmpty = isActualTailOrderForDetail
+  ? !tailPayAmountForDetail
+  : !depAmount;
+
+const depositLast5Label = isActualTailOrderForDetail
+  ? '尾款匯款後五碼'
+  : '匯款後五碼';
+
+const depositExpireLabel = isActualTailOrderForDetail
+  ? '尾款到期日'
+  : '訂金到期日';
+
+const holdUntilLabel = isActualTailOrderForDetail
+  ? '原訂單編號'
+  : '保留到';
+
+const holdUntilDisplay = isActualTailOrderForDetail
+  ? (detailParentOrderId || '—')
+  : (holdUntil10 || '—');
+
+const holdUntilEmpty = isActualTailOrderForDetail
+  ? !detailParentOrderId
+  : !holdUntil10;
+
+const depositReceivedLabel = isActualTailOrderForDetail
+  ? '尾款已收到匯款 (deposit_received)'
+  : '已收到訂金 (deposit_received)';
+
+const payNoticeSentLabel = isActualTailOrderForDetail
+  ? '已發出尾款通知 (pay_notice_sent)'
+  : '已發出款/保留通知 (pay_notice_sent)';
+
 const isYufuOrder = /^yufu_inst_/i.test(String(f.payment_method || '').trim());
 
 const instApplyText = isYufuOrder
@@ -4045,21 +4102,24 @@ ${isCashInstOrder ? `
   <input id="d_cash_inst_completed" type="hidden" value="${cashInstCompleted ? '1' : ''}">
 ` : ''}
 
-<label class="mt-3">訂金 / 匯款資訊</label>
+<label class="mt-3">${depositSectionTitle}</label>
 
 <div class="row">
   <div>
-    <label>訂金金額</label>
-    <div class="ro-field ${depAmount ? '' : 'ro-empty'}" id="d_deposit_amount_ro">
-      ${depAmount ? `NT$ ${depAmount}` : '—'}
+    <label>${depositAmountLabel}</label>
+    <div class="ro-field ${depositAmountEmpty ? 'ro-empty' : ''}" id="d_deposit_amount_ro">
+      ${escapeHtml(depositAmountDisplay)}
     </div>
+
+    <!-- ✅ 注意：這個 hidden 保留原本 depAmount，不要改成尾款金額。
+         confirmPay 會讀這個欄位；TL 尾款單本身已經有 total_amount / net_amount，不需要把尾款寫進 deposit_amount。 -->
     <input id="d_deposit_amount" type="hidden" value="${depAmount}">
   </div>
 
   <div>
-    <label>匯款後五碼</label>
+    <label>${depositLast5Label}</label>
     <div class="ro-field ${depLast5 ? '' : 'ro-empty'}" id="d_deposit_last5_ro">
-      ${depLast5 || '—'}
+      ${escapeHtml(depLast5 || '—')}
     </div>
     <input id="d_deposit_last5" type="hidden" value="${depLast5}">
   </div>
@@ -4067,17 +4127,17 @@ ${isCashInstOrder ? `
 
 <div class="row">
   <div>
-    <label>訂金到期日</label>
+    <label>${depositExpireLabel}</label>
     <div class="ro-field ${depExpire10 ? '' : 'ro-empty'}" id="d_deposit_expire_at_ro">
-      ${depExpire10 || '—'}
+      ${escapeHtml(depExpire10 || '—')}
     </div>
     <input id="d_deposit_expire_at" type="hidden" value="${depExpire10}">
   </div>
 
   <div>
-    <label>保留到</label>
-    <div class="ro-field ${holdUntil10 ? '' : 'ro-empty'}" id="d_hold_until_ro">
-      ${holdUntil10 || '—'}
+    <label>${holdUntilLabel}</label>
+    <div class="ro-field ${holdUntilEmpty ? 'ro-empty' : ''}" id="d_hold_until_ro">
+      ${escapeHtml(holdUntilDisplay)}
     </div>
     <input id="d_hold_until" type="hidden" value="${holdUntil10}">
   </div>
@@ -4085,14 +4145,13 @@ ${isCashInstOrder ? `
 
 <div class="label-inline mt-2">
   <input id="d_deposit_received" type="checkbox" ${f.deposit_received ? 'checked':''}>
-  <span>已收到訂金 (deposit_received)</span>
+  <span>${depositReceivedLabel}</span>
 </div>
 
 <div class="label-inline">
   <input id="d_pay_notice_sent" type="checkbox" ${f.pay_notice_sent ? 'checked':''}>
-  <span>已發出款/保留通知 (pay_notice_sent)</span>
+  <span>${payNoticeSentLabel}</span>
 </div>
-
 <label class="mt-3 note-cn-label">內部備註中文說明</label>
 <div class="ro-field internal-note-cn ${f.internal_note ? '' : 'ro-empty'}">${escapeHtml(displayInternalNoteChinese(f.internal_note || ''))}</div>
 
