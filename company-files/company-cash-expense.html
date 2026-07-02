@@ -480,6 +480,13 @@ input, select, button{
   overflow:visible;
 }
 
+.paste-preview.has-photo{
+  border:none;
+  background:transparent;
+  padding:0;
+  min-height:auto;
+}
+
 .photo-placeholder{
   width:100%;
   min-height:54px;
@@ -504,6 +511,48 @@ input, select, button{
   border:1px solid #67e8f9;
   background:#ecfeff;
   color:#0e7490;
+  font-size:12px;
+  font-weight:900;
+  cursor:pointer;
+}
+
+.new-photo-cell{
+  width:260px !important;
+  min-width:260px !important;
+}
+
+.photo-slot-list{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:flex-start;
+}
+
+.photo-slot{
+  width:112px;
+}
+
+.photo-slot-preview{
+  width:112px;
+  min-height:88px;
+}
+
+.photo-slot-preview.has-photo{
+  border:none;
+  background:transparent;
+  padding:0;
+  min-height:auto;
+}
+
+.btn-add-photo-slot{
+  width:112px;
+  min-width:112px;
+  margin-top:8px;
+  padding:6px 6px;
+  border-radius:8px;
+  border:1px solid #c7d7ef;
+  background:#eef6ff;
+  color:#0f3f8c;
   font-size:12px;
   font-weight:900;
   cursor:pointer;
@@ -559,10 +608,53 @@ input, select, button{
   color:#0f766e;
 }
 
-.photo-open-hint{
-  margin-top:2px;
-  font-size:10px;
-  color:#64748b;
+/* 同頁面圖片放大，不開新視窗 */
+.photo-lightbox{
+  position:fixed;
+  inset:0;
+  z-index:99999;
+  background:rgba(15,23,42,.72);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+}
+
+.photo-lightbox.is-open{
+  display:flex;
+}
+
+.photo-lightbox-inner{
+  position:relative;
+  max-width:94vw;
+  max-height:92vh;
+}
+
+.photo-lightbox-img{
+  max-width:94vw;
+  max-height:88vh;
+  object-fit:contain;
+  border-radius:14px;
+  background:#fff;
+  box-shadow:0 18px 60px rgba(0,0,0,.35);
+}
+
+.photo-lightbox-close{
+  position:absolute;
+  top:-14px;
+  right:-14px;
+  width:32px;
+  height:32px;
+  min-width:32px;
+  padding:0;
+  border-radius:999px;
+  border:none;
+  background:#ef4444;
+  color:#fff;
+  font-size:20px;
+  font-weight:900;
+  line-height:32px;
+  cursor:pointer;
 }
 /* ===== 區塊標題：跟欄位標題分開辨識 ===== */
 .section-title{
@@ -653,7 +745,7 @@ th{
         <thead>
           <tr>
             <th style="width:210px;">交易明細備註</th>
-            <th style="width:140px;">拍照/截圖</th>
+            <th style="width:260px;">拍照/截圖</th>
             <th style="width:120px;">交易金額</th>
             <th style="width:135px;">交易日期</th>
            <th style="min-width:210px;">費用支出對象</th>
@@ -665,15 +757,24 @@ th{
             <td>
               <input id="newDetail" placeholder="例如 7-11運費 / 文具 / 郵局" />
             </td>
-            <td class="thumb-cell">
-  <div id="newPhotoPreview" class="paste-preview">點框後<br>Ctrl+V貼圖</div>
+         <td class="thumb-cell new-photo-cell">
+  <div id="newPhotoSlots" class="photo-slot-list">
+    <div class="photo-slot newPhotoSlot" data-slot-id="slot0" data-photo-url="">
+      <div class="paste-preview photo-slot-preview" tabindex="0">
+        點框後<br>Ctrl+V貼圖
+      </div>
 
-<div class="photo-actions">
-  <button class="photo-file-btn" type="button" id="btnNewPhotoAdd">＋選圖/加圖</button>
-</div>
+      <div class="photo-actions">
+        <button class="photo-file-btn photo-slot-choose" type="button">選擇檔案</button>
+      </div>
 
-<input id="newPhotoFile" type="file" accept="image/*" multiple style="display:none;" />
-<input id="newPhoto" class="photo-edit-input" placeholder="圖片網址 / 可連續貼圖" />
+      <input class="photo-slot-file" type="file" accept="image/*" multiple style="display:none;" />
+    </div>
+  </div>
+
+  <button class="btn-add-photo-slot" type="button" id="btnNewPhotoAdd">＋新增圖片欄位</button>
+
+  <input id="newPhoto" class="photo-edit-input" placeholder="圖片網址 / 可連續貼圖" />
 </td>
             <td>
               <input id="newAmount" type="number" placeholder="金額" />
@@ -977,7 +1078,6 @@ function photoPreviewHtml(value) {
       `).join("")}
     </div>
     <div class="photo-count">${urls.length} 張</div>
-    <div class="photo-open-hint">點圖放大｜×刪除</div>
   `;
 }
 
@@ -996,6 +1096,7 @@ function renderPhotoPreview(target, value) {
   if (!box) return;
 
   const urls = photoUrlsFromValue(value);
+  box.classList.toggle("has-photo", urls.length > 0);
 
   if (!urls.length) {
     box.innerHTML = `<div class="photo-placeholder">點框後<br>Ctrl+V貼圖</div>`;
@@ -1010,6 +1111,157 @@ function renderPhotoPreview(target, value) {
   box.style.cursor = "default";
   box.innerHTML = photoPreviewHtml(urls);
 }
+    function ensurePhotoLightbox() {
+  let box = document.getElementById("photoLightbox");
+
+  if (box) return box;
+
+  box = document.createElement("div");
+  box.id = "photoLightbox";
+  box.className = "photo-lightbox";
+  box.innerHTML = `
+    <div class="photo-lightbox-inner">
+      <button class="photo-lightbox-close" type="button">×</button>
+      <img class="photo-lightbox-img" src="" alt="圖片放大" />
+    </div>
+  `;
+
+  document.body.appendChild(box);
+
+  box.addEventListener("click", (e) => {
+    if (
+      e.target === box ||
+      e.target?.closest?.(".photo-lightbox-close")
+    ) {
+      box.classList.remove("is-open");
+      box.querySelector(".photo-lightbox-img").src = "";
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      box.classList.remove("is-open");
+      box.querySelector(".photo-lightbox-img").src = "";
+    }
+  });
+
+  return box;
+}
+
+function openPhotoLightbox(url) {
+  const s = String(url || "").trim();
+  if (!s) return;
+
+  const box = ensurePhotoLightbox();
+  box.querySelector(".photo-lightbox-img").src = s;
+  box.classList.add("is-open");
+}
+
+function photoSlotPreviewHtml(url) {
+  const s = String(url || "").trim();
+
+  if (!s) {
+    return `<div class="photo-placeholder">點框後<br>Ctrl+V貼圖</div>`;
+  }
+
+  return `
+    <div class="photo-thumb-grid">
+      <div class="photo-thumb-item">
+        <img
+          class="photo-thumb-img"
+          src="${esc(s)}"
+          data-photo-url="${esc(s)}"
+          alt="拍照/截圖"
+          title="點擊放大"
+        />
+        <button
+          type="button"
+          class="photo-remove-btn"
+          title="刪除這張"
+        >×</button>
+      </div>
+    </div>
+  `;
+}
+
+function updateNewPhotoHiddenFromSlots() {
+  const urls = [...document.querySelectorAll(".newPhotoSlot")]
+    .map(slot => String(slot.dataset.photoUrl || "").trim())
+    .filter(isValidPhotoUrl);
+
+  $("newPhoto").value = photoValueFromUrls(urls);
+}
+
+function renderNewPhotoSlot(slot, url = "") {
+  if (!slot) return;
+
+  const s = String(url || "").trim();
+  const preview = slot.querySelector(".photo-slot-preview");
+
+  slot.dataset.photoUrl = isValidPhotoUrl(s) ? s : "";
+
+  if (preview) {
+    preview.classList.toggle("has-photo", !!slot.dataset.photoUrl);
+    preview.innerHTML = photoSlotPreviewHtml(slot.dataset.photoUrl);
+  }
+
+  updateNewPhotoHiddenFromSlots();
+}
+
+function addNewPhotoSlot(url = "") {
+  const box = $("newPhotoSlots");
+  if (!box) return null;
+
+  const id = `slot${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+  box.insertAdjacentHTML("beforeend", `
+    <div class="photo-slot newPhotoSlot" data-slot-id="${esc(id)}" data-photo-url="">
+      <div class="paste-preview photo-slot-preview" tabindex="0">
+        點框後<br>Ctrl+V貼圖
+      </div>
+
+      <div class="photo-actions">
+        <button class="photo-file-btn photo-slot-choose" type="button">選擇檔案</button>
+      </div>
+
+      <input class="photo-slot-file" type="file" accept="image/*" multiple style="display:none;" />
+    </div>
+  `);
+
+  const slot = box.lastElementChild;
+  bindNewPhotoSlot(slot);
+
+  if (url) {
+    renderNewPhotoSlot(slot, url);
+  }
+
+  return slot;
+}
+
+function resetNewPhotoSlots() {
+  const box = $("newPhotoSlots");
+  if (!box) return;
+
+  box.innerHTML = `
+    <div class="photo-slot newPhotoSlot" data-slot-id="slot0" data-photo-url="">
+      <div class="paste-preview photo-slot-preview" tabindex="0">
+        點框後<br>Ctrl+V貼圖
+      </div>
+
+      <div class="photo-actions">
+        <button class="photo-file-btn photo-slot-choose" type="button">選擇檔案</button>
+      </div>
+
+      <input class="photo-slot-file" type="file" accept="image/*" multiple style="display:none;" />
+    </div>
+  `;
+
+  $("newPhoto").value = "";
+
+  document.querySelectorAll(".newPhotoSlot").forEach(bindNewPhotoSlot);
+  updateNewPhotoHiddenFromSlots();
+}
+    
 function markPhotoRowPicked(inputEl, previewEl) {
   const base = inputEl || previewEl;
   const tr = base?.closest?.(".reviewDataRow");
@@ -1021,10 +1273,11 @@ function markPhotoRowPicked(inputEl, previewEl) {
   ck.checked = true;
   tr.classList.add("is-picked");
 }
-async function uploadCashPhotoFile(file, inputEl, previewEl) {
+    
+async function uploadCashPhotoFile(file, inputEl, previewEl, opts = {}) {
   if (!file || !file.type || !file.type.startsWith("image/")) {
     alert("請選擇圖片檔。");
-    return;
+    return "";
   }
 
   const oldPreview = previewEl?.innerHTML || "";
@@ -1057,85 +1310,43 @@ async function uploadCashPhotoFile(file, inputEl, previewEl) {
       throw new Error("圖片已上傳，但後端回傳的圖片網址格式不正確。");
     }
 
+    if (typeof opts.onUploaded === "function") {
+      opts.onUploaded(url);
+      return url;
+    }
+
     const urls = photoUrlsFromValue(inputEl.value);
     if (!urls.includes(url)) urls.push(url);
 
     inputEl.value = photoValueFromUrls(urls);
     renderPhotoPreview(previewEl, inputEl.value);
     markPhotoRowPicked(inputEl, previewEl);
+
+    return url;
   } catch (err) {
     inputEl.value = oldValue;
     if (previewEl) previewEl.innerHTML = oldPreview;
     alert(err.message || err);
+    return "";
   }
 }
 
-async function uploadCashPhotoFiles(files, inputEl, previewEl) {
+async function uploadCashPhotoFiles(files, inputEl, previewEl, opts = {}) {
   const list = [...(files || [])].filter(f => f && f.type && f.type.startsWith("image/"));
   if (!list.length) return;
 
   for (const file of list) {
-    await uploadCashPhotoFile(file, inputEl, previewEl);
+    await uploadCashPhotoFile(file, inputEl, previewEl, opts);
   }
 }
 
-    let ACTIVE_PHOTO_PASTE_TARGET = null;
-let PHOTO_GLOBAL_PASTE_BOUND = false;
-
-function setActivePhotoPasteTarget(inputEl, previewEl) {
-  if (!inputEl || !previewEl) return;
-
-  ACTIVE_PHOTO_PASTE_TARGET = { inputEl, previewEl };
-
-  previewEl.focus();
-
-  previewEl.style.outline = "2px solid #22c55e";
-  previewEl.style.outlineOffset = "2px";
-
-  setTimeout(() => {
-    if (previewEl) {
-      previewEl.style.outline = "";
-      previewEl.style.outlineOffset = "";
-    }
-  }, 900);
-}
-
 function bindGlobalPhotoPaste() {
-  if (PHOTO_GLOBAL_PASTE_BOUND) return;
-  PHOTO_GLOBAL_PASTE_BOUND = true;
-
-  document.addEventListener("paste", async (e) => {
-    const target = ACTIVE_PHOTO_PASTE_TARGET;
-    if (!target?.inputEl || !target?.previewEl) return;
-
-    const tag = String(e.target?.tagName || "").toLowerCase();
-    const isTyping =
-      tag === "input" ||
-      tag === "textarea" ||
-      tag === "select" ||
-      e.target?.isContentEditable;
-
-    // 如果正在一般文字欄位輸入，不攔截，避免影響備註/明細貼文字
-    if (isTyping && e.target !== target.previewEl) return;
-
-    const items = [...(e.clipboardData?.items || [])];
-    const imgItems = items.filter(x => x.type && x.type.startsWith("image/"));
-    if (!imgItems.length) return;
-
-    e.preventDefault();
-
-    for (const imgItem of imgItems) {
-      const file = imgItem.getAsFile();
-      if (file) await uploadCashPhotoFile(file, target.inputEl, target.previewEl);
-    }
-  });
+  // 目前改成每一個圖片框自己接 paste，不再用全域貼圖目標。
 }
 
 function bindPasteImage(inputEl, previewEl, fileInputEl, addBtnEl) {
   if (!inputEl || inputEl.dataset.pasteBound === "1") return;
   inputEl.dataset.pasteBound = "1";
-
-  bindGlobalPhotoPaste();
 
   const handlePaste = async (e) => {
     const items = [...(e.clipboardData?.items || [])];
@@ -1158,6 +1369,8 @@ function bindPasteImage(inputEl, previewEl, fileInputEl, addBtnEl) {
   });
 
   if (previewEl) {
+    renderPhotoPreview(previewEl, inputEl.value);
+
     previewEl.tabIndex = 0;
     previewEl.addEventListener("paste", handlePaste);
 
@@ -1185,24 +1398,18 @@ function bindPasteImage(inputEl, previewEl, fileInputEl, addBtnEl) {
 
       if (img) {
         const url = String(img.dataset.photoUrl || img.src || "").trim();
-        if (url) {
-          window.open(url, "_blank", "noopener,noreferrer");
-        }
+        openPhotoLightbox(url);
         return;
       }
 
-      // 點空白框後，直接 Ctrl+V 貼圖；可連續貼多張
-      setActivePhotoPasteTarget(inputEl, previewEl);
+      previewEl.focus();
     });
   }
 
-  // ＋選圖/加圖：保留原本圖片，再追加新圖片；可一次選多張
   if (addBtnEl && fileInputEl) {
     addBtnEl.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-
-      fileInputEl.dataset.photoMode = "add";
       fileInputEl.click();
     });
   }
@@ -1210,19 +1417,106 @@ function bindPasteImage(inputEl, previewEl, fileInputEl, addBtnEl) {
   if (fileInputEl) {
     fileInputEl.addEventListener("change", async () => {
       await uploadCashPhotoFiles(fileInputEl.files, inputEl, previewEl);
-
       fileInputEl.value = "";
-      fileInputEl.dataset.photoMode = "add";
     });
   }
 }
+
+    async function uploadFilesToNewPhotoSlot(files, slot) {
+  const list = [...(files || [])].filter(f => f && f.type && f.type.startsWith("image/"));
+  if (!list.length || !slot) return;
+
+  for (let i = 0; i < list.length; i++) {
+    const targetSlot = i === 0 ? slot : addNewPhotoSlot();
+    const preview = targetSlot?.querySelector?.(".photo-slot-preview");
+
+    await uploadCashPhotoFile(list[i], $("newPhoto"), preview, {
+      onUploaded: (url) => {
+        renderNewPhotoSlot(targetSlot, url);
+      }
+    });
+  }
+}
+
+function bindNewPhotoSlot(slot) {
+  if (!slot || slot.dataset.slotBound === "1") return;
+  slot.dataset.slotBound = "1";
+
+  const preview = slot.querySelector(".photo-slot-preview");
+  const fileInput = slot.querySelector(".photo-slot-file");
+  const chooseBtn = slot.querySelector(".photo-slot-choose");
+
+  if (preview) {
+    preview.tabIndex = 0;
+
+    preview.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const removeBtn = e.target?.closest?.(".photo-remove-btn");
+      if (removeBtn) {
+        renderNewPhotoSlot(slot, "");
+        return;
+      }
+
+      const img = e.target?.closest?.(".photo-thumb-img");
+      if (img) {
+        const url = String(img.dataset.photoUrl || img.src || "").trim();
+        openPhotoLightbox(url);
+        return;
+      }
+
+      preview.focus();
+    });
+
+    preview.addEventListener("paste", async (e) => {
+      const items = [...(e.clipboardData?.items || [])];
+      const imgItems = items.filter(x => x.type && x.type.startsWith("image/"));
+      if (!imgItems.length) return;
+
+      e.preventDefault();
+
+      const files = imgItems
+        .map(item => item.getAsFile())
+        .filter(Boolean);
+
+      await uploadFilesToNewPhotoSlot(files, slot);
+    });
+  }
+
+  if (chooseBtn && fileInput) {
+    chooseBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      fileInput.click();
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener("change", async () => {
+      await uploadFilesToNewPhotoSlot(fileInput.files, slot);
+      fileInput.value = "";
+    });
+  }
+
+  renderNewPhotoSlot(slot, slot.dataset.photoUrl || "");
+}
+    
 function bindAllPhotoPasteInputs() {
-  bindPasteImage(
-    $("newPhoto"),
-    $("newPhotoPreview"),
-    $("newPhotoFile"),
-    $("btnNewPhotoAdd")
-  );
+  document.querySelectorAll(".newPhotoSlot").forEach(bindNewPhotoSlot);
+
+  const btnAddSlot = $("btnNewPhotoAdd");
+  if (btnAddSlot && btnAddSlot.dataset.slotAddBound !== "1") {
+    btnAddSlot.dataset.slotAddBound = "1";
+
+    btnAddSlot.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const slot = addNewPhotoSlot();
+      slot?.querySelector?.(".photo-slot-preview")?.focus();
+    });
+  }
 
   document.querySelectorAll(".rowPhoto").forEach(input => {
     const id = input.dataset.id;
@@ -1608,8 +1902,7 @@ const payload = {
 
     $("newDetail").value = "";
     $("newPhoto").value = "";
-    if ($("newPhotoFile")) $("newPhotoFile").value = "";
-    renderPhotoPreview("newPhotoPreview", "");
+    resetNewPhotoSlots();
     $("newAmount").value = "";
     $("newNote").value = "";
     $("newCategory").value = "";
