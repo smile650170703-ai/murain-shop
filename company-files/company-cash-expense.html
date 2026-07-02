@@ -497,23 +497,59 @@ input, select, button{
   min-width:78px;
   padding:6px 6px;
   border-radius:8px;
-  border:1px solid #c7d7ef;
-  background:#eef6ff;
-  color:#0f3f8c;
+  border:1px solid #67e8f9;
+  background:#ecfeff;
+  color:#0e7490;
   font-size:12px;
   font-weight:900;
   cursor:pointer;
 }
 
-.photo-file-btn.add{
-  background:#ecfeff;
-  border-color:#67e8f9;
-  color:#0e7490;
+.photo-thumb-grid{
+  width:100%;
+  display:grid;
+  grid-template-columns:repeat(2, 1fr);
+  gap:4px;
 }
-    .photo-file-btn.paste{
-  background:#f0fdf4;
-  border-color:#86efac;
-  color:#15803d;
+
+.photo-thumb-item{
+  position:relative;
+  width:34px;
+  height:34px;
+}
+
+.photo-thumb-item img{
+  width:34px;
+  height:34px;
+  object-fit:cover;
+  border-radius:7px;
+  border:1px solid var(--line);
+  display:block;
+}
+
+.photo-remove-btn{
+  position:absolute;
+  top:-6px;
+  right:-6px;
+  width:18px;
+  height:18px;
+  min-width:18px;
+  padding:0;
+  border-radius:999px;
+  border:none;
+  background:#ef4444;
+  color:#fff;
+  font-size:12px;
+  font-weight:900;
+  line-height:18px;
+  cursor:pointer;
+}
+
+.photo-count{
+  margin-top:3px;
+  font-size:11px;
+  font-weight:900;
+  color:#0f766e;
 }
 /* ===== 區塊標題：跟欄位標題分開辨識 ===== */
 .section-title{
@@ -617,12 +653,10 @@ th{
               <input id="newDetail" placeholder="例如 7-11運費 / 文具 / 郵局" />
             </td>
             <td class="thumb-cell">
-  <div id="newPhotoPreview" class="paste-preview">點這裡貼圖<br>Ctrl+V</div>
+  <div id="newPhotoPreview" class="paste-preview">點框後<br>Ctrl+V貼圖</div>
 
 <div class="photo-actions">
-  <button class="photo-file-btn paste" type="button" id="btnNewPhotoPaste">貼上圖片</button>
-  <button class="photo-file-btn" type="button" id="btnNewPhotoChoose">選擇圖片</button>
-  <button class="photo-file-btn add" type="button" id="btnNewPhotoAdd">＋加圖片</button>
+  <button class="photo-file-btn" type="button" id="btnNewPhotoAdd">＋選圖/加圖</button>
 </div>
 
 <input id="newPhotoFile" type="file" accept="image/*" multiple style="display:none;" />
@@ -904,13 +938,24 @@ function photoValueFromUrls(value) {
 
 function photoPreviewHtml(value) {
   const urls = photoUrlsFromValue(value);
-  const first = urls[0] || "";
 
-  if (!first) return `點這裡貼圖<br>Ctrl+V`;
+  if (!urls.length) return `點這裡貼圖<br>Ctrl+V`;
 
   return `
-    <img src="${esc(first)}" alt="拍照/截圖" />
-    ${urls.length > 1 ? `<div style="font-size:11px;font-weight:900;">${urls.length}張</div>` : ""}
+    <div class="photo-thumb-grid">
+      ${urls.map((url, idx) => `
+        <div class="photo-thumb-item">
+          <img src="${esc(url)}" alt="拍照/截圖 ${idx + 1}" />
+          <button
+            type="button"
+            class="photo-remove-btn"
+            data-photo-idx="${idx}"
+            title="刪除這張"
+          >×</button>
+        </div>
+      `).join("")}
+    </div>
+    <div class="photo-count">${urls.length} 張</div>
   `;
 }
 
@@ -931,7 +976,7 @@ function renderPhotoPreview(target, value) {
   const urls = photoUrlsFromValue(value);
 
   if (!urls.length) {
-    box.innerHTML = `點這裡貼圖<br>Ctrl+V`;
+    box.innerHTML = `點框後<br>Ctrl+V貼圖`;
     box.dataset.photoUrl = "";
     box.dataset.photoUrls = "[]";
     box.style.cursor = "pointer";
@@ -1064,7 +1109,7 @@ function bindGlobalPhotoPaste() {
   });
 }
 
-function bindPasteImage(inputEl, previewEl, fileInputEl, addBtnEl, replaceBtnEl, pasteBtnEl) {
+function bindPasteImage(inputEl, previewEl, fileInputEl, addBtnEl) {
   if (!inputEl || inputEl.dataset.pasteBound === "1") return;
   inputEl.dataset.pasteBound = "1";
 
@@ -1094,43 +1139,32 @@ function bindPasteImage(inputEl, previewEl, fileInputEl, addBtnEl, replaceBtnEl,
     previewEl.tabIndex = 0;
     previewEl.addEventListener("paste", handlePaste);
 
-    // 圖片框：點一下後 Ctrl+V，可追加貼上第 2 張、第 3 張
     previewEl.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      setActivePhotoPasteTarget(inputEl, previewEl);
-    });
-  }
 
-  // 貼上圖片：只是指定貼圖目標，接著按 Ctrl+V
-  if (pasteBtnEl) {
-    pasteBtnEl.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+      const removeBtn = e.target?.closest?.(".photo-remove-btn");
 
-      setActivePhotoPasteTarget(inputEl, previewEl);
-      alert("請按 Ctrl+V 貼上圖片。可以連續貼多張。");
-    });
-  }
+      if (removeBtn) {
+        const idx = Number(removeBtn.dataset.photoIdx);
+        const urls = photoUrlsFromValue(inputEl.value);
 
-  if (fileInputEl) {
-    fileInputEl.addEventListener("change", async () => {
-      const mode = String(fileInputEl.dataset.photoMode || "add");
+        if (Number.isFinite(idx) && idx >= 0) {
+          urls.splice(idx, 1);
+          inputEl.value = photoValueFromUrls(urls);
+          renderPhotoPreview(previewEl, inputEl.value);
+          markPhotoRowPicked(inputEl, previewEl);
+        }
 
-      // 選擇圖片＝重新選，先清掉原本圖片
-      if (mode === "replace") {
-        inputEl.value = "";
-        renderPhotoPreview(previewEl, "");
+        return;
       }
 
-      await uploadCashPhotoFiles(fileInputEl.files, inputEl, previewEl);
-
-      fileInputEl.value = "";
-      fileInputEl.dataset.photoMode = "add";
+      // 點圖片框後，直接 Ctrl+V 貼圖；可連續貼多張
+      setActivePhotoPasteTarget(inputEl, previewEl);
     });
   }
 
-  // ＋加圖片：保留原本圖片再新增
+  // ＋選圖/加圖：保留原本圖片，再追加新圖片；可一次選多張
   if (addBtnEl && fileInputEl) {
     addBtnEl.addEventListener("click", (e) => {
       e.preventDefault();
@@ -1141,14 +1175,12 @@ function bindPasteImage(inputEl, previewEl, fileInputEl, addBtnEl, replaceBtnEl,
     });
   }
 
-  // 選擇圖片：清掉原本圖片後重新選
-  if (replaceBtnEl && fileInputEl) {
-    replaceBtnEl.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+  if (fileInputEl) {
+    fileInputEl.addEventListener("change", async () => {
+      await uploadCashPhotoFiles(fileInputEl.files, inputEl, previewEl);
 
-      fileInputEl.dataset.photoMode = "replace";
-      fileInputEl.click();
+      fileInputEl.value = "";
+      fileInputEl.dataset.photoMode = "add";
     });
   }
 }
@@ -1157,9 +1189,7 @@ function bindAllPhotoPasteInputs() {
     $("newPhoto"),
     $("newPhotoPreview"),
     $("newPhotoFile"),
-    $("btnNewPhotoAdd"),
-    $("btnNewPhotoChoose"),
-    $("btnNewPhotoPaste")
+    $("btnNewPhotoAdd")
   );
 
   document.querySelectorAll(".rowPhoto").forEach(input => {
@@ -1167,10 +1197,8 @@ function bindAllPhotoPasteInputs() {
     const preview = document.querySelector(`.rowPhotoPreview[data-id="${id}"]`);
     const fileInput = document.querySelector(`.rowPhotoFile[data-id="${id}"]`);
     const addBtn = document.querySelector(`.rowPhotoChoose[data-id="${id}"]`);
-    const pasteBtn = document.querySelector(`.rowPhotoPaste[data-id="${id}"]`);
 
-    // 第二區塊：貼上圖片 / ＋加圖 都是追加，不取代
-    bindPasteImage(input, preview, fileInput, addBtn, null, pasteBtn);
+    bindPasteImage(input, preview, fileInput, addBtn);
   });
 }
 
@@ -1290,9 +1318,8 @@ async function renderUnconfirmedRows() {
             ${photoPreviewHtml(r.photos || r.photo)}
           </div>
 
-                   <div class="photo-actions">
-            <button class="photo-file-btn paste rowPhotoPaste" type="button" data-id="${esc(r.id)}">貼上圖片</button>
-            <button class="photo-file-btn add rowPhotoChoose" type="button" data-id="${esc(r.id)}">＋加圖</button>
+            <div class="photo-actions">
+            <button class="photo-file-btn rowPhotoChoose" type="button" data-id="${esc(r.id)}">＋選圖/加圖</button>
           </div>
 
           <input class="rowPhotoFile" type="file" accept="image/*" multiple data-id="${esc(r.id)}" style="display:none;" />
