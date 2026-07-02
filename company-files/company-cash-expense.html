@@ -1316,7 +1316,10 @@ function updateNewPhotoHiddenFromSlots() {
 
 function hasNewPhotoUploading() {
   return [...document.querySelectorAll(".newPhotoSlot .photo-slot-preview")]
-    .some(el => String(el.textContent || "").includes("上傳中"));
+    .some(el => {
+      const t = String(el.textContent || "");
+      return t.includes("上傳中") || t.includes("圖片處理中");
+    });
 }
 function hasRowPhotoUploading() {
   return [...document.querySelectorAll(".rowPhotoSlot .row-photo-slot-preview")]
@@ -1980,7 +1983,32 @@ function setTodayForNewDate() {
 
   return false;
 }
-    
+    async function waitCreatedCashExpensePhotosVisible(recordId, expectedPhotos = []) {
+  const id = String(recordId || "").trim();
+  const expectedCount = photoUrlsFromValue(expectedPhotos).length;
+
+  if (!id || !expectedCount) return true;
+
+  for (let i = 0; i < 12; i++) {
+    try {
+      const data = await apiGet(API_REVIEW);
+      const rows = Array.isArray(data.rows) ? data.rows : [];
+      const row = rows.find(r => String(r.id || "") === id);
+
+      if (row) {
+        const photos = photoUrlsFromValue(row.photos).length
+          ? photoUrlsFromValue(row.photos)
+          : photoUrlsFromValue(row.photo);
+
+        if (photos.length >= expectedCount) return true;
+      }
+    } catch (_) {}
+
+    await sleep(1000);
+  }
+
+  return false;
+}
 async function renderUnconfirmedRows() {
   const tbody = $("unconfirmedRows");
   tbody.innerHTML = `<tr><td colspan="9" class="empty">載入中...</td></tr>`;
@@ -2295,7 +2323,25 @@ $("btnBatchConfirm").addEventListener("click", async () => {
   btn.textContent = "處理中...";
 
   try {
-    await Promise.all(payloads.map(p => apiPost(API_UPDATE, p)));
+    const results = await Promise.all(payloads.map(p => apiPost(API_UPDATE, p)));
+
+    for (let i = 0; i < payloads.length; i++) {
+      const p = payloads[i];
+      const result = results[i] || {};
+      const expectedPhotos = photoUrlsFromValue(p.photos);
+      const returnedPhotos = photoUrlsFromValue(result.photos || []);
+
+      if (expectedPhotos.length && returnedPhotos.length < expectedPhotos.length) {
+        throw new Error(
+          `圖片沒有成功寫進後端/Airtable。送出 ${expectedPhotos.length} 張，但後端只回傳 ${returnedPhotos.length} 張。請確認 api.murain.tw 是否已部署最新 index.js，或 Airtable「拍照/截圖」附件欄位是否接受該圖片網址。`
+        );
+      }
+    }
+
+    if (payloads.some(p => photoUrlsFromValue(p.photos).length > 0)) {
+      await sleep(1200);
+    }
+
     await refreshAll();
   } catch (err) {
     alert(`儲存失敗：${err.message || err}`);
@@ -2345,7 +2391,26 @@ const payload = {
   msg.className = "msg";
 
   try {
-    await apiPost(API_CREATE, payload);
+    const createdResult = await apiPost(API_CREATE, payload);
+    const createdId = String(createdResult?.id || createdResult?.record?.id || "");
+    const expectedPhotos = photoUrlsFromValue(payload.photos || []);
+    const returnedPhotos = photoUrlsFromValue(createdResult?.photos || []);
+
+    if (expectedPhotos.length && returnedPhotos.length < expectedPhotos.length) {
+      throw new Error(
+        `新增資料已送出，但圖片沒有成功寫進後端/Airtable。送出 ${expectedPhotos.length} 張，但後端只回傳 ${returnedPhotos.length} 張。請確認 api.murain.tw 是否已部署最新 index.js，或 Airtable「拍照/截圖」附件欄位是否接受該圖片網址。`
+      );
+    }
+
+    if (expectedPhotos.length) {
+      const visible = await waitCreatedCashExpensePhotosVisible(createdId, expectedPhotos);
+
+      if (!visible) {
+        throw new Error(
+          `新增後第二區塊列表 API 還讀不到圖片。這代表 /review-list 讀回來的拍照/截圖欄位仍是空的，請確認 Airtable 附件欄位是否真的有存入圖片。`
+        );
+      }
+    }
 
     $("newDetail").value = "";
     $("newPhoto").value = "";
@@ -2358,8 +2423,6 @@ const payload = {
     msg.textContent = "✅ 已新增到未確認現金支出。";
     msg.className = "msg ok";
 
-    // Airtable 附件欄位多張圖處理會比一張慢，等穩定後再刷新第二區塊
-    await sleep((payload.photos || []).length > 1 ? 3000 : 1500);
     await refreshAll();
   } catch (err) {
     msg.textContent = `❌ 新增失敗：${err.message || err}`;
