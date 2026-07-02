@@ -485,9 +485,10 @@ input, select, button{
   border-radius:8px;
   border:1px solid var(--line);
 }
-    .photo-actions{
+.photo-actions{
   margin-top:5px;
   display:flex;
+  flex-direction:column;
   gap:5px;
 }
 
@@ -502,6 +503,12 @@ input, select, button{
   font-size:12px;
   font-weight:900;
   cursor:pointer;
+}
+
+.photo-file-btn.add{
+  background:#ecfeff;
+  border-color:#67e8f9;
+  color:#0e7490;
 }
 /* ===== 區塊標題：跟欄位標題分開辨識 ===== */
 .section-title{
@@ -607,12 +614,13 @@ th{
             <td class="thumb-cell">
   <div id="newPhotoPreview" class="paste-preview">貼圖/選圖<br>可多張</div>
 
-  <div class="photo-actions">
-    <button class="photo-file-btn" type="button" id="btnNewPhotoChoose">＋選擇圖片</button>
-  </div>
+<div class="photo-actions">
+  <button class="photo-file-btn" type="button" id="btnNewPhotoChoose">選擇圖片</button>
+  <button class="photo-file-btn add" type="button" id="btnNewPhotoAdd">＋加圖片</button>
+</div>
 
-  <input id="newPhotoFile" type="file" accept="image/*" multiple style="display:none;" />
-  <input id="newPhoto" class="photo-edit-input" placeholder="圖片網址 / 可連續貼圖" />
+<input id="newPhotoFile" type="file" accept="image/*" multiple style="display:none;" />
+<input id="newPhoto" class="photo-edit-input" placeholder="圖片網址 / 可連續貼圖" />
 </td>
             <td>
               <input id="newAmount" type="number" placeholder="金額" />
@@ -998,7 +1006,7 @@ async function uploadCashPhotoFiles(files, inputEl, previewEl) {
   }
 }
 
-function bindPasteImage(inputEl, previewEl, fileInputEl, chooseBtnEl) {
+function bindPasteImage(inputEl, previewEl, fileInputEl, addBtnEl, replaceBtnEl) {
   if (!inputEl || inputEl.dataset.pasteBound === "1") return;
   inputEl.dataset.pasteBound = "1";
 
@@ -1026,9 +1034,17 @@ function bindPasteImage(inputEl, previewEl, fileInputEl, chooseBtnEl) {
     previewEl.tabIndex = 0;
     previewEl.addEventListener("paste", handlePaste);
 
-    // 點圖片不要再放大，避免你要加第二張時一直開圖
+    // 點圖片框＝加圖片
     previewEl.addEventListener("click", (e) => {
+      e.preventDefault();
       e.stopPropagation();
+
+      if (fileInputEl) {
+        fileInputEl.dataset.photoMode = "add";
+        fileInputEl.click();
+        return;
+      }
+
       previewEl.focus();
       inputEl.focus();
     });
@@ -1036,15 +1052,39 @@ function bindPasteImage(inputEl, previewEl, fileInputEl, chooseBtnEl) {
 
   if (fileInputEl) {
     fileInputEl.addEventListener("change", async () => {
+      const mode = String(fileInputEl.dataset.photoMode || "add");
+
+      // 選擇圖片＝重新選，先清掉原本圖片
+      if (mode === "replace") {
+        inputEl.value = "";
+        renderPhotoPreview(previewEl, "");
+      }
+
       await uploadCashPhotoFiles(fileInputEl.files, inputEl, previewEl);
+
       fileInputEl.value = "";
+      fileInputEl.dataset.photoMode = "add";
     });
   }
 
-  if (chooseBtnEl && fileInputEl) {
-    chooseBtnEl.addEventListener("click", (e) => {
+  // ＋加圖片：保留原本圖片再新增
+  if (addBtnEl && fileInputEl) {
+    addBtnEl.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
+
+      fileInputEl.dataset.photoMode = "add";
+      fileInputEl.click();
+    });
+  }
+
+  // 選擇圖片：清掉原本圖片後重新選
+  if (replaceBtnEl && fileInputEl) {
+    replaceBtnEl.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      fileInputEl.dataset.photoMode = "replace";
       fileInputEl.click();
     });
   }
@@ -1054,6 +1094,7 @@ function bindAllPhotoPasteInputs() {
     $("newPhoto"),
     $("newPhotoPreview"),
     $("newPhotoFile"),
+    $("btnNewPhotoAdd"),
     $("btnNewPhotoChoose")
   );
 
@@ -1063,6 +1104,7 @@ function bindAllPhotoPasteInputs() {
     const fileInput = document.querySelector(`.rowPhotoFile[data-id="${id}"]`);
     const chooseBtn = document.querySelector(`.rowPhotoChoose[data-id="${id}"]`);
 
+    // 清單裡的「＋加圖」只做新增，不取代
     bindPasteImage(input, preview, fileInput, chooseBtn);
   });
 }
