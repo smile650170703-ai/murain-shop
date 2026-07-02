@@ -586,8 +586,8 @@ th{
               <input id="newDetail" placeholder="例如 7-11運費 / 文具 / 郵局" />
             </td>
             <td class="thumb-cell">
-              <div id="newPhotoPreview" class="paste-preview">貼上圖片<br>Ctrl+V</div>
-              <input id="newPhoto" class="photo-edit-input" placeholder="圖片網址 / 可貼圖" />
+              <div id="newPhotoPreview" class="paste-preview">可連續貼圖<br>Ctrl+V</div>
+              <input id="newPhoto" class="photo-edit-input" placeholder="圖片網址 / 可連續貼圖" />
             </td>
             <td>
               <input id="newAmount" type="number" placeholder="金額" />
@@ -800,22 +800,71 @@ function categorySelect(id, value) {
   `;
 }
 
-function renderPhotoPreview(target, url) {
+function photoUrlsFromValue(value) {
+  if (Array.isArray(value)) {
+    return [...new Set(
+      value
+        .map(x => {
+          if (x == null) return "";
+          if (typeof x === "object") return String(x.url || "").trim();
+          return String(x).trim();
+        })
+        .filter(Boolean)
+    )];
+  }
+
+  return [...new Set(
+    String(value || "")
+      .split(/[\n,]+/g)
+      .map(s => s.trim())
+      .filter(Boolean)
+  )];
+}
+
+function photoValueFromUrls(value) {
+  return photoUrlsFromValue(value).join("\n");
+}
+
+function photoPreviewHtml(value) {
+  const urls = photoUrlsFromValue(value);
+  const first = urls[0] || "";
+
+  if (!first) return `可連續貼圖<br>Ctrl+V`;
+
+  return `
+    <img src="${esc(first)}" alt="拍照/截圖" />
+    ${urls.length > 1 ? `<div style="font-size:11px;font-weight:900;">${urls.length}張</div>` : ""}
+  `;
+}
+
+function photoThumbLinksHtml(value) {
+  const urls = photoUrlsFromValue(value);
+
+  return urls.map(url => `
+    <a href="${esc(url)}" target="_blank" rel="noopener">
+      <img src="${esc(url)}" alt="拍照/截圖" />
+    </a>
+  `).join("");
+}
+
+function renderPhotoPreview(target, value) {
   const box = typeof target === "string" ? $(target) : target;
   if (!box) return;
 
-  const s = String(url || "").trim();
+  const urls = photoUrlsFromValue(value);
 
-  if (!s) {
-    box.innerHTML = `貼上圖片<br>Ctrl+V`;
+  if (!urls.length) {
+    box.innerHTML = `可連續貼圖<br>Ctrl+V`;
     box.dataset.photoUrl = "";
+    box.dataset.photoUrls = "[]";
     box.style.cursor = "pointer";
     return;
   }
 
-  box.dataset.photoUrl = s;
+  box.dataset.photoUrl = urls[0] || "";
+  box.dataset.photoUrls = JSON.stringify(urls);
   box.style.cursor = "zoom-in";
-  box.innerHTML = `<img src="${esc(s)}" alt="拍照/截圖" />`;
+  box.innerHTML = photoPreviewHtml(urls);
 }
 
 async function uploadCashPhotoFile(file, inputEl, previewEl) {
@@ -825,6 +874,8 @@ async function uploadCashPhotoFile(file, inputEl, previewEl) {
   }
 
   const oldPreview = previewEl?.innerHTML || "";
+  const oldValue = inputEl?.value || "";
+
   if (previewEl) previewEl.textContent = "上傳中...";
 
   try {
@@ -850,9 +901,13 @@ async function uploadCashPhotoFile(file, inputEl, previewEl) {
     const url = info.delivery_url || info.url || "";
     if (!url) throw new Error("圖片已上傳，但後端沒有回傳圖片網址。");
 
-    inputEl.value = url;
-    renderPhotoPreview(previewEl, url);
+    const urls = photoUrlsFromValue(inputEl.value);
+    if (!urls.includes(url)) urls.push(url);
+
+    inputEl.value = photoValueFromUrls(urls);
+    renderPhotoPreview(previewEl, inputEl.value);
   } catch (err) {
+    inputEl.value = oldValue;
     if (previewEl) previewEl.innerHTML = oldPreview;
     alert(err.message || err);
   }
@@ -862,36 +917,47 @@ function bindPasteImage(inputEl, previewEl) {
   if (!inputEl || inputEl.dataset.pasteBound === "1") return;
   inputEl.dataset.pasteBound = "1";
 
-  inputEl.addEventListener("paste", async (e) => {
+  const handlePaste = async (e) => {
     const items = [...(e.clipboardData?.items || [])];
-    const imgItem = items.find(x => x.type && x.type.startsWith("image/"));
-    if (!imgItem) return;
+    const imgItems = items.filter(x => x.type && x.type.startsWith("image/"));
+    if (!imgItems.length) return;
 
     e.preventDefault();
-    const file = imgItem.getAsFile();
-    await uploadCashPhotoFile(file, inputEl, previewEl);
-  });
+
+    for (const imgItem of imgItems) {
+      const file = imgItem.getAsFile();
+      if (file) {
+        await uploadCashPhotoFile(file, inputEl, previewEl);
+      }
+    }
+  };
+
+  inputEl.addEventListener("paste", handlePaste);
 
   inputEl.addEventListener("change", () => {
+    inputEl.value = photoValueFromUrls(inputEl.value);
     renderPhotoPreview(previewEl, inputEl.value);
   });
 
-   if (previewEl) {
+  if (previewEl) {
+    previewEl.tabIndex = 0;
+    previewEl.addEventListener("paste", handlePaste);
+
     previewEl.addEventListener("click", (e) => {
       e.stopPropagation();
 
-      const url = String(inputEl.value || previewEl.dataset.photoUrl || "").trim();
+      const urls = photoUrlsFromValue(inputEl.value || previewEl.dataset.photoUrls || previewEl.dataset.photoUrl || "");
 
-      if (url) {
-        window.open(url, "_blank", "noopener,noreferrer");
+      if (urls.length) {
+        window.open(urls[0], "_blank", "noopener,noreferrer");
         return;
       }
 
+      previewEl.focus();
       inputEl.focus();
     });
   }
 }
-
 function bindAllPhotoPasteInputs() {
   bindPasteImage($("newPhoto"), $("newPhotoPreview"));
 
@@ -1013,12 +1079,12 @@ async function renderUnconfirmedRows() {
           <input class="rowDetail" data-id="${esc(r.id)}" value="${esc(r.detail)}" />
         </td>
 
-        <td class="thumb-cell">
+                <td class="thumb-cell">
           <div class="paste-preview rowPhotoPreview" data-id="${esc(r.id)}">
-            ${r.photo ? `<img src="${esc(r.photo)}" alt="拍照/截圖" />` : `貼上圖片<br>Ctrl+V`}
+            ${photoPreviewHtml(r.photos || r.photo)}
           </div>
 
-          <input class="rowPhoto photo-edit-input" data-id="${esc(r.id)}" value="${esc(r.photo)}" placeholder="圖片網址 / 可貼圖" />
+          <input class="rowPhoto photo-edit-input" data-id="${esc(r.id)}" value="${esc(photoValueFromUrls(r.photos || r.photo))}" placeholder="圖片網址 / 可連續貼圖" />
         </td>
 
         <td>
@@ -1097,12 +1163,8 @@ async function renderConfirmedRows() {
     tbody.innerHTML = list.length ? list.map(r => `
       <tr>
         <td>${esc(r.detail)}</td>
-        <td class="thumb-cell">
-          ${r.photo ? `
-            <a href="${esc(r.photo)}" target="_blank" rel="noopener">
-              <img src="${esc(r.photo)}" alt="拍照/截圖" />
-            </a>
-          ` : ""}
+                <td class="thumb-cell">
+          ${photoThumbLinksHtml(r.photos || r.photo)}
         </td>
         <td>${money(r.amount)}</td>
         <td>${esc(r.date)}</td>
@@ -1139,7 +1201,7 @@ $("btnBatchConfirm").addEventListener("click", async () => {
   return {
     id,
     detail: document.querySelector(`.rowDetail[data-id="${id}"]`)?.value || "",
-    photo: document.querySelector(`.rowPhoto[data-id="${id}"]`)?.value || "",
+    photos: photoUrlsFromValue(document.querySelector(`.rowPhoto[data-id="${id}"]`)?.value || ""),
     amount: document.querySelector(`.rowAmount[data-id="${id}"]`)?.value || "",
     category: document.querySelector(`.rowCategory[data-id="${id}"]`)?.value || "",
     manualBank: !!document.querySelector(`.rowManualBank[data-id="${id}"]`)?.checked,
@@ -1187,7 +1249,7 @@ $("btnBatchConfirm").addEventListener("click", async () => {
 $("btnCreateCashExpense").addEventListener("click", async () => {
 const payload = {
   detail: $("newDetail")?.value || "",
-  photo: $("newPhoto")?.value || "",
+  photos: photoUrlsFromValue($("newPhoto")?.value || ""),
   amount: $("newAmount")?.value || "",
   category: $("newCategory")?.value || "",
   note: $("newNote")?.value || ""
