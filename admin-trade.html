@@ -434,7 +434,9 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 </div>
 </div><!-- ✅ 關閉 toolbar-main，讓清單不要被排到上方工具列右邊 -->
 
-<div class="layout">
+<div id="tradeToolbarWrap"></div>
+
+<div class="layout" id="adminMainLayout">
   <div class="card" id="orderList">
     <div class="muted">載入中…</div>
   </div>
@@ -684,37 +686,50 @@ function renderConsignAccountingPeriodPicker(){
   currentConsignAccountingBucket = '';
   currentConsignAccountingRows = [];
 
+  const layoutEl = $('#adminMainLayout');
+  const toolbarEl = $('#tradeToolbarWrap');
   const listEl = $('#orderList');
   const detailEl = $('#orderDetail');
   const msgEl = $('#msg');
 
-  const options = getTradePeriodOptions();
+  if (layoutEl) layoutEl.classList.add('trade-single-layout');
 
+  const options = getTradePeriodOptions();
   const defaultPeriod = currentConsignAccountingPeriod || options[0]?.value || '';
 
-  listEl.innerHTML = `
-    <div style="padding:12px;">
-      <div class="section-title">一時貿易申報月份</div>
-      <div class="tag-small" style="margin-top:6px;line-height:1.6;">
-        先選月份再載入，系統只會抓該月份區間資料，不會一進頁面就抓全部。
+  if (toolbarEl) {
+    toolbarEl.innerHTML = `
+      <div class="trade-toolbar-card">
+        <div class="section-title">一時貿易申報月份</div>
+        <div class="tag-small" style="margin-top:4px;">
+          先選月份再載入，只抓該月份區間資料。
+        </div>
+
+        <div class="trade-toolbar-row" style="margin-top:10px;">
+          <div>
+            <label>申報月份</label>
+            <select id="trade_period_select">
+              ${options.map(opt => `
+                <option value="${escapeHtml(opt.value)}" ${opt.value === defaultPeriod ? 'selected' : ''}>
+                  ${escapeHtml(opt.label)}
+                </option>
+              `).join('')}
+            </select>
+          </div>
+
+          <button class="btn-primary" id="btnLoadTradePeriod" type="button">
+            載入一時貿易資料
+          </button>
+        </div>
       </div>
+    `;
+  }
 
-      <label style="margin-top:12px;">申報月份</label>
-      <select id="trade_period_select">
-        ${options.map(opt => `
-          <option value="${escapeHtml(opt.value)}" ${opt.value === defaultPeriod ? 'selected' : ''}>
-            ${escapeHtml(opt.label)}
-          </option>
-        `).join('')}
-      </select>
+  if (listEl) {
+    listEl.innerHTML = '';
+  }
 
-      <button class="btn-primary" id="btnLoadTradePeriod" type="button" style="width:100%;margin-top:12px;">
-        載入一時貿易資料
-      </button>
-    </div>
-  `;
-
-  detailEl.innerHTML = '<div class="muted">請先選擇申報月份，再載入資料。</div>';
+  detailEl.innerHTML = '<div class="muted">請先在上方選擇申報月份，再載入資料。</div>';
   updateCurrentSubTabCount(0);
   setTopFilterActive('consign_accounting');
 
@@ -743,8 +758,8 @@ async function loadConsignAccountingPeriod(period){
     return;
   }
 
-  listEl.innerHTML = '<div class="muted">一時貿易資料載入中…</div>';
-  detailEl.innerHTML = '<div class="muted">資料載入中…</div>';
+  if (listEl) listEl.innerHTML = '';
+  detailEl.innerHTML = '<div class="muted">一時貿易資料載入中…</div>';
 
   if (msgEl) {
     msgEl.textContent = `正在載入 ${getTradePeriodLabel(currentConsignAccountingPeriod)} 一時貿易資料…`;
@@ -802,25 +817,6 @@ async function loadConsignAccountingList(){
   renderConsignAccountingPeriodPicker();
 }
 
-function buildTradePeriodReloadBox(){
-  return `
-    <div style="margin-top:12px;padding:12px;border:1px solid rgba(148,163,184,.24);border-radius:12px;background:rgba(15,23,42,.7);">
-      <label>申報月份</label>
-      <select id="trade_period_select_detail">
-        ${getTradePeriodOptions().map(opt => `
-          <option value="${escapeHtml(opt.value)}" ${opt.value === currentConsignAccountingPeriod ? 'selected' : ''}>
-            ${escapeHtml(opt.label)}
-          </option>
-        `).join('')}
-      </select>
-
-      <button class="btn-secondary" id="btnLoadTradePeriodDetail" type="button" style="width:100%;margin-top:10px;">
-        重新載入月份
-      </button>
-    </div>
-  `;
-}
-
 function bindTradePeriodReloadBox(){
   $('#btnLoadTradePeriodDetail')?.addEventListener('click', async () => {
     const period = String($('#trade_period_select_detail')?.value || '').trim();
@@ -833,19 +829,10 @@ function renderConsignAccountingPeriodResult(){
 
   const label = getTradePeriodLabel(currentConsignAccountingPeriod || '');
   const rows = currentConsignAccountingRows || [];
-  const count = rows.length;
 
-  listEl.innerHTML = `
-    <div class="order-row active" data-bucket="${escapeHtml(label)}">
-      <div class="ord-top">
-        <div class="ord-id">${escapeHtml(label)}</div>
-        <div class="ord-right">
-          <div class="ord-amount">${count} 筆</div>
-        </div>
-      </div>
-      <div class="ord-sub">已完成匯款／購物金的一時貿易資料</div>
-    </div>
-  `;
+  if (listEl) {
+    listEl.innerHTML = '';
+  }
 
   currentConsignAccountingBucket = label;
   renderConsignAccountingDetail(label, rows);
@@ -858,11 +845,7 @@ function renderConsignAccountingDetail(bucket, rows){
     detailEl.innerHTML = `
       <div class="section-title">${bucket} 一時貿易資料</div>
       <div class="tag-small">${bucket} 沒有可列印資料。</div>
-
-      ${buildTradePeriodReloadBox()}
     `;
-
-    bindTradePeriodReloadBox();
     return;
   }
 
@@ -877,10 +860,10 @@ function renderConsignAccountingDetail(bucket, rows){
     const idBack  = String(acc.idBackUrl || '').trim();
 
     return `
-      <div style="border:1px solid rgba(148,163,184,.25);border-radius:12px;padding:12px;margin-bottom:12px;background:rgba(2,6,23,.55);">
-        <div style="font-weight:800;font-size:15px;margin-bottom:8px;">第 ${idx + 1} 筆｜${escapeHtml(bucket)} 一時貿易資料</div>
+      <div class="trade-preview-card">
+        <div class="trade-preview-title">第 ${idx + 1} 筆｜${escapeHtml(bucket)} 一時貿易資料</div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="trade-preview-grid">
           <div><b>姓名：</b>${escapeHtml(acc.name || '')}</div>
           <div><b>身分證字號：</b>${escapeHtml(acc.nationalId || '')}</div>
           <div><b>訂單編號：</b>${escapeHtml(item.orderId || '')}</div>
@@ -897,7 +880,7 @@ function renderConsignAccountingDetail(bucket, rows){
     `;
   }).join('');
 
-  detailEl.innerHTML = `
+    detailEl.innerHTML = `
     <div class="section-title">${bucket} 一時貿易資料</div>
     <div class="tag-small">共 ${rows.length} 筆；列印時會一筆一頁，並附身分證正反面。</div>
 
@@ -906,12 +889,8 @@ function renderConsignAccountingDetail(bucket, rows){
       <button class="btn-primary" id="btnPrintConsignAccountingIds" type="button">🖨️ 列印身分證正反面</button>
     </div>
 
-    ${buildTradePeriodReloadBox()}
-
-    <div style="margin-top:12px;max-height:70vh;overflow:auto;">${previewHtml}</div>
+    <div class="trade-preview-list">${previewHtml}</div>
   `;
-
-  bindTradePeriodReloadBox();
  
   function getConsignAccountingPersonGroups(sourceRows){
     const map = new Map();
@@ -1337,7 +1316,90 @@ function renderConsignAccountingDetail(bucket, rows){
 #benefitBadge{
   display:none !important;
 }
-        </style>
+       /* ===== 一時貿易：上方操作區 + 單一清單區 ===== */
+.trade-toolbar-card{
+  background:rgba(15,23,42,.95);
+  border:1px solid rgba(148,163,184,.3);
+  border-radius:16px;
+  padding:12px;
+  margin-bottom:12px;
+}
+
+.trade-toolbar-row{
+  display:grid;
+  grid-template-columns:minmax(180px,260px) 180px;
+  gap:10px;
+  align-items:end;
+}
+
+.trade-toolbar-card label{
+  font-size:12px;
+  margin:0 0 4px;
+}
+
+.trade-toolbar-card select{
+  height:36px;
+  font-size:13px;
+}
+
+.trade-toolbar-card button{
+  height:36px;
+  margin-top:0;
+  padding:8px 12px;
+  font-size:13px;
+}
+
+.trade-single-layout{
+  grid-template-columns:1fr !important;
+}
+
+.trade-single-layout #orderList{
+  display:none !important;
+}
+
+.trade-single-layout #orderDetail{
+  width:100%;
+}
+
+.trade-preview-list{
+  margin-top:10px;
+  max-height:70vh;
+  overflow:auto;
+  font-size:13px;
+  line-height:1.5;
+}
+
+.trade-preview-card{
+  border:1px solid rgba(148,163,184,.25);
+  border-radius:12px;
+  padding:9px 10px;
+  margin-bottom:8px;
+  background:rgba(2,6,23,.55);
+}
+
+.trade-preview-title{
+  font-weight:800;
+  font-size:13px;
+  margin-bottom:6px;
+}
+
+.trade-preview-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:5px 10px;
+}
+
+.trade-preview-grid b{
+  font-weight:800;
+}
+
+@media (max-width:720px){
+  .trade-toolbar-row{
+    grid-template-columns:1fr;
+  }
+}
+
+</style>
       </head>
 
       <body>
