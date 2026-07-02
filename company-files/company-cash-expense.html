@@ -1251,12 +1251,21 @@ function photoSlotPreviewHtml(url) {
   `;
 }
 
-function updateNewPhotoHiddenFromSlots() {
-  const urls = [...document.querySelectorAll(".newPhotoSlot")]
+function getNewPhotoSlotUrls() {
+  return [...document.querySelectorAll(".newPhotoSlot")]
     .map(slot => String(slot.dataset.photoUrl || "").trim())
     .filter(isValidPhotoUrl);
+}
 
+function updateNewPhotoHiddenFromSlots() {
+  const urls = getNewPhotoSlotUrls();
   $("newPhoto").value = photoValueFromUrls(urls);
+  return urls;
+}
+
+function hasNewPhotoUploading() {
+  return [...document.querySelectorAll(".newPhotoSlot .photo-slot-preview")]
+    .some(el => String(el.textContent || "").includes("上傳中"));
 }
 
 function renderNewPhotoSlot(slot, url = "") {
@@ -2162,9 +2171,16 @@ $("btnBatchConfirm").addEventListener("click", async () => {
   }
 });
 $("btnCreateCashExpense").addEventListener("click", async () => {
+if (hasNewPhotoUploading()) {
+  alert("圖片還在上傳中，請等圖片顯示出來後再新增。");
+  return;
+}
+
+const newPhotoUrls = updateNewPhotoHiddenFromSlots();
+
 const payload = {
   detail: $("newDetail")?.value || "",
-  photos: photoUrlsFromValue($("newPhoto")?.value || ""),
+  photos: newPhotoUrls,
   amount: $("newAmount")?.value || "",
   category: $("newCategory")?.value || "",
   note: $("newNote")?.value || ""
@@ -2208,6 +2224,8 @@ const payload = {
     msg.textContent = "✅ 已新增到未確認現金支出。";
     msg.className = "msg ok";
 
+    // Airtable 附件欄位有時需要一點時間處理圖片網址，等一下再刷新第二區塊
+    await new Promise(resolve => setTimeout(resolve, 900));
     await refreshAll();
   } catch (err) {
     msg.textContent = `❌ 新增失敗：${err.message || err}`;
