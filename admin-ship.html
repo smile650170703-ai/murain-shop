@@ -2111,11 +2111,17 @@ function displayInternalNoteChinese(raw){
 
   const lines = [];
 
+  function pushLine(text){
+    const t = String(text || '').trim();
+    if (!t) return;
+    if (!lines.includes(t)) lines.push(t);
+  }
+
   function addIfMatch(label, re){
     const m = s.match(re);
     if (!m) return;
     const d = noteDateLabel(m[0]);
-    lines.push(d ? `${label}（${d}）` : label);
+    pushLine(d ? `${label}（${d}）` : label);
   }
 
   addIfMatch('尾款逾期，訂金已沒收', /\[TAIL_OVERDUE_DEPOSIT_FORFEIT\][^\[]*/);
@@ -2129,11 +2135,18 @@ function displayInternalNoteChinese(raw){
   addIfMatch('⚠️ 現金分期補庫存失敗，請人工確認庫存', /\[RESTOCK_FAILED_CASH_INST_OVERDUE\][^\[]*/);
   addIfMatch('人工已補回庫存（現金分期訂金沒收）', /\[MANUAL_RESTOCK_CASH_INST_FORFEIT\][^\[]*/);
 
+  // ✅ 付款 / 保留通知
+  addIfMatch('已發出款／保留通知', /\[ADMIN_PAYMENT_PENDING_NOTIFY_SENT[^\]]*\][^\[]*/);
+  addIfMatch('已發出款／保留通知', /\[ADMIN_PAYMENT_PENDING_NOTIFY[^\]]*\][^\[]*/);
+
+  // ✅ 現金分期提醒通知
+  addIfMatch('已發送現金分期付款提醒', /\[ADMIN_CASH_INST_DUE_NOTIFY[^\]]*\][^\[]*/);
+
   const cashPeriods = s.matchAll(/\[CASH_INST_PERIOD_OK:(\d+)\][^\[]*/g);
   for (const m of cashPeriods) {
     const d = noteDateLabel(m[0]);
     const no = m[1] || '';
-    lines.push(d ? `現金分期第 ${no} 期已收款（${d}）` : `現金分期第 ${no} 期已收款`);
+    pushLine(d ? `現金分期第 ${no} 期已收款（${d}）` : `現金分期第 ${no} 期已收款`);
   }
 
   addIfMatch('線上付款失敗，系統已自動補回庫存', /\[AUTO_RESTOCK_PAYUNI_FAIL\][^\[]*/);
@@ -2143,8 +2156,64 @@ function displayInternalNoteChinese(raw){
 
   const retry = s.match(/\[RETRY_CART=([^\]]+)\]/);
   if (retry) {
-    lines.push(`已產生重新結帳購物車：${retry[1]}`);
+    pushLine(`已產生重新結帳購物車：${retry[1]}`);
   }
+
+  // ✅ 把人工手打備註也顯示在中文說明
+  const manualLines = String(s || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map(line => {
+      let x = String(line || '').trim();
+      if (!x) return '';
+
+      // 移除已知系統標籤與後面的系統紀錄
+      x = x
+        .replace(/\[TAIL_OVERDUE_DEPOSIT_FORFEIT\][^\[]*/g, '')
+        .replace(/\[AUTO_RESTOCK_TAIL_OVERDUE_CANCEL\][^\[]*/g, '')
+        .replace(/\[RESTOCK_FAILED_TAIL_OVERDUE\][^\[]*/g, '')
+        .replace(/\[MANUAL_RESTOCK_TAIL_FORFEIT\][^\[]*/g, '')
+
+        .replace(/\[CASH_INST_DEPOSIT_OK\][^\[]*/g, '')
+        .replace(/\[CASH_INST_OVERDUE_CANCEL(?::[^\]]+)?\][^\[]*/g, '')
+        .replace(/\[AUTO_RESTOCK_CASH_INST_OVERDUE\][^\[]*/g, '')
+        .replace(/\[RESTOCK_FAILED_CASH_INST_OVERDUE\][^\[]*/g, '')
+        .replace(/\[MANUAL_RESTOCK_CASH_INST_FORFEIT\][^\[]*/g, '')
+        .replace(/\[CASH_INST_PERIOD_OK:\d+\][^\[]*/g, '')
+
+        .replace(/\[ADMIN_PAYMENT_PENDING_NOTIFY_SENT[^\]]*\][^\[]*/g, '')
+        .replace(/\[ADMIN_PAYMENT_PENDING_NOTIFY[^\]]*\][^\[]*/g, '')
+        .replace(/\[ADMIN_CASH_INST_DUE_NOTIFY[^\]]*\][^\[]*/g, '')
+
+        .replace(/\[AUTO_RESTOCK_PAYUNI_FAIL\][^\[]*/g, '')
+        .replace(/\[AUTO_RESTOCK_ZC_NOTIFY_FAIL\][^\[]*/g, '')
+        .replace(/\[AUTO_RESTOCK_ADMIN_RETRY_CHECKOUT\][^\[]*/g, '')
+        .replace(/\[FAIL_FLEX_SENT\][^\[]*/g, '')
+        .replace(/\[RETRY_CART=[^\]]+\]/g, '');
+
+      // 移除殘留的時間 / to=1 / phase= 這類系統字串
+      x = x
+        .replace(/\[\d{4}-\d{2}-\d{2}T[^\]]+\]\s*(to=|to:|phase=|paid_parts=|total_parts=)[^\n]*/gi, '')
+        .replace(/\d{4}-\d{2}-\d{2}T[\d:.+-Z]+/gi, '')
+        .replace(/\b(to|phase|paid_parts|total_parts)\s*=\s*\S+/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+
+      const meaningful = x
+        .replace(/\d{4}-\d{2}-\d{2}/g, '')
+        .replace(/\d{2}:\d{2}(:\d{2})?/g, '')
+        .replace(/[T+Z年月日\s:：,，.。;；/\\\-_=|]+/g, '')
+        .trim();
+
+      if (!meaningful) return '';
+      return x;
+    })
+    .filter(Boolean);
+
+  manualLines.forEach(t => {
+    pushLine(`人工備註：${t}`);
+  });
 
   return lines.length ? lines.join('\n') : s;
 }
@@ -5752,39 +5821,40 @@ const cleanPrintNote = (v) => {
     .replace(/\r/g, '\n')
     .split('\n')
     .map(line => {
-      let s = String(line || '').trim();
-      if (!s) return '';
+      const original = String(line || '').trim();
+      if (!original) return '';
 
-      // ✅ 移除系統英文標籤本體
-      // 例如：[CASH_INST_PERIOD_OK:1]、[ADMIN_CONFIRM_PAY]、[RETRY_CART=xxx]
-      s = s.replace(/\[[A-Z0-9_:=\-\s]+\]/gi, '');
+      // ✅ 只要「原始整行」是系統自動紀錄，就整行不印
+      // 避免清掉 [ADMIN...] 後，還剩下 [時間] to=1 這種垃圾文字
+      const isSystemLine =
+        /\[(CASH_INST|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[^\]]*\]/i.test(original) ||
+        /\b(CASH_INST|ADMIN_CASH_INST|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_OVERDUE|FAIL_FLEX|MANUAL_RESTOCK)\b/i.test(original) ||
+        /^\[\d{4}-\d{2}-\d{2}T[^\]]+\]\s*(to=|to:|phase=|paid_parts=|total_parts=)/i.test(original) ||
+        (
+          /^\[?\d{4}-\d{2}-\d{2}T/i.test(original) &&
+          /\b(to|phase|paid_parts|total_parts)\s*=/i.test(original)
+        );
 
-      // ✅ 移除常見英文系統字串殘留
-      s = s
-        .replace(/\bCASH_INST[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bADMIN[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bAUTO_RESTOCK[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bRESTOCK_FAILED[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bPAYUNI[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bYUFU[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bRETRY_CART[A-Z0-9_:=:-]*\b/gi, '')
-        .replace(/\bTAIL[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bPAYMENT[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bDEPOSIT[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bNOTIFY[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bREMIND[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bSYSTEM[A-Z0-9_:-]*\b/gi, '');
+      if (isSystemLine) return '';
 
-      // ✅ 如果清完只剩日期、時間、符號，就不要印
-      const onlySystemLeft = s
+      // ✅ 非系統行才做安全清理，保留人工備註
+      let s = original
+        .replace(/\[(CASH_INST|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[^\]]*\]/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+
+      // ✅ 清完只剩日期、時間、分隔線、符號，也不要印
+      const meaningful = s
+        .replace(/\[\d{4}-\d{2}-\d{2}T[^\]]+\]/g, '')
+        .replace(/\d{4}-\d{2}-\d{2}T[\d:.+-Z]+/gi, '')
         .replace(/\d{4}-\d{2}-\d{2}/g, '')
         .replace(/\d{2}:\d{2}(:\d{2})?/g, '')
         .replace(/[T+Z年月日\s:：,，.。;；/\\\-_=|]+/g, '')
         .trim();
 
-      if (!onlySystemLeft) return '';
+      if (!meaningful) return '';
 
-      return s.replace(/\s{2,}/g, ' ').trim();
+      return s;
     })
     .filter(Boolean)
     .join('\n')
