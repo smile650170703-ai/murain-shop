@@ -802,6 +802,32 @@ async function loadConsignAccountingList(){
   renderConsignAccountingPeriodPicker();
 }
 
+function buildTradePeriodReloadBox(){
+  return `
+    <div style="margin-top:12px;padding:12px;border:1px solid rgba(148,163,184,.24);border-radius:12px;background:rgba(15,23,42,.7);">
+      <label>申報月份</label>
+      <select id="trade_period_select_detail">
+        ${getTradePeriodOptions().map(opt => `
+          <option value="${escapeHtml(opt.value)}" ${opt.value === currentConsignAccountingPeriod ? 'selected' : ''}>
+            ${escapeHtml(opt.label)}
+          </option>
+        `).join('')}
+      </select>
+
+      <button class="btn-secondary" id="btnLoadTradePeriodDetail" type="button" style="width:100%;margin-top:10px;">
+        重新載入月份
+      </button>
+    </div>
+  `;
+}
+
+function bindTradePeriodReloadBox(){
+  $('#btnLoadTradePeriodDetail')?.addEventListener('click', async () => {
+    const period = String($('#trade_period_select_detail')?.value || '').trim();
+    await loadConsignAccountingPeriod(period);
+  });
+}
+
 function renderConsignAccountingPeriodResult(){
   const listEl = $('#orderList');
 
@@ -810,21 +836,6 @@ function renderConsignAccountingPeriodResult(){
   const count = rows.length;
 
   listEl.innerHTML = `
-    <div style="padding:12px;border-bottom:1px solid rgba(148,163,184,.18);margin-bottom:8px;">
-      <label>申報月份</label>
-      <select id="trade_period_select">
-        ${getTradePeriodOptions().map(opt => `
-          <option value="${escapeHtml(opt.value)}" ${opt.value === currentConsignAccountingPeriod ? 'selected' : ''}>
-            ${escapeHtml(opt.label)}
-          </option>
-        `).join('')}
-      </select>
-
-      <button class="btn-secondary" id="btnLoadTradePeriod" type="button" style="width:100%;margin-top:10px;">
-        重新載入月份
-      </button>
-    </div>
-
     <div class="order-row active" data-bucket="${escapeHtml(label)}">
       <div class="ord-top">
         <div class="ord-id">${escapeHtml(label)}</div>
@@ -836,11 +847,6 @@ function renderConsignAccountingPeriodResult(){
     </div>
   `;
 
-  $('#btnLoadTradePeriod')?.addEventListener('click', async () => {
-    const period = String($('#trade_period_select')?.value || '').trim();
-    await loadConsignAccountingPeriod(period);
-  });
-
   currentConsignAccountingBucket = label;
   renderConsignAccountingDetail(label, rows);
 }
@@ -849,7 +855,14 @@ function renderConsignAccountingDetail(bucket, rows){
   const detailEl = $('#orderDetail');
 
   if (!rows.length){
-    detailEl.innerHTML = `<div class="muted">${bucket} 沒有可列印資料</div>`;
+    detailEl.innerHTML = `
+      <div class="section-title">${bucket} 一時貿易資料</div>
+      <div class="tag-small">${bucket} 沒有可列印資料。</div>
+
+      ${buildTradePeriodReloadBox()}
+    `;
+
+    bindTradePeriodReloadBox();
     return;
   }
 
@@ -889,12 +902,17 @@ function renderConsignAccountingDetail(bucket, rows){
     <div class="tag-small">共 ${rows.length} 筆；列印時會一筆一頁，並附身分證正反面。</div>
 
     <div class="top-order-actions mt-3">
-  <button class="btn-secondary" id="btnDownloadConsignAccountingTxt" type="button">📝 依姓名整理 TXT</button>
-  <button class="btn-primary" id="btnPrintConsignAccountingIds" type="button">🖨️ 列印身分證正反面</button>
-</div>
+      <button class="btn-secondary" id="btnDownloadConsignAccountingTxt" type="button">📝 依姓名整理 TXT</button>
+      <button class="btn-primary" id="btnPrintConsignAccountingIds" type="button">🖨️ 列印身分證正反面</button>
+    </div>
+
+    ${buildTradePeriodReloadBox()}
 
     <div style="margin-top:12px;max-height:70vh;overflow:auto;">${previewHtml}</div>
   `;
+
+  bindTradePeriodReloadBox();
+ 
   function getConsignAccountingPersonGroups(sourceRows){
     const map = new Map();
 
