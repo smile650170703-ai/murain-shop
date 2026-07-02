@@ -1085,7 +1085,58 @@ function isValidPhotoUrl(url) {
 
   return true;
 }
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
+function waitOneImageLoad(url, timeoutMs = 1600) {
+  return new Promise(resolve => {
+    const s = String(url || "").trim();
+    if (!s) {
+      resolve(false);
+      return;
+    }
+
+    let done = false;
+    const img = new Image();
+
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      img.onload = null;
+      img.onerror = null;
+      resolve(false);
+    }, timeoutMs);
+
+    img.onload = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(true);
+    };
+
+    img.onerror = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(false);
+    };
+
+    img.src = `${s}${s.includes("?") ? "&" : "?"}_ready=${Date.now()}`;
+  });
+}
+
+async function waitPhotoDeliveryReady(url, maxTry = 6) {
+  const s = String(url || "").trim();
+  if (!isValidPhotoUrl(s)) return false;
+
+  for (let i = 0; i < maxTry; i++) {
+    if (await waitOneImageLoad(s)) return true;
+    await sleep(450);
+  }
+
+  return false;
+}
 function photoUrlsFromValue(value) {
   let raw = [];
 
@@ -1388,6 +1439,13 @@ async function uploadCashPhotoFile(file, inputEl, previewEl, opts = {}) {
     const url = info.delivery_url || info.url || "";
     if (!isValidPhotoUrl(url)) {
       throw new Error("圖片已上傳，但後端回傳的圖片網址格式不正確。");
+    }
+
+    if (previewEl) previewEl.textContent = "圖片處理中...";
+
+    const ready = await waitPhotoDeliveryReady(url);
+    if (!ready) {
+      throw new Error("圖片已上傳，但圖片網址尚未準備完成，請稍等幾秒再重新貼圖或重新選檔。");
     }
 
     if (typeof opts.onUploaded === "function") {
@@ -1912,7 +1970,7 @@ async function renderUnconfirmedRows() {
                               <td class="thumb-cell row-photo-cell">
           <div class="photo-slot-list rowPhotoSlots" data-id="${esc(r.id)}">
             ${
-              (photoUrlsFromValue(r.photos || r.photo).length ? photoUrlsFromValue(r.photos || r.photo) : [""])
+              (photoUrlsFromValue(r.photos).length ? photoUrlsFromValue(r.photos) : (photoUrlsFromValue(r.photo).length ? photoUrlsFromValue(r.photo) : [""]))
                 .map(url => `
                   <div class="photo-slot rowPhotoSlot" data-id="${esc(r.id)}" data-photo-url="${esc(url)}">
                     <button class="photo-slot-remove" type="button" title="刪除圖片">×</button>
@@ -1933,7 +1991,7 @@ async function renderUnconfirmedRows() {
 
           <button class="btn-add-photo-slot rowPhotoAddSlot" type="button" data-id="${esc(r.id)}">＋圖片</button>
 
-          <input class="rowPhoto photo-edit-input" data-id="${esc(r.id)}" value="${esc(photoValueFromUrls(r.photos || r.photo))}" placeholder="圖片網址 / 可連續貼圖" />
+          <input class="rowPhoto photo-edit-input" data-id="${esc(r.id)}" value="${esc(photoValueFromUrls(photoUrlsFromValue(r.photos).length ? r.photos : r.photo))}" placeholder="圖片網址 / 可連續貼圖" />
         </td>
 
         <td>
@@ -2021,7 +2079,7 @@ async function renderConfirmedRows() {
       <tr>
         <td>${esc(r.detail)}</td>
                 <td class="thumb-cell">
-          ${photoThumbLinksHtml(r.photos || r.photo)}
+          ${photoThumbLinksHtml(photoUrlsFromValue(r.photos).length ? r.photos : r.photo)}
         </td>
         <td>${money(r.amount)}</td>
         <td>${esc(r.date)}</td>
@@ -2224,8 +2282,8 @@ const payload = {
     msg.textContent = "✅ 已新增到未確認現金支出。";
     msg.className = "msg ok";
 
-    // Airtable 附件欄位有時需要一點時間處理圖片網址，等一下再刷新第二區塊
-    await new Promise(resolve => setTimeout(resolve, 900));
+    // Airtable 附件欄位多張圖處理會比一張慢，等穩定後再刷新第二區塊
+    await sleep((payload.photos || []).length > 1 ? 3000 : 1500);
     await refreshAll();
   } catch (err) {
     msg.textContent = `❌ 新增失敗：${err.message || err}`;
