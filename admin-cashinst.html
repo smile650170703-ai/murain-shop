@@ -5337,30 +5337,41 @@ async function printShipSlipsRange(){
     const doc = win.document;
 
 const cleanPrintNote = (v) => {
-  const lines = String(v || '')
+  return String(v || '')
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
-    .split('\n');
+    .split('\n')
+    .map(line => {
+      let s = String(line || '').trim();
+      if (!s) return '';
 
-  return lines
-    .map(x => String(x || '').trim())
-    .filter(line => {
-      if (!line) return false;
+      // ✅ 移除系統英文標籤本體
+      // 例如：[CASH_INST_PERIOD_OK:1]、[ADMIN_CASH_INST_DUE_NOTIFY:xxx]、[RETRY_CART=xxx]
+      s = s.replace(/\[[A-Z0-9_:=\-\s]+\]/gi, '');
 
-      // ✅ 只隱藏「確定是系統自動產生」的英文標籤
-      // 不要隨便用 ORDER / LINE / SYSTEM 這種大範圍字眼，避免誤刪手動備註的列印
-      const isSystemAutoNote =
-        /^\[CASH_INST_DEPOSIT_OK\]/i.test(line) ||
-        /^\[CASH_INST_DUE_REMIND_TODAY\]/i.test(line) ||
-        /^\[CASH_INST_DUE_REMIND_TOMORROW\]/i.test(line) ||
-        /^\[ADMIN_CASH_INST_DUE_NOTIFY/i.test(line) ||
-        /^\[CASH_INST_PERIOD_OK/i.test(line) ||
-        /^\[CASH_INST_PERIOD_REMIND/i.test(line) ||
-        /^\[CASH_INST_PERIOD_OVERDUE/i.test(line) ||
-        /^\[CASH_INST_ALL_DONE/i.test(line);
+      // ✅ 移除常見英文系統字串殘留
+      s = s
+        .replace(/\bCASH_INST[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bADMIN[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bAUTO_RESTOCK[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bRESTOCK_FAILED[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bPAYUNI[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bYUFU[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bRETRY_CART[A-Z0-9_:=:-]*\b/gi, '')
+        .replace(/\bTAIL[A-Z0-9_:-]*\b/gi, '');
 
-      return !isSystemAutoNote;
+      // ✅ 如果清完只剩日期、時間、符號，就不要印
+      const onlySystemLeft = s
+        .replace(/\d{4}-\d{2}-\d{2}/g, '')
+        .replace(/\d{2}:\d{2}(:\d{2})?/g, '')
+        .replace(/[T+Z年月日\s:：,，.。;；/\\\-_=|]+/g, '')
+        .trim();
+
+      if (!onlySystemLeft) return '';
+
+      return s.replace(/\s{2,}/g, ' ').trim();
     })
+    .filter(Boolean)
     .join('\n')
     .trim();
 };
@@ -5471,6 +5482,17 @@ const slipEscape = (v) => (typeof escapeHtml === 'function'
     }[c]))
 );
 
+const slipNum = (v) => {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const s = String(v ?? '').replace(/[^\d.-]/g, '').trim();
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const slipMoney = (v) => {
+  return 'NT$ ' + Math.round(slipNum(v)).toLocaleString('zh-TW');
+};
+
 function parseSlipItems(itemsText){
   const raw = String(itemsText || '')
     .replace(/\r\n/g, '\n')
@@ -5489,11 +5511,18 @@ function parseSlipItems(itemsText){
       let work = line;
 
       const priceMatch = work.match(/[（(]\s*(NT\$?\s*[\d,]+|\$?\s*[\d,]+)\s*[）)]\s*$/i);
+      let price = '';
+
       if (priceMatch) {
+        price = String(priceMatch[1] || '').replace(/\s+/g, ' ').trim();
+        price = price.replace(/^NT\$\s*/i, 'NT$ ');
+        if (!/^NT\$/i.test(price)) {
+          price = 'NT$ ' + price.replace(/^\$?\s*/, '');
+        }
         work = work.slice(0, priceMatch.index).trim();
       }
 
-      // 只抓最後面的 x 1 / x 2 / × 3，不會誤抓 250ML
+      // 只抓最後面的 x 1 / x 2 / × 3，不會誤抓 50ML、250ML
       const qtyMatch = work.match(/(?:^|\s)([xX×＊*])\s*(\d+)\s*$/);
       let qty = 0;
 
@@ -5504,7 +5533,8 @@ function parseSlipItems(itemsText){
 
       return {
         name: work.replace(/^・\s*/, '・ ').trim(),
-        qty
+        qty,
+        price
       };
     });
 }
@@ -5529,15 +5559,63 @@ function renderSlipItems(itemsText){
   `).join('');
 }
 
-    // ↓ 這裡完全照匯出中心的 printOrders 抄來 ↓
+function getSlipAmountInfo(f){
+  const a = (typeof calcAmounts === 'function') ? calcAmounts(f) : null;
+
+  const base = slipNum(firstNonEmpty(
+    f['訂單金額'],
+    f['商品總金額'],
+    f.total_amount,
+    f.total,
+    a?.base
+  ));
+
+  const credit = slipNum(firstNonEmpty(
+    f['購物金折抵'],
+    f.credit_used,
+    f.CreditUsed,
+    f.credit,
+    a?.credit
+  ));
+
+  let net = slipNum(firstNonEmpty(
+    f['應付金額'],
+    f['付款金額'],
+    f.net_amount,
+    f.net,
+    a?.net
+  ));
+
+  if (!net && base) net = Math.max(base - credit, 0);
+
+  return { base, credit, net };
+}
+
+function getSlipMeetupText(shipInfoObj = {}, f = {}){
+  const ship = shipInfoObj.ship || {};
+  const meetup = shipInfoObj.meetup || ship.meetup || {};
+
+  return firstNonEmpty(
+    f['面交時間'],
+    f['預約面交時間'],
+    f.meetup_time,
+    f.meet_time,
+    ship.meetup_time,
+    ship.meetupTime,
+    ship.meet_time,
+    meetup.time,
+    shipInfoObj.meetup_time,
+    shipInfoObj.meetupTime
+  );
+}
+
+     // ↓ SHIP 版型為基底，cashinst 額外顯示保留/分期日期，並清掉英文系統備註 ↓
    const slipsHtml = records.map((rec) => {
   const f = rec.fields || {};
 
-  // ✅ 先宣告
   const shipInfoObj  = (typeof parseShippingInfo === 'function') ? (parseShippingInfo(f) || {}) : {};
   const lp = shipInfoObj.line_profile || shipInfoObj.line || shipInfoObj.lineProfile || {};
 
-  // ✅ 再計算
   const lineName = firstNonEmpty(
     f['LINE名稱'],
     f['LINE 名稱'],
@@ -5554,86 +5632,124 @@ function renderSlipItems(itemsText){
     f['商品SKU']
   );
 
-  // ✅ debug 一定要放在宣告之後
   if (!window.__slip_debug_once) {
     window.__slip_debug_once = true;
     console.log("[slip] keys:", Object.keys(f));
     console.log("[slip] sample fields:", f);
   }
 
-      const orderId      = firstNonEmpty(f['訂單編號'], f.order_id);
-const product      = firstNonEmpty(f['商品明細'], f.items_text, f['items_text']);
-const itemQty      = getItemTotalQty(product);
-const productHtml  = renderSlipItems(product);
-const customerNote = f['客戶備註']       || '';
-      const shipType     = f['出貨方式']       || '';
-      const note         = cleanPrintNote(f['備註'] || f.internal_note || '');
-      const zip          = f['郵遞區號']       || '';
-      const addr         = f['收件地址']       || '';
-      const name         = f['收件人姓名']     || '';
-      const phone        = f['收件人電話']     || '';
-      const storeName    = f['超商店名']       || '';
-      const cashInstPrintInfo = buildCashInstPrintInfo(f, shipInfoObj);
+const orderId = firstNonEmpty(f['訂單編號'], f.order_id);
+
+const product = firstNonEmpty(f['商品明細'], f.items_text, f['items_text']);
+const itemQtyField = slipNum(firstNonEmpty(f['商品總數量'], f.item_count, f.items_count));
+const itemQty = itemQtyField > 0 ? itemQtyField : getItemTotalQty(product);
+const productHtml = renderSlipItems(product);
+
+const customerNote = f['客戶備註'] || '';
+
+// ✅ cashinst 不照 SHIP 直接印 f['備註']，要先清英文系統標籤
+const note = cleanPrintNote([f.internal_note, f['備註']].filter(Boolean).join('\n'));
+
+const shipObj = shipInfoObj.ship || {};
+const storeObj = shipObj.store || shipInfoObj.store || {};
+const postObj = shipObj.post || shipInfoObj.post || {};
+
+const rawShipType = firstNonEmpty(f['出貨方式'], f.shipping_type, shipObj.type);
+const shipType = rawShipType === '711'
+  ? '7-11 超商取貨'
+  : rawShipType === 'post'
+    ? '郵寄'
+    : rawShipType === 'meetup'
+      ? '面交'
+      : rawShipType;
+
+const paymentMethod = firstNonEmpty(f.payment_method, f['付款方式']);
+
+const amountInfo = getSlipAmountInfo(f);
+const payableAmountText = slipMoney(amountInfo.net);
+
+const meetupText = getSlipMeetupText(shipInfoObj, f);
+const isMeetupSlip =
+  rawShipType === 'meetup' ||
+  shipType === '面交' ||
+  String(paymentMethod || '').toLowerCase() === 'meetup_cash';
+
+const zip = firstNonEmpty(f['郵遞區號'], postObj.zip, shipObj.zip);
+const addr = firstNonEmpty(f['收件地址'], postObj.addr, shipObj.addr);
+const name = firstNonEmpty(f['收件人姓名'], shipObj.name, shipInfoObj.name);
+const phone = firstNonEmpty(f['收件人電話'], shipObj.phone, shipInfoObj.phone);
+const storeName = firstNonEmpty(f['超商店名'], storeObj.name, shipObj.store_name, shipInfoObj.store_name);
+
+const cashInstPrintInfo = buildCashInstPrintInfo(f, shipInfoObj);
 
       return `
         <div class="slip">
           <!-- 上半部：內部用資訊 -->
-          <div class="line small">訂單編號：${escapeHtml(orderId)}</div>
-<div class="line total-qty">商品總數量：<b>${escapeHtml(itemQty)}</b> 件</div>
+          <div class="line small">訂單編號：${slipEscape(orderId)}</div>
+
+          <div class="line total-qty">商品總數量：<b>${slipEscape(itemQty)}</b> 件</div>
+
           ${lineName ? `
   <div class="badge badge-line">
-    <span class="t">LINE 名稱：</span><span class="v">${escapeHtml(lineName)}</span>
+    <span class="t">LINE 名稱：</span><span class="v">${slipEscape(lineName)}</span>
   </div>
 ` : ``}
-          <div class="line">出貨方式：${shipType}</div>
 
           ${cashInstPrintInfo ? `
             <div class="dates-box">
               <div class="dates-title">保留 / 分期日期</div>
-              <div class="dates-text">${escapeHtml(cashInstPrintInfo)}</div>
+              <div class="dates-text">${slipEscape(cashInstPrintInfo)}</div>
             </div>
           ` : ``}
 
-          <!-- ★ 商品編號、商品明細：標題一行，內容一行 ★ -->
-   <div class="section-title">商品</div>
-      <div class="block items">
-  ${sku ? `<div class="sku">SKU：${escapeHtml(sku)}</div>` : ``}
-  ${productHtml}
-</div>
+          <!-- 商品 -->
+          <div class="section-title">商品</div>
+          <div class="block items">
+            ${sku ? `<div class="sku">SKU：${slipEscape(sku)}</div>` : ``}
+            ${productHtml}
+          </div>
 
-      ${(customerNote || note) ? `
-        <div class="remark">
-          <div class="title">備註</div>
-          ${customerNote ? `<div class="text">客戶：${customerNote}</div>` : ''}
-          ${note ? `<div class="sub">內部：${note}</div>` : ''}
-        </div>
-      ` : ``}
+          ${(customerNote || note) ? `
+            <div class="remark">
+              <div class="title">備註</div>
+              ${customerNote ? `<div class="text">客戶：${slipEscape(customerNote)}</div>` : ''}
+              ${note ? `<div class="sub">內部：${slipEscape(note)}</div>` : ''}
+            </div>
+          ` : ``}
+
           <!-- 分隔線：下面這塊可以剪下來貼在包裹上 -->
           <div class="cut-line"></div>
 
           <!-- 下半部：收件資料（剪下用） -->
           <div class="shipbox">
-  ${storeName ? `
-    <div class="row"><div class="k">門市</div><div class="v">${storeName}</div></div>
-  ` : ``}
+           ${isMeetupSlip ? `
+              <div class="meetup-ship">
+                <div class="row"><div class="k">面交</div><div class="v">${slipEscape(meetupText || '-')}</div></div>
+                <div class="row"><div class="k">應收</div><div class="v payable">${slipEscape(payableAmountText)}</div></div>
+              </div>
+            ` : `
+              ${storeName ? `
+                <div class="row"><div class="k">門市</div><div class="v">${slipEscape(storeName)}</div></div>
+              ` : ``}
 
-  ${(zip || addr) ? `
-    <div class="row"><div class="k">地址</div><div class="v">${[zip, addr].filter(Boolean).join(' ')}</div></div>
-  ` : ``}
+              ${(zip || addr) ? `
+                <div class="row"><div class="k">地址</div><div class="v">${slipEscape([zip, addr].filter(Boolean).join(' '))}</div></div>
+              ` : ``}
+            `}
 
-  <div class="row">
-  <div class="k">收件人</div>
-  <div class="v name">${name || ''}</div>
-</div>
+            <div class="row">
+              <div class="k">收件人</div>
+              <div class="v name">${slipEscape(name || '')}</div>
+            </div>
 
-${phone ? `
-  <div class="row">
-    <div class="k">電話</div>
-    <div class="v phone">${phone}</div>
-  </div>
-` : ``}
-</div>
-</div>
+            ${phone ? `
+              <div class="row">
+                <div class="k">電話</div>
+                <div class="v phone">${slipEscape(phone)}</div>
+              </div>
+            ` : ``}
+          </div>
+        </div>
        `;
     }).join('');
 
@@ -5643,7 +5759,7 @@ ${phone ? `
 <meta charset="utf-8" />
 <title>出貨明細列印</title>
 <style>
- @page {
+@page {
   size: 80mm 200mm;
   margin: 0;
 }
@@ -5662,8 +5778,8 @@ body {
   margin: 0 !important;
   padding: 0 !important;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 14px;
-  line-height: 1.16;
+  font-size: 15px;
+  line-height: 1.18;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
@@ -5685,22 +5801,21 @@ body {
   break-after: auto;
 }
 
-  .line {
-    margin-bottom: 3px;   /* 原本 2px，稍微拉開一點比較好讀 */
-    white-space: pre-wrap;
-    word-break: break-all;
-  }
+.line {
+  margin-bottom: 3px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 
-  /* 收件人姓名那行，用更大的字＋粗體 */
-  .line.big {
-    font-size: 17px;      /* 原本 14 → 16，更醒目 */
-    font-weight: 700;
-  }
+.line.big {
+  font-size: 17px;
+  font-weight: 700;
+}
 
-  /* ===== 商品區塊 + 備註醒目框 ===== */
+/* 商品區塊 */
 .section-title{
   margin-top:4px;
-  font-size:14px;
+  font-size:15px;
   font-weight:900;
   letter-spacing:0.2px;
 }
@@ -5716,7 +5831,7 @@ body {
 
 .items .sku{
   font-weight:900;
-  font-size:12px;
+  font-size:13px;
   line-height:1.15;
   word-break:break-word;
 }
@@ -5725,13 +5840,13 @@ body {
   border:2px solid #000;
   padding:2px 4px;
   margin:2px 0 2px;
-  font-size:13px !important;
+  font-size:14px !important;
   font-weight:900;
   color:#000 !important;
 }
 
 .total-qty b{
-  font-size:16px;
+  font-size:17px;
 }
 
 .item-row{
@@ -5747,7 +5862,7 @@ body {
 }
 
 .item-name{
-  font-size:12px;
+  font-size:13px;
   line-height:1.18;
   font-weight:900;
   word-break:break-all;
@@ -5760,21 +5875,29 @@ body {
   margin-top:2px;
   padding:1px 5px;
   border:2px solid #000;
-  font-size:16px;
+  font-size:17px;
   line-height:1.02;
   font-weight:900;
 }
-/* 保留 / 分期日期 */
+
+.item-price{
+  display:none;
+}
+
+/* cashinst 專用：保留 / 分期日期 */
 .dates-box{
   border:1px solid #000;
-  padding:5px 6px;
-  margin-top:5px;
+  padding:3px 4px;
+  margin-top:3px;
+  line-height:1.25;
+  page-break-inside: avoid;
+  break-inside: avoid;
 }
 
 .dates-title{
   font-size:13px;
   font-weight:900;
-  margin-bottom:2px;
+  margin-bottom:1px;
 }
 
 .dates-text{
@@ -5784,30 +5907,35 @@ body {
   white-space:pre-wrap;
   word-break:break-word;
 }
-/* 備註：粗框+粗體更醒目 */
+
+/* 備註 */
 .remark{
-  border:2px solid #000;
-  padding:6px;
-  margin-top:6px;
+  border:1px solid #000;
+  padding:3px 4px;
+  margin-top:3px;
 }
+
 .remark .title{
-  font-size:15px;
+  font-size:13px;
   font-weight:900;
-  margin-bottom:2px;
+  margin-bottom:1px;
 }
+
 .remark .text{
-  font-size:16px;
+  font-size:14px;
   font-weight:900;
   white-space:pre-wrap;
   word-break:break-word;
 }
+
 .remark .sub{
-  font-size:14px;
+  font-size:12px;
   font-weight:700;
   white-space:pre-wrap;
   word-break:break-word;
-  margin-top:4px;
+  margin-top:1px;
 }
+
 /* LINE 名稱框 */
 .badge{
   width:100%;
@@ -5824,64 +5952,88 @@ body {
 
 .badge .t{
   display:inline;
-  font-size:12px;
+  font-size:13px;
   font-weight:900;
   margin:0;
 }
 
 .badge .v{
   display:inline;
-  font-size:13px;
+  font-size:14px;
   font-weight:900;
   word-break:break-word;
 }
 
 /* 收件資訊框（剪下用） */
 .shipbox{
-  border: none;          /* ✅ 不要框框 */
-  padding: 0;            /* ✅ 取消內距 */
+  border: none;
+  padding: 0;
   margin-top: 6px;
+  page-break-inside: avoid;
+  break-inside: avoid;
 }
+
 .shipbox .row{
   display:flex;
-  gap:8px;
+  gap:6px;
   margin-bottom:4px;
+  page-break-inside: avoid;
+  break-inside: avoid;
 }
+
 .shipbox .k{
   width:34px;
-  font-size:13px;
+  font-size:14px;
   font-weight:900;
   white-space:nowrap;
 }
+
 .shipbox .v{
   flex:1;
-  font-size:13px;
+  font-size:14px;
   word-break:break-word;
 }
+
 .shipbox .name{
   font-size:16px;
   font-weight:900;
 }
+
 .shipbox .phone{
   font-size:15px;
   font-weight:900;
 }
-  /* 比較不重要的小字（例如時間、訂單編號）可以套 small */
-  .line.small {
-    font-size: 11px;
-    color: #555;
-  }
 
-   .cut-line{
-    width: 38mm;
-    border-top: 1px dashed #000;
-    margin: 5px 0 5px 0;
-    height: 1px;
-  }
+.meetup-ship{
+  border:none;
+  padding:0;
+  margin:2px 0 4px;
+}
 
-  .page-break {
-    display: none;
-  }
+.meetup-ship .row{
+  margin-bottom:3px;
+}
+
+.meetup-ship .payable{
+  font-size:16px;
+  font-weight:900;
+}
+
+.line.small {
+  font-size: 11px;
+  color: #555;
+}
+
+.cut-line{
+  width: 38mm;
+  border-top: 1px dashed #000;
+  margin: 5px 0 5px 0;
+  height: 1px;
+}
+
+.page-break {
+  display: none;
+}
 </style>
 <meta name="robots" content="noindex, nofollow">
 </head>
