@@ -5746,6 +5746,51 @@ async function printShipSlipsRange(){
   return '';
 };
 
+const cleanPrintNote = (v) => {
+  return String(v || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map(line => {
+      let s = String(line || '').trim();
+      if (!s) return '';
+
+      // ✅ 移除系統英文標籤本體
+      // 例如：[CASH_INST_PERIOD_OK:1]、[ADMIN_CONFIRM_PAY]、[RETRY_CART=xxx]
+      s = s.replace(/\[[A-Z0-9_:=\-\s]+\]/gi, '');
+
+      // ✅ 移除常見英文系統字串殘留
+      s = s
+        .replace(/\bCASH_INST[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bADMIN[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bAUTO_RESTOCK[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bRESTOCK_FAILED[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bPAYUNI[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bYUFU[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bRETRY_CART[A-Z0-9_:=:-]*\b/gi, '')
+        .replace(/\bTAIL[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bPAYMENT[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bDEPOSIT[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bNOTIFY[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bREMIND[A-Z0-9_:-]*\b/gi, '')
+        .replace(/\bSYSTEM[A-Z0-9_:-]*\b/gi, '');
+
+      // ✅ 如果清完只剩日期、時間、符號，就不要印
+      const onlySystemLeft = s
+        .replace(/\d{4}-\d{2}-\d{2}/g, '')
+        .replace(/\d{2}:\d{2}(:\d{2})?/g, '')
+        .replace(/[T+Z年月日\s:：,，.。;；/\\\-_=|]+/g, '')
+        .trim();
+
+      if (!onlySystemLeft) return '';
+
+      return s.replace(/\s{2,}/g, ' ').trim();
+    })
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+};
+
 const slipEscape = (v) => (typeof escapeHtml === 'function'
   ? escapeHtml(v)
   : String(v ?? '').replace(/[&<>"']/g, (c) => ({
@@ -5920,7 +5965,7 @@ const itemQty = itemQtyField > 0 ? itemQtyField : getItemTotalQty(product);
 const productHtml = renderSlipItems(product);
 
 const customerNote = f['客戶備註'] || '';
-const note = f['備註'] || '';
+const note = cleanPrintNote([f.internal_note, f['備註']].filter(Boolean).join('\n'));
 
 const shipObj = shipInfoObj.ship || {};
 const storeObj = shipObj.store || shipInfoObj.store || {};
@@ -5981,8 +6026,8 @@ const storeName = firstNonEmpty(f['超商店名'], storeObj.name, shipObj.store_
       ${(customerNote || note) ? `
         <div class="remark">
           <div class="title">備註</div>
-          ${customerNote ? `<div class="text">客戶：${customerNote}</div>` : ''}
-          ${note ? `<div class="sub">內部：${note}</div>` : ''}
+          ${customerNote ? `<div class="text">客戶：${slipEscape(customerNote)}</div>` : ''}
+          ${note ? `<div class="sub">內部：${slipEscape(note)}</div>` : ''}
         </div>
       ` : ``}
           <!-- 分隔線：下面這塊可以剪下來貼在包裹上 -->
