@@ -1318,7 +1318,13 @@ function hasNewPhotoUploading() {
   return [...document.querySelectorAll(".newPhotoSlot .photo-slot-preview")]
     .some(el => String(el.textContent || "").includes("上傳中"));
 }
-
+function hasRowPhotoUploading() {
+  return [...document.querySelectorAll(".rowPhotoSlot .row-photo-slot-preview")]
+    .some(el => {
+      const t = String(el.textContent || "");
+      return t.includes("上傳中") || t.includes("圖片處理中");
+    });
+}
 function renderNewPhotoSlot(slot, url = "") {
   if (!slot) return;
 
@@ -1947,6 +1953,34 @@ function setTodayForNewDate() {
   const day = String(d.getDate()).padStart(2, "0");
   el.value = `${y}-${m}-${day}`;
 }
+
+    async function waitReviewRowPhotosVisible(id, expectedPhotos = []) {
+  const rowId = String(id || "").trim();
+  const expectedCount = photoUrlsFromValue(expectedPhotos).length;
+
+  if (!rowId || !expectedCount) return true;
+
+  for (let i = 0; i < 12; i++) {
+    try {
+      const data = await apiGet(API_REVIEW);
+      const rows = Array.isArray(data.rows) ? data.rows : [];
+      const row = rows.find(r => String(r.id || "") === rowId);
+
+      if (row) {
+        const photos = photoUrlsFromValue(row.photos).length
+          ? photoUrlsFromValue(row.photos)
+          : photoUrlsFromValue(row.photo);
+
+        if (photos.length >= expectedCount) return true;
+      }
+    } catch (_) {}
+
+    await sleep(1000);
+  }
+
+  return false;
+}
+    
 async function renderUnconfirmedRows() {
   const tbody = $("unconfirmedRows");
   tbody.innerHTML = `<tr><td colspan="9" class="empty">載入中...</td></tr>`;
@@ -2170,12 +2204,22 @@ function bindRowSaveButtons() {
   });
 }
 $("btnBatchSave").addEventListener("click", async () => {
+  if (hasRowPhotoUploading()) {
+    alert("第二區塊圖片還在上傳或處理中，請等圖片顯示出來後再儲存。");
+    return;
+  }
+
   const picked = [...document.querySelectorAll(".rowPick:checked")];
 
   if (!picked.length) {
     alert("請先勾選要儲存的現金支出。");
     return;
   }
+
+  picked.forEach(ck => {
+    const id = ck.dataset.id || "";
+    updateRowPhotoHiddenFromSlots(id);
+  });
 
   const payloads = picked.map(ck => buildReviewPayload(ck.dataset.id, false));
 
@@ -2190,6 +2234,11 @@ $("btnBatchSave").addEventListener("click", async () => {
 
   try {
     await Promise.all(payloads.map(p => apiPost(API_UPDATE, p)));
+
+    for (const p of payloads) {
+      await waitReviewRowPhotosVisible(p.id, p.photos);
+    }
+
     await renderUnconfirmedRows();
     alert("✅ 已儲存勾選資料，尚未確認完成。");
   } catch (err) {
@@ -2202,10 +2251,20 @@ $("btnBatchSave").addEventListener("click", async () => {
 $("btnBatchConfirm").addEventListener("click", async () => {
   const picked = [...document.querySelectorAll(".rowPick:checked")];
 
+    if (hasRowPhotoUploading()) {
+    alert("第二區塊圖片還在上傳或處理中，請等圖片顯示出來後再確認完成。");
+    return;
+  }
+
   if (!picked.length) {
     alert("請先勾選要確認的現金支出。");
     return;
   }
+
+    picked.forEach(ck => {
+    const id = ck.dataset.id || "";
+    updateRowPhotoHiddenFromSlots(id);
+  });
 
   const payloads = picked.map(ck => buildReviewPayload(ck.dataset.id, true));
 
