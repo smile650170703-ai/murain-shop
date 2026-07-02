@@ -2102,7 +2102,36 @@ function bindRowSaveButtons() {
     });
   });
 }
+$("btnBatchSave").addEventListener("click", async () => {
+  const picked = [...document.querySelectorAll(".rowPick:checked")];
 
+  if (!picked.length) {
+    alert("請先勾選要儲存的現金支出。");
+    return;
+  }
+
+  const payloads = picked.map(ck => buildReviewPayload(ck.dataset.id, false));
+
+  for (const p of payloads) {
+    if (!validateReviewPayload(p, false)) return;
+  }
+
+  const btn = $("btnBatchSave");
+  const oldText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "儲存中...";
+
+  try {
+    await Promise.all(payloads.map(p => apiPost(API_UPDATE, p)));
+    await renderUnconfirmedRows();
+    alert("✅ 已儲存勾選資料，尚未確認完成。");
+  } catch (err) {
+    alert(`儲存失敗：${err.message || err}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText;
+  }
+});
 $("btnBatchConfirm").addEventListener("click", async () => {
   const picked = [...document.querySelectorAll(".rowPick:checked")];
 
