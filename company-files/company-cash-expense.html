@@ -2233,10 +2233,27 @@ $("btnBatchSave").addEventListener("click", async () => {
   btn.textContent = "儲存中...";
 
   try {
-    await Promise.all(payloads.map(p => apiPost(API_UPDATE, p)));
+    const results = await Promise.all(payloads.map(p => apiPost(API_UPDATE, p)));
 
-    for (const p of payloads) {
-      await waitReviewRowPhotosVisible(p.id, p.photos);
+    for (let i = 0; i < payloads.length; i++) {
+      const p = payloads[i];
+      const result = results[i] || {};
+      const expectedPhotos = photoUrlsFromValue(p.photos);
+      const returnedPhotos = photoUrlsFromValue(result.photos || []);
+
+      if (expectedPhotos.length && returnedPhotos.length < expectedPhotos.length) {
+        throw new Error(
+          `圖片沒有成功寫進後端/Airtable。送出 ${expectedPhotos.length} 張，但後端只回傳 ${returnedPhotos.length} 張。請確認 api.murain.tw 是否已部署最新 index.js，或 Airtable「拍照/截圖」附件欄位是否接受該圖片網址。`
+        );
+      }
+
+      const visible = await waitReviewRowPhotosVisible(p.id, p.photos);
+
+      if (expectedPhotos.length && !visible) {
+        throw new Error(
+          `圖片後端儲存後，第二區塊列表 API 還讀不到圖片。這代表 /review-list 讀回來的拍照/截圖欄位仍是空的，請確認 Airtable 附件欄位是否真的有存入圖片。`
+        );
+      }
     }
 
     await renderUnconfirmedRows();
