@@ -484,6 +484,24 @@ input, select, button{
   border-radius:8px;
   border:1px solid var(--line);
 }
+    .photo-actions{
+  margin-top:5px;
+  display:flex;
+  gap:5px;
+}
+
+.photo-file-btn{
+  width:78px;
+  min-width:78px;
+  padding:6px 6px;
+  border-radius:8px;
+  border:1px solid #c7d7ef;
+  background:#eef6ff;
+  color:#0f3f8c;
+  font-size:12px;
+  font-weight:900;
+  cursor:pointer;
+}
 /* ===== 區塊標題：跟欄位標題分開辨識 ===== */
 .section-title{
   display:flex;
@@ -586,9 +604,15 @@ th{
               <input id="newDetail" placeholder="例如 7-11運費 / 文具 / 郵局" />
             </td>
             <td class="thumb-cell">
-              <div id="newPhotoPreview" class="paste-preview">可連續貼圖<br>Ctrl+V</div>
-              <input id="newPhoto" class="photo-edit-input" placeholder="圖片網址 / 可連續貼圖" />
-            </td>
+  <div id="newPhotoPreview" class="paste-preview">貼圖/選圖<br>可多張</div>
+
+  <div class="photo-actions">
+    <button class="photo-file-btn" type="button" id="btnNewPhotoChoose">＋選擇圖片</button>
+  </div>
+
+  <input id="newPhotoFile" type="file" accept="image/*" multiple style="display:none;" />
+  <input id="newPhoto" class="photo-edit-input" placeholder="圖片網址 / 可連續貼圖" />
+</td>
             <td>
               <input id="newAmount" type="number" placeholder="金額" />
             </td>
@@ -800,24 +824,62 @@ function categorySelect(id, value) {
   `;
 }
 
+function isValidPhotoUrl(url) {
+  const s = String(url || "").trim();
+  if (!s) return false;
+
+  let u = null;
+  try {
+    u = new URL(s);
+  } catch (_) {
+    return false;
+  }
+
+  if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+
+  const path = u.pathname || "";
+  if (path.includes("..")) return false;
+  if (path.includes("//")) return false;
+
+  // Cloudflare Images 正確格式：
+  // /帳號hash/圖片ID/版本
+  if (u.hostname === "imagedelivery.net") {
+    const parts = path.split("/").filter(Boolean);
+    if (parts.length < 3) return false;
+  }
+
+  return true;
+}
+
 function photoUrlsFromValue(value) {
+  let raw = [];
+
   if (Array.isArray(value)) {
-    return [...new Set(
-      value
-        .map(x => {
-          if (x == null) return "";
-          if (typeof x === "object") return String(x.url || "").trim();
-          return String(x).trim();
-        })
-        .filter(Boolean)
-    )];
+    raw = value.map(x => {
+      if (x == null) return "";
+      if (typeof x === "object") return String(x.url || "").trim();
+      return String(x).trim();
+    });
+  } else {
+    const s = String(value || "").trim();
+
+    if (!s || s === "[]" || s === "{}") return [];
+
+    // 支援 dataset 裡面的 JSON 字串，例如 ["url1","url2"]
+    if ((s.startsWith("[") && s.endsWith("]")) || (s.startsWith("{") && s.endsWith("}"))) {
+      try {
+        const parsed = JSON.parse(s);
+        return photoUrlsFromValue(parsed);
+      } catch (_) {}
+    }
+
+    raw = s.split(/[\n,]+/g);
   }
 
   return [...new Set(
-    String(value || "")
-      .split(/[\n,]+/g)
-      .map(s => s.trim())
-      .filter(Boolean)
+    raw
+      .map(s => String(s || "").trim())
+      .filter(isValidPhotoUrl)
   )];
 }
 
@@ -829,7 +891,7 @@ function photoPreviewHtml(value) {
   const urls = photoUrlsFromValue(value);
   const first = urls[0] || "";
 
-  if (!first) return `可連續貼圖<br>Ctrl+V`;
+  if (!first) return `貼圖/選圖<br>可多張`;
 
   return `
     <img src="${esc(first)}" alt="拍照/截圖" />
@@ -854,7 +916,7 @@ function renderPhotoPreview(target, value) {
   const urls = photoUrlsFromValue(value);
 
   if (!urls.length) {
-    box.innerHTML = `可連續貼圖<br>Ctrl+V`;
+    box.innerHTML = `貼圖/選圖<br>可多張`;
     box.dataset.photoUrl = "";
     box.dataset.photoUrls = "[]";
     box.style.cursor = "pointer";
@@ -863,13 +925,13 @@ function renderPhotoPreview(target, value) {
 
   box.dataset.photoUrl = urls[0] || "";
   box.dataset.photoUrls = JSON.stringify(urls);
-  box.style.cursor = "zoom-in";
+  box.style.cursor = "default";
   box.innerHTML = photoPreviewHtml(urls);
 }
 
 async function uploadCashPhotoFile(file, inputEl, previewEl) {
   if (!file || !file.type || !file.type.startsWith("image/")) {
-    alert("請貼上圖片檔。");
+    alert("請選擇圖片檔。");
     return;
   }
 
@@ -899,7 +961,9 @@ async function uploadCashPhotoFile(file, inputEl, previewEl) {
     }
 
     const url = info.delivery_url || info.url || "";
-    if (!url) throw new Error("圖片已上傳，但後端沒有回傳圖片網址。");
+    if (!isValidPhotoUrl(url)) {
+      throw new Error("圖片已上傳，但後端回傳的圖片網址格式不正確。");
+    }
 
     const urls = photoUrlsFromValue(inputEl.value);
     if (!urls.includes(url)) urls.push(url);
@@ -913,7 +977,16 @@ async function uploadCashPhotoFile(file, inputEl, previewEl) {
   }
 }
 
-function bindPasteImage(inputEl, previewEl) {
+async function uploadCashPhotoFiles(files, inputEl, previewEl) {
+  const list = [...(files || [])].filter(f => f && f.type && f.type.startsWith("image/"));
+  if (!list.length) return;
+
+  for (const file of list) {
+    await uploadCashPhotoFile(file, inputEl, previewEl);
+  }
+}
+
+function bindPasteImage(inputEl, previewEl, fileInputEl, chooseBtnEl) {
   if (!inputEl || inputEl.dataset.pasteBound === "1") return;
   inputEl.dataset.pasteBound = "1";
 
@@ -926,9 +999,7 @@ function bindPasteImage(inputEl, previewEl) {
 
     for (const imgItem of imgItems) {
       const file = imgItem.getAsFile();
-      if (file) {
-        await uploadCashPhotoFile(file, inputEl, previewEl);
-      }
+      if (file) await uploadCashPhotoFile(file, inputEl, previewEl);
     }
   };
 
@@ -943,28 +1014,44 @@ function bindPasteImage(inputEl, previewEl) {
     previewEl.tabIndex = 0;
     previewEl.addEventListener("paste", handlePaste);
 
+    // 點圖片不要再放大，避免你要加第二張時一直開圖
     previewEl.addEventListener("click", (e) => {
       e.stopPropagation();
-
-      const urls = photoUrlsFromValue(inputEl.value || previewEl.dataset.photoUrls || previewEl.dataset.photoUrl || "");
-
-      if (urls.length) {
-        window.open(urls[0], "_blank", "noopener,noreferrer");
-        return;
-      }
-
       previewEl.focus();
       inputEl.focus();
     });
   }
+
+  if (fileInputEl) {
+    fileInputEl.addEventListener("change", async () => {
+      await uploadCashPhotoFiles(fileInputEl.files, inputEl, previewEl);
+      fileInputEl.value = "";
+    });
+  }
+
+  if (chooseBtnEl && fileInputEl) {
+    chooseBtnEl.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      fileInputEl.click();
+    });
+  }
 }
 function bindAllPhotoPasteInputs() {
-  bindPasteImage($("newPhoto"), $("newPhotoPreview"));
+  bindPasteImage(
+    $("newPhoto"),
+    $("newPhotoPreview"),
+    $("newPhotoFile"),
+    $("btnNewPhotoChoose")
+  );
 
   document.querySelectorAll(".rowPhoto").forEach(input => {
     const id = input.dataset.id;
     const preview = document.querySelector(`.rowPhotoPreview[data-id="${id}"]`);
-    bindPasteImage(input, preview);
+    const fileInput = document.querySelector(`.rowPhotoFile[data-id="${id}"]`);
+    const chooseBtn = document.querySelector(`.rowPhotoChoose[data-id="${id}"]`);
+
+    bindPasteImage(input, preview, fileInput, chooseBtn);
   });
 }
 
@@ -1079,11 +1166,16 @@ async function renderUnconfirmedRows() {
           <input class="rowDetail" data-id="${esc(r.id)}" value="${esc(r.detail)}" />
         </td>
 
-                <td class="thumb-cell">
+                      <td class="thumb-cell">
           <div class="paste-preview rowPhotoPreview" data-id="${esc(r.id)}">
             ${photoPreviewHtml(r.photos || r.photo)}
           </div>
 
+          <div class="photo-actions">
+            <button class="photo-file-btn rowPhotoChoose" type="button" data-id="${esc(r.id)}">＋加圖</button>
+          </div>
+
+          <input class="rowPhotoFile" type="file" accept="image/*" multiple data-id="${esc(r.id)}" style="display:none;" />
           <input class="rowPhoto photo-edit-input" data-id="${esc(r.id)}" value="${esc(photoValueFromUrls(r.photos || r.photo))}" placeholder="圖片網址 / 可連續貼圖" />
         </td>
 
