@@ -1302,10 +1302,41 @@ function photoSlotPreviewHtml(url) {
   `;
 }
 
+function cssAttrValue(v) {
+  return String(v || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
+}
+
+function photoUrlsFromSlotElement(slot) {
+  const urls = [];
+  if (!slot) return urls;
+
+  const fromDataset = String(slot.dataset.photoUrl || "").trim();
+  if (isValidPhotoUrl(fromDataset)) urls.push(fromDataset);
+
+  slot.querySelectorAll(".photo-thumb-img").forEach(img => {
+    const u = String(
+      img.dataset.photoUrl ||
+      img.getAttribute("src") ||
+      img.src ||
+      ""
+    ).trim();
+
+    if (isValidPhotoUrl(u)) urls.push(u);
+  });
+
+  return [...new Set(urls)];
+}
+
 function getNewPhotoSlotUrls() {
-  return [...document.querySelectorAll(".newPhotoSlot")]
-    .map(slot => String(slot.dataset.photoUrl || "").trim())
-    .filter(isValidPhotoUrl);
+  const urls = [];
+
+  document.querySelectorAll(".newPhotoSlot").forEach(slot => {
+    urls.push(...photoUrlsFromSlotElement(slot));
+  });
+
+  return [...new Set(urls)].filter(isValidPhotoUrl);
 }
 
 function updateNewPhotoHiddenFromSlots() {
@@ -1664,17 +1695,25 @@ function bindNewPhotoSlot(slot) {
   renderNewPhotoSlot(slot, slot.dataset.photoUrl || "");
 }
 
-    function rowPhotoUrlsFromSlots(id) {
-  return [...document.querySelectorAll(`.rowPhotoSlot[data-id="${id}"]`)]
-    .map(slot => String(slot.dataset.photoUrl || "").trim())
-    .filter(isValidPhotoUrl);
+function rowPhotoUrlsFromSlots(id) {
+  const safeId = cssAttrValue(id);
+  const urls = [];
+
+  document.querySelectorAll(`.rowPhotoSlot[data-id="${safeId}"]`).forEach(slot => {
+    urls.push(...photoUrlsFromSlotElement(slot));
+  });
+
+  return [...new Set(urls)].filter(isValidPhotoUrl);
 }
 
 function updateRowPhotoHiddenFromSlots(id) {
-  const input = document.querySelector(`.rowPhoto[data-id="${id}"]`);
-  if (!input) return;
+  const safeId = cssAttrValue(id);
+  const input = document.querySelector(`.rowPhoto[data-id="${safeId}"]`);
+  if (!input) return [];
 
-  input.value = photoValueFromUrls(rowPhotoUrlsFromSlots(id));
+  const urls = rowPhotoUrlsFromSlots(id);
+  input.value = photoValueFromUrls(urls);
+  return urls;
 }
 
 function renderRowPhotoSlot(slot, url = "", shouldPick = false) {
