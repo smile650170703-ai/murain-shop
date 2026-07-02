@@ -510,6 +510,11 @@ input, select, button{
   border-color:#67e8f9;
   color:#0e7490;
 }
+    .photo-file-btn.paste{
+  background:#f0fdf4;
+  border-color:#86efac;
+  color:#15803d;
+}
 /* ===== 區塊標題：跟欄位標題分開辨識 ===== */
 .section-title{
   display:flex;
@@ -615,6 +620,7 @@ th{
   <div id="newPhotoPreview" class="paste-preview">點這裡貼圖<br>Ctrl+V</div>
 
 <div class="photo-actions">
+  <button class="photo-file-btn paste" type="button" id="btnNewPhotoPaste">貼上圖片</button>
   <button class="photo-file-btn" type="button" id="btnNewPhotoChoose">選擇圖片</button>
   <button class="photo-file-btn add" type="button" id="btnNewPhotoAdd">＋加圖片</button>
 </div>
@@ -1006,9 +1012,63 @@ async function uploadCashPhotoFiles(files, inputEl, previewEl) {
   }
 }
 
-function bindPasteImage(inputEl, previewEl, fileInputEl, addBtnEl, replaceBtnEl) {
+    let ACTIVE_PHOTO_PASTE_TARGET = null;
+let PHOTO_GLOBAL_PASTE_BOUND = false;
+
+function setActivePhotoPasteTarget(inputEl, previewEl) {
+  if (!inputEl || !previewEl) return;
+
+  ACTIVE_PHOTO_PASTE_TARGET = { inputEl, previewEl };
+
+  previewEl.focus();
+
+  previewEl.style.outline = "2px solid #22c55e";
+  previewEl.style.outlineOffset = "2px";
+
+  setTimeout(() => {
+    if (previewEl) {
+      previewEl.style.outline = "";
+      previewEl.style.outlineOffset = "";
+    }
+  }, 900);
+}
+
+function bindGlobalPhotoPaste() {
+  if (PHOTO_GLOBAL_PASTE_BOUND) return;
+  PHOTO_GLOBAL_PASTE_BOUND = true;
+
+  document.addEventListener("paste", async (e) => {
+    const target = ACTIVE_PHOTO_PASTE_TARGET;
+    if (!target?.inputEl || !target?.previewEl) return;
+
+    const tag = String(e.target?.tagName || "").toLowerCase();
+    const isTyping =
+      tag === "input" ||
+      tag === "textarea" ||
+      tag === "select" ||
+      e.target?.isContentEditable;
+
+    // 如果正在一般文字欄位輸入，不攔截，避免影響備註/明細貼文字
+    if (isTyping && e.target !== target.previewEl) return;
+
+    const items = [...(e.clipboardData?.items || [])];
+    const imgItems = items.filter(x => x.type && x.type.startsWith("image/"));
+    if (!imgItems.length) return;
+
+    e.preventDefault();
+
+    for (const imgItem of imgItems) {
+      const file = imgItem.getAsFile();
+      if (file) await uploadCashPhotoFile(file, target.inputEl, target.previewEl);
+    }
+  });
+}
+
+function bindPasteImage(inputEl, previewEl, fileInputEl, addBtnEl, replaceBtnEl, pasteBtnEl) {
   if (!inputEl || inputEl.dataset.pasteBound === "1") return;
   inputEl.dataset.pasteBound = "1";
+
+  bindGlobalPhotoPaste();
 
   const handlePaste = async (e) => {
     const items = [...(e.clipboardData?.items || [])];
@@ -1034,12 +1094,22 @@ function bindPasteImage(inputEl, previewEl, fileInputEl, addBtnEl, replaceBtnEl)
     previewEl.tabIndex = 0;
     previewEl.addEventListener("paste", handlePaste);
 
-    // 圖片框專門用來貼圖：先點一下，再 Ctrl+V
+    // 圖片框：點一下後 Ctrl+V，可追加貼上第 2 張、第 3 張
     previewEl.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
+      setActivePhotoPasteTarget(inputEl, previewEl);
+    });
+  }
 
-      previewEl.focus();
+  // 貼上圖片：只是指定貼圖目標，接著按 Ctrl+V
+  if (pasteBtnEl) {
+    pasteBtnEl.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      setActivePhotoPasteTarget(inputEl, previewEl);
+      alert("請按 Ctrl+V 貼上圖片。可以連續貼多張。");
     });
   }
 
@@ -1088,17 +1158,19 @@ function bindAllPhotoPasteInputs() {
     $("newPhotoPreview"),
     $("newPhotoFile"),
     $("btnNewPhotoAdd"),
-    $("btnNewPhotoChoose")
+    $("btnNewPhotoChoose"),
+    $("btnNewPhotoPaste")
   );
 
   document.querySelectorAll(".rowPhoto").forEach(input => {
     const id = input.dataset.id;
     const preview = document.querySelector(`.rowPhotoPreview[data-id="${id}"]`);
     const fileInput = document.querySelector(`.rowPhotoFile[data-id="${id}"]`);
-    const chooseBtn = document.querySelector(`.rowPhotoChoose[data-id="${id}"]`);
+    const addBtn = document.querySelector(`.rowPhotoChoose[data-id="${id}"]`);
+    const pasteBtn = document.querySelector(`.rowPhotoPaste[data-id="${id}"]`);
 
-    // 清單裡的「＋加圖」只做新增，不取代
-    bindPasteImage(input, preview, fileInput, chooseBtn);
+    // 第二區塊：貼上圖片 / ＋加圖 都是追加，不取代
+    bindPasteImage(input, preview, fileInput, addBtn, null, pasteBtn);
   });
 }
 
@@ -1218,8 +1290,9 @@ async function renderUnconfirmedRows() {
             ${photoPreviewHtml(r.photos || r.photo)}
           </div>
 
-          <div class="photo-actions">
-            <button class="photo-file-btn rowPhotoChoose" type="button" data-id="${esc(r.id)}">＋加圖</button>
+                   <div class="photo-actions">
+            <button class="photo-file-btn paste rowPhotoPaste" type="button" data-id="${esc(r.id)}">貼上圖片</button>
+            <button class="photo-file-btn add rowPhotoChoose" type="button" data-id="${esc(r.id)}">＋加圖</button>
           </div>
 
           <input class="rowPhotoFile" type="file" accept="image/*" multiple data-id="${esc(r.id)}" style="display:none;" />
@@ -1262,14 +1335,21 @@ async function renderUnconfirmedRows() {
           />
         </td>
 
-        <td>
+                <td>
           <input class="rowNote" data-id="${esc(r.id)}" value="${esc(r.note)}" />
+          <button
+            class="btn secondary small rowSaveBtn"
+            type="button"
+            data-id="${esc(r.id)}"
+            style="margin-top:6px;"
+          >單獨儲存</button>
         </td>
       </tr>
     `).join("") : `<tr><td colspan="9" class="empty">目前沒有未確認現金支出。</td></tr>`;
 
        bindAllPhotoPasteInputs();
     bindReviewRowAutoPick();
+    bindRowSaveButtons();
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="9" class="empty">❌ ${esc(err.message || err)}</td></tr>`;
     $("unconfirmedCountTag").textContent = `0 筆`;
@@ -1278,11 +1358,19 @@ async function renderUnconfirmedRows() {
 
 async function renderConfirmedRows() {
   const tbody = $("confirmedRows");
-  tbody.innerHTML = `<tr><td colspan="6" class="empty">載入中...</td></tr>`;
 
   const month = $("confirmedMonth")?.value?.trim() || "";
   const category = $("confirmedCategory")?.value?.trim() || "";
   const keyword = $("confirmedKeyword")?.value?.trim() || "";
+
+  if (!month && !category && !keyword) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty">請先選擇月份、費用支出對象或輸入關鍵字後，再按「查詢」。</td></tr>`;
+    $("confirmedCountTag").textContent = `0 筆`;
+    $("confirmedTotal").textContent = money(0);
+    return;
+  }
+
+  tbody.innerHTML = `<tr><td colspan="6" class="empty">載入中...</td></tr>`;
 
   try {
     const data = await apiGetWithQuery(API_LIST, {
@@ -1320,10 +1408,78 @@ async function renderConfirmedRows() {
 }
 
 async function refreshAll() {
-  await Promise.all([
-    renderUnconfirmedRows(),
-    renderConfirmedRows()
-  ]);
+  await renderUnconfirmedRows();
+  await renderConfirmedRows();
+}
+
+    function buildReviewPayload(id, checked = false) {
+  return {
+    id,
+    detail: document.querySelector(`.rowDetail[data-id="${id}"]`)?.value || "",
+    photos: photoUrlsFromValue(document.querySelector(`.rowPhoto[data-id="${id}"]`)?.value || ""),
+    amount: document.querySelector(`.rowAmount[data-id="${id}"]`)?.value || "",
+    category: document.querySelector(`.rowCategory[data-id="${id}"]`)?.value || "",
+    manualBank: !!document.querySelector(`.rowManualBank[data-id="${id}"]`)?.checked,
+    inputInvoiceAmount: document.querySelector(`.rowInputInvoiceAmount[data-id="${id}"]`)?.value || "",
+    note: document.querySelector(`.rowNote[data-id="${id}"]`)?.value || "",
+    checked
+  };
+}
+
+function validateReviewPayload(p, requireCategory = false) {
+  if (requireCategory && !p.category) {
+    alert("有勾選的資料還沒選費用支出對象。");
+    return false;
+  }
+
+  const amount = Number(String(p.amount || "").replace(/,/g, "").trim()) || 0;
+  const invoiceAmount = Number(String(p.inputInvoiceAmount || "").replace(/,/g, "").trim()) || 0;
+
+  if (invoiceAmount < 0) {
+    alert("發票金額不能小於 0。");
+    return false;
+  }
+
+  if (invoiceAmount > amount) {
+    alert("發票金額不能大於交易金額。");
+    return false;
+  }
+
+  return true;
+}
+
+function bindRowSaveButtons() {
+  document.querySelectorAll(".rowSaveBtn").forEach(btn => {
+    if (btn.dataset.saveBound === "1") return;
+    btn.dataset.saveBound = "1";
+
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const id = btn.dataset.id;
+      if (!id) return;
+
+      const payload = buildReviewPayload(id, false);
+
+      if (!validateReviewPayload(payload, false)) return;
+
+      const oldText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "儲存中...";
+
+      try {
+        await apiPost(API_UPDATE, payload);
+        await renderUnconfirmedRows();
+        alert("✅ 已單獨儲存。");
+      } catch (err) {
+        alert(`單獨儲存失敗：${err.message || err}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = oldText;
+      }
+    });
+  });
 }
 
 $("btnBatchConfirm").addEventListener("click", async () => {
@@ -1334,41 +1490,11 @@ $("btnBatchConfirm").addEventListener("click", async () => {
     return;
   }
 
-  const payloads = picked.map(ck => {
-  const id = ck.dataset.id;
-
-  return {
-    id,
-    detail: document.querySelector(`.rowDetail[data-id="${id}"]`)?.value || "",
-    photos: photoUrlsFromValue(document.querySelector(`.rowPhoto[data-id="${id}"]`)?.value || ""),
-    amount: document.querySelector(`.rowAmount[data-id="${id}"]`)?.value || "",
-    category: document.querySelector(`.rowCategory[data-id="${id}"]`)?.value || "",
-    manualBank: !!document.querySelector(`.rowManualBank[data-id="${id}"]`)?.checked,
-    inputInvoiceAmount: document.querySelector(`.rowInputInvoiceAmount[data-id="${id}"]`)?.value || "",
-    note: document.querySelector(`.rowNote[data-id="${id}"]`)?.value || "",
-    checked: true
-  };
-});
+  const payloads = picked.map(ck => buildReviewPayload(ck.dataset.id, true));
 
   for (const p of payloads) {
-  if (!p.category) {
-    alert("有勾選的資料還沒選費用支出對象。");
-    return;
+    if (!validateReviewPayload(p, true)) return;
   }
-
-  const amount = Number(String(p.amount || "").replace(/,/g, "").trim()) || 0;
-  const invoiceAmount = Number(String(p.inputInvoiceAmount || "").replace(/,/g, "").trim()) || 0;
-
-  if (invoiceAmount < 0) {
-    alert("發票金額不能小於 0。");
-    return;
-  }
-
-  if (invoiceAmount > amount) {
-    alert("發票金額不能大於交易金額。");
-    return;
-  }
-}
 
   const btn = $("btnBatchConfirm");
   const oldText = btn.textContent;
@@ -1450,7 +1576,10 @@ $("btnConfirmedReset").addEventListener("click", async () => {
   $("confirmedMonth").value = "";
   $("confirmedCategory").value = "";
   $("confirmedKeyword").value = "";
-  await renderConfirmedRows();
+
+  $("confirmedRows").innerHTML = `<tr><td colspan="6" class="empty">請先選擇月份、費用支出對象或輸入關鍵字後，再按「查詢」。</td></tr>`;
+  $("confirmedCountTag").textContent = `0 筆`;
+  $("confirmedTotal").textContent = money(0);
 });
 
 async function initCashExpensePage() {
