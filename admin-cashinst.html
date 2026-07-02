@@ -496,8 +496,9 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 }
 
 #orderDetail .ro-field.internal-note-cn{
-  color:#f87171 !important;
-  -webkit-text-fill-color:#f87171 !important;
+  display:block !important;
+  color:#ffffff !important;
+  -webkit-text-fill-color:initial !important;
   font-size:11px !important;
   line-height:1.35 !important;
   font-weight:400 !important;
@@ -506,6 +507,20 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   padding:6px 10px !important;
   white-space:normal !important;
   text-align:left;
+}
+
+#orderDetail .internal-note-cn .note-manual{
+  color:#f87171 !important;
+  -webkit-text-fill-color:#f87171 !important;
+  font-weight:700 !important;
+  margin-bottom:3px;
+}
+
+#orderDetail .internal-note-cn .note-system{
+  color:#ffffff !important;
+  -webkit-text-fill-color:#ffffff !important;
+  font-weight:400 !important;
+  margin-top:2px;
 }
 
 #orderDetail .internal-note-raw{
@@ -1990,19 +2005,20 @@ function displayInternalNoteChinese(raw){
   const s = String(raw || '').trim();
   if (!s) return '—';
 
-  const lines = [];
+  const translatedLines = [];
+  const manualLines = [];
 
-  function pushLine(text){
+  function pushLine(list, text){
     const t = String(text || '').trim();
     if (!t) return;
-    if (!lines.includes(t)) lines.push(t);
+    if (!list.includes(t)) list.push(t);
   }
 
   function addIfMatch(label, re){
     const m = s.match(re);
     if (!m) return;
     const d = noteDateLabel(m[0]);
-    pushLine(d ? `${label}（${d}）` : label);
+    pushLine(translatedLines, d ? `${label}（${d}）` : label);
   }
 
   addIfMatch('尾款逾期，訂金已沒收', /\[TAIL_OVERDUE_DEPOSIT_FORFEIT\][^\[]*/);
@@ -2027,7 +2043,7 @@ function displayInternalNoteChinese(raw){
   for (const m of cashPeriods) {
     const d = noteDateLabel(m[0]);
     const no = m[1] || '';
-    pushLine(d ? `現金分期第 ${no} 期已收款（${d}）` : `現金分期第 ${no} 期已收款`);
+    pushLine(translatedLines, d ? `現金分期第 ${no} 期已收款（${d}）` : `現金分期第 ${no} 期已收款`);
   }
 
   addIfMatch('線上付款失敗，系統已自動補回庫存', /\[AUTO_RESTOCK_PAYUNI_FAIL\][^\[]*/);
@@ -2037,11 +2053,11 @@ function displayInternalNoteChinese(raw){
 
   const retry = s.match(/\[RETRY_CART=([^\]]+)\]/);
   if (retry) {
-    pushLine(`已產生重新結帳購物車：${retry[1]}`);
+    pushLine(translatedLines, `已產生重新結帳購物車：${retry[1]}`);
   }
 
-  // ✅ 把你手打的人工備註也顯示在中文說明
-  const manualLines = String(s || '')
+  // ✅ 把手打人工備註抓出來，放最上面紅色
+  String(s || '')
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
     .split('\n')
@@ -2078,6 +2094,7 @@ function displayInternalNoteChinese(raw){
         .replace(/\[\d{4}-\d{2}-\d{2}T[^\]]+\]\s*(to=|to:|phase=|paid_parts=|total_parts=)[^\n]*/gi, '')
         .replace(/\d{4}-\d{2}-\d{2}T[\d:.+-Z]+/gi, '')
         .replace(/\b(to|phase|paid_parts|total_parts)\s*=\s*\S+/gi, '')
+        .replace(/^人工備註[:：]\s*/g, '')
         .replace(/\s{2,}/g, ' ')
         .trim();
 
@@ -2090,13 +2107,17 @@ function displayInternalNoteChinese(raw){
       if (!meaningful) return '';
       return x;
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    .forEach(t => {
+      pushLine(manualLines, `人工備註：${t}`);
+    });
 
-  manualLines.forEach(t => {
-    pushLine(`人工備註：${t}`);
-  });
+  const html = [
+    ...manualLines.map(t => `<div class="note-manual">${escapeHtml(t)}</div>`),
+    ...translatedLines.map(t => `<div class="note-system">${escapeHtml(t)}</div>`)
+  ].join('');
 
-  return lines.length ? lines.join('\n') : s;
+  return html || escapeHtml(s).replace(/\n/g, '<br>');
 }
 function isDepositForfeitOrder(f = {}) {
   const st = String(f.status || '').trim().toLowerCase();
@@ -4055,7 +4076,7 @@ ${isCashInstOrder ? `
 </div>
 
 <label class="mt-3 note-cn-label">內部備註中文說明</label>
-<div class="ro-field internal-note-cn ${f.internal_note ? '' : 'ro-empty'}">${escapeHtml(displayInternalNoteChinese(f.internal_note || ''))}</div>
+<div class="ro-field internal-note-cn ${f.internal_note ? '' : 'ro-empty'}">${displayInternalNoteChinese(f.internal_note || '')}</div>
 
 <label class="mt-3 note-raw-label">系統原始備註 (internal_note，請勿刪除英文標籤)</label>
 <textarea id="d_internal_note" class="internal-note-raw">${f.internal_note || ''}</textarea>
