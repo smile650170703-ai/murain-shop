@@ -5657,18 +5657,34 @@ function getItemTotalQty(itemsText){
   }, 0);
 }
 
-function renderSlipItems(itemsText){
+function parseSlipSkus(skuText){
+  return String(skuText || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split(/[\n,，、;；\s]+/g)
+    .map(x => String(x || '').trim())
+    .filter(Boolean);
+}
+
+function renderSlipItems(itemsText, skuText = ''){
   const items = parseSlipItems(itemsText);
+  const skus = parseSlipSkus(skuText);
+
   if (!items.length) {
     return '<div class="item-row"><div class="item-name">-</div></div>';
   }
 
-  return items.map(it => `
-    <div class="item-row">
-      <div class="item-name">${slipEscape(it.name || '-')}</div>
-      <div class="item-qty">數量：${it.qty ? `x ${slipEscape(it.qty)}` : '-'}</div>
-    </div>
-  `).join('');
+  return items.map((it, idx) => {
+    const sku = skus[idx] || '';
+
+    return `
+      <div class="item-row">
+        ${sku ? `<div class="item-sku">SKU：${slipEscape(sku)}</div>` : ``}
+        <div class="item-name">${slipEscape(it.name || '-')}</div>
+        <div class="item-qty">數量：${it.qty ? `x ${slipEscape(it.qty)}` : '-'}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 function getSlipAmountInfo(f){
@@ -5755,7 +5771,7 @@ const orderId = firstNonEmpty(f['訂單編號'], f.order_id);
 const product = firstNonEmpty(f['商品明細'], f.items_text, f['items_text']);
 const itemQtyField = slipNum(firstNonEmpty(f['商品總數量'], f.item_count, f.items_count));
 const itemQty = itemQtyField > 0 ? itemQtyField : getItemTotalQty(product);
-const productHtml = renderSlipItems(product);
+const productHtml = renderSlipItems(product, sku);
 
 const customerNote = f['客戶備註'] || '';
 
@@ -5816,10 +5832,9 @@ const storeName = firstNonEmpty(f['超商店名'], storeObj.name, shipObj.store_
 
           <!-- 商品 -->
           <div class="section-title">商品</div>
-          <div class="block items">
-            ${sku ? `<div class="sku">SKU：${slipEscape(sku)}</div>` : ``}
-            ${productHtml}
-          </div>
+         <div class="block items">
+  ${productHtml}
+</div>
 
           ${(customerNote || note) ? `
             <div class="remark">
@@ -5941,11 +5956,12 @@ body {
   margin-top:3px;
 }
 
-.items .sku{
+.item-sku{
   font-weight:900;
   font-size:14px;
   line-height:1.2;
   word-break:break-word;
+  margin-bottom:2px;
 }
 
 .total-qty{
