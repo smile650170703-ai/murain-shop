@@ -354,6 +354,112 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   box-shadow:0 8px 20px rgba(34,211,238,.35);
 }
 
+/* ===== 一時貿易：簡潔操作版 ===== */
+#tradeToolbarWrap:empty{
+  display:none;
+}
+
+.trade-control-row{
+  display:flex;
+  align-items:flex-end;
+  gap:10px;
+  margin:4px 0 16px 0;
+  max-width:440px;
+}
+
+.trade-period-field{
+  width:180px;
+  flex:0 0 180px;
+}
+
+.trade-period-field label{
+  font-size:12px;
+  margin:0 0 4px;
+  color:#cbd5f5;
+}
+
+.trade-period-field select{
+  width:100%;
+  height:34px;
+  padding:5px 10px;
+  border-radius:10px;
+  font-size:13px;
+}
+
+.trade-control-row button{
+  height:34px;
+  margin:0;
+  padding:0 14px;
+  font-size:13px;
+  white-space:nowrap;
+}
+
+.trade-clean-layout{
+  display:block !important;
+}
+
+.trade-clean-layout #orderList{
+  display:none !important;
+}
+
+.trade-clean-layout #orderDetail{
+  width:100%;
+  min-height:0;
+}
+
+.trade-preview-list{
+  margin-top:10px;
+  max-height:70vh;
+  overflow:auto;
+  font-size:13px;
+  line-height:1.45;
+}
+
+.trade-preview-card{
+  border:1px solid rgba(148,163,184,.25);
+  border-radius:12px;
+  padding:8px 10px;
+  margin-bottom:8px;
+  background:rgba(2,6,23,.55);
+}
+
+.trade-preview-title{
+  font-weight:800;
+  font-size:13px;
+  margin-bottom:5px;
+}
+
+.trade-preview-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:4px 10px;
+}
+
+.trade-preview-grid b{
+  font-weight:800;
+}
+
+@media (max-width:720px){
+  .trade-control-row{
+    flex-direction:column;
+    align-items:stretch;
+    max-width:none;
+  }
+
+  .trade-period-field{
+    width:100%;
+    flex:auto;
+  }
+
+  .trade-control-row button{
+    width:100%;
+  }
+
+  .trade-preview-grid{
+    grid-template-columns:1fr;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -692,50 +798,51 @@ function renderConsignAccountingPeriodPicker(){
   const detailEl = $('#orderDetail');
   const msgEl = $('#msg');
 
-  if (layoutEl) layoutEl.classList.add('trade-single-layout');
-
   const options = getTradePeriodOptions();
   const defaultPeriod = currentConsignAccountingPeriod || options[0]?.value || '';
 
-  if (toolbarEl) {
-    toolbarEl.innerHTML = `
-      <div class="trade-toolbar-card">
-        <div class="section-title">一時貿易申報月份</div>
-        <div class="tag-small" style="margin-top:4px;">
-          先選月份再載入，只抓該月份區間資料。
-        </div>
-
-        <div class="trade-toolbar-row" style="margin-top:10px;">
-          <div>
-            <label>申報月份</label>
-            <select id="trade_period_select">
-              ${options.map(opt => `
-                <option value="${escapeHtml(opt.value)}" ${opt.value === defaultPeriod ? 'selected' : ''}>
-                  ${escapeHtml(opt.label)}
-                </option>
-              `).join('')}
-            </select>
-          </div>
-
-          <button class="btn-primary" id="btnLoadTradePeriod" type="button">
-            載入一時貿易資料
-          </button>
-        </div>
-      </div>
-    `;
+  // 未載入前，不顯示下面兩個空框
+  if (layoutEl) {
+    layoutEl.classList.add('trade-clean-layout');
+    layoutEl.style.display = 'none';
   }
 
   if (listEl) {
     listEl.innerHTML = '';
+    listEl.style.display = 'none';
   }
 
-  detailEl.innerHTML = '<div class="muted">請先在上方選擇申報月份，再載入資料。</div>';
-  updateCurrentSubTabCount(0);
-  setTopFilterActive('consign_accounting');
+  if (detailEl) {
+    detailEl.innerHTML = '';
+  }
 
   if (msgEl) {
-    msgEl.textContent = '請先選擇申報月份，不會自動載入全部資料。';
+    msgEl.textContent = '';
   }
+
+  if (toolbarEl) {
+    toolbarEl.innerHTML = `
+      <div class="trade-control-row">
+        <div class="trade-period-field">
+          <label>申報月份</label>
+          <select id="trade_period_select">
+            ${options.map(opt => `
+              <option value="${escapeHtml(opt.value)}" ${opt.value === defaultPeriod ? 'selected' : ''}>
+                ${escapeHtml(opt.label)}
+              </option>
+            `).join('')}
+          </select>
+        </div>
+
+        <button class="btn-primary" id="btnLoadTradePeriod" type="button">
+          載入一時貿易資料
+        </button>
+      </div>
+    `;
+  }
+
+  updateCurrentSubTabCount(0);
+  setTopFilterActive('consign_accounting');
 
   $('#btnLoadTradePeriod')?.addEventListener('click', async () => {
     const period = String($('#trade_period_select')?.value || '').trim();
@@ -749,6 +856,7 @@ async function loadConsignAccountingPeriod(period){
   currentConsignAccountingBucket = '';
   currentConsignAccountingPeriod = String(period || '').trim();
 
+  const layoutEl = $('#adminMainLayout');
   const listEl = $('#orderList');
   const detailEl = $('#orderDetail');
   const msgEl = $('#msg');
@@ -758,11 +866,20 @@ async function loadConsignAccountingPeriod(period){
     return;
   }
 
-  if (listEl) listEl.innerHTML = '';
+  if (layoutEl) {
+    layoutEl.classList.add('trade-clean-layout');
+    layoutEl.style.display = 'block';
+  }
+
+  if (listEl) {
+    listEl.innerHTML = '';
+    listEl.style.display = 'none';
+  }
+
   detailEl.innerHTML = '<div class="muted">一時貿易資料載入中…</div>';
 
   if (msgEl) {
-    msgEl.textContent = `正在載入 ${getTradePeriodLabel(currentConsignAccountingPeriod)} 一時貿易資料…`;
+    msgEl.textContent = '';
   }
 
   try{
@@ -799,15 +916,18 @@ async function loadConsignAccountingPeriod(period){
     updateCurrentSubTabCount(currentConsignAccountingRows.length);
     setTopFilterActive('consign_accounting');
 
-    if (msgEl) {
-      msgEl.textContent = currentConsignAccountingRows.length
-        ? `目前顯示 ${getTradePeriodLabel(currentConsignAccountingPeriod)}，共 ${currentConsignAccountingRows.length} 筆。`
-        : `${getTradePeriodLabel(currentConsignAccountingPeriod)} 目前沒有一時貿易資料。`;
+       if (msgEl) {
+      msgEl.textContent = '';
     }
   }catch(e){
     console.error(e);
-    listEl.innerHTML = '<div class="error">一時貿易資料載入失敗：' + (e.message || e) + '</div>';
-    detailEl.innerHTML = '<div class="muted">請重新選擇月份後再試一次。</div>';
+
+    if (listEl) {
+      listEl.innerHTML = '';
+      listEl.style.display = 'none';
+    }
+
+    detailEl.innerHTML = '<div class="error">一時貿易資料載入失敗：' + (e.message || e) + '</div>';
     currentConsignAccountingRows = [];
     updateCurrentSubTabCount(0);
   }
@@ -817,21 +937,21 @@ async function loadConsignAccountingList(){
   renderConsignAccountingPeriodPicker();
 }
 
-function bindTradePeriodReloadBox(){
-  $('#btnLoadTradePeriodDetail')?.addEventListener('click', async () => {
-    const period = String($('#trade_period_select_detail')?.value || '').trim();
-    await loadConsignAccountingPeriod(period);
-  });
-}
-
 function renderConsignAccountingPeriodResult(){
+  const layoutEl = $('#adminMainLayout');
   const listEl = $('#orderList');
 
   const label = getTradePeriodLabel(currentConsignAccountingPeriod || '');
   const rows = currentConsignAccountingRows || [];
 
+  if (layoutEl) {
+    layoutEl.classList.add('trade-clean-layout');
+    layoutEl.style.display = 'block';
+  }
+
   if (listEl) {
     listEl.innerHTML = '';
+    listEl.style.display = 'none';
   }
 
   currentConsignAccountingBucket = label;
