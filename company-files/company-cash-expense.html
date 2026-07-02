@@ -1716,6 +1716,53 @@ function updateRowPhotoHiddenFromSlots(id) {
   return urls;
 }
 
+function appendRowPhotoHiddenUrl(id, url) {
+  const safeId = cssAttrValue(id);
+  const input = document.querySelector(`.rowPhoto[data-id="${safeId}"]`);
+  if (!input || !isValidPhotoUrl(url)) return [];
+
+  const urls = photoUrlsFromValue(input.value);
+
+  if (!urls.includes(url)) {
+    urls.push(url);
+  }
+
+  input.value = photoValueFromUrls(urls);
+  return urls;
+}
+
+function getRowPhotoUrlsForPayload(id) {
+  const safeId = cssAttrValue(id);
+  const input = document.querySelector(`.rowPhoto[data-id="${safeId}"]`);
+
+  const fromHidden = photoUrlsFromValue(input?.value || "");
+  const fromSlots = rowPhotoUrlsFromSlots(id);
+
+  return [...new Set([...fromHidden, ...fromSlots])]
+    .filter(isValidPhotoUrl);
+}
+
+function rowHasVisualPhoto(id) {
+  const safeId = cssAttrValue(id);
+  const tr = document.querySelector(`.reviewDataRow[data-id="${safeId}"]`);
+  if (!tr) return false;
+
+  return [...tr.querySelectorAll(".rowPhotoSlot")].some(slot => {
+    if (isValidPhotoUrl(slot.dataset.photoUrl || "")) return true;
+
+    return [...slot.querySelectorAll(".photo-thumb-img")].some(img => {
+      const u = String(
+        img.dataset.photoUrl ||
+        img.getAttribute("src") ||
+        img.src ||
+        ""
+      ).trim();
+
+      return isValidPhotoUrl(u);
+    });
+  });
+}
+
 function renderRowPhotoSlot(slot, url = "", shouldPick = false) {
   if (!slot) return;
 
@@ -1779,11 +1826,12 @@ async function uploadFilesToRowPhotoSlot(files, slot) {
     const targetSlot = i === 0 ? slot : addRowPhotoSlot(id);
     const preview = targetSlot?.querySelector?.(".row-photo-slot-preview");
 
-    await uploadCashPhotoFile(list[i], input, preview, {
-      onUploaded: (url) => {
-  renderRowPhotoSlot(targetSlot, url, true);
-}
-    });
+ await uploadCashPhotoFile(list[i], input, preview, {
+  onUploaded: (url) => {
+    renderRowPhotoSlot(targetSlot, url, true);
+    appendRowPhotoHiddenUrl(id, url);
+  }
+});
   }
 }
 
@@ -2205,7 +2253,7 @@ async function refreshAll() {
   return {
     id,
     detail: document.querySelector(`.rowDetail[data-id="${id}"]`)?.value || "",
-    photos: photoUrlsFromValue(document.querySelector(`.rowPhoto[data-id="${id}"]`)?.value || ""),
+    photos: getRowPhotoUrlsForPayload(id),
     amount: document.querySelector(`.rowAmount[data-id="${id}"]`)?.value || "",
     category: document.querySelector(`.rowCategory[data-id="${id}"]`)?.value || "",
     manualBank: !!document.querySelector(`.rowManualBank[data-id="${id}"]`)?.checked,
@@ -2288,11 +2336,20 @@ $("btnBatchSave").addEventListener("click", async () => {
     updateRowPhotoHiddenFromSlots(id);
   });
 
-  const payloads = picked.map(ck => buildReviewPayload(ck.dataset.id, false));
+ const payloads = picked.map(ck => buildReviewPayload(ck.dataset.id, false));
 
-  for (const p of payloads) {
-    if (!validateReviewPayload(p, false)) return;
-  }
+const emptyPhotoPayloads = payloads.filter(p => {
+  return rowHasVisualPhoto(p.id) && !photoUrlsFromValue(p.photos).length;
+});
+
+if (emptyPhotoPayloads.length) {
+  alert("第二區塊畫面上有圖片，但儲存資料沒有抓到圖片網址。請重新整理後再試一次，或把這筆圖片重新貼上。");
+  return;
+}
+
+for (const p of payloads) {
+  if (!validateReviewPayload(p, false)) return;
+}
 
   const btn = $("btnBatchSave");
   const oldText = btn.textContent;
@@ -2352,9 +2409,18 @@ $("btnBatchConfirm").addEventListener("click", async () => {
 
   const payloads = picked.map(ck => buildReviewPayload(ck.dataset.id, true));
 
-  for (const p of payloads) {
-    if (!validateReviewPayload(p, true)) return;
-  }
+const emptyPhotoPayloads = payloads.filter(p => {
+  return rowHasVisualPhoto(p.id) && !photoUrlsFromValue(p.photos).length;
+});
+
+if (emptyPhotoPayloads.length) {
+  alert("第二區塊畫面上有圖片，但確認完成資料沒有抓到圖片網址。請重新整理後再試一次，或把這筆圖片重新貼上。");
+  return;
+}
+
+for (const p of payloads) {
+  if (!validateReviewPayload(p, true)) return;
+}
 
   const btn = $("btnBatchConfirm");
   const oldText = btn.textContent;
