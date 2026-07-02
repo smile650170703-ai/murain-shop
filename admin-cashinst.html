@@ -5356,34 +5356,42 @@ const cleanPrintNote = (v) => {
     .replace(/\r/g, '\n')
     .split('\n')
     .map(line => {
-      let s = String(line || '').trim();
-      if (!s) return '';
+      const original = String(line || '').trim();
+      if (!original) return '';
 
-      // ✅ 移除系統英文標籤本體
-      // 例如：[CASH_INST_PERIOD_OK:1]、[ADMIN_CASH_INST_DUE_NOTIFY:xxx]、[RETRY_CART=xxx]
-      s = s.replace(/\[[A-Z0-9_:=\-\s]+\]/gi, '');
+      const upper = original.toUpperCase();
 
-      // ✅ 移除常見英文系統字串殘留
-      s = s
-        .replace(/\bCASH_INST[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bADMIN[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bAUTO_RESTOCK[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bRESTOCK_FAILED[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bPAYUNI[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bYUFU[A-Z0-9_:-]*\b/gi, '')
-        .replace(/\bRETRY_CART[A-Z0-9_:=:-]*\b/gi, '')
-        .replace(/\bTAIL[A-Z0-9_:-]*\b/gi, '');
+      // ✅ 只要「原始整行」是系統自動紀錄，就整行不印
+      // 避免清掉 [ADMIN...] 後，還剩下 [時間] to=1 這種垃圾文字
+      const isSystemLine =
+        /\[(CASH_INST|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[^\]]*\]/i.test(original) ||
+        /\b(CASH_INST|ADMIN_CASH_INST|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_OVERDUE|FAIL_FLEX|MANUAL_RESTOCK)\b/i.test(original) ||
+        /^\[\d{4}-\d{2}-\d{2}T[^\]]+\]\s*(to=|to:|phase=|paid_parts=|total_parts=)/i.test(original) ||
+        (
+          /^\[?\d{4}-\d{2}-\d{2}T/i.test(original) &&
+          /\b(to|phase|paid_parts|total_parts)\s*=/i.test(original)
+        );
 
-      // ✅ 如果清完只剩日期、時間、符號，就不要印
-      const onlySystemLeft = s
+      if (isSystemLine) return '';
+
+      // ✅ 非系統行才做安全清理，保留人工備註
+      let s = original
+        .replace(/\[(CASH_INST|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[^\]]*\]/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+
+      // ✅ 清完只剩日期、時間、分隔線、符號，也不要印
+      const meaningful = s
+        .replace(/\[\d{4}-\d{2}-\d{2}T[^\]]+\]/g, '')
+        .replace(/\d{4}-\d{2}-\d{2}T[\d:.+-Z]+/gi, '')
         .replace(/\d{4}-\d{2}-\d{2}/g, '')
         .replace(/\d{2}:\d{2}(:\d{2})?/g, '')
         .replace(/[T+Z年月日\s:：,，.。;；/\\\-_=|]+/g, '')
         .trim();
 
-      if (!onlySystemLeft) return '';
+      if (!meaningful) return '';
 
-      return s.replace(/\s{2,}/g, ' ').trim();
+      return s;
     })
     .filter(Boolean)
     .join('\n')
