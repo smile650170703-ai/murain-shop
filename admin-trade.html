@@ -850,40 +850,100 @@ function renderConsignAccountingDetail(bucket, rows){
     <div class="tag-small">共 ${rows.length} 筆；列印時會一筆一頁，並附身分證正反面。</div>
 
     <div class="top-order-actions mt-3">
-  <button class="btn-secondary" id="btnDownloadConsignAccountingTxt" type="button">📝 產生記事本 TXT</button>
+  <button class="btn-secondary" id="btnDownloadConsignAccountingTxt" type="button">📝 依姓名整理 TXT</button>
   <button class="btn-primary" id="btnPrintConsignAccountingIds" type="button">🖨️ 列印身分證正反面</button>
 </div>
 
     <div style="margin-top:12px;max-height:70vh;overflow:auto;">${previewHtml}</div>
   `;
-  function buildConsignAccountingTxt(){
-    return rows.map((item, idx) => {
+  function getConsignAccountingPersonGroups(sourceRows){
+    const map = new Map();
+
+    (sourceRows || []).forEach(item => {
       const acc = item.accounting || {};
+      const name = String(acc.name || item.consignorName || '未填姓名').trim() || '未填姓名';
+      const nationalId = String(acc.nationalId || '').trim();
+
+      // 有身分證字號就優先用身分證字號分組；沒有才用姓名分組
+      const key = nationalId ? `id:${nationalId}` : `name:${name}`;
+
       const methodText = displayConsignMethod(item.method);
       const actualAmount = String(item.method || '').trim() === 'bank_transfer'
         ? Number(item.bankAmount || 0)
         : Number(item.creditAmount || 0);
 
-      return [
-        `一時貿易資料｜${bucket}`,
-        `第 ${idx + 1} 筆`,
-        `姓名：${acc.name || ''}`,
-        `身分證字號：${acc.nationalId || ''}`,
-       `訂單編號：${item.orderId || ''}`,
-`發票號碼：${item.invoiceNo || ''}`,
-`發票日期：${item.invoiceDate || ''}`,
-`發票金額：NT$ ${Number(item.invoiceGrossAmount || 0).toLocaleString('zh-TW')}`,
-`發票品名：${item.invoiceItemName || ''}`,
-`商品名稱：${item.name || ''}`,
-        `售出金額：NT$ ${Number(item.saleAmount || 0).toLocaleString('zh-TW')}`,
-        `結算方式：${methodText}`,
-        `實際給付金額：NT$ ${Number(actualAmount || 0).toLocaleString('zh-TW')}`,
-        `匯款金額：NT$ ${Number(item.bankAmount || 0).toLocaleString('zh-TW')}`,
-        `購物金金額：NT$ ${Number(item.creditAmount || 0).toLocaleString('zh-TW')}`
-      ].join('\n');
-    }).join('\n\n--------------------\n\n');
+      if (!map.has(key)) {
+        map.set(key, {
+          name,
+          nationalId,
+          items: [],
+          totalInvoiceGrossAmount: 0,
+          totalSaleAmount: 0,
+          totalActualAmount: 0,
+          totalBankAmount: 0,
+          totalCreditAmount: 0
+        });
+      }
+
+      const group = map.get(key);
+
+      group.items.push({
+        ...item,
+        methodText,
+        actualAmount
+      });
+
+      group.totalInvoiceGrossAmount += Number(item.invoiceGrossAmount || 0) || 0;
+      group.totalSaleAmount += Number(item.saleAmount || 0) || 0;
+      group.totalActualAmount += Number(actualAmount || 0) || 0;
+      group.totalBankAmount += Number(item.bankAmount || 0) || 0;
+      group.totalCreditAmount += Number(item.creditAmount || 0) || 0;
+    });
+
+    return Array.from(map.values()).sort((a, b) => {
+      return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hant') ||
+        String(a.nationalId || '').localeCompare(String(b.nationalId || ''), 'zh-Hant');
+    });
   }
 
+  function buildConsignAccountingTxt(){
+    const fmtMoney = n => `NT$ ${Number(n || 0).toLocaleString('zh-TW')}`;
+    const groups = getConsignAccountingPersonGroups(rows);
+
+    return groups.map((group, groupIdx) => {
+      const detailLines = group.items.map((item, idx) => {
+        return [
+          `  ${idx + 1}. 訂單編號：${item.orderId || ''}`,
+          `     發票號碼：${item.invoiceNo || ''}`,
+          `     發票日期：${item.invoiceDate || ''}`,
+          `     發票金額：${fmtMoney(item.invoiceGrossAmount || 0)}`,
+          `     發票品名：${item.invoiceItemName || ''}`,
+          `     商品名稱：${item.name || ''}`,
+          `     售出金額：${fmtMoney(item.saleAmount || 0)}`,
+          `     結算方式：${item.methodText || ''}`,
+          `     實際給付金額：${fmtMoney(item.actualAmount || 0)}`,
+          `     匯款金額：${fmtMoney(item.bankAmount || 0)}`,
+          `     購物金金額：${fmtMoney(item.creditAmount || 0)}`
+        ].join('\n');
+      }).join('\n\n');
+
+      return [
+        `一時貿易資料｜${bucket}`,
+        `第 ${groupIdx + 1} 人`,
+        `姓名：${group.name || ''}`,
+        `身分證字號：${group.nationalId || ''}`,
+        `同月份筆數：${group.items.length} 筆`,
+        `發票金額合計：${fmtMoney(group.totalInvoiceGrossAmount)}`,
+        `售出金額合計：${fmtMoney(group.totalSaleAmount)}`,
+        `實際給付合計：${fmtMoney(group.totalActualAmount)}`,
+        `匯款金額合計：${fmtMoney(group.totalBankAmount)}`,
+        `購物金金額合計：${fmtMoney(group.totalCreditAmount)}`,
+        ``,
+        `明細：`,
+        detailLines
+      ].join('\n');
+    }).join('\n\n====================\n\n');
+  }
   function downloadTextFile(filename, text){
     const blob = new Blob(['\ufeff' + text], {
       type: 'text/plain;charset=utf-8'
@@ -906,10 +966,11 @@ function renderConsignAccountingDetail(bucket, rows){
     const safeBucket = String(bucket || '一時貿易')
       .replace(/[\\/:*?"<>|]/g, '_');
 
+    const personCount = getConsignAccountingPersonGroups(rows).length;
     const txt = buildConsignAccountingTxt();
 
     downloadTextFile(
-      `${safeBucket}_一時貿易資料_${rows.length}筆.txt`,
+      `${safeBucket}_一時貿易資料_${personCount}人_${rows.length}筆.txt`,
       txt
     );
   });
