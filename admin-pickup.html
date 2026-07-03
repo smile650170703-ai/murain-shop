@@ -1043,6 +1043,137 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 #orderDetail .label-inline:has(#d_pay_notice_sent){
   display:none !important;
 }
+
+/* ✅ 賣貨便登記頁：月份統計 + 取貨登記統計，雙框小版 */
+.pickup-summary-grid{
+  width:100%;
+  margin-top:8px;
+  display:grid;
+  grid-template-columns:minmax(360px, 1fr) minmax(230px, 0.55fr);
+  gap:8px;
+  align-items:stretch;
+}
+
+.pickup-summary-grid.hidden{
+  display:none !important;
+}
+
+.pickup-summary-grid .vendor-month-main{
+  width:100% !important;
+  margin-top:0 !important;
+  padding:8px 10px !important;
+  border-radius:14px !important;
+  display:grid !important;
+  grid-template-columns:120px minmax(0,1fr) !important;
+  gap:8px !important;
+  align-items:start !important;
+}
+
+.pickup-summary-grid .vendor-month-main label{
+  font-size:12px !important;
+}
+
+.pickup-summary-grid .vendor-month-main #vendor_month{
+  width:118px !important;
+  max-width:118px !important;
+  height:30px !important;
+  padding:4px 7px !important;
+  font-size:12px !important;
+}
+
+.pickup-summary-grid #vendor_month_summary{
+  font-size:11px !important;
+  line-height:1.25 !important;
+}
+
+.pickup-summary-grid .vendor-summary-rows{
+  grid-template-columns:repeat(2,minmax(0,1fr)) !important;
+  gap:4px 6px !important;
+}
+
+.pickup-summary-grid .vendor-summary-row{
+  padding:4px 6px !important;
+  gap:5px !important;
+  border-radius:8px !important;
+}
+
+.pickup-summary-grid .vendor-summary-name{
+  min-width:54px !important;
+  max-width:76px !important;
+  font-size:11px !important;
+}
+
+.pickup-summary-grid .vendor-summary-amount{
+  font-size:11px !important;
+}
+
+.pickup-reg-summary-main{
+  width:100% !important;
+  margin-top:0 !important;
+  padding:8px 10px !important;
+  border-radius:14px !important;
+  border:1px solid rgba(34,197,94,.28) !important;
+  background:rgba(15,23,42,.78) !important;
+}
+
+.pickup-reg-summary-title{
+  color:#e2e8f0;
+  font-weight:900;
+  font-size:12px;
+  line-height:1.2;
+  margin-bottom:6px;
+}
+
+.pickup-reg-summary-rows{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:4px 6px;
+}
+
+.pickup-reg-summary-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:6px;
+  min-width:0;
+  padding:4px 6px;
+  border-radius:8px;
+  background:rgba(255,255,255,.045);
+  border:1px solid rgba(148,163,184,.16);
+}
+
+.pickup-reg-summary-name{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#e2e8f0;
+  font-weight:800;
+  font-size:11px;
+}
+
+.pickup-reg-summary-count{
+  flex:0 0 auto;
+  color:#bbf7d0;
+  font-weight:800;
+  font-size:11px;
+  white-space:nowrap;
+}
+
+@media (max-width:900px){
+  .pickup-summary-grid{
+    grid-template-columns:1fr !important;
+  }
+
+  .pickup-summary-grid .vendor-month-main{
+    grid-template-columns:1fr !important;
+  }
+
+  .pickup-reg-summary-rows,
+  .pickup-summary-grid .vendor-summary-rows{
+    grid-template-columns:1fr !important;
+  }
+}
 </style>
 </head>
 <body>
@@ -1178,12 +1309,19 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 
        <div id="summary" class="summary-row"></div>
 
-      <div class="side-box vendor-month-main" id="vendorMonthBox">
-        <div class="vendor-month-left">
-          <label for="vendor_month">賣貨便月份</label>
-          <input id="vendor_month" type="month" />
+      <div class="pickup-summary-grid hidden" id="pickupSummaryGrid">
+        <div class="side-box vendor-month-main" id="vendorMonthBox">
+          <div class="vendor-month-left">
+            <label for="vendor_month">賣貨便月份</label>
+            <input id="vendor_month" type="month" />
+          </div>
+          <div id="vendor_month_summary" class="tag-small"></div>
         </div>
-        <div id="vendor_month_summary" class="tag-small"></div>
+
+        <div class="side-box pickup-reg-summary-main" id="pickupRegSummaryBox">
+          <div class="pickup-reg-summary-title">取貨登記統計</div>
+          <div id="pickup_reg_summary" class="tag-small">請先選擇月份</div>
+        </div>
       </div>
 
       <!-- ★ 賣貨便月份下方：目前選中訂單的快捷操作按鈕 -->
@@ -1455,8 +1593,10 @@ function setupAdminPageChrome(){
       }
     }
 
-    // 賣貨便登記頁：上方顯示月份統計
+    // 賣貨便登記頁：上方顯示月份統計 + 取貨登記統計
+    document.getElementById('pickupSummaryGrid')?.classList.remove('hidden');
     document.getElementById('vendorMonthBox')?.classList.remove('hidden');
+    document.getElementById('pickupRegSummaryBox')?.classList.remove('hidden');
 
     const vendorMonthInput = document.getElementById('vendor_month');
     if (vendorMonthInput && !vendorMonthInput.value) {
@@ -1467,7 +1607,10 @@ function setupAdminPageChrome(){
 
     if (vendorMonthInput && !vendorMonthInput.dataset.bound) {
       vendorMonthInput.dataset.bound = '1';
-      vendorMonthInput.addEventListener('change', renderVendorMonthSummary);
+      vendorMonthInput.addEventListener('change', () => {
+        renderVendorMonthSummary();
+        renderPickupRegSummary();
+      });
     }
 
     // 顯示：賣貨便頁上方違約費用欄位
@@ -1481,10 +1624,20 @@ function setupAdminPageChrome(){
     if (pickupBtn) pickupBtn.classList.add('active');
   }
 
-  // 其他頁不要顯示賣貨便月份
+  // 其他頁不要顯示賣貨便月份 / 取貨登記統計
+  const pickupSummaryGrid = document.getElementById('pickupSummaryGrid');
+  if (pickupSummaryGrid && ADMIN_PAGE_FILE !== 'admin-pickup.html') {
+    pickupSummaryGrid.classList.add('hidden');
+  }
+
   const vendorMonthBox = document.getElementById('vendorMonthBox');
   if (vendorMonthBox && ADMIN_PAGE_FILE !== 'admin-pickup.html') {
     vendorMonthBox.classList.add('hidden');
+  }
+
+  const pickupRegSummaryBox = document.getElementById('pickupRegSummaryBox');
+  if (pickupRegSummaryBox && ADMIN_PAGE_FILE !== 'admin-pickup.html') {
+    pickupRegSummaryBox.classList.add('hidden');
   }
 }
 
@@ -2132,6 +2285,61 @@ function renderVendorMonthSummary(){
     }).join('') +
     `</div>`;
 
+}
+
+ function renderPickupRegSummary(){
+  const panel = $('#pickup_reg_summary');
+  const monthEl = $('#vendor_month');
+  if (!panel || !monthEl) return;
+
+  const month = String(monthEl.value || '').trim();
+  const source = VENDOR_SUMMARY_CACHE || [];
+  const map = new Map();
+
+  source.forEach(rec => {
+    const f = rec.fields || rec || {};
+
+    const m = monthKeyOfRecord(f);
+    if (month && m !== month) return;
+
+    const shipInfo = parseShippingInfo(f) || {};
+    const ship = shipInfo.ship || {};
+    const is711 = String(ship.type || '').trim().toLowerCase() === '711';
+
+    const vendorName = String(f['賣貨便名稱'] || '').trim();
+    const pickRegRaw = String(f['取貨登記'] || '').trim();
+
+    // 只統計跟賣貨便 / 7-11 取貨有關的資料，避免郵寄/面交混進來
+    if (!is711 && !vendorName && !pickRegRaw) return;
+
+    const pickReg = pickRegRaw || '未登記';
+    map.set(pickReg, (map.get(pickReg) || 0) + 1);
+  });
+
+  const rows = Array.from(map.entries()).sort((a, b) => {
+    if (a[0] === '未登記') return -1;
+    if (b[0] === '未登記') return 1;
+    return b[1] - a[1];
+  });
+
+  if (!rows.length) {
+    panel.innerHTML = month
+      ? `月份：${escapeHtml(month)}<br>尚無取貨登記資料`
+      : '請先選擇月份';
+    return;
+  }
+
+  panel.innerHTML =
+    `<div class="pickup-reg-summary-rows">` +
+    rows.map(([name, count]) => {
+      return `
+        <div class="pickup-reg-summary-row">
+          <span class="pickup-reg-summary-name">${escapeHtml(name)}</span>
+          <span class="pickup-reg-summary-count">${count} 筆</span>
+        </div>
+      `;
+    }).join('') +
+    `</div>`;
 }
 
 async function applyFullView(mode = 'all', save = true){
@@ -4130,6 +4338,7 @@ async function reloadCurrentView(){
     if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
       await loadVendorSummaryCache();
       renderVendorMonthSummary();
+      renderPickupRegSummary();
     }
 
     updateCurrentSubTabCount(currentOrders.length);
@@ -5761,10 +5970,17 @@ const idx = currentOrders.findIndex(x=>{
 });
 if (idx >= 0) setField(currentOrders[idx], '取貨登記', v);
 
+const vendorIdx = VENDOR_SUMMARY_CACHE.findIndex(x => {
+  const fx = x.fields || x || {};
+  return String(fx.order_id || '') === String(orderId);
+});
+if (vendorIdx >= 0) setField(VENDOR_SUMMARY_CACHE[vendorIdx], '取貨登記', v);
+
 if (msgEl) msgEl.textContent = '取貨登記已儲存 ✅';
 
-// ✅ 只重畫左側列表（不打 API、不跳回首訂單）
+// ✅ 只重畫左側列表與上方統計（不打 API、不跳回首訂單）
 renderOrderList();
+renderPickupRegSummary();
   }catch(e){
     console.error(e);
     if (msgEl) msgEl.textContent = '取貨登記儲存失敗：' + (e.message || e);
@@ -7124,6 +7340,7 @@ async function loadAdminDefaultPage(){
   if (ADMIN_PAGE_FILE === 'admin-pickup.html') {
     await loadVendorSummaryCache();
     renderVendorMonthSummary();
+    renderPickupRegSummary();
   }
 
   return;
