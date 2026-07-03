@@ -512,7 +512,7 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 #orderDetail .internal-note-cn .note-manual{
   color:#f87171 !important;
   -webkit-text-fill-color:#f87171 !important;
-  font-weight:700 !important;
+  font-weight:400 !important;
   margin-bottom:3px;
 }
 
@@ -2033,16 +2033,16 @@ function displayInternalNoteChinese(raw){
   addMatches('⚠️ 現金分期補庫存失敗，請人工確認庫存', /\[RESTOCK_FAILED_CASH_INST_OVERDUE\][^\[]*/g);
   addMatches('人工已補回庫存（現金分期訂金沒收）', /\[MANUAL_RESTOCK_CASH_INST_FORFEIT\][^\[]*/g);
 
-  // ✅ 付款 / 保留通知
   addMatches('已發出款／保留通知', /\[ADMIN_PAYMENT_PENDING_NOTIFY_SENT[^\]]*\][^\[]*/g);
   addMatches('已發出款／保留通知', /\[ADMIN_PAYMENT_PENDING_NOTIFY[^\]]*\][^\[]*/g);
 
-  // ✅ 現金分期提醒通知
   addMatches('已發送現金分期付款提醒', /\[ADMIN_CASH_INST_DUE_NOTIFY[^\]]*\][^\[]*/g);
-
-  // ✅ 新增：現金分期今日 / 明日到期提醒，不要再被當人工備註
   addMatches('現金分期明日到期提醒已建立', /\[CASH_INST_DUE_REMIND_TOMORROW(?::[^\]]+)?\][^\[]*/g);
   addMatches('現金分期今日到期提醒已建立', /\[CASH_INST_DUE_REMIND_TODAY(?::[^\]]+)?\][^\[]*/g);
+
+  // ✅ 匯款提醒：不要再被當人工備註
+  addMatches('已發送匯款 24 小時提醒', /\[BANK_REMIND_24H\][^\[]*/g);
+  addMatches('已發送匯款 48 小時提醒', /\[BANK_REMIND_48H\][^\[]*/g);
 
   const cashPeriods = s.matchAll(/\[CASH_INST_PERIOD_OK:(\d+)\][^\[]*/g);
   for (const m of cashPeriods) {
@@ -2061,7 +2061,6 @@ function displayInternalNoteChinese(raw){
     pushLine(translatedLines, `已產生重新結帳購物車：${retry[1]}`);
   }
 
-  // ✅ 人工備註清理：把所有已知系統標籤移除，只留下真正手打的內容
   const systemRemoveRules = [
     /\[TAIL_OVERDUE_DEPOSIT_FORFEIT\][^\[]*/g,
     /\[AUTO_RESTOCK_TAIL_OVERDUE_CANCEL\][^\[]*/g,
@@ -2074,10 +2073,11 @@ function displayInternalNoteChinese(raw){
     /\[RESTOCK_FAILED_CASH_INST_OVERDUE\][^\[]*/g,
     /\[MANUAL_RESTOCK_CASH_INST_FORFEIT\][^\[]*/g,
     /\[CASH_INST_PERIOD_OK:\d+\][^\[]*/g,
-
-    // ✅ 新增：排除現金分期今日 / 明日提醒
     /\[CASH_INST_DUE_REMIND_TOMORROW(?::[^\]]+)?\][^\[]*/g,
     /\[CASH_INST_DUE_REMIND_TODAY(?::[^\]]+)?\][^\[]*/g,
+
+    /\[BANK_REMIND_24H\][^\[]*/g,
+    /\[BANK_REMIND_48H\][^\[]*/g,
 
     /\[ADMIN_PAYMENT_PENDING_NOTIFY_SENT[^\]]*\][^\[]*/g,
     /\[ADMIN_PAYMENT_PENDING_NOTIFY[^\]]*\][^\[]*/g,
@@ -2089,8 +2089,7 @@ function displayInternalNoteChinese(raw){
     /\[FAIL_FLEX_SENT\][^\[]*/g,
     /\[RETRY_CART=[^\]]+\]/g,
 
-    // ✅ 保底：只清掉公司程式常用英文系統標籤，不會清 [重要] 這種人工標註
-    /\[(CASH_INST|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[^\]]*\][^\[]*/gi
+    /\[(CASH_INST|BANK_|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[^\]]*\][^\[]*/gi
   ];
 
   String(s || '')
@@ -2105,12 +2104,11 @@ function displayInternalNoteChinese(raw){
         x = x.replace(re, '');
       }
 
-      // 移除殘留的時間 / to=1 / phase= 這類系統字串
       x = x
         .replace(/\[\d{4}-\d{2}-\d{2}T[^\]]+\]\s*(to=|to:|phase=|paid_parts=|total_parts=)[^\n]*/gi, '')
         .replace(/\d{4}-\d{2}-\d{2}T[\d:.+-Z]+/gi, '')
         .replace(/\b(to|phase|paid_parts|total_parts)\s*=\s*\S+/gi, '')
-        .replace(/\b(CASH_INST|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[A-Z0-9_:=:-]*\b/gi, '')
+        .replace(/\b(CASH_INST|BANK_|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[A-Z0-9_:=:-]*\b/gi, '')
         .replace(/^人工備註[:：]\s*/g, '')
         .replace(/\s{2,}/g, ' ')
         .trim();
@@ -3877,12 +3875,13 @@ ${renderTailInfoBlock(f)}
 
           <label>取貨方式 / 地址</label>
           <textarea id="d_ship_addr" readonly>${addrText}</textarea>
-
+${String(note || '').trim() ? `
           <label class="mt-2">客戶備註</label>
-          <textarea id="d_note" readonly>${note || ''}</textarea>
+          <div id="d_note" class="ro-field" style="height:auto;min-height:44px;align-items:flex-start;padding:10px 12px;white-space:pre-wrap;word-break:break-word;">${escapeHtml(note)}</div>
+          ` : ``}
 
           <label class="mt-2">商品明細</label>
-          <textarea id="d_items_text" readonly>${itemsText}</textarea>
+          <div id="d_items_text" class="ro-field" style="height:auto;min-height:88px;align-items:flex-start;padding:10px 12px;white-space:pre-wrap;word-break:break-word;">${escapeHtml(itemsText || '-')}</div>
 
           ${instApplyText ? `
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;">
@@ -5476,7 +5475,7 @@ const cleanPrintNote = (v) => {
       // ✅ 只要「原始整行」是系統自動紀錄，就整行不印
       // 避免清掉 [ADMIN...] 後，還剩下 [時間] to=1 這種垃圾文字
       const isSystemLine =
-        /\[(CASH_INST|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[^\]]*\]/i.test(original) ||
+        /\[(CASH_INST|BANK_|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[^\]]*\]/i.test(original) ||
         /\b(CASH_INST|ADMIN_CASH_INST|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_OVERDUE|FAIL_FLEX|MANUAL_RESTOCK)\b/i.test(original) ||
         /^\[\d{4}-\d{2}-\d{2}T[^\]]+\]\s*(to=|to:|phase=|paid_parts=|total_parts=)/i.test(original) ||
         (
@@ -5488,7 +5487,7 @@ const cleanPrintNote = (v) => {
 
       // ✅ 非系統行才做安全清理，保留人工備註
       let s = original
-        .replace(/\[(CASH_INST|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[^\]]*\]/gi, '')
+        .replace(/\[(CASH_INST|BANK_|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[^\]]*\]/gi, '')
         .replace(/\s{2,}/g, ' ')
         .trim();
 
