@@ -162,6 +162,22 @@
     .selected-row td{background:#f7fcf9;}
     .muted{color:var(--muted);}
 
+      #missingPackageRows tr[data-item-id]{
+      cursor:pointer;
+    }
+
+    #missingPackageRows tr[data-item-id]:hover td{
+      background:#f8fbff;
+    }
+
+    #missingPackageRows tr.selected-missing-row td{
+      background:#eff6ff;
+    }
+
+    #missingPackageRows tr.selected-missing-row td:first-child{
+      box-shadow:inset 4px 0 0 #22d3ee;
+    }
+
       .item-head{
       align-items:center;
       margin-bottom:10px;
@@ -304,17 +320,19 @@
       display:none;
     }
 
-    /* ✅ 快速查詢訂單清單：改成深色文字列表，像賣貨便月份統計 */
+    /* ✅ 快速查詢訂單清單：白底雙排小卡 */
     .purchase-quick-box #recentOrderList{
-      display:block;
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:5px;
       margin-top:0 !important;
       max-height:118px;
       overflow:auto;
-      padding:7px 8px;
-      border-radius:10px;
-      background:#020617;
-      border:1px solid rgba(148,163,184,.35);
-      box-shadow:inset 0 0 0 1px rgba(255,255,255,.03);
+      padding:0 4px 0 0;
+      align-items:start;
+      background:transparent;
+      border:0;
+      box-shadow:none;
     }
 
     .purchase-quick-box #recentOrderList::-webkit-scrollbar{
@@ -322,28 +340,27 @@
     }
 
     .purchase-quick-box #recentOrderList::-webkit-scrollbar-thumb{
-      background:#64748b;
+      background:#94a3b8;
       border-radius:999px;
     }
 
     .purchase-quick-box #recentOrderList::-webkit-scrollbar-track{
-      background:#0f172a;
+      background:#e2e8f0;
       border-radius:999px;
     }
 
     .recent-order-chip{
       width:100% !important;
       min-width:0 !important;
-      min-height:22px;
-      padding:2px 4px !important;
-      border:0;
-      border-radius:6px;
-      background:transparent;
-      color:#e2e8f0;
+      height:30px;
+      padding:0 8px !important;
+      border-radius:9px;
+      border:1px solid #cbd5e1;
+      background:#ffffff;
+      color:#0f172a;
       display:flex;
       align-items:center;
-      justify-content:flex-start;
-      gap:0;
+      gap:6px;
       overflow:hidden;
       cursor:pointer;
       box-shadow:none;
@@ -351,39 +368,38 @@
     }
 
     .recent-order-chip:hover{
-      background:rgba(34,211,238,.12);
+      border-color:#38bdf8;
+      background:#f0f9ff;
     }
 
     .recent-order-date{
       flex:0 0 auto;
-      font-size:11px;
-      color:#7dd3fc;
+      font-size:10.5px;
+      color:#64748b;
       font-weight:800;
-      line-height:1.45;
+      line-height:1;
       white-space:nowrap;
     }
 
     .recent-order-date::after{
-      content:"：";
-      color:#94a3b8;
-      margin:0 3px;
-      font-weight:700;
+      content:"";
+      margin:0;
     }
 
     .recent-order-no{
       min-width:0;
       flex:1;
-      font-size:11.5px;
-      color:#e2e8f0;
+      font-size:12px;
+      color:#0f172a;
       font-weight:900;
-      line-height:1.45;
+      line-height:1;
       overflow:hidden;
       text-overflow:ellipsis;
       white-space:nowrap;
     }
 
     .purchase-quick-box #recentOrderList .muted{
-      color:#cbd5e1;
+      color:#64748b;
       font-size:11px;
     }
 
@@ -413,10 +429,10 @@
       border-radius:10px;
     }
 
-    .purchase-file-row{
+      .purchase-file-row{
       margin-top:10px;
       display:grid;
-      grid-template-columns:minmax(260px,360px) auto minmax(220px,1fr);
+      grid-template-columns:minmax(260px,360px) auto minmax(0,1fr) auto;
       gap:8px;
       align-items:center;
     }
@@ -445,6 +461,15 @@
       margin-top:0 !important;
     }
 
+    .purchase-file-row #btnResetPurchase{
+      justify-self:end;
+      min-width:82px;
+      height:30px;
+      padding:0 10px;
+      border-radius:9px;
+      font-size:11px;
+      background:#b91c1c;
+    }
     @media (max-width:1100px){
       .purchase-top-grid{
         grid-template-columns:1fr;
@@ -569,11 +594,11 @@
               匯入採購 PDF 自動填表
             </button>
 
-            <button class="btn danger" type="button" id="btnResetPurchase">
+            <div id="pdfImportStatus" class="status"></div>
+
+            <button class="btn danger small reset-purchase-mini" type="button" id="btnResetPurchase">
               清空採購區
             </button>
-
-            <div id="pdfImportStatus" class="status"></div>
           </div>
         </div>
       </div>
@@ -812,7 +837,68 @@
   }
   function resetPurchase(){["vendor","orderNo","usdTotal","twdAfterTax","usdRate","buyDate","packageCode"].forEach(id=>{const el=$(id); if(el) el.value="";}); $("itemRows").innerHTML=""; createPurchaseRow(); refreshPurchaseRows(); state.purchaseSaved=false; updateSteps(); setStatus($("purchaseMsg"),"尚未送出");}
 
-  function renderMissingPackageRows(rows){const tbody=$("missingPackageRows"); if(!tbody)return; if(!Array.isArray(rows)||!rows.length){tbody.innerHTML='<tr><td colspan="11" class="empty">目前沒有缺包裹編號的商品。</td></tr>';return;} tbody.innerHTML=rows.map(row=>`<tr data-item-id="${escapeHtml(row.item_id||"")}"><td><input class="missing-row-check" type="checkbox"></td><td>${escapeHtml(row.order_no||"-")}</td><td>${escapeHtml(row.buy_date||"-")}</td><td>${escapeHtml(row.order_total||"")}</td><td>${escapeHtml(row.name||"-")}</td><td>${escapeHtml(row.qty||"")}</td><td>${escapeHtml(row.usd_unit_price||"")}</td><td>${row.photo_url?`<img class="thumb" src="${escapeHtml(row.photo_url)}" alt="">`:"-"}</td><td>${escapeHtml(row.color||"")}</td><td>${escapeHtml(row.size||"")}</td><td><input class="packageInput" placeholder="包裹編號"></td></tr>`).join(""); tbody.querySelectorAll(".packageInput").forEach(input=>{input.addEventListener("input",()=>{const ck=input.closest("tr")?.querySelector(".missing-row-check"); if(ck)ck.checked=!!input.value.trim();}); input.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();saveMissingPackageItems();}});});}
+   function setMissingRowSelected(tr, selected=true){
+    if (!tr) return;
+    const ck = tr.querySelector(".missing-row-check");
+    if (ck) ck.checked = !!selected;
+    tr.classList.toggle("selected-missing-row", !!selected);
+  }
+
+  function renderMissingPackageRows(rows){
+    const tbody = $("missingPackageRows");
+    if (!tbody) return;
+
+    if (!Array.isArray(rows) || !rows.length){
+      tbody.innerHTML = '<tr><td colspan="11" class="empty">目前沒有缺包裹編號的商品。</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = rows.map(row=>`
+      <tr data-item-id="${escapeHtml(row.item_id || "")}">
+        <td><input class="missing-row-check" type="checkbox"></td>
+        <td>${escapeHtml(row.order_no || "-")}</td>
+        <td>${escapeHtml(row.buy_date || "-")}</td>
+        <td>${escapeHtml(row.order_total || "")}</td>
+        <td>${escapeHtml(row.name || "-")}</td>
+        <td>${escapeHtml(row.qty || "")}</td>
+        <td>${escapeHtml(row.usd_unit_price || "")}</td>
+        <td>${row.photo_url ? `<img class="thumb" src="${escapeHtml(row.photo_url)}" alt="">` : "-"}</td>
+        <td>${escapeHtml(row.color || "")}</td>
+        <td>${escapeHtml(row.size || "")}</td>
+        <td><input class="packageInput" placeholder="包裹編號"></td>
+      </tr>
+    `).join("");
+
+    tbody.querySelectorAll("tr[data-item-id]").forEach(tr=>{
+      const ck = tr.querySelector(".missing-row-check");
+      const input = tr.querySelector(".packageInput");
+
+      tr.addEventListener("click", e=>{
+        if (e.target && e.target.closest(".missing-row-check")) return;
+        setMissingRowSelected(tr, true);
+      });
+
+      ck?.addEventListener("click", e=>{
+        e.stopPropagation();
+        tr.classList.toggle("selected-missing-row", !!ck.checked);
+      });
+
+      input?.addEventListener("focus", ()=>{
+        setMissingRowSelected(tr, true);
+      });
+
+      input?.addEventListener("input", ()=>{
+        setMissingRowSelected(tr, !!input.value.trim());
+      });
+
+      input?.addEventListener("keydown", e=>{
+        if (e.key === "Enter"){
+          e.preventDefault();
+          saveMissingPackageItems();
+        }
+      });
+    });
+  }
   async function loadMissingPackageItems(){const tbody=$("missingPackageRows"); if(!tbody)return; tbody.innerHTML='<tr><td colspan="11" class="empty">載入中...</td></tr>'; try{const data=await apiGet(`${API.missingPackageList}?limit=300`); renderMissingPackageRows(data.rows||[]);}catch(err){tbody.innerHTML=`<tr><td colspan="11" class="empty">❌ ${escapeHtml(err.message||String(err))}</td></tr>`;}}
   async function saveMissingPackageItems(){const rows=[...$("missingPackageRows").querySelectorAll("tr")].map(tr=>{const checked=tr.querySelector(".missing-row-check")?.checked; const item_id=tr.getAttribute("data-item-id")||""; const package_code=tr.querySelector(".packageInput")?.value.trim()||""; return checked&&item_id&&package_code?{item_id,package_code}:null;}).filter(Boolean); if(!rows.length){setStatus($("purchaseMsg"),"❌ 請先輸入包裹編號，系統會自動勾選該列。","err");return;} try{const data=await apiPost(API.missingPackageSave,{rows}); setStatus($("purchaseMsg"),`✅ 已儲存 ${data.updated_count||0} 筆包裹編號${data.failed_count?`，失敗 ${data.failed_count} 筆`:""}`,data.failed_count?'err':'ok'); await loadMissingPackageItems(); await loadInbound();}catch(err){setStatus($("purchaseMsg"),'❌ '+(err.message||err),'err');}}
 
