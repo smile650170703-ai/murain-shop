@@ -562,8 +562,9 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 }
 
 #orderDetail .ro-field.internal-note-cn{
-  color:#f87171 !important;
-  -webkit-text-fill-color:#f87171 !important;
+  display:block !important;
+  color:#ffffff !important;
+  -webkit-text-fill-color:initial !important;
   font-size:11px !important;
   line-height:1.35 !important;
   font-weight:400 !important;
@@ -572,6 +573,20 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   padding:6px 10px !important;
   white-space:normal !important;
   text-align:left;
+}
+
+#orderDetail .internal-note-cn .note-manual{
+  color:#f87171 !important;
+  -webkit-text-fill-color:#f87171 !important;
+  font-weight:700 !important;
+  margin-bottom:3px;
+}
+
+#orderDetail .internal-note-cn .note-system{
+  color:#ffffff !important;
+  -webkit-text-fill-color:#ffffff !important;
+  font-weight:400 !important;
+  margin-top:2px;
 }
 
 #orderDetail .internal-note-raw{
@@ -2884,44 +2899,129 @@ function displayInternalNoteChinese(raw){
   const s = String(raw || '').trim();
   if (!s) return '—';
 
-  const lines = [];
+  const translatedLines = [];
+  const manualLines = [];
 
-  function addIfMatch(label, re){
-    const m = s.match(re);
-    if (!m) return;
-    const d = noteDateLabel(m[0]);
-    lines.push(d ? `${label}（${d}）` : label);
+  function pushLine(list, text){
+    const t = String(text || '').trim();
+    if (!t) return;
+    if (!list.includes(t)) list.push(t);
   }
 
-  addIfMatch('尾款逾期，訂金已沒收', /\[TAIL_OVERDUE_DEPOSIT_FORFEIT\][^\[]*/);
-  addIfMatch('系統已自動補回庫存（尾款逾期取消）', /\[AUTO_RESTOCK_TAIL_OVERDUE_CANCEL\][^\[]*/);
-  addIfMatch('⚠️ 系統補庫存失敗，請人工確認庫存', /\[RESTOCK_FAILED_TAIL_OVERDUE\][^\[]*/);
-  addIfMatch('人工已補回庫存（尾款逾期訂金沒收）', /\[MANUAL_RESTOCK_TAIL_FORFEIT\][^\[]*/);
+  function addMatches(label, re){
+    const rx = re.flags.includes('g') ? re : new RegExp(re.source, re.flags + 'g');
+    for (const m of s.matchAll(rx)) {
+      const d = noteDateLabel(m[0]);
+      pushLine(translatedLines, d ? `${label}（${d}）` : label);
+    }
+  }
 
-  addIfMatch('現金分期訂金已確認，進入分期付款中', /\[CASH_INST_DEPOSIT_OK\][^\[]*/);
-  addIfMatch('現金分期逾期，訂金已沒收', /\[CASH_INST_OVERDUE_CANCEL(?::[^\]]+)?\][^\[]*/);
-  addIfMatch('系統已自動補回庫存（現金分期逾期）', /\[AUTO_RESTOCK_CASH_INST_OVERDUE\][^\[]*/);
-  addIfMatch('⚠️ 現金分期補庫存失敗，請人工確認庫存', /\[RESTOCK_FAILED_CASH_INST_OVERDUE\][^\[]*/);
-  addIfMatch('人工已補回庫存（現金分期訂金沒收）', /\[MANUAL_RESTOCK_CASH_INST_FORFEIT\][^\[]*/);
+  addMatches('尾款逾期，訂金已沒收', /\[TAIL_OVERDUE_DEPOSIT_FORFEIT\][^\[]*/g);
+  addMatches('系統已自動補回庫存（尾款逾期取消）', /\[AUTO_RESTOCK_TAIL_OVERDUE_CANCEL\][^\[]*/g);
+  addMatches('⚠️ 系統補庫存失敗，請人工確認庫存', /\[RESTOCK_FAILED_TAIL_OVERDUE\][^\[]*/g);
+  addMatches('人工已補回庫存（尾款逾期訂金沒收）', /\[MANUAL_RESTOCK_TAIL_FORFEIT\][^\[]*/g);
+
+  addMatches('現金分期訂金已確認，進入分期付款中', /\[CASH_INST_DEPOSIT_OK\][^\[]*/g);
+  addMatches('現金分期逾期，訂金已沒收', /\[CASH_INST_OVERDUE_CANCEL(?::[^\]]+)?\][^\[]*/g);
+  addMatches('系統已自動補回庫存（現金分期逾期）', /\[AUTO_RESTOCK_CASH_INST_OVERDUE\][^\[]*/g);
+  addMatches('⚠️ 現金分期補庫存失敗，請人工確認庫存', /\[RESTOCK_FAILED_CASH_INST_OVERDUE\][^\[]*/g);
+  addMatches('人工已補回庫存（現金分期訂金沒收）', /\[MANUAL_RESTOCK_CASH_INST_FORFEIT\][^\[]*/g);
+
+  addMatches('已發出款／保留通知', /\[ADMIN_PAYMENT_PENDING_NOTIFY_SENT[^\]]*\][^\[]*/g);
+  addMatches('已發出款／保留通知', /\[ADMIN_PAYMENT_PENDING_NOTIFY[^\]]*\][^\[]*/g);
+
+  addMatches('已發送現金分期付款提醒', /\[ADMIN_CASH_INST_DUE_NOTIFY[^\]]*\][^\[]*/g);
+
+  addMatches('現金分期明日到期提醒已建立', /\[CASH_INST_DUE_REMIND_TOMORROW(?::[^\]]+)?\][^\[]*/g);
+  addMatches('現金分期今日到期提醒已建立', /\[CASH_INST_DUE_REMIND_TODAY(?::[^\]]+)?\][^\[]*/g);
 
   const cashPeriods = s.matchAll(/\[CASH_INST_PERIOD_OK:(\d+)\][^\[]*/g);
   for (const m of cashPeriods) {
     const d = noteDateLabel(m[0]);
     const no = m[1] || '';
-    lines.push(d ? `現金分期第 ${no} 期已收款（${d}）` : `現金分期第 ${no} 期已收款`);
+    pushLine(translatedLines, d ? `現金分期第 ${no} 期已收款（${d}）` : `現金分期第 ${no} 期已收款`);
   }
 
-  addIfMatch('線上付款失敗，系統已自動補回庫存', /\[AUTO_RESTOCK_PAYUNI_FAIL\][^\[]*/);
-  addIfMatch('中租／零卡付款失敗，系統已自動補回庫存', /\[AUTO_RESTOCK_ZC_NOTIFY_FAIL\][^\[]*/);
-  addIfMatch('後台重新結帳，系統已自動補回庫存', /\[AUTO_RESTOCK_ADMIN_RETRY_CHECKOUT\][^\[]*/);
-  addIfMatch('已發送付款失敗通知', /\[FAIL_FLEX_SENT\][^\[]*/);
+  addMatches('線上付款失敗，系統已自動補回庫存', /\[AUTO_RESTOCK_PAYUNI_FAIL\][^\[]*/g);
+  addMatches('中租／零卡付款失敗，系統已自動補回庫存', /\[AUTO_RESTOCK_ZC_NOTIFY_FAIL\][^\[]*/g);
+  addMatches('後台重新結帳，系統已自動補回庫存', /\[AUTO_RESTOCK_ADMIN_RETRY_CHECKOUT\][^\[]*/g);
+  addMatches('已發送付款失敗通知', /\[FAIL_FLEX_SENT\][^\[]*/g);
 
   const retry = s.match(/\[RETRY_CART=([^\]]+)\]/);
   if (retry) {
-    lines.push(`已產生重新結帳購物車：${retry[1]}`);
+    pushLine(translatedLines, `已產生重新結帳購物車：${retry[1]}`);
   }
 
-  return lines.length ? lines.join('\n') : s;
+  const systemRemoveRules = [
+    /\[TAIL_OVERDUE_DEPOSIT_FORFEIT\][^\[]*/g,
+    /\[AUTO_RESTOCK_TAIL_OVERDUE_CANCEL\][^\[]*/g,
+    /\[RESTOCK_FAILED_TAIL_OVERDUE\][^\[]*/g,
+    /\[MANUAL_RESTOCK_TAIL_FORFEIT\][^\[]*/g,
+
+    /\[CASH_INST_DEPOSIT_OK\][^\[]*/g,
+    /\[CASH_INST_OVERDUE_CANCEL(?::[^\]]+)?\][^\[]*/g,
+    /\[AUTO_RESTOCK_CASH_INST_OVERDUE\][^\[]*/g,
+    /\[RESTOCK_FAILED_CASH_INST_OVERDUE\][^\[]*/g,
+    /\[MANUAL_RESTOCK_CASH_INST_FORFEIT\][^\[]*/g,
+    /\[CASH_INST_PERIOD_OK:\d+\][^\[]*/g,
+
+    /\[CASH_INST_DUE_REMIND_TOMORROW(?::[^\]]+)?\][^\[]*/g,
+    /\[CASH_INST_DUE_REMIND_TODAY(?::[^\]]+)?\][^\[]*/g,
+
+    /\[ADMIN_PAYMENT_PENDING_NOTIFY_SENT[^\]]*\][^\[]*/g,
+    /\[ADMIN_PAYMENT_PENDING_NOTIFY[^\]]*\][^\[]*/g,
+    /\[ADMIN_CASH_INST_DUE_NOTIFY[^\]]*\][^\[]*/g,
+
+    /\[AUTO_RESTOCK_PAYUNI_FAIL\][^\[]*/g,
+    /\[AUTO_RESTOCK_ZC_NOTIFY_FAIL\][^\[]*/g,
+    /\[AUTO_RESTOCK_ADMIN_RETRY_CHECKOUT\][^\[]*/g,
+    /\[FAIL_FLEX_SENT\][^\[]*/g,
+    /\[RETRY_CART=[^\]]+\]/g,
+
+    /\[(CASH_INST|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[^\]]*\][^\[]*/gi
+  ];
+
+  String(s || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map(line => {
+      let x = String(line || '').trim();
+      if (!x) return '';
+
+      for (const re of systemRemoveRules) {
+        x = x.replace(re, '');
+      }
+
+      x = x
+        .replace(/\[\d{4}-\d{2}-\d{2}T[^\]]+\]\s*(to=|to:|phase=|paid_parts=|total_parts=)[^\n]*/gi, '')
+        .replace(/\d{4}-\d{2}-\d{2}T[\d:.+-Z]+/gi, '')
+        .replace(/\b(to|phase|paid_parts|total_parts)\s*=\s*\S+/gi, '')
+        .replace(/\b(CASH_INST|ADMIN_|AUTO_RESTOCK|RESTOCK_FAILED|PAYUNI|YUFU|RETRY_CART|TAIL_|FAIL_FLEX|MANUAL_RESTOCK|PAYMENT_|DEPOSIT_|NOTIFY|REMIND|SYSTEM)[A-Z0-9_:=:-]*\b/gi, '')
+        .replace(/^人工備註[:：]\s*/g, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+
+      const meaningful = x
+        .replace(/\d{4}-\d{2}-\d{2}/g, '')
+        .replace(/\d{2}:\d{2}(:\d{2})?/g, '')
+        .replace(/[T+Z年月日\s:：,，.。;；/\\\-_=|]+/g, '')
+        .trim();
+
+      if (!meaningful) return '';
+      return x;
+    })
+    .filter(Boolean)
+    .forEach(t => {
+      pushLine(manualLines, `人工備註：${t}`);
+    });
+
+  const html = [
+    ...manualLines.map(t => `<div class="note-manual">${escapeHtml(t)}</div>`),
+    ...translatedLines.map(t => `<div class="note-system">${escapeHtml(t)}</div>`)
+  ].join('');
+
+  return html || escapeHtml(s).replace(/\n/g, '<br>');
 }
 function isDepositForfeitOrder(f = {}) {
   const st = String(f.status || '').trim().toLowerCase();
