@@ -33,7 +33,7 @@
     : '2008430261-kOeNLR9x';
 window.OFFICIAL_LINE_URL = isStaging
   ? 'https://line.me/R/ti/p/@523fqjkm'
-  : 'https://line.me/R/ti/p/@cc0857';
+  : 'https://line.me/R/ti/p/@mu88888';
 
 // ✅ 寄賣契約專用 LINE：只給 consign.html 的契約按鈕使用
 window.CONSIGN_CONTRACT_LINE_URL = isStaging
