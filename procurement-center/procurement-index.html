@@ -997,13 +997,7 @@
     </div>
 
     <section id="inboundBody" class="card work-body" hidden>
-      <div class="card-head">
-        <div></div>
-        <div class="toolbar">
-          <button class="btn secondary" type="button" id="btnLoadInbound">載入待入庫清單</button>
-          <button class="btn secondary" type="button" id="btnSelectReadyRows">勾選可入庫列</button>
-        </div>
-      </div>
+      <!-- 到貨清單改為展開時自動載入，不再顯示載入 / 勾選按鈕 -->
       <!-- 已隱藏預設庫位 / 入庫日期 / 預設分類 / 搜尋清單；保留 hidden 欄位避免 JS 取不到元素 -->
       <input id="defaultLocation" type="hidden" value="">
       <input id="stockInDate" type="hidden" value="">
@@ -1408,7 +1402,55 @@
   function inboundRowFormValues(tr,row={}){return {id:tr.dataset.id||row.id||"",brand:tr.querySelector('[data-role="brand"]')?.value.trim()||"",productType:tr.querySelector('[data-role="productType"]')?.value.trim()||"",productName:tr.querySelector('[data-role="productName"]')?.value.trim()||"",labelCode:tr.querySelector('[data-role="labelCode"]')?.value.trim()||"",suggestPrice:tr.querySelector('[data-role="suggestPrice"]')?.value.trim()||"",receivedQty:normalizeInt(tr.querySelector('[data-role="receivedQty"]')?.value||""),stockLocation:tr.querySelector('[data-role="stockLocation"]')?.value.trim()||"",stockDate:tr.querySelector('[data-role="stockDate"]')?.value.trim()||"",category:tr.querySelector('[data-role="category"]')?.value.trim()||""};}
   function isInboundReady(values){return !!(values.id&&values.brand&&values.productName&&values.labelCode&&values.suggestPrice&&(values.receivedQty||values.receivedQty==="0")&&values.category&&values.stockDate);}
   function renderInboundRows(rows){const list=Array.isArray(rows)?rows:[]; if(!list.length){$("inboundRows").innerHTML='<tr><td colspan="15" class="empty">目前沒有待入庫資料。</td></tr>'; refreshInboundSummary(); return;} const defDate=$("stockInDate").value||todayStr(); const defLoc=$("defaultLocation").value||""; const defCat=$("defaultCategory").value||""; $("inboundRows").innerHTML=list.map(row=>{const autoName=buildAutoProductName(row); const productName=String(row.productName||"").trim()||autoName||String(row.name||"").trim(); const brand=String(row.brand||"").trim(); const cat=defCat||brand; const received=String(row.receivedQty||"").trim(); const abnormal=computeAbnormalQty(row.qty||"",received); const photo=row.photoUrl?`<img class="thumb" src="${escapeHtml(row.photoUrl)}" alt="">`:'<span class="muted">無</span>'; return `<tr data-id="${escapeHtml(row.id)}" data-name="${escapeHtml(row.name||"")}" data-qty="${escapeHtml(row.qty||"")}" data-unit-cost="${escapeHtml(row.refPrice||"")}"><td><input type="checkbox" class="inboundCheck"></td><td>${photo}</td><td>${escapeHtml(row.name||"")}</td><td>${escapeHtml(row.qty||"")}</td><td>${escapeHtml(row.color||"")}</td><td><input data-role="brand" list="brandOptions" value="${escapeHtml(brand)}" placeholder="品牌/分類"></td><td><input data-role="productType" list="typeOptions" value="${escapeHtml(row.productType||"")}" placeholder="種類"></td><td><input data-role="productName" value="${escapeHtml(productName)}" placeholder="商品名稱"></td><td><input data-role="labelCode" value="${escapeHtml(row.labelInputCode||"")}" placeholder="SKU/標籤碼"></td><td>${escapeHtml(formatRefPrice(row.refPrice||""))}</td><td><input data-role="suggestPrice" type="text" inputmode="numeric" value="${escapeHtml(row.suggestPrice||"")}" placeholder="售價"></td><td><input data-role="receivedQty" type="text" inputmode="numeric" value="${escapeHtml(received)}" placeholder="實收"></td><td><span data-role="abnormalQtyText">${escapeHtml(abnormal)}</span></td><td><input data-role="stockLocation" value="${escapeHtml(defLoc)}" placeholder="庫位"></td><td><input data-role="stockDate" type="date" value="${escapeHtml(defDate)}"><input data-role="category" list="categoryOptions" value="${escapeHtml(cat)}" placeholder="分類" title="Products sub_category"></td></tr>`;}).join(""); bindInboundRows(); refreshInboundSummary(); filterInboundRows();}
-  function bindInboundRows(){document.querySelectorAll("#inboundRows tr[data-id]").forEach(tr=>{const refresh=()=>{const qty=tr.dataset.qty||""; const received=normalizeInt(tr.querySelector('[data-role="receivedQty"]')?.value||""); const abnormal=computeAbnormalQty(qty,received); const ab=tr.querySelector('[data-role="abnormalQtyText"]'); if(ab)ab.textContent=abnormal; const vals=inboundRowFormValues(tr); const ready=isInboundReady(vals); tr.classList.toggle("selected-row",tr.querySelector(".inboundCheck")?.checked); refreshInboundSummary();}; tr.querySelectorAll("input").forEach(input=>{input.addEventListener("input",()=>{if(input.dataset.role==="brand"){const cat=tr.querySelector('[data-role="category"]'); if(cat&&!cat.value.trim()) cat.value=input.value.trim();} refresh();}); input.addEventListener("change",refresh); input.addEventListener("keydown",e=>{if(e.key!=="Enter")return; e.preventDefault(); focusNextInboundSameRole(input,input.dataset.role);});}); tr.querySelector(".inboundCheck")?.addEventListener("change",refresh);});}
+    function bindInboundRows(){
+    document.querySelectorAll("#inboundRows tr[data-id]").forEach(tr=>{
+      const refresh=()=>{
+        const qty=tr.dataset.qty||"";
+        const received=normalizeInt(tr.querySelector('[data-role="receivedQty"]')?.value||"");
+        const abnormal=computeAbnormalQty(qty,received);
+        const ab=tr.querySelector('[data-role="abnormalQtyText"]');
+
+        if(ab) ab.textContent=abnormal;
+
+        tr.classList.toggle("selected-row",tr.querySelector(".inboundCheck")?.checked);
+        refreshInboundSummary();
+      };
+
+      tr.addEventListener("click",e=>{
+        if (e.target && e.target.closest("input,select,textarea,button")) return;
+
+        const ck = tr.querySelector(".inboundCheck");
+        if (!ck) return;
+
+        ck.checked = !ck.checked;
+        refresh();
+      });
+
+      tr.querySelectorAll("input").forEach(input=>{
+        input.addEventListener("input",()=>{
+          if(input.dataset.role==="brand"){
+            const cat=tr.querySelector('[data-role="category"]');
+            if(cat&&!cat.value.trim()) cat.value=input.value.trim();
+          }
+          refresh();
+        });
+
+        input.addEventListener("change",refresh);
+
+        input.addEventListener("keydown",e=>{
+          if(e.key!=="Enter") return;
+          e.preventDefault();
+          focusNextInboundSameRole(input,input.dataset.role);
+        });
+      });
+
+      tr.querySelector(".inboundCheck")?.addEventListener("click",e=>{
+        e.stopPropagation();
+      });
+
+      tr.querySelector(".inboundCheck")?.addEventListener("change",refresh);
+    });
+  }
   function focusNextInboundSameRole(input,role){const inputs=[...document.querySelectorAll(`#inboundRows tr[data-id] [data-role="${role}"]`)]; const idx=inputs.indexOf(input); const next=inputs[idx+1]; if(next){next.focus(); next.select?.();}}
   function getInboundTrs(){return [...document.querySelectorAll("#inboundRows tr[data-id]")];}
   function filterInboundRows(){const kw=String($("inboundFilter")?.value||"").trim().toLowerCase(); getInboundTrs().forEach(tr=>{const text=tr.innerText.toLowerCase()+" "+[...tr.querySelectorAll("input")].map(i=>i.value).join(" ").toLowerCase(); tr.style.display=(!kw||text.includes(kw))?"":"none";}); refreshInboundSummary();}
@@ -1650,10 +1692,14 @@
     const show = body.hidden;
     body.hidden = !show;
     btn.textContent = show ? "－ 收合" : "+ 展開";
+
+    if (show) {
+      loadInbound();
+    }
   });
   let quickTimer=null; $("quickOrderNo")?.addEventListener("input",()=>{clearTimeout(quickTimer); quickTimer=setTimeout(()=>{const kw=$("quickOrderNo").value.trim(); loadRecentPurchases(kw); if(kw.length>=5) checkPurchaseQuick(); else setStatus($("purchaseCheckResult"),kw?`正在篩選包含「${kw}」的訂單...`:"輸入訂單編號幾碼會自動篩選，下方顯示相關訂單。");},250);}); $("quickOrderNo")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();checkPurchaseQuick();}}); ["usdTotal","usdRate"].forEach(id=>$(id)?.addEventListener("input",calcTwd)); $("buyDate")?.addEventListener("blur",()=>$("buyDate").value=normalizeDateInput($("buyDate").value)); MAIN_FIELDS.forEach((id,i)=>$(id)?.addEventListener("keydown",e=>{if(e.key!=="Enter")return;e.preventDefault(); const next=MAIN_FIELDS[i+1]; if(next)$(next).focus(); else $("itemRows").querySelector(".name")?.focus();}));
   $("btnImportTransferPdf")?.addEventListener("click",handleTransferPdfImport); $("transferPdf")?.addEventListener("change",handleTransferPdfImport); $("btnSubmitTransfer")?.addEventListener("click",submitTransfer); $("packageSearch")?.addEventListener("input",filterPackageRows); $("packageSearch")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();filterPackageRows();getVisiblePackageRows()[0]?.querySelector(".weightLbs")?.focus();}}); $("btnClearPackageSearch")?.addEventListener("click",()=>{$("packageSearch").value="";filterPackageRows();}); $("transferDate")?.addEventListener("blur",()=>{const n=normalizeDateInput($("transferDate").value); if(n)$("transferDate").value=n;});
-  $("btnLoadInbound")?.addEventListener("click",loadInbound); $("btnSelectReadyRows")?.addEventListener("click",selectReadyRows); $("btnSaveInboundDraft")?.addEventListener("click",()=>saveInboundDraft({selectedOnly:false}).catch(e=>setStatus($("inboundMsg"),`❌ ${e.message||e}`,'err'))); $("btnFinalStockIn")?.addEventListener("click",finalStockInAndExport); $("inboundFilter")?.addEventListener("input",filterInboundRows); ["defaultLocation","stockInDate","defaultCategory"].forEach(id=>$(id)?.addEventListener("change",()=>renderInboundRows(state.inboundRows)));
+  $("btnSaveInboundDraft")?.addEventListener("click",()=>saveInboundDraft({selectedOnly:false}).catch(e=>setStatus($("inboundMsg"),`❌ ${e.message||e}`,'err'))); $("btnFinalStockIn")?.addEventListener("click",finalStockInAndExport); $("inboundFilter")?.addEventListener("input",filterInboundRows); ["defaultLocation","stockInDate","defaultCategory"].forEach(id=>$(id)?.addEventListener("change",()=>renderInboundRows(state.inboundRows)));
   $("btnToggleReviewEdit")?.addEventListener("click",()=>{
     const b = $("reviewEditBody");
     const btn = $("btnToggleReviewEdit");
