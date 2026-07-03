@@ -417,6 +417,107 @@
       line-height:1;
       box-shadow:0 5px 12px rgba(220,38,38,.25);
     }
+      /* ===== 異常追蹤處理區 ===== */
+    .review-edit-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+      margin-bottom:12px;
+    }
+
+    .review-edit-head h2{
+      margin:0;
+      font-size:20px;
+    }
+
+    .review-edit-count{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:54px;
+      height:28px;
+      padding:0 10px;
+      border-radius:999px;
+      background:#fff7ed;
+      border:1px solid #fed7aa;
+      color:#b45309;
+      font-size:12px;
+      font-weight:900;
+    }
+
+    .track-panel{
+      padding:12px 14px;
+      background:#fafcff;
+    }
+
+    .track-grid{
+      display:grid;
+      grid-template-columns:150px 150px 150px 130px minmax(260px,1fr);
+      gap:10px;
+      align-items:start;
+    }
+
+    .track-item label{
+      display:block;
+      font-size:12px;
+      font-weight:900;
+      color:#64748b;
+      margin-bottom:5px;
+    }
+
+    .track-item select,
+    .track-item input,
+    .track-item textarea{
+      width:100%;
+      border:1px solid #cfd8e6;
+      border-radius:10px;
+      padding:8px 10px;
+      font-size:12px;
+      background:#fff;
+      color:var(--text);
+    }
+
+    .track-item textarea{
+      min-height:86px;
+      resize:vertical;
+      line-height:1.55;
+    }
+
+    .track-actions{
+      margin-top:10px;
+      display:flex;
+      justify-content:flex-start;
+    }
+
+    .review-main-row td{
+      background:#fff;
+    }
+
+    .review-setting-row td{
+      border-bottom:1px solid var(--line);
+    }
+
+    @media (max-width:1100px){
+      .track-grid{
+        grid-template-columns:1fr 1fr;
+      }
+
+      .track-note-wrap{
+        grid-column:1 / -1;
+      }
+    }
+
+    @media (max-width:720px){
+      .track-grid{
+        grid-template-columns:1fr;
+      }
+
+      .track-note-wrap{
+        grid-column:auto;
+      }
+    }
       /* ===== 採購第一區塊：左快速查詢＋右主資料 ===== */
     .purchase-card{
       padding:14px 16px;
@@ -680,7 +781,7 @@
           <button class="work-tab" type="button" data-go="transferSec">2 轉運資料</button>
           <button class="work-tab" type="button" data-go="inboundSec">3 到貨／標籤／入庫</button>
           <button class="work-tab" type="button" data-go="reviewSec">異常追蹤</button>
-          <button class="work-tab" type="button" data-go="verifySec">設定檢查</button>
+          <button class="work-tab" type="button" data-go="verifySec">異常處理</button>
         </div>
   </div>
 
@@ -952,8 +1053,36 @@
     </section>
 
     <section id="verifySec" class="work-section card">
-      <div class="card-head"><div><h2>設定檢查</h2><div class="sub">檢查 PDF 套件、共用後台權限、主要 API 是否可讀。這個檢查不會寫入資料。</div></div><button class="btn secondary" type="button" id="btnVerifySetup">檢查設定</button></div>
-      <div id="verifyMsg" class="status">尚未檢查</div>
+      <div class="review-edit-head">
+        <div class="section-title-left">
+          <h2>待確認追蹤處理</h2>
+          <span class="review-edit-count"><span id="pendingReviewEditCount">0</span> 筆</span>
+        </div>
+
+        <button class="btn secondary small" type="button" id="btnReloadPendingReviewEdit">
+          重新整理
+        </button>
+      </div>
+
+      <div id="pendingReviewEditMsg" class="status">尚未載入</div>
+
+      <div class="table-wrap">
+        <table style="min-width:1120px;">
+          <thead>
+            <tr>
+              <th style="width:120px;">品牌</th>
+              <th style="width:220px;">商品名稱</th>
+              <th style="width:70px;">數量</th>
+              <th style="width:100px;">累計實收</th>
+              <th style="width:90px;">異常數量</th>
+              <th>追蹤設定</th>
+            </tr>
+          </thead>
+          <tbody id="pendingReviewEditRows">
+            <tr><td colspan="6" class="empty">尚未載入</td></tr>
+          </tbody>
+        </table>
+      </div>
     </section>
   </div>
 
@@ -974,7 +1103,8 @@
     labelSaveDraft: "https://api.murain.tw/op/procurement/label-print/save-draft",
     labelSaveExport: "https://api.murain.tw/op/procurement/label-print/save-export",
     stockInBatch: "https://api.murain.tw/op/products/stock-in/batch",
-    pendingReviewList: "https://api.murain.tw/op/procurement/pending-review/list"
+    pendingReviewList: "https://api.murain.tw/op/procurement/pending-review/list",
+    pendingReviewUpdate: "https://api.murain.tw/op/procurement/pending-review/update"
   };
   const PDFJS_WORKER_SRC = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   const STORAGE_OK = "procurement_entry_ok";
@@ -989,6 +1119,31 @@
   const state = { purchaseSaved:false, transferSaved:false, inboundSaved:false, stockDone:false, inboundRows:[] };
   const ITEM_COLS = ["name","qty","usdUnitPrice","color","size","packageCode"];
   const MAIN_FIELDS = ["vendor","orderNo","usdTotal","twdAfterTax","usdRate","buyDate"];
+
+    const REVIEW_STATUS_OPTIONS = [
+    "待確認",
+    "待廠商回覆",
+    "待退款",
+    "待補寄",
+    "已退款",
+    "已補寄",
+    "已結案"
+  ];
+
+  const REVIEW_REASON_OPTIONS = [
+    "少件",
+    "缺貨",
+    "規格錯誤",
+    "顏色錯誤",
+    "損壞"
+  ];
+
+  const REVIEW_METHOD_OPTIONS = [
+    "退款",
+    "補寄",
+    "下次折抵",
+    "不處理"
+  ];
 
   function escapeHtml(str){return String(str||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");}
   function setStatus(el,text,type=""){ if(!el) return; el.textContent=text||""; el.className="status"+(type?" "+type:""); }
@@ -1238,7 +1393,173 @@
   function buildLabelFileName(){const d=new Date(); const pad=n=>String(n).padStart(2,"0"); return `正式入庫標籤_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.csv`;}
   async function finalStockInAndExport(){const selected=collectInboundDraftRows(true); try{validateFinalRows(selected);}catch(err){setStatus($("inboundMsg"),`❌ ${err.message||err}`,'err'); return;} const op_key=getSharedStockInAdminKey(); if(!op_key){setStatus($("inboundMsg"),"❌ 找不到共用後台主管密碼 / op_key。請先用上方共用後台登入，或先開啟 stock-in.html 登入一次。","err"); return;} const ok=confirm(`確定要正式入庫 ${selected.length} 筆到 Products 庫存，並匯出標籤 CSV 嗎？\n\n注意：這一步會真的新增 Products，請勿重複按。`); if(!ok)return; const btn=$("btnFinalStockIn"); btn.disabled=true; setStatus($("inboundMsg"),"1/4 暫存到貨與標籤資料中...","info"); try{await saveInboundDraft({silent:true,selectedOnly:true}); const stockItems=buildStockPayloadRows(selected); setStatus($("inboundMsg"),"2/4 正式入庫 Products 中...","info"); const stock=await apiPost(API.stockInBatch,{op_key,items:stockItems}); setStatus($("inboundMsg"),"3/4 標記列印完成並產生 CSV 中...","info"); const labelItems=selected.map(r=>({id:r.id,labelCode:r.labelCode,suggestPrice:r.suggestPrice,receivedQty:r.receivedQty,newBarcode:r.labelCode,brand:r.brand,productName:r.productName,qty:r.qty,unitCost:r.unitCost||r.refPrice})); const label=await apiPost(API.labelSaveExport,{items:labelItems}); const exportRows=Array.isArray(label.export_rows)?label.export_rows:[]; if(exportRows.length) downloadCsv(buildLabelFileName(),exportRows); state.stockDone=true; state.inboundSaved=true; updateSteps(); setStatus($("inboundMsg"),`✅ 正式入庫完成＋標籤已匯出\nProducts 新增：${stock.createdCount||0} 筆\nSKU：${Array.isArray(stock.skus)?stock.skus.join(', '):''}\n標籤更新：${label.updated_count||0} 筆`,'ok'); toast('✅ 正式入庫完成＋標籤已下載','ok'); await loadInbound(); await loadPendingReview();}catch(err){setStatus($("inboundMsg"),`❌ 正式入庫流程中斷：${err.message||err}\n\n如果訊息顯示 Products 已新增但標籤下載失敗，請不要重複按正式入庫，避免 SKU 重複。`,'err'); toast('❌ 正式入庫失敗，請看訊息','err');}finally{btn.disabled=false;}}
 
-  async function loadPendingReview(){try{const data=await apiGet(API.pendingReviewList); const rows=Array.isArray(data.rows)?data.rows:[]; $("pendingReviewCount").textContent=String(data.count??rows.length); if(!rows.length){$("pendingReviewRows").innerHTML='<tr><td colspan="7" class="empty">目前沒有待確認追蹤資料。</td></tr>'; return;} $("pendingReviewRows").innerHTML=rows.map(r=>`<tr><td>${escapeHtml(r.brand||"")}</td><td>${escapeHtml(r.productName||"")}</td><td>${escapeHtml(r.qty||"")}</td><td>${escapeHtml(r.receivedQty||"")}</td><td>${escapeHtml(r.abnormalQty||"")}</td><td>${escapeHtml(r.abnormalStatus||"")}</td><td>${escapeHtml(r.abnormalNote||"")}</td></tr>`).join("");}catch(e){$("pendingReviewRows").innerHTML=`<tr><td colspan="7" class="empty">❌ ${escapeHtml(e.message||String(e))}</td></tr>`;}}
+  function buildReviewSelectOptions(list, value){
+    return (Array.isArray(list) ? list : []).map(v=>{
+      const selected = String(value || "") === v ? "selected" : "";
+      return `<option value="${escapeHtml(v)}" ${selected}>${escapeHtml(v)}</option>`;
+    }).join("");
+  }
+
+  function renderPendingReviewMiniRows(rows){
+    const tbody = $("pendingReviewRows");
+    if (!tbody) return;
+
+    if (!Array.isArray(rows) || !rows.length){
+      tbody.innerHTML = '<tr><td colspan="7" class="empty">目前沒有待確認追蹤資料。</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = rows.map(r=>`
+      <tr>
+        <td>${escapeHtml(r.brand || "")}</td>
+        <td>${escapeHtml(r.productName || "")}</td>
+        <td>${escapeHtml(r.qty || "")}</td>
+        <td>${escapeHtml(r.receivedQty || "")}</td>
+        <td>${escapeHtml(r.abnormalQty || "")}</td>
+        <td>${escapeHtml(r.abnormalStatus || "")}</td>
+        <td>${escapeHtml(r.abnormalNote || "")}</td>
+      </tr>
+    `).join("");
+  }
+
+  function renderPendingReviewEditRows(rows){
+    const tbody = $("pendingReviewEditRows");
+    if (!tbody) return;
+
+    const countEl = $("pendingReviewEditCount");
+    if (countEl) countEl.textContent = String(Array.isArray(rows) ? rows.length : 0);
+
+    if (!Array.isArray(rows) || !rows.length){
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">目前沒有待確認追蹤資料。</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = rows.map(row=>`
+      <tr class="review-main-row">
+        <td>${escapeHtml(row.brand || "")}</td>
+        <td>${escapeHtml(row.productName || "")}</td>
+        <td>${escapeHtml(row.qty || "")}</td>
+        <td>${escapeHtml(row.receivedQty || "")}</td>
+        <td>${escapeHtml(row.abnormalQty || "")}</td>
+        <td style="color:#64748b;font-weight:800;">請在下方設定</td>
+      </tr>
+
+      <tr class="review-setting-row" data-review-id="${escapeHtml(row.id || "")}">
+        <td colspan="6" class="track-panel">
+          <div class="track-grid">
+            <div class="track-item">
+              <label>異常狀態</label>
+              <select data-role="abnormalStatus">
+                ${buildReviewSelectOptions(REVIEW_STATUS_OPTIONS, row.abnormalStatus)}
+              </select>
+            </div>
+
+            <div class="track-item">
+              <label>異常原因</label>
+              <select data-role="abnormalReason">
+                ${buildReviewSelectOptions(REVIEW_REASON_OPTIONS, row.abnormalReason)}
+              </select>
+            </div>
+
+            <div class="track-item">
+              <label>處理方式</label>
+              <select data-role="abnormalMethod">
+                ${buildReviewSelectOptions(REVIEW_METHOD_OPTIONS, row.abnormalMethod)}
+              </select>
+            </div>
+
+            <div class="track-item">
+              <label style="color:#dc2626;">退款金額</label>
+              <input
+                type="text"
+                inputmode="decimal"
+                data-role="refundAmount"
+                value="${escapeHtml(row.refundAmount || "")}"
+                placeholder="退款金額"
+              >
+            </div>
+
+            <div class="track-item track-note-wrap">
+              <label>異常備註</label>
+              <textarea data-role="abnormalNote" placeholder="輸入備註">${escapeHtml(row.abnormalNote || "")}</textarea>
+            </div>
+          </div>
+
+          <div class="track-actions">
+            <button class="btn secondary small btnSaveReviewRow" type="button" data-id="${escapeHtml(row.id || "")}">
+              儲存
+            </button>
+          </div>
+        </td>
+      </tr>
+    `).join("");
+
+    tbody.querySelectorAll(".btnSaveReviewRow").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const tr = btn.closest("tr[data-review-id]");
+        const id = String(btn.dataset.id || "").trim();
+
+        if (!tr || !id){
+          setStatus($("pendingReviewEditMsg"),"❌ 缺少待確認追蹤 ID。","err");
+          return;
+        }
+
+        const payload = {
+          id,
+          abnormal_status: String(tr.querySelector('[data-role="abnormalStatus"]')?.value || "").trim(),
+          abnormal_reason: String(tr.querySelector('[data-role="abnormalReason"]')?.value || "").trim(),
+          abnormal_method: String(tr.querySelector('[data-role="abnormalMethod"]')?.value || "").trim(),
+          abnormal_note: String(tr.querySelector('[data-role="abnormalNote"]')?.value || "").trim(),
+          refund_amount: String(tr.querySelector('[data-role="refundAmount"]')?.value || "").trim()
+        };
+
+        const oldText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "儲存中...";
+
+        try{
+          await apiPost(API.pendingReviewUpdate, payload);
+          setStatus($("pendingReviewEditMsg"),"✅ 已更新待確認追蹤資料。","ok");
+          await loadPendingReview();
+        }catch(err){
+          setStatus($("pendingReviewEditMsg"),`❌ ${err.message || err}`,"err");
+          btn.disabled = false;
+          btn.textContent = oldText;
+        }
+      });
+    });
+  }
+
+  async function loadPendingReview(){
+    try{
+      const data = await apiGet(API.pendingReviewList);
+      const rows = Array.isArray(data.rows) ? data.rows : [];
+      const count = data.count ?? rows.length;
+
+      $("pendingReviewCount").textContent = String(count);
+
+      renderPendingReviewMiniRows(rows);
+      renderPendingReviewEditRows(rows);
+
+      setStatus($("pendingReviewEditMsg"),`✅ 待確認追蹤已更新，共 ${count} 筆。`, count ? "warn" : "ok");
+    }catch(e){
+      const msg = `❌ ${escapeHtml(e.message || String(e))}`;
+
+      if ($("pendingReviewRows")) {
+        $("pendingReviewRows").innerHTML = `<tr><td colspan="7" class="empty">${msg}</td></tr>`;
+      }
+
+      if ($("pendingReviewEditRows")) {
+        $("pendingReviewEditRows").innerHTML = `<tr><td colspan="6" class="empty">${msg}</td></tr>`;
+      }
+
+      if ($("pendingReviewEditCount")) {
+        $("pendingReviewEditCount").textContent = "0";
+      }
+
+      setStatus($("pendingReviewEditMsg"), msg, "err");
+    }
+  }
   async function verifySetup(){const lines=[]; lines.push(`PDF.js：${window.pdfjsLib?'✅ 已載入':'❌ 未載入'}`); const op=getSharedStockInAdminKey(); lines.push(`共用後台 op_key：${op?'✅ 已取得':'❌ 未取得，正式入庫會失敗'}`); const tests=[['採購 recent-list',`${API.recentList}?limit=1`],['待入庫 inbound/list',`${API.inboundList}?limit=1`],['待確認追蹤 pending-review/list',API.pendingReviewList]]; for(const [name,url] of tests){try{await apiGet(url); lines.push(`${name}：✅ 可讀取`);}catch(e){lines.push(`${name}：❌ ${e.message||e}`);}} setStatus($("verifyMsg"),lines.join("\n"),lines.some(x=>x.includes('❌'))?'warn':'ok');}
 
   document.querySelectorAll(".work-tab[data-go]").forEach(btn=>btn.addEventListener("click",()=>{const id=btn.dataset.go; document.getElementById(id)?.scrollIntoView({behavior:"smooth",block:"start"}); document.querySelectorAll(".work-tab").forEach(b=>b.classList.remove("is-active")); btn.classList.add("is-active");}));
@@ -1284,7 +1605,19 @@
   let quickTimer=null; $("quickOrderNo")?.addEventListener("input",()=>{clearTimeout(quickTimer); quickTimer=setTimeout(()=>{const kw=$("quickOrderNo").value.trim(); loadRecentPurchases(kw); if(kw.length>=5) checkPurchaseQuick(); else setStatus($("purchaseCheckResult"),kw?`正在篩選包含「${kw}」的訂單...`:"輸入訂單編號幾碼會自動篩選，下方顯示相關訂單。");},250);}); $("quickOrderNo")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();checkPurchaseQuick();}}); ["usdTotal","usdRate"].forEach(id=>$(id)?.addEventListener("input",calcTwd)); $("buyDate")?.addEventListener("blur",()=>$("buyDate").value=normalizeDateInput($("buyDate").value)); MAIN_FIELDS.forEach((id,i)=>$(id)?.addEventListener("keydown",e=>{if(e.key!=="Enter")return;e.preventDefault(); const next=MAIN_FIELDS[i+1]; if(next)$(next).focus(); else $("itemRows").querySelector(".name")?.focus();}));
   $("btnImportTransferPdf")?.addEventListener("click",handleTransferPdfImport); $("transferPdf")?.addEventListener("change",handleTransferPdfImport); $("btnSubmitTransfer")?.addEventListener("click",submitTransfer); $("packageSearch")?.addEventListener("input",filterPackageRows); $("packageSearch")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();filterPackageRows();getVisiblePackageRows()[0]?.querySelector(".weightLbs")?.focus();}}); $("btnClearPackageSearch")?.addEventListener("click",()=>{$("packageSearch").value="";filterPackageRows();}); $("transferDate")?.addEventListener("blur",()=>{const n=normalizeDateInput($("transferDate").value); if(n)$("transferDate").value=n;});
   $("btnLoadInbound")?.addEventListener("click",loadInbound); $("btnSelectReadyRows")?.addEventListener("click",selectReadyRows); $("btnSaveInboundDraft")?.addEventListener("click",()=>saveInboundDraft({selectedOnly:false}).catch(e=>setStatus($("inboundMsg"),`❌ ${e.message||e}`,'err'))); $("btnFinalStockIn")?.addEventListener("click",finalStockInAndExport); $("inboundFilter")?.addEventListener("input",filterInboundRows); ["defaultLocation","stockInDate","defaultCategory"].forEach(id=>$(id)?.addEventListener("change",()=>renderInboundRows(state.inboundRows)));
-  $("btnLoadPendingReview")?.addEventListener("click",loadPendingReview); $("btnToggleReview")?.addEventListener("click",()=>{const b=$("reviewBody"), btn=$("btnToggleReview"); const show=b.hidden; b.hidden=!show; btn.textContent=show?'－ 收合':'+ 展開'; if(show) loadPendingReview();}); $("btnVerifySetup")?.addEventListener("click",verifySetup);
+  $("btnToggleReview")?.addEventListener("click",()=>{
+    const b = $("reviewBody");
+    const btn = $("btnToggleReview");
+    if (!b || !btn) return;
+
+    const show = b.hidden;
+    b.hidden = !show;
+    btn.textContent = show ? "－ 收合" : "+ 展開";
+
+    if (show) loadPendingReview();
+  });
+
+  $("btnReloadPendingReviewEdit")?.addEventListener("click",loadPendingReview);
   $("stockInDate").value=todayStr();
   createPurchaseRow();
   updateSteps();
