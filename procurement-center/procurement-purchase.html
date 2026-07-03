@@ -486,6 +486,7 @@ th:nth-child(9), td:nth-child(9){ width:50px; }
   }
 }
   </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/config.js?v=20260627-auth-fix"></script>
 </head>
 <body>
@@ -592,6 +593,21 @@ th:nth-child(9), td:nth-child(9){ width:50px; }
 
         <input id="packageCode" type="hidden" value="" />
       </div>
+
+      <div class="toolbar" style="align-items:center; margin-top:16px;">
+        <input
+          id="pdfImportFile"
+          type="file"
+          accept="application/pdf,.pdf"
+          style="width:360px; max-width:100%;"
+        />
+        <button class="btn secondary" type="button" id="btnImportPdf">
+          匯入 PDF 自動填表
+        </button>
+      </div>
+      <div id="pdfImportStatus" class="sub" style="margin-top:8px;">
+        上傳 PDF 後只會自動填入主資料與商品明細，不會自動送出。
+      </div>
     </div>
     
 <div class="card">
@@ -652,6 +668,7 @@ const API_PURCHASE_CHECK = "https://api.murain.tw/op/procurement/purchase/check"
 const API_BAD_LIST = "https://api.murain.tw/op/procurement/purchase/bad-list";
 const API_RECENT_LIST = "https://api.murain.tw/op/procurement/purchase/recent-list";
 const API_IMAGE_DIRECT_UPLOAD = "https://api.murain.tw/op/procurement/image/direct-upload";
+const PDFJS_WORKER_SRC = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 const $ = (id) => document.getElementById(id);
 const rowsEl = $("itemRows");
@@ -679,6 +696,256 @@ const MAIN_FIELDS = ["vendor", "orderNo", "usdTotal", "twdAfterTax", "usdRate", 
   return `${m[1]}-${String(m[2]).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`;
 }
 
+    function setPdfImportStatus(text, type = "") {
+  const el = $("pdfImportStatus");
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.color = type === "err" ? "var(--danger)" : (type === "ok" ? "var(--ok)" : "var(--muted)");
+}
+
+function normalizePdfNumber(v) {
+  return String(v == null ? "" : v).replace(/,/g, "").trim();
+}
+
+function formatPdfDate(y, m, d) {
+  return `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+function pickPdfDate(text, label) {
+  const re = new RegExp(`${label}\\s*(\\d{4})年\\s*(\\d{1,2})月\\s*(\\d{1,2})日`);
+  const m = String(text || "").match(re);
+  return m ? formatPdfDate(m[1], m[2], m[3]) : "";
+}
+
+function setSelectIfExists(id, value) {
+  const el = $(id);
+  if (!el || !value) return;
+
+  const wanted = String(value).trim();
+  const option = [...el.options].find(opt => opt.value === wanted || opt.textContent.trim() === wanted);
+  if (option) el.value = option.value;
+}
+
+function parsePurchasePdfText(rawText) {
+  const text = String(rawText || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+
+  const flat = text.replace(/\s+/g, " ");
+  const parsed = {
+    purchase: {
+      vendor: "",
+      orderNo: "",
+      usdTotal: "",
+      twdAfterTax: "",
+      usdRate: "",
+      buyDate: ""
+    },
+    items: []
+  };
+
+  if (/Buyforyou|Buy\s*&\s*Ship/i.test(flat)) {
+    parsed.purchase.vendor = "Buy&Ship";
+  } else if (/MICHAEL\s*KORS/i.test(flat)) {
+    parsed.purchase.vendor = "MICHAEL KORS 官網";
+  }
+
+  const orderNo = flat.match(/訂單編號[:：]\s*([A-Z0-9-]+)/i);
+  if (orderNo) parsed.purchase.orderNo = orderNo[1].trim();
+
+  parsed.purchase.buyDate = pickPdfDate(flat, "訂購日期") || pickPdfDate(flat, "付款日期");
+
+  const usdTotal = flat.match(/商品總值\s*US\$\s*([\d,]+(?:\.\d+)?)/i);
+  if (usdTotal) parsed.purchase.usdTotal = normalizePdfNumber(usdTotal[1]);
+
+  const usdRate = flat.match(/匯率\s*US\$\s*1\s*[≈=]\s*NT\$\s*([\d,]+(?:\.\d+)?)/i);
+  if (usdRate) parsed.purchase.usdRate = normalizePdfNumber(usdRate[1]);
+
+  const twdTotal = flat.match(/合計\s*[（(]?\s*TWD\s*[）)]?\s*NT\$\s*([\d,]+)/i);
+  if (twdTotal) parsed.purchase.twdAfterTax = normalizePdfNumber(twdTotal[1]);
+
+  const lines = text
+    .split(/\n+/g)
+    .map(s => s.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  let inItems = false;
+  const pendingNameLines = [];
+
+  for (const line of lines) {
+    if (line.includes("商品資料")) {
+      inItems = true;
+      continue;
+    }
+    if (line.includes("收費總計")) break;
+    if (!inItems) continue;
+
+    if (
+      line === "品名" ||
+      line === "數量" ||
+      line.includes("商品單價") ||
+      line === "小計" ||
+      /USD/.test(line) ||
+      /^（.*）$/.test(line)
+    ) {
+      continue;
+    }
+
+    const row = line.match(/^(.+?)\s+(\d{1,4})\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)$/);
+    if (row) {
+      const name = [...pendingNameLines, row[1]].join(" ").replace(/\s+/g, " ").trim();
+      parsed.items.push({
+        name,
+        qty: normalizePdfNumber(row[2]),
+        usdUnitPrice: normalizePdfNumber(row[3]),
+        photoUrl: "",
+        color: "",
+        size: "",
+        packageCode: ""
+      });
+      pendingNameLines.length = 0;
+      continue;
+    }
+
+    pendingNameLines.push(line);
+  }
+
+  if (!parsed.items.length) {
+    const sectionMatch = flat.match(/商品資料\s+(.+?)\s+收費總計/);
+    const section = sectionMatch ? sectionMatch[1] : "";
+    const cleaned = section
+      .replace(/品名|數量|商品單價|小計|（\s*USD\s*）|\(\s*USD\s*\)/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const itemRe = /(.+?)\s+(\d{1,4})\s+([\d,]+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)(?=\s+.+?\s+\d{1,4}\s+[\d,]+(?:\.\d+)?\s+[\d,]+(?:\.\d+)?|$)/g;
+    let m;
+    while ((m = itemRe.exec(cleaned))) {
+      parsed.items.push({
+        name: m[1].replace(/\s+/g, " ").trim(),
+        qty: normalizePdfNumber(m[2]),
+        usdUnitPrice: normalizePdfNumber(m[3]),
+        photoUrl: "",
+        color: "",
+        size: "",
+        packageCode: ""
+      });
+    }
+  }
+
+  if (!parsed.purchase.usdTotal && parsed.items.length) {
+    const total = parsed.items.reduce((sum, row) => {
+      const qty = Number(row.qty || 0);
+      const price = Number(row.usdUnitPrice || 0);
+      return sum + (Number.isFinite(qty * price) ? qty * price : 0);
+    }, 0);
+    if (total > 0) parsed.purchase.usdTotal = total.toFixed(2);
+  }
+
+  return parsed;
+}
+
+async function readPdfTextFromFile(file) {
+  if (!window.pdfjsLib) {
+    throw new Error("PDF 解析套件尚未載入，請重新整理頁面後再試。");
+  }
+
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_SRC;
+
+  const buffer = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: buffer }).promise;
+  const allLines = [];
+
+  for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+    const page = await pdf.getPage(pageNo);
+    const content = await page.getTextContent();
+    const rows = new Map();
+
+    for (const item of content.items || []) {
+      const str = String(item.str || "").trim();
+      if (!str) continue;
+
+      const transform = Array.isArray(item.transform) ? item.transform : [];
+      const x = Number(transform[4] || 0);
+      const y = Math.round(Number(transform[5] || 0));
+      const key = String(y);
+
+      if (!rows.has(key)) rows.set(key, []);
+      rows.get(key).push({ x, str });
+    }
+
+    const pageLines = [...rows.entries()]
+      .sort((a, b) => Number(b[0]) - Number(a[0]))
+      .map(([, arr]) => arr
+        .sort((a, b) => a.x - b.x)
+        .map(x => x.str)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim()
+      )
+      .filter(Boolean);
+
+    allLines.push(...pageLines);
+  }
+
+  return allLines.join("\n");
+}
+
+function applyPurchasePdfData(parsed) {
+  const p = parsed?.purchase || {};
+
+  setSelectIfExists("vendor", p.vendor);
+  if (p.orderNo) $("orderNo").value = p.orderNo;
+  if (p.usdTotal) $("usdTotal").value = p.usdTotal;
+  if (p.twdAfterTax) $("twdAfterTax").value = p.twdAfterTax;
+  if (p.usdRate) $("usdRate").value = p.usdRate;
+  if (p.buyDate) $("buyDate").value = normalizeDateInput(p.buyDate);
+
+  rowsEl.innerHTML = "";
+  const itemRows = Array.isArray(parsed?.items) && parsed.items.length ? parsed.items : [{}];
+  itemRows.forEach(row => createRow(row));
+  refreshRows();
+
+  if (!p.twdAfterTax && p.usdTotal && p.usdRate) calcTwd();
+}
+
+async function handlePdfImport() {
+  const file = $("pdfImportFile")?.files?.[0];
+  if (!file) {
+    setPdfImportStatus("請先選擇 PDF 檔。", "err");
+    return;
+  }
+
+  if (!String(file.type || "").includes("pdf") && !/\.pdf$/i.test(file.name || "")) {
+    setPdfImportStatus("請上傳 PDF 檔案。", "err");
+    return;
+  }
+
+  setPdfImportStatus("PDF 解析中，請稍候...");
+  setMsg("PDF 解析中，正在自動填表...");
+
+  try {
+    const text = await readPdfTextFromFile(file);
+    const parsed = parsePurchasePdfText(text);
+
+    if (!parsed.purchase.orderNo && !parsed.items.length) {
+      throw new Error("這份 PDF 沒有解析到訂單編號或商品明細，請確認是不是 Buyforyou 收據格式。");
+    }
+
+    applyPurchasePdfData(parsed);
+
+    const itemCount = parsed.items.length;
+    const textMsg = `✅ PDF 已自動填入${itemCount ? ` ${itemCount} 筆商品` : "資料"}。請再手動補商品照片、顏色、尺寸、包裹編號後，再按送出建立採購單。`;
+    setPdfImportStatus(textMsg, "ok");
+    setMsg(textMsg, "ok");
+  } catch (err) {
+    const msg = `❌ PDF 解析失敗：${err.message || err}`;
+    setPdfImportStatus(msg, "err");
+    setMsg(msg, "err");
+  }
+}
+    
 function resetPurchaseForm() {
   $("vendor").value = "";
   $("twdAfterTax").value = "";
@@ -1193,6 +1460,16 @@ ${data.item_failed_count ? "失敗明細：\n" + JSON.stringify(data.failed_item
 
 btnAddRow.addEventListener("click", () => createRow());
 btnSubmit.addEventListener("click", submitForm);
+
+const btnImportPdf = $("btnImportPdf");
+if (btnImportPdf) {
+  btnImportPdf.addEventListener("click", handlePdfImport);
+}
+
+const pdfImportFile = $("pdfImportFile");
+if (pdfImportFile) {
+  pdfImportFile.addEventListener("change", handlePdfImport);
+}
 
 const btnCheckPurchase = $("btnCheckPurchase");
 if (btnCheckPurchase) {
