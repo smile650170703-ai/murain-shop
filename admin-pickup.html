@@ -356,9 +356,9 @@
   color:#fecaca;
 }
 .pill.credit-red span{ color:#fecaca; }
- /* ★ 只把賣貨便累積那一行改成紅色 */
+/* ✅ 隱藏右側賣貨便累積提示文字 */
 #d_vendor_stats {
-  color:#fecaca;   /* 你也可以換成 #f87171 或 red */
+  display:none !important;
 }
 #btnQuickPaid,
 #btnRemindToday,
@@ -1028,10 +1028,9 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   box-shadow:0 0 0 2px rgba(248,113,113,.16);
 }
 
+/* ✅ 隱藏違約費用下方目前選取提示文字 */
 #codPenaltyMsgTop{
-  color:#fca5a5 !important;
-  font-size:10.5px !important;
-  line-height:1.25 !important;
+  display:none !important;
 }
 
 /* ✅ 賣貨便登記頁：隱藏右側明細不需要看的系統區塊 */
@@ -2287,7 +2286,62 @@ function renderVendorMonthSummary(){
 
 }
 
- function renderPickupRegSummary(){
+function pickupRegMonthKey(text, selectedMonth){
+  const s = String(text || '').trim();
+  const selected = String(selectedMonth || '').trim();
+
+  if (!s || !selected) return '';
+
+  const selectedYear = selected.slice(0, 4);
+
+  // 2026-07-06 / 2026/7/6 / 2026.7.6
+  let m = s.match(/^(\d{4})[-/.](\d{1,2})(?:[-/.]\d{1,2})?/);
+  if (m) {
+    return `${m[1]}-${String(m[2]).padStart(2, '0')}`;
+  }
+
+  // 7/6 / 7-6 / 7.6
+  m = s.match(/^(\d{1,2})[\/\-.]\d{1,2}/);
+  if (m) {
+    return `${selectedYear}-${String(m[1]).padStart(2, '0')}`;
+  }
+
+  // 7月6日
+  m = s.match(/^(\d{1,2})月\d{1,2}/);
+  if (m) {
+    return `${selectedYear}-${String(m[1]).padStart(2, '0')}`;
+  }
+
+  return '';
+}
+
+function pickupRegSortValue(label){
+  const s = String(label || '').trim();
+
+  if (s === '未登記') return -1;
+
+  // 7/6、7-6、7.6
+  let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})/);
+  if (m) {
+    return Number(m[1]) * 100 + Number(m[2]);
+  }
+
+  // 7月6日
+  m = s.match(/^(\d{1,2})月(\d{1,2})/);
+  if (m) {
+    return Number(m[1]) * 100 + Number(m[2]);
+  }
+
+  // 2026-07-06
+  m = s.match(/^\d{4}[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (m) {
+    return Number(m[1]) * 100 + Number(m[2]);
+  }
+
+  return 99999;
+}
+
+function renderPickupRegSummary(){
   const panel = $('#pickup_reg_summary');
   const monthEl = $('#vendor_month');
   if (!panel || !monthEl) return;
@@ -2299,9 +2353,6 @@ function renderVendorMonthSummary(){
   source.forEach(rec => {
     const f = rec.fields || rec || {};
 
-    const m = monthKeyOfRecord(f);
-    if (month && m !== month) return;
-
     const shipInfo = parseShippingInfo(f) || {};
     const ship = shipInfo.ship || {};
     const is711 = String(ship.type || '').trim().toLowerCase() === '711';
@@ -2309,16 +2360,33 @@ function renderVendorMonthSummary(){
     const vendorName = String(f['賣貨便名稱'] || '').trim();
     const pickRegRaw = String(f['取貨登記'] || '').trim();
 
-    // 只統計跟賣貨便 / 7-11 取貨有關的資料，避免郵寄/面交混進來
+    // 只統計賣貨便 / 7-11 相關資料
     if (!is711 && !vendorName && !pickRegRaw) return;
 
+    // ✅ 你輸入什麼，就用什麼當統計名稱
     const pickReg = pickRegRaw || '未登記';
+
+    // ✅ 如果你輸入 7/6、7/9，會用這個日期月份判斷
+    // 例如月份選 2026-07，就會統計 7/6、7/9
+    if (month) {
+      const regMonth = pickupRegMonthKey(pickRegRaw, month);
+      const orderMonth = monthKeyOfRecord(f);
+
+      if (regMonth) {
+        if (regMonth !== month) return;
+      } else {
+        if (orderMonth !== month) return;
+      }
+    }
+
     map.set(pickReg, (map.get(pickReg) || 0) + 1);
   });
 
   const rows = Array.from(map.entries()).sort((a, b) => {
-    if (a[0] === '未登記') return -1;
-    if (b[0] === '未登記') return 1;
+    const av = pickupRegSortValue(a[0]);
+    const bv = pickupRegSortValue(b[0]);
+
+    if (av !== bv) return av - bv;
     return b[1] - a[1];
   });
 
