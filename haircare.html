@@ -2771,16 +2771,36 @@ body{
   font-size:14px;
 }
 
-.preorder-member-login{
+.preorder-member-actions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+}
+
+.preorder-member-login,
+.preorder-member-logout{
   min-height:30px;
   padding:0 12px;
   border:0;
   border-radius:999px;
-  background:#3b2923;
-  color:#fffaf6;
   font-size:12px;
   font-weight:900;
   cursor:pointer;
+}
+
+.preorder-member-login{
+  background:#3b2923;
+  color:#fffaf6;
+}
+
+.preorder-member-logout{
+  background:#fee2e2;
+  color:#991b1b;
+}
+
+.preorder-member-logout[hidden]{
+  display:none !important;
 }
 
 .preorder-member-grid{
@@ -3135,10 +3155,13 @@ body{
   <input type="hidden" id="preorderLineName">
 
   <div class="preorder-member-box is-missing" id="preorderMemberBox">
-    <div class="preorder-member-head">
-      <b>會員資料</b>
-      <button class="preorder-member-login" id="preorderLoginBtn" type="button">會員登入 / 重新確認</button>
-    </div>
+<div class="preorder-member-head">
+  <b>會員資料</b>
+  <div class="preorder-member-actions">
+    <button class="preorder-member-login" id="preorderLoginBtn" type="button">會員登入</button>
+    <button class="preorder-member-logout" id="preorderLogoutBtn" type="button" hidden>登出</button>
+  </div>
+</div>
 
     <div class="preorder-member-grid">
       <div class="preorder-member-item">
@@ -3997,6 +4020,8 @@ function normalizeUrl(u) {
 
   const memberBox = document.getElementById("preorderMemberBox");
   const loginBtn = document.getElementById("preorderLoginBtn");
+  const logoutBtn = document.getElementById("preorderLogoutBtn");
+
   const memberNameText = document.getElementById("preorderMemberNameText");
   const memberPhoneText = document.getElementById("preorderMemberPhoneText");
   const memberLineText = document.getElementById("preorderMemberLineText");
@@ -4077,6 +4102,28 @@ function normalizeUrl(u) {
     return { name, phone, lineName, lineUserId };
   }
 
+  function clearSharedMemberStorage() {
+    try { localStorage.removeItem("murain_line_user_id"); } catch (_) {}
+    try { localStorage.removeItem("MURAIN_LINE_USER_ID"); } catch (_) {}
+  }
+
+  function setLoggedOutMemberBox() {
+    customerNameEl.value = "";
+    phoneEl.value = "";
+    lineNameEl.value = "";
+
+    memberNameText.textContent = "尚未登入";
+    memberPhoneText.textContent = "尚未登入";
+    memberLineText.textContent = "尚未登入";
+    memberStatusText.textContent = "請先登入會員";
+
+    memberBox.classList.remove("is-ok");
+    memberBox.classList.add("is-missing");
+
+    if (loginBtn) loginBtn.textContent = "會員登入";
+    if (logoutBtn) logoutBtn.hidden = true;
+  }
+
   function applyMemberInfo(raw) {
     const info = normalizeMemberInfo(raw);
 
@@ -4084,33 +4131,42 @@ function normalizeUrl(u) {
     phoneEl.value = info.phone || "";
     lineNameEl.value = info.lineName || "";
 
-    memberNameText.textContent = info.name || "會員資料未填";
-    memberPhoneText.textContent = info.phone || "會員資料未填";
-    memberLineText.textContent = info.lineName || "會員資料未填";
-
     const ok = !!(info.name && info.phone && info.lineName);
 
-    memberBox.classList.toggle("is-ok", ok);
-    memberBox.classList.toggle("is-missing", !ok);
-    memberStatusText.textContent = ok ? "已登入，可送出預購" : "會員資料不完整，請先補姓名 / 電話 / LINE名稱";
+    if (!ok) {
+      memberNameText.textContent = info.name || "會員資料未填";
+      memberPhoneText.textContent = info.phone || "會員資料未填";
+      memberLineText.textContent = info.lineName || "會員資料未填";
+      memberStatusText.textContent = "會員資料不完整，請先補姓名 / 電話 / LINE名稱";
 
-    return ok;
+      memberBox.classList.remove("is-ok");
+      memberBox.classList.add("is-missing");
+
+      if (loginBtn) loginBtn.textContent = "重新確認";
+      if (logoutBtn) logoutBtn.hidden = false;
+
+      return false;
+    }
+
+    memberNameText.textContent = info.name;
+    memberPhoneText.textContent = info.phone;
+    memberLineText.textContent = info.lineName;
+    memberStatusText.textContent = "已登入，可送出預購";
+
+    memberBox.classList.add("is-ok");
+    memberBox.classList.remove("is-missing");
+
+    if (loginBtn) loginBtn.textContent = "重新確認";
+    if (logoutBtn) logoutBtn.hidden = false;
+
+    return true;
   }
 
   async function refreshMemberBox() {
     const memberInfo = await getPreorderMemberInfo();
+
     if (!memberInfo) {
-      customerNameEl.value = "";
-      phoneEl.value = "";
-      lineNameEl.value = "";
-
-      memberNameText.textContent = "尚未登入";
-      memberPhoneText.textContent = "尚未登入";
-      memberLineText.textContent = "尚未登入";
-      memberStatusText.textContent = "請先登入會員";
-
-      memberBox.classList.remove("is-ok");
-      memberBox.classList.add("is-missing");
+      setLoggedOutMemberBox();
       return false;
     }
 
@@ -4119,6 +4175,31 @@ function normalizeUrl(u) {
 
   loginBtn?.addEventListener("click", function () {
     location.href = preorderLoginUrl();
+  });
+
+  logoutBtn?.addEventListener("click", async function () {
+    const ok = confirm("要登出目前的 LINE 會員嗎？");
+    if (!ok) return;
+
+    logoutBtn.disabled = true;
+    logoutBtn.textContent = "登出中…";
+
+    try {
+      await fetch(API + "/line/auth/logout", {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store"
+      }).catch(() => null);
+    } finally {
+      clearSharedMemberStorage();
+      setLoggedOutMemberBox();
+
+      logoutBtn.disabled = false;
+      logoutBtn.textContent = "登出";
+
+      statusEl.textContent = "已登出會員，送出預購前請重新登入。";
+      statusEl.className = "preorder-status err";
+    }
   });
 
   function setSelected(btn) {
@@ -4165,6 +4246,8 @@ function normalizeUrl(u) {
     const memberInfo = await getPreorderMemberInfo();
 
     if (!memberInfo) {
+      setLoggedOutMemberBox();
+
       statusEl.textContent = "請先完成 LINE 會員登入／綁定後再送出預購。即將前往會員登入…";
       statusEl.className = "preorder-status err";
 
