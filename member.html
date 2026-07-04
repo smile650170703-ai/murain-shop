@@ -346,9 +346,9 @@
   }
 
   /* Tabs */
-  .tabs {
+.tabs {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 6px;
     background: rgba(255, 255, 255, 0.6);
     padding: 5px;
@@ -1262,15 +1262,17 @@
       </div>
     </div>
 
-    <div class="tabs">
+<div class="tabs">
   <button class="tab active" data-tab="history">歷史訂單</button>
   <button class="tab" data-tab="deposit">定金保留</button>
+  <button class="tab" data-tab="preorder">預購清單</button>
   <button class="tab" data-tab="credits">購物金明細</button>
   <button class="tab" data-tab="consign">寄賣清單</button>
 </div>
 
 <div class="msg" id="infoMsg">資料讀取中.</div>
 <div class="order-list" id="orderList"></div>
+<div class="order-list" id="preorderList" style="display:none;"></div>
 <div class="credits-list" id="creditsList" style="display:none;"></div>
 <div class="consign-list" id="consignList" style="display:none;"></div>
 <div class="empty-state" id="emptyText" style="display:none;">尚無資料紀錄</div>
@@ -1282,6 +1284,7 @@ if (!API_BASE) throw new Error("API_BASE missing");
 const MEMBER_API  = API_BASE + "/member/orders";
 const CREDITS_API = API_BASE + "/member/credits";
 const CONSIGN_API = API_BASE + "/member/consign";
+const PREORDER_API = API_BASE + "/member/preorders";
 const MEMBER_INFO_API = API_BASE + "/line/member-info";
 const LIFF_ID = String(window.LIFF_MEMBER_ID || "2008430261-EGZPg3Qp").trim();
 const MEMBER_NORMAL_URL = `${String(window.MURAIN_SITE_ORIGIN || "https://murain.tw").replace(/\/$/,'')}/member`;
@@ -1837,6 +1840,7 @@ let orders = [];
 let memberInfo = null;
 let credits = [];
 let consignItems = [];
+let preorderItems = [];
 let currentFilter = "history";
   let memberAuthGateBlocked = false;
 
@@ -1852,6 +1856,7 @@ const userAvatarImg = document.getElementById("userAvatarImg");
 const defaultAvatar = document.getElementById("defaultAvatar");
 const infoMsg     = document.getElementById("infoMsg");
 const orderList   = document.getElementById("orderList");
+const preorderList = document.getElementById("preorderList");
 const creditsList = document.getElementById("creditsList");
 const consignList = document.getElementById("consignList");
 const emptyText   = document.getElementById("emptyText");
@@ -1875,6 +1880,7 @@ function hideMemberMainSections() {
   if (memberCard) memberCard.style.display = "none";
   if (tabsWrap) tabsWrap.style.display = "none";
   if (orderList) orderList.style.display = "none";
+  if (preorderList) preorderList.style.display = "none";
   if (creditsList) creditsList.style.display = "none";
   if (consignList) consignList.style.display = "none";
   if (emptyText) emptyText.style.display = "none";
@@ -1892,13 +1898,21 @@ function showMemberMainSections() {
   if (currentFilter === "credits") {
     if (creditsList) creditsList.style.display = "flex";
     if (orderList) orderList.style.display = "none";
+    if (preorderList) preorderList.style.display = "none";
     if (consignList) consignList.style.display = "none";
   } else if (currentFilter === "consign") {
     if (consignList) consignList.style.display = "flex";
     if (orderList) orderList.style.display = "none";
+    if (preorderList) preorderList.style.display = "none";
     if (creditsList) creditsList.style.display = "none";
+  } else if (currentFilter === "preorder") {
+    if (preorderList) preorderList.style.display = "flex";
+    if (orderList) orderList.style.display = "none";
+    if (creditsList) creditsList.style.display = "none";
+    if (consignList) consignList.style.display = "none";
   } else {
     if (orderList) orderList.style.display = "";
+    if (preorderList) preorderList.style.display = "none";
     if (creditsList) creditsList.style.display = "none";
     if (consignList) consignList.style.display = "none";
   }
@@ -2216,6 +2230,7 @@ clearSharedLineUserId();
       orders = [];
       credits = [];
       consignItems = [];
+      preorderItems = [];
     } catch (e) {}
 
     // ✅ 立刻切回「請登入」畫面
@@ -2231,6 +2246,7 @@ clearSharedLineUserId();
       }
 
       if (orderList) orderList.innerHTML = "";
+      if (preorderList) preorderList.innerHTML = "";
       if (creditsList) creditsList.innerHTML = "";
       if (consignList) consignList.innerHTML = "";
 
@@ -2285,6 +2301,8 @@ async function handleMemberReload() {
       await loadCredits();
     } else if (currentFilter === "consign") {
       await loadConsigns();
+    } else if (currentFilter === "preorder") {
+      await loadPreorders();
     } else {
       await loadOrders();
     }
@@ -2312,6 +2330,8 @@ document.querySelectorAll(".js-member-reload").forEach((btn) => {
       renderCredits();
     } else if (currentFilter === "consign") {
       renderConsigns();
+    } else if (currentFilter === "preorder") {
+      renderPreorders();
     } else {
       renderOrders();
     }
@@ -3710,6 +3730,238 @@ async function loadConsigns() {
     infoMsg.style.display = "block";
   }
 }
+
+async function loadPreorders() {
+  if (!currentUserId) return;
+
+  infoMsg.textContent = "更新資料中.";
+  infoMsg.classList.remove("error");
+  infoMsg.style.display = "block";
+
+  try {
+    const url = PREORDER_API + "?line_user_id=" + encodeURIComponent(currentUserId);
+    const res = await fetch(url, { credentials: "include" });
+
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch (e) {}
+
+    if (res.ok && json && json.ok) {
+      preorderItems = Array.isArray(json.items) ? json.items : [];
+
+      preorderItems.sort((a, b) => {
+        const da = new Date(a.created_at || 0).getTime();
+        const db = new Date(b.created_at || 0).getTime();
+        return db - da;
+      });
+
+      if (currentFilter === "preorder") renderPreorders();
+
+      infoMsg.textContent = "";
+      infoMsg.style.display = "none";
+      return;
+    }
+
+    console.error("[loadPreorders] API not ok", res.status, json || text.slice(0, 200));
+    preorderItems = [];
+    if (currentFilter === "preorder") renderPreorders();
+
+    infoMsg.textContent = "預購清單載入失敗";
+    infoMsg.classList.add("error");
+    infoMsg.style.display = "block";
+  } catch (e) {
+    console.error("[loadPreorders] fetch fail", e);
+    preorderItems = [];
+    if (currentFilter === "preorder") renderPreorders();
+
+    infoMsg.textContent = "預購清單載入失敗";
+    infoMsg.classList.add("error");
+    infoMsg.style.display = "block";
+  }
+}
+
+function preorderStatusText(p) {
+  const s = String(p?.preorder_status || "").trim();
+  const a = String(p?.arrival_notify_status || "").trim();
+
+  if (a === "已發送到貨結帳通知") return "已通知結帳";
+  if (a === "已到貨待通知") return "已到貨待通知";
+  if (s) return s;
+
+  return "等待到貨";
+}
+
+function preorderPayText(p) {
+  const s = String(p?.payment_status || "").trim();
+  if (s) return s;
+
+  const dep = Number(p?.deposit_amount || 0) || 0;
+  return dep > 0 ? "未確認定金" : "到貨後付款";
+}
+
+function preorderMoney(n) {
+  const v = Math.round(Number(n || 0) || 0);
+  return "NT$ " + v.toLocaleString("zh-TW");
+}
+
+function renderPreorders() {
+  if (!preorderList) return;
+
+  if (orderList) orderList.style.display = "none";
+  if (creditsList) creditsList.style.display = "none";
+  if (consignList) consignList.style.display = "none";
+  preorderList.style.display = "flex";
+  emptyText.style.display = "none";
+
+  preorderList.innerHTML = "";
+
+  if (!preorderItems.length) {
+    emptyText.textContent = "尚無預購資料紀錄";
+    emptyText.style.display = "block";
+    return;
+  }
+
+  preorderItems.forEach((p) => {
+    const preorderId = String(p.preorder_id || "—");
+    const productName = String(p.product_name || "預購商品");
+    const spec = String(p.product_spec || "");
+    const qty = Number(p.qty || 0) || 0;
+    const note = String(p.note || "");
+    const status = preorderStatusText(p);
+    const payStatus = preorderPayText(p);
+    const created = formatDate(p.created_at);
+    const dep = Number(p.deposit_amount || 0) || 0;
+    const last5 = String(p.deposit_last5 || "");
+    const checkoutUrl = String(p.checkout_url || "");
+    const officialOrderId = String(p.official_order_id || "");
+    const arrivedSku = String(p.arrived_sku || "");
+
+    const wrap = document.createElement("div");
+    wrap.className = "order-card expanded";
+
+    wrap.innerHTML = `
+      <div class="card-header">
+        <div class="order-info-main">
+          <div class="order-id">${escapeHtml(preorderId)}</div>
+          <div class="order-date">${escapeHtml(created || "—")}</div>
+        </div>
+        <span class="status-badge st-pending">${escapeHtml(status)}</span>
+      </div>
+
+      <div class="card-body">
+        <div class="info-group">
+          <div class="info-row">
+            <span class="info-label">預購商品</span>
+            <span>${escapeHtml(productName)}</span>
+          </div>
+
+          <div class="info-row">
+            <span class="info-label">商品規格</span>
+            <span>${escapeHtml(spec || "—")}</span>
+          </div>
+
+          <div class="info-row">
+            <span class="info-label">預購數量</span>
+            <span>${escapeHtml(String(qty || 1))}</span>
+          </div>
+
+          <div class="info-row">
+            <span class="info-label">付款狀態</span>
+            <span>${escapeHtml(payStatus)}</span>
+          </div>
+
+          ${
+            dep > 0
+              ? `
+                <div class="info-row">
+                  <span class="info-label">預付定金</span>
+                  <span>${escapeHtml(preorderMoney(dep))}${last5 ? `　後五碼：${escapeHtml(last5)}` : ""}</span>
+                </div>
+              `
+              : ""
+          }
+
+          <div class="info-row">
+            <span class="info-label">備註</span>
+            <span>${escapeHtml(note || "—")}</span>
+          </div>
+
+          ${
+            arrivedSku
+              ? `
+                <div class="info-row">
+                  <span class="info-label">到貨商品 SKU</span>
+                  <span>${escapeHtml(arrivedSku)}</span>
+                </div>
+              `
+              : ""
+          }
+
+          ${
+            officialOrderId
+              ? `
+                <div class="info-row">
+                  <span class="info-label">正式訂單編號</span>
+                  <span>${escapeHtml(officialOrderId)}</span>
+                </div>
+              `
+              : ""
+          }
+        </div>
+
+        <div class="progress">
+          <div class="amount-line">
+            <span class="k">目前狀態</span>
+            <span class="v">${escapeHtml(status)}</span>
+          </div>
+          <div class="amount-line" style="border-bottom:none;">
+            <span class="k">到貨通知</span>
+            <span class="v">${escapeHtml(String(p.arrival_notify_status || "未到貨"))}</span>
+          </div>
+
+          <div class="microcopy">
+            預購商品到貨後，小幫手會發送結帳通知。付款完成後才會成立正式訂單並安排出貨。
+          </div>
+
+          <div class="action-row">
+            <button class="btn-mini btn-gold js-copy-preorder" data-copy="${escapeHtml(preorderId)}">複製預購單號</button>
+            ${
+              checkoutUrl
+                ? `<button class="btn-mini btn-gold js-open-preorder-checkout" data-url="${escapeHtml(checkoutUrl)}">前往結帳</button>`
+                : ""
+            }
+          </div>
+        </div>
+      </div>
+    `;
+
+    const copyBtn = wrap.querySelector(".js-copy-preorder");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const v = copyBtn.getAttribute("data-copy") || "";
+        const ok = await copyText(v);
+        alert(ok ? "已複製：" + v : "複製失敗，請手動選取");
+      });
+    }
+
+    const checkoutBtn = wrap.querySelector(".js-open-preorder-checkout");
+    if (checkoutBtn) {
+      checkoutBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const u = checkoutBtn.getAttribute("data-url") || "";
+        if (u) location.href = u;
+      });
+    }
+
+    preorderList.appendChild(wrap);
+  });
+}
+  
 async function loadMemberInfo() {
   if (!currentUserId) return false;
 
@@ -3992,6 +4244,9 @@ if (sessionOk) {
       } else if (currentFilter === "consign") {
         if (consignItems.length === 0) loadConsigns();
         else renderConsigns();
+      } else if (currentFilter === "preorder") {
+        if (preorderItems.length === 0) loadPreorders();
+        else renderPreorders();
       } else {
         renderOrders();
       }
