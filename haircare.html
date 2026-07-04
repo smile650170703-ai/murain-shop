@@ -2778,7 +2778,7 @@ body{
     <a class="site-menu-link menu-shop" href="/shop.html">
       <div class="site-menu-text">
         <div class="site-menu-title-row">
-          <strong>新品上市</strong>
+          <strong>官方商城</strong>
           <span>New</span>
         </div>
         <small>精選包袋與官網選品</small>
@@ -3066,7 +3066,17 @@ body{
                   <input id="preorderQty" type="number" min="1" step="1" value="1">
                 </div>
               </div>
+<div class="preorder-form-grid">
+  <div class="preorder-field">
+    <label for="preorderDepositAmount">預付定金金額</label>
+    <input id="preorderDepositAmount" type="number" min="0" step="1" placeholder="例：3000">
+  </div>
 
+  <div class="preorder-field">
+    <label for="preorderDepositLast5">帳號後五碼</label>
+    <input id="preorderDepositLast5" type="text" inputmode="numeric" maxlength="5" placeholder="例：12345">
+  </div>
+</div>
               <div class="preorder-field">
                 <label for="preorderNote">想預購的商品 / 款式 / 備註 *</label>
                 <textarea id="preorderNote" placeholder="例：想預購沐雨洗髮精 3 瓶、精品包品牌款式、顏色、預算、可接受到貨月份等" required></textarea>
@@ -3878,8 +3888,32 @@ function normalizeUrl(u) {
   const lineNameEl = document.getElementById("preorderLineName");
   const qtyEl = document.getElementById("preorderQty");
   const noteEl = document.getElementById("preorderNote");
+const depositAmountEl = document.getElementById("preorderDepositAmount");
+const depositLast5El = document.getElementById("preorderDepositLast5");
 
   if (!form) return;
+
+  function preorderLoginUrl() {
+  const returnUrl = location.href;
+  return API + "/line/auth/start?return_url=" + encodeURIComponent(returnUrl) + "&require_friend=1&mode=preorder";
+}
+
+async function getPreorderMemberInfo() {
+  try {
+    const r = await fetch(API + "/line/member-info", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store"
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) return null;
+
+    return j;
+  } catch (_) {
+    return null;
+  }
+}
 
   function setSelected(btn) {
     const code = String(btn.dataset.code || "").trim();
@@ -3917,17 +3951,19 @@ function normalizeUrl(u) {
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
 
-    const payload = {
-      source_page: "haircare_preorder",
-      product_code: productCodeEl.value,
-      product_name: productNameEl.value,
-      product_spec: productSpecEl.value,
-      qty: qtyEl.value || 1,
-      customer_name: customerNameEl.value,
-      phone: phoneEl.value,
-      line_name: lineNameEl.value,
-      note: noteEl.value
-    };
+const payload = {
+  source_page: "haircare_preorder",
+  product_code: productCodeEl.value,
+  product_name: productNameEl.value,
+  product_spec: productSpecEl.value,
+  qty: qtyEl.value || 1,
+  customer_name: customerNameEl.value,
+  phone: phoneEl.value,
+  line_name: lineNameEl.value,
+  deposit_amount: depositAmountEl ? depositAmountEl.value : "",
+  deposit_last5: depositLast5El ? depositLast5El.value : "",
+  note: noteEl.value
+};
 
     if (!String(payload.customer_name || "").trim()) {
       statusEl.textContent = "請填寫客人姓名";
@@ -3950,19 +3986,50 @@ function normalizeUrl(u) {
       return;
     }
 
-    submitBtn.disabled = true;
-    submitBtn.textContent = "送出中…";
-    statusEl.textContent = "正在送出預購登記…";
-    statusEl.className = "preorder-status";
+submitBtn.disabled = true;
+submitBtn.textContent = "確認會員中…";
+statusEl.textContent = "正在確認會員登入狀態…";
+statusEl.className = "preorder-status";
+
+const memberInfo = await getPreorderMemberInfo();
+
+if (!memberInfo) {
+  statusEl.textContent = "請先完成 LINE 會員登入／綁定後再送出預購。即將前往會員登入…";
+  statusEl.className = "preorder-status err";
+
+  setTimeout(() => {
+    location.href = preorderLoginUrl();
+  }, 700);
+
+  submitBtn.disabled = false;
+  submitBtn.textContent = "送出預購登記";
+  return;
+}
+
+const last5 = String(payload.deposit_last5 || "").trim();
+if (last5 && !/^\d{5}$/.test(last5)) {
+  statusEl.textContent = "帳號後五碼請填 5 位數字";
+  statusEl.className = "preorder-status err";
+  depositLast5El?.focus();
+
+  submitBtn.disabled = false;
+  submitBtn.textContent = "送出預購登記";
+  return;
+}
+
+submitBtn.textContent = "送出中…";
+statusEl.textContent = "正在送出預購登記…";
+statusEl.className = "preorder-status";
 
     try {
-      const r = await fetch(API + "/public/preorder/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(payload)
-      });
+const r = await fetch(API + "/public/preorder/register", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  credentials: "include",
+  body: JSON.stringify(payload)
+});
 
       const j = await r.json().catch(() => ({}));
 
@@ -3981,6 +4048,9 @@ function normalizeUrl(u) {
       selectedNameEl.textContent = "髮品預購登記";
       selectedSpecEl.textContent = "到貨後付款｜請在備註填寫想預購的髮品名稱、數量或組合";
       qtyEl.value = "1";
+
+      if (depositAmountEl) depositAmountEl.value = "";
+if (depositLast5El) depositLast5El.value = "";
 
       document.querySelectorAll(".preorder-pick").forEach(x => {
         x.textContent = "選擇這個預購";
