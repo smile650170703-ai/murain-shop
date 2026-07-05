@@ -3077,65 +3077,15 @@ body{
         </div>
 
         <div class="preorder-layout">
-          <div class="preorder-products">
+        <div class="preorder-products" id="preorderProductsWrap">
+  <div class="preorder-card">
+    <small>LOADING</small>
+    <h3>預購商品載入中</h3>
+    <p>正在讀取目前開放登記的預購商品。</p>
+  </div>
+</div>
 
-            <article class="preorder-card">
-              <small>HAIRCARE</small>
-              <h3>髮品預購登記</h3>
-              <p>適合登記洗髮精、護髮、精華、頭皮養護等髮品。到貨後再通知付款連結。</p>
-              <button
-                type="button"
-                class="preorder-pick"
-                data-code="HC-PRE-01"
-                data-name="髮品預購登記"
-                data-spec="到貨後付款｜請在備註填寫想預購的髮品名稱、數量或組合">
-                選擇這個預購
-              </button>
-            </article>
-
-            <article class="preorder-card">
-              <small>HAIRCARE SET</small>
-              <h3>髮品組合預購</h3>
-              <p>適合想一次登記多瓶、多組、團購或直播組合。可在備註填寫預算與需求。</p>
-              <button
-                type="button"
-                class="preorder-pick"
-                data-code="HC-PRE-SET"
-                data-name="髮品組合預購"
-                data-spec="到貨後付款｜請在備註填寫組合需求、預算、數量">
-                選擇這個預購
-              </button>
-            </article>
-
-            <article class="preorder-card">
-              <small>BOUTIQUE</small>
-              <h3>精品預購登記</h3>
-              <p>適合登記包款、飾品或精品選品。商品到貨或確認可訂後，再通知付款。</p>
-              <button
-                type="button"
-                class="preorder-pick"
-                data-code="BT-PRE-01"
-                data-name="精品預購登記"
-                data-spec="到貨後付款或確認後付款｜請在備註填寫品牌、款式、顏色、預算">
-                選擇這個預購
-              </button>
-            </article>
-
-            <article class="preorder-card">
-              <small>DEPOSIT</small>
-              <h3>精品定金預購</h3>
-              <p>適合需要先付定金保留名額的精品預購。小幫手確認後才會通知定金付款方式。</p>
-              <button
-                type="button"
-                class="preorder-pick"
-                data-code="BT-PRE-DEPOSIT"
-                data-name="精品定金預購"
-                data-spec="需先確認定金｜請在備註填寫品牌、款式、顏色、預算">
-                選擇這個預購
-              </button>
-            </article>
-
-          </div>
+          <div class="preorder-form-card">
 
           <div class="preorder-form-card">
             <h3>預購登記資料</h3>
@@ -3146,9 +3096,12 @@ body{
             </div>
 
            <form id="preorderForm">
-  <input type="hidden" id="preorderProductCode" value="HC-PRE-01">
-  <input type="hidden" id="preorderProductName" value="髮品預購登記">
-  <input type="hidden" id="preorderProductSpec" value="到貨後付款｜請在備註填寫想預購的髮品名稱、數量或組合">
+<input type="hidden" id="preorderProductCode" value="">
+<input type="hidden" id="preorderProductName" value="">
+<input type="hidden" id="preorderProductSpec" value="">
+<input type="hidden" id="preorderPlanName" value="">
+<input type="hidden" id="preorderPlanQty" value="">
+<input type="hidden" id="preorderPlanPrice" value="">
 
   <input type="hidden" id="preorderCustomerName">
   <input type="hidden" id="preorderPhone">
@@ -3997,14 +3950,20 @@ function normalizeUrl(u) {
 <script>
 (function () {
   const API = String(window.API_BASE || "https://api.murain.tw").replace(/\/+$/, "");
+  const PREORDER_PRODUCTS_API = API + "/public/preorder-products/list";
 
   const form = document.getElementById("preorderForm");
   const submitBtn = document.getElementById("preorderSubmit");
   const statusEl = document.getElementById("preorderStatus");
 
+  const productsWrap = document.getElementById("preorderProductsWrap");
+
   const productCodeEl = document.getElementById("preorderProductCode");
   const productNameEl = document.getElementById("preorderProductName");
   const productSpecEl = document.getElementById("preorderProductSpec");
+  const planNameEl = document.getElementById("preorderPlanName");
+  const planQtyEl = document.getElementById("preorderPlanQty");
+  const planPriceEl = document.getElementById("preorderPlanPrice");
 
   const selectedNameEl = document.getElementById("selectedPreorderName");
   const selectedSpecEl = document.getElementById("selectedPreorderSpec");
@@ -4028,6 +3987,23 @@ function normalizeUrl(u) {
   const memberStatusText = document.getElementById("preorderMemberStatusText");
 
   if (!form) return;
+
+  let preorderProducts = [];
+
+  function money(n) {
+    const v = Math.round(Number(n || 0) || 0);
+    return "NT$ " + v.toLocaleString("zh-TW");
+  }
+
+  function esc(s) {
+    return String(s ?? "").replace(/[&<>"']/g, c => ({
+      "&":"&amp;",
+      "<":"&lt;",
+      ">":"&gt;",
+      '"':"&quot;",
+      "'":"&#39;"
+    }[c]));
+  }
 
   function preorderLoginUrl() {
     const returnUrl = location.href;
@@ -4063,48 +4039,12 @@ function normalizeUrl(u) {
   function normalizeMemberInfo(raw) {
     const m = raw?.member || raw?.profile || raw?.user || raw?.data || raw || {};
 
-    const name = pickText(m, [
-      "name",
-      "Name",
-      "customer_name",
-      "CustomerName",
-      "姓名",
-      "客人姓名"
-    ]);
-
-    const phone = pickText(m, [
-      "phone",
-      "Phone",
-      "mobile",
-      "Mobile",
-      "電話",
-      "手機"
-    ]);
-
-    const lineName = pickText(m, [
-      "DisplayName",
-      "display_name",
-      "displayName",
-      "line_name",
-      "LINE名稱",
-      "LINE 名稱",
-      "name",
-      "Name"
-    ]);
-
-    const lineUserId = pickText(m, [
-      "LineUserId",
-      "line_user_id",
-      "lineUserId",
-      "LINE_USER_ID"
-    ]);
+    const name = pickText(m, ["name","Name","customer_name","CustomerName","姓名","客人姓名"]);
+    const phone = pickText(m, ["phone","Phone","mobile","Mobile","電話","手機"]);
+    const lineName = pickText(m, ["DisplayName","display_name","displayName","line_name","LINE名稱","LINE 名稱","name","Name"]);
+    const lineUserId = pickText(m, ["LineUserId","line_user_id","lineUserId","LINE_USER_ID"]);
 
     return { name, phone, lineName, lineUserId };
-  }
-
-  function clearSharedMemberStorage() {
-    try { localStorage.removeItem("murain_line_user_id"); } catch (_) {}
-    try { localStorage.removeItem("MURAIN_LINE_USER_ID"); } catch (_) {}
   }
 
   function setLoggedOutMemberBox() {
@@ -4191,7 +4131,9 @@ function normalizeUrl(u) {
         cache: "no-store"
       }).catch(() => null);
     } finally {
-      clearSharedMemberStorage();
+      try { localStorage.removeItem("murain_line_user_id"); } catch (_) {}
+      try { localStorage.removeItem("MURAIN_LINE_USER_ID"); } catch (_) {}
+
       setLoggedOutMemberBox();
 
       logoutBtn.disabled = false;
@@ -4202,25 +4144,36 @@ function normalizeUrl(u) {
     }
   });
 
-  function setSelected(btn) {
-    const code = String(btn.dataset.code || "").trim();
-    const name = String(btn.dataset.name || "").trim();
-    const spec = String(btn.dataset.spec || "").trim();
+  function selectPreorderProduct(item, plan) {
+    const p = plan || (Array.isArray(item.plan_options) ? item.plan_options[0] : null) || {};
 
-    productCodeEl.value = code;
-    productNameEl.value = name;
-    productSpecEl.value = spec;
+    const planName = String(p.name || "").trim();
+    const planQty = Number(p.qty || 1) || 1;
+    const planPrice = Number(p.price || 0) || 0;
 
-    selectedNameEl.textContent = name || "預購登記";
-    selectedSpecEl.textContent = spec || "請填寫預購需求";
+    const specParts = [
+      item.brand ? "品牌：" + item.brand : "",
+      item.category ? "分類：" + item.category : "",
+      planName ? "方案：" + planName : "",
+      planPrice ? "金額：" + money(planPrice) : ""
+    ].filter(Boolean);
 
-    document.querySelectorAll(".preorder-pick").forEach(x => {
-      x.textContent = "選擇這個預購";
-      x.disabled = false;
-    });
+    productCodeEl.value = item.record_id || item.id || "";
+    productNameEl.value = item.product_name || "預購商品";
+    productSpecEl.value = specParts.join("｜");
 
-    btn.textContent = "已選擇";
-    btn.disabled = true;
+    planNameEl.value = planName;
+    planQtyEl.value = String(planQty);
+    planPriceEl.value = String(planPrice);
+
+    selectedNameEl.textContent = item.product_name || "預購商品";
+    selectedSpecEl.textContent = specParts.join("｜") || "請填寫預購需求";
+
+    qtyEl.value = String(planQty || 1);
+
+    if (item.need_deposit && item.deposit_amount > 0) {
+      depositAmountEl.value = String(item.deposit_amount);
+    }
 
     statusEl.textContent = "";
     statusEl.className = "preorder-status";
@@ -4231,9 +4184,89 @@ function normalizeUrl(u) {
     });
   }
 
-  document.querySelectorAll(".preorder-pick").forEach(btn => {
-    btn.addEventListener("click", () => setSelected(btn));
-  });
+  function renderPreorderProducts(items) {
+    if (!productsWrap) return;
+
+    if (!items.length) {
+      productsWrap.innerHTML = `
+        <div class="preorder-card">
+          <small>COMING SOON</small>
+          <h3>目前尚無開放預購商品</h3>
+          <p>請稍後再回來查看，或私訊 LINE 小幫手詢問。</p>
+        </div>
+      `;
+      return;
+    }
+
+    productsWrap.innerHTML = items.map((item, idx) => {
+      const plans = Array.isArray(item.plan_options) ? item.plan_options : [];
+      const options = plans.map((p, planIdx) => {
+        const text = `${p.name || "方案"}｜${p.qty || 1} 件｜${money(p.price || 0)}`;
+        return `<option value="${planIdx}">${esc(text)}</option>`;
+      }).join("");
+
+      return `
+        <article class="preorder-card" data-id="${esc(item.record_id || item.id || "")}">
+          <small>${esc(item.category || "PREORDER")}</small>
+          ${item.main_image ? `<img src="${esc(item.main_image)}" alt="${esc(item.product_name || "")}" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:18px;margin-bottom:12px;background:#fff;">` : ""}
+          <h3>${esc(item.product_name || "預購商品")}</h3>
+          <p>${esc(item.brand || "")}${item.need_deposit ? "｜需定金 " + money(item.deposit_amount || 0) : "｜到貨後通知付款"}</p>
+          <select class="preorder-plan-select" data-index="${idx}" style="margin-top:12px;">
+            ${options || `<option value="0">預購登記｜1 件｜金額待確認</option>`}
+          </select>
+          <button type="button" class="preorder-pick" data-index="${idx}">
+            選擇這個預購
+          </button>
+        </article>
+      `;
+    }).join("");
+
+    productsWrap.querySelectorAll(".preorder-pick").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.dataset.index || 0) || 0;
+        const item = preorderProducts[idx];
+        if (!item) return;
+
+        const card = btn.closest(".preorder-card");
+        const sel = card?.querySelector(".preorder-plan-select");
+        const planIdx = Number(sel?.value || 0) || 0;
+        const plans = Array.isArray(item.plan_options) ? item.plan_options : [];
+        const plan = plans[planIdx] || plans[0] || { name: "預購登記", qty: 1, price: 0 };
+
+        selectPreorderProduct(item, plan);
+      });
+    });
+
+    selectPreorderProduct(items[0], items[0].plan_options?.[0]);
+  }
+
+  async function loadPreorderProducts() {
+    try {
+      const r = await fetch(PREORDER_PRODUCTS_API, {
+        method: "GET",
+        cache: "no-store"
+      });
+
+      const j = await r.json().catch(() => ({}));
+
+      if (!r.ok || !j.ok) {
+        throw new Error(j.message || j.error || "預購商品載入失敗");
+      }
+
+      preorderProducts = Array.isArray(j.items) ? j.items : [];
+      renderPreorderProducts(preorderProducts);
+    } catch (err) {
+      if (productsWrap) {
+        productsWrap.innerHTML = `
+          <div class="preorder-card">
+            <small>ERROR</small>
+            <h3>預購商品載入失敗</h3>
+            <p>${esc(err.message || err)}</p>
+          </div>
+        `;
+      }
+    }
+  }
 
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
@@ -4271,21 +4304,39 @@ function normalizeUrl(u) {
       return;
     }
 
+    const planLine = [
+      planNameEl.value ? "方案：" + planNameEl.value : "",
+      planQtyEl.value ? "方案數量：" + planQtyEl.value : "",
+      planPriceEl.value ? "方案金額：NT$ " + Number(planPriceEl.value || 0).toLocaleString("zh-TW") : ""
+    ].filter(Boolean).join("｜");
+
+    const userNote = String(noteEl.value || "").trim();
+    const finalNote = [planLine, userNote].filter(Boolean).join("\n");
+
     const payload = {
       source_page: "haircare_preorder",
       product_code: productCodeEl.value,
       product_name: productNameEl.value,
       product_spec: productSpecEl.value,
-      qty: qtyEl.value || 1,
+      qty: qtyEl.value || planQtyEl.value || 1,
       customer_name: customerNameEl.value,
       phone: phoneEl.value,
       line_name: lineNameEl.value,
       deposit_amount: depositAmountEl ? depositAmountEl.value : "",
       deposit_last5: depositLast5El ? depositLast5El.value : "",
-      note: noteEl.value
+      note: finalNote
     };
 
-    if (!String(payload.note || "").trim()) {
+    if (!String(payload.product_name || "").trim()) {
+      statusEl.textContent = "請先選擇預購商品";
+      statusEl.className = "preorder-status err";
+
+      submitBtn.disabled = false;
+      submitBtn.textContent = "送出預購登記";
+      return;
+    }
+
+    if (!String(userNote || "").trim()) {
       statusEl.textContent = "請填寫想預購的商品、款式或需求";
       statusEl.className = "preorder-status err";
       noteEl.focus();
@@ -4330,20 +4381,7 @@ function normalizeUrl(u) {
       statusEl.className = "preorder-status ok";
 
       noteEl.value = "";
-      qtyEl.value = "1";
-      if (depositAmountEl) depositAmountEl.value = "";
       if (depositLast5El) depositLast5El.value = "";
-
-      productCodeEl.value = "HC-PRE-01";
-      productNameEl.value = "髮品預購登記";
-      productSpecEl.value = "到貨後付款｜請在備註填寫想預購的髮品名稱、數量或組合";
-      selectedNameEl.textContent = "髮品預購登記";
-      selectedSpecEl.textContent = "到貨後付款｜請在備註填寫想預購的髮品名稱、數量或組合";
-
-      document.querySelectorAll(".preorder-pick").forEach(x => {
-        x.textContent = "選擇這個預購";
-        x.disabled = false;
-      });
     } catch (err) {
       statusEl.textContent = "送出失敗：" + (err.message || err);
       statusEl.className = "preorder-status err";
@@ -4354,6 +4392,7 @@ function normalizeUrl(u) {
   });
 
   refreshMemberBox();
+  loadPreorderProducts();
 })();
 </script>
 </body>
