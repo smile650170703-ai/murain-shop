@@ -2856,6 +2856,78 @@ body{
     width:100%;
   }
 }
+
+  /* ===== 預購商品：介紹與多圖 ===== */
+.preorder-product-desc{
+  position:relative;
+  z-index:2;
+  margin-top:12px;
+  padding:12px 13px;
+  border-radius:18px;
+  background:rgba(255,255,255,.72);
+  border:1px solid rgba(118,82,70,.08);
+  color:#735f57;
+  font-size:12px;
+  line-height:1.75;
+  white-space:pre-line;
+}
+
+.preorder-gallery{
+  position:relative;
+  z-index:2;
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:7px;
+  margin-top:10px;
+}
+
+.preorder-gallery img{
+  width:100%;
+  aspect-ratio:1/1;
+  object-fit:cover;
+  border-radius:12px;
+  background:#fff;
+  border:1px solid rgba(118,82,70,.08);
+  cursor:pointer;
+}
+
+.preorder-detail-toggle{
+  position:relative;
+  z-index:2;
+  width:100%;
+  min-height:34px;
+  margin-top:10px;
+  border-radius:999px;
+  border:1px solid rgba(118,82,70,.10);
+  background:rgba(255,255,255,.9);
+  color:#4a3028;
+  font-size:12px;
+  font-weight:900;
+  cursor:pointer;
+}
+
+.preorder-detail{
+  display:none;
+}
+
+.preorder-card.is-detail-open .preorder-detail{
+  display:block;
+}
+
+.preorder-card.is-detail-open .preorder-detail-toggle{
+  background:#fff2ee;
+}
+
+@media (max-width:767px){
+  .preorder-gallery{
+    grid-template-columns:repeat(3,1fr);
+  }
+
+  .preorder-product-desc{
+    font-size:11.5px;
+    line-height:1.7;
+  }
+}
 </style>
 </head>
 <body>
@@ -3084,8 +3156,6 @@ body{
     <p>正在讀取目前開放登記的預購商品。</p>
   </div>
 </div>
-
-          <div class="preorder-form-card">
 
           <div class="preorder-form-card">
             <h3>預購登記資料</h3>
@@ -4184,61 +4254,133 @@ function normalizeUrl(u) {
     });
   }
 
-  function renderPreorderProducts(items) {
-    if (!productsWrap) return;
+function renderPreorderProducts(items) {
+  if (!productsWrap) return;
 
-    if (!items.length) {
-      productsWrap.innerHTML = `
-        <div class="preorder-card">
-          <small>COMING SOON</small>
-          <h3>目前尚無開放預購商品</h3>
-          <p>請稍後再回來查看，或私訊 LINE 小幫手詢問。</p>
-        </div>
-      `;
-      return;
-    }
+  if (!items.length) {
+    productsWrap.innerHTML = `
+      <div class="preorder-card">
+        <small>COMING SOON</small>
+        <h3>目前尚無開放預購商品</h3>
+        <p>請稍後再回來查看，或私訊 LINE 小幫手詢問。</p>
+      </div>
+    `;
+    return;
+  }
 
-    productsWrap.innerHTML = items.map((item, idx) => {
-      const plans = Array.isArray(item.plan_options) ? item.plan_options : [];
-      const options = plans.map((p, planIdx) => {
-        const text = `${p.name || "方案"}｜${p.qty || 1} 件｜${money(p.price || 0)}`;
-        return `<option value="${planIdx}">${esc(text)}</option>`;
-      }).join("");
-
-      return `
-        <article class="preorder-card" data-id="${esc(item.record_id || item.id || "")}">
-          <small>${esc(item.category || "PREORDER")}</small>
-          ${item.main_image ? `<img src="${esc(item.main_image)}" alt="${esc(item.product_name || "")}" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:18px;margin-bottom:12px;background:#fff;">` : ""}
-          <h3>${esc(item.product_name || "預購商品")}</h3>
-          <p>${esc(item.brand || "")}${item.need_deposit ? "｜需定金 " + money(item.deposit_amount || 0) : "｜到貨後通知付款"}</p>
-          <select class="preorder-plan-select" data-index="${idx}" style="margin-top:12px;">
-            ${options || `<option value="0">預購登記｜1 件｜金額待確認</option>`}
-          </select>
-          <button type="button" class="preorder-pick" data-index="${idx}">
-            選擇這個預購
-          </button>
-        </article>
-      `;
+  productsWrap.innerHTML = items.map((item, idx) => {
+    const plans = Array.isArray(item.plan_options) ? item.plan_options : [];
+    const options = plans.map((p, planIdx) => {
+      const text = `${p.name || "方案"}｜${p.qty || 1} 件｜${money(p.price || 0)}`;
+      return `<option value="${planIdx}">${esc(text)}</option>`;
     }).join("");
 
-    productsWrap.querySelectorAll(".preorder-pick").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const idx = Number(btn.dataset.index || 0) || 0;
-        const item = preorderProducts[idx];
-        if (!item) return;
+    const gallery = Array.isArray(item.gallery_images)
+      ? item.gallery_images.filter(Boolean)
+      : [];
 
-        const card = btn.closest(".preorder-card");
-        const sel = card?.querySelector(".preorder-plan-select");
-        const planIdx = Number(sel?.value || 0) || 0;
-        const plans = Array.isArray(item.plan_options) ? item.plan_options : [];
-        const plan = plans[planIdx] || plans[0] || { name: "預購登記", qty: 1, price: 0 };
+    const allImages = [
+      item.main_image || "",
+      ...gallery
+    ].filter(Boolean);
 
-        selectPreorderProduct(item, plan);
-      });
+    const desc = String(item.description || "").trim();
+
+    const mainImgHtml = item.main_image
+      ? `<img class="preorder-main-img" src="${esc(item.main_image)}" alt="${esc(item.product_name || "")}" style="width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:18px;margin-bottom:12px;background:#fff;">`
+      : "";
+
+    const galleryHtml = allImages.length > 1
+      ? `
+        <div class="preorder-gallery">
+          ${allImages.map(url => `
+            <img class="preorder-gallery-thumb" src="${esc(url)}" alt="${esc(item.product_name || "預購商品圖片")}">
+          `).join("")}
+        </div>
+      `
+      : "";
+
+    const descHtml = desc
+      ? `<div class="preorder-product-desc">${esc(desc)}</div>`
+      : `<div class="preorder-product-desc">尚未填寫商品介紹。</div>`;
+
+    const hasDetail = desc || allImages.length > 1;
+
+    return `
+      <article class="preorder-card" data-id="${esc(item.record_id || item.id || "")}">
+        <small>${esc(item.category || "PREORDER")}</small>
+
+        ${mainImgHtml}
+
+        <h3>${esc(item.product_name || "預購商品")}</h3>
+
+        <p>
+          ${esc(item.brand || "")}
+          ${item.need_deposit ? "｜需定金 " + money(item.deposit_amount || 0) : "｜到貨後通知付款"}
+        </p>
+
+        <select class="preorder-plan-select" data-index="${idx}" style="margin-top:12px;">
+          ${options || `<option value="0">預購登記｜1 件｜金額待確認</option>`}
+        </select>
+
+        ${
+          hasDetail
+            ? `<button type="button" class="preorder-detail-toggle">查看商品介紹 / 多圖</button>`
+            : ""
+        }
+
+        <div class="preorder-detail">
+          ${galleryHtml}
+          ${descHtml}
+        </div>
+
+        <button type="button" class="preorder-pick" data-index="${idx}">
+          選擇這個預購
+        </button>
+      </article>
+    `;
+  }).join("");
+
+  productsWrap.querySelectorAll(".preorder-detail-toggle").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const card = btn.closest(".preorder-card");
+      if (!card) return;
+
+      card.classList.toggle("is-detail-open");
+      btn.textContent = card.classList.contains("is-detail-open")
+        ? "收合商品介紹 / 多圖"
+        : "查看商品介紹 / 多圖";
     });
+  });
 
-    selectPreorderProduct(items[0], items[0].plan_options?.[0]);
-  }
+  productsWrap.querySelectorAll(".preorder-gallery-thumb").forEach(img => {
+    img.addEventListener("click", () => {
+      const card = img.closest(".preorder-card");
+      const mainImg = card?.querySelector(".preorder-main-img");
+      if (!mainImg) return;
+
+      mainImg.src = img.src;
+    });
+  });
+
+  productsWrap.querySelectorAll(".preorder-pick").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.index || 0) || 0;
+      const item = preorderProducts[idx];
+      if (!item) return;
+
+      const card = btn.closest(".preorder-card");
+      const sel = card?.querySelector(".preorder-plan-select");
+      const planIdx = Number(sel?.value || 0) || 0;
+      const plans = Array.isArray(item.plan_options) ? item.plan_options : [];
+      const plan = plans[planIdx] || plans[0] || { name: "預購登記", qty: 1, price: 0 };
+
+      selectPreorderProduct(item, plan);
+    });
+  });
+
+  selectPreorderProduct(items[0], items[0].plan_options?.[0]);
+}
 
   async function loadPreorderProducts() {
     try {
