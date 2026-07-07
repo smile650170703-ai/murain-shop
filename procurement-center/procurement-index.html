@@ -1199,7 +1199,17 @@
   function collectPurchaseItems(){return purchaseRowList().map(tr=>({name:tr.querySelector(".name")?.value.trim()||"",qty:tr.querySelector(".qty")?.value.trim()||"",usdUnitPrice:tr.querySelector(".usdUnitPrice")?.value.trim()||"",photoUrl:tr.querySelector(".photoUrl")?.value.trim()||"",color:tr.querySelector(".color")?.value.trim()||"",size:tr.querySelector(".size")?.value.trim()||"",packageCode:tr.querySelector(".packageCode")?.value.trim()||""}));}
   function refreshPurchaseSummary(){const rows=collectPurchaseItems().filter(r=>r.name||r.qty||r.usdUnitPrice||r.photoUrl||r.color||r.size||r.packageCode); $("itemCount").textContent=rows.length; $("qtyTotal").textContent=rows.reduce((s,r)=>s+(Number(r.qty||0)||0),0);}
   function calcTwd(){const usd=Number($("usdTotal").value||0), rate=Number($("usdRate").value||0); if(usd>0&&rate>0) $("twdAfterTax").value=Math.round(usd*rate);}
-  async function submitPurchase(){const payload={purchase:{vendor:$("vendor").value.trim(),orderNo:$("orderNo").value.trim(),usdTotal:$("usdTotal").value.trim(),twdAfterTax:$("twdAfterTax").value.trim(),usdRate:$("usdRate").value.trim(),buyDate:$("buyDate").value.trim(),packageCode:$("packageCode")?.value.trim()||""},items:collectPurchaseItems()}; if(!payload.purchase.vendor){setStatus($("purchaseMsg"),"❌ 請先選擇進貨商。","err");return;} if(!payload.purchase.orderNo){setStatus($("purchaseMsg"),"❌ 請先輸入訂單編號。","err");return;} let valid=payload.items.filter(r=>r.name||r.qty||r.usdUnitPrice||r.photoUrl||r.color||r.size||r.packageCode).map(r=>({...r,packageCode:r.packageCode||payload.purchase.packageCode||""})); if(!valid.length){setStatus($("purchaseMsg"),"❌ 商品明細目前都是空白列。","err");return;} const orderUsd=moneyNum(payload.purchase.usdTotal); const itemsUsd=valid.reduce((s,r)=>s+(moneyNum(r.qty)*moneyNum(r.usdUnitPrice)),0); if(!orderUsd){setStatus($("purchaseMsg"),"❌ 請先輸入美金總額 or 稅前。","err");return;} if(Math.abs(orderUsd-itemsUsd)>0.01){setStatus($("purchaseMsg"),`❌ 金額不一致，不能送出。\n訂單美金總額：${orderUsd.toFixed(2)}\n商品美金總額：${itemsUsd.toFixed(2)}`,'err');return;} const btn=$("btnSubmitPurchase"); btn.disabled=true; setStatus($("purchaseMsg"),"圖片上傳中...","info"); try{const rowEls=purchaseRowList(); for(let i=0;i<valid.length;i++){const row=valid[i], tr=rowEls[i]; const fileInput=tr?.querySelector(".photoFile"), photoUrlInput=tr?.querySelector(".photoUrl"), fileName=tr?.querySelector(".photo-name"); const file=tr?._pastedPhotoFile||fileInput?.files?.[0]; if(file){const uploaded=await uploadImageToCloudflare(file); row.photoUrl=uploaded.imageUrl||""; if(photoUrlInput)photoUrlInput.value=row.photoUrl; if(fileName)fileName.textContent=row.photoUrl?"已上傳圖片":file.name;}} payload.items=valid; setStatus($("purchaseMsg"),"送出中...","info"); const data=await apiPost(API.createPurchase,payload); state.purchaseSaved=true; updateSteps(); setStatus($("purchaseMsg"),`✅ 建立成功\n採購單 ID：${data.purchase_id||""}\n包裹數：${data.package_created_count||0}\n成功商品筆數：${data.item_created_count||0}\n缺包裹編號商品：${data.missing_package_count||0}`,'ok'); toast('✅ 採購單已儲存','ok'); await loadInbound(); await loadMissingPackageItems();}catch(err){setStatus($("purchaseMsg"),'❌ '+(err.message||err),'err');}finally{btn.disabled=false;}}
+  async function submitPurchase(){const payload={purchase:{vendor:$("vendor").value.trim(),orderNo:$("orderNo").value.trim(),usdTotal:$("usdTotal").value.trim(),twdAfterTax:$("twdAfterTax").value.trim(),usdRate:$("usdRate").value.trim(),buyDate:$("buyDate").value.trim(),packageCode:$("packageCode")?.value.trim()||""},items:collectPurchaseItems()}; if(!payload.purchase.vendor){setStatus($("purchaseMsg"),"❌ 請先選擇進貨商。","err");return;} if(!payload.purchase.orderNo){setStatus($("purchaseMsg"),"❌ 請先輸入訂單編號。","err");return;} let valid=payload.items.filter(r=>r.name||r.qty||r.usdUnitPrice||r.photoUrl||r.color||r.size||r.packageCode).map(r=>({...r,packageCode:r.packageCode||payload.purchase.packageCode||""})); if(!valid.length){setStatus($("purchaseMsg"),"❌ 商品明細目前都是空白列。","err");return;} const orderUsd=moneyNum(payload.purchase.usdTotal); const itemsUsd=valid.reduce((s,r)=>s+(moneyNum(r.qty)*moneyNum(r.usdUnitPrice)),0); if(!orderUsd){setStatus($("purchaseMsg"),"❌ 請先輸入美金總額 or 稅前。","err");return;} if(Math.abs(orderUsd-itemsUsd)>0.01){setStatus($("purchaseMsg"),`❌ 金額不一致，不能送出。\n訂單美金總額：${orderUsd.toFixed(2)}\n商品美金總額：${itemsUsd.toFixed(2)}`,'err');return;} const btn=$("btnSubmitPurchase"); btn.disabled=true; setStatus($("purchaseMsg"),"圖片上傳中...","info"); try{const rowEls=purchaseRowList(); for(let i=0;i<valid.length;i++){const row=valid[i], tr=rowEls[i]; const fileInput=tr?.querySelector(".photoFile"), photoUrlInput=tr?.querySelector(".photoUrl"), fileName=tr?.querySelector(".photo-name"); const file=tr?._pastedPhotoFile||fileInput?.files?.[0]; if(file){const uploaded=await uploadImageToCloudflare(file); row.photoUrl=uploaded.imageUrl||""; if(photoUrlInput)photoUrlInput.value=row.photoUrl; if(fileName)fileName.textContent=row.photoUrl?"已上傳圖片":file.name;}} payload.items=valid; setStatus($("purchaseMsg"),"送出中...","info"); const data=await apiPost(API.createPurchase,payload); state.purchaseSaved=true; updateSteps(); setStatus($("purchaseMsg"),`✅ 建立成功\n採購單 ID：${data.purchase_id||""}\n包裹數：${data.package_created_count||0}\n成功商品筆數：${data.item_created_count||0}\n缺包裹編號商品：${data.missing_package_count||0}`,'ok');
+toast('✅ 採購單已儲存，採購區已清空','ok');
+
+await loadInbound();
+await loadMissingPackageItems();
+await loadRecentPurchases();
+
+resetPurchase({
+  message:`✅ 上一張採購單已建立成功，採購區已清空，可以建立下一張。\n採購單 ID：${data.purchase_id||""}`,
+  type:"ok"
+});}catch(err){setStatus($("purchaseMsg"),'❌ '+(err.message||err),'err');}finally{btn.disabled=false;}}
   async function checkPurchaseQuick(){const kw=$("quickOrderNo")?.value.trim(); if(!kw){setStatus($("purchaseCheckResult"),"輸入訂單編號幾碼會自動篩選，下方顯示相關訂單。"); return;} setStatus($("purchaseCheckResult"),"查詢中...","info"); try{const data=await apiGet(`${API.purchaseCheck}?orderNo=${encodeURIComponent(kw)}`); if(!data.exists){setStatus($("purchaseCheckResult"),`目前沒有完全相同的訂單編號：${kw}`);return;} setStatus($("purchaseCheckResult"),[`✅ 已存在：${data.order_no||kw}`,`進貨商：${data.vendor||"-"}`,`購買日期：${data.buy_date||"-"}`,`包裹編號：${data.package_code||"-"}`,`商品數：${data.item_count??0}`,`訂單核對：${data.order_check||"-"}`].join("\n"),'ok');}catch(err){setStatus($("purchaseCheckResult"),`❌ ${err.message||err}`,'err');}}
    async function loadRecentPurchases(keyword=""){
     const wrap = $("recentOrderList");
@@ -1235,7 +1245,25 @@
       wrap.innerHTML = `<span class="muted">❌ ${escapeHtml(err.message || String(err))}</span>`;
     }
   }
-  function resetPurchase(){["vendor","orderNo","usdTotal","twdAfterTax","usdRate","buyDate","packageCode"].forEach(id=>{const el=$(id); if(el) el.value="";}); $("itemRows").innerHTML=""; createPurchaseRow(); refreshPurchaseRows(); state.purchaseSaved=false; updateSteps(); setStatus($("purchaseMsg"),"尚未送出");}
+  function resetPurchase(options={}){
+    ["vendor","orderNo","usdTotal","twdAfterTax","usdRate","buyDate","packageCode"].forEach(id=>{
+      const el=$(id);
+      if(el) el.value="";
+    });
+
+    const pdfFile = $("pdfImportFile");
+    if (pdfFile) pdfFile.value = "";
+
+    $("itemRows").innerHTML="";
+    createPurchaseRow();
+    refreshPurchaseRows();
+
+    state.purchaseSaved=false;
+    updateSteps();
+
+    setStatus($("pdfImportStatus"),"");
+    setStatus($("purchaseMsg"),options.message || "尚未送出", options.type || "");
+  }
 
    function setMissingRowSelected(tr, selected=true){
     if (!tr) return;
@@ -1518,9 +1546,40 @@ ${parsed.paidTotal ? `已付總收費：NT$ ${parsed.paidTotal}` : ""}
   function focusNextVisibleWeight(currentEl){const inputs=getVisiblePackageRows().map(tr=>tr.querySelector(".weightLbs")).filter(Boolean); const idx=inputs.indexOf(currentEl); const next=inputs[idx+1]; if(next){next.focus(); next.select?.();} else $("btnSubmitTransfer").focus();}
   function filterPackageRows(){const kw=String($("packageSearch")?.value||"").trim().toLowerCase(); packageRowList().forEach(tr=>{const code=String(tr.dataset.packageCode||"").toLowerCase(); tr.style.display=(!kw||code.includes(kw))?"":"none";}); refreshPackageSummary();}
   function refreshPackageSummary(){const rows=packageRowList(); const sel=rows.filter(tr=>tr.querySelector(".rowCheck")?.checked); const total=sel.reduce((sum,tr)=>sum+(Number(tr.querySelector(".weightLbs")?.value||0)||0),0); $("packageCount").textContent=rows.length; $("selectedPackageCount").textContent=sel.length; $("weightTotal").textContent=String(Math.round(total*10)/10);}
+    function resetTransfer(options={}){
+    ["transferNo","transferDate","shippingFeeOrTax","extraFeeTwd","invoiceRef","packageSearch"].forEach(id=>{
+      const el=$(id);
+      if(el) el.value="";
+    });
+
+    const credit = $("creditOrTaichung");
+    if (credit) credit.checked = false;
+
+    const file = $("transferPdf");
+    if (file) file.value = "";
+
+    const rows = $("packageRows");
+    if (rows) rows.innerHTML = '<div class="empty">已清空，請展開或上傳下一張轉運 PDF 後重新載入。</div>';
+
+    refreshPackageSummary();
+
+    state.transferSaved=false;
+    updateSteps();
+
+    setStatus($("transferPdfStatus"),"請先上傳 Buy&Ship 付款收據 PDF。");
+    setStatus($("transferMsg"),options.message || "尚未送出", options.type || "");
+  }
   async function loadZeroWeightPackages(){setStatus($("transferMsg"),"載入中...","info"); $("packageRows").innerHTML=""; try{const data=await apiGet(API.zeroWeightPackages); const rows=Array.isArray(data.rows)?data.rows:[]; if(!rows.length) $("packageRows").innerHTML='<div class="empty">目前沒有重量[磅] = 0 的包裹。</div>'; rows.forEach((row,i)=>createPackageRow(row,i)); filterPackageRows(); setStatus($("transferMsg"),`✅ 已載入 ${rows.length} 筆重量[磅] = 0 的包裹`,'ok');}catch(err){setStatus($("transferMsg"),`❌ ${err.message||err}`,'err');}}
   function collectSelectedPackages(){return packageRowList().filter(tr=>tr.querySelector(".rowCheck")?.checked).map(tr=>({packageCode:tr.dataset.packageCode||"",weightLbs:tr.querySelector(".weightLbs")?.value.trim()||"",packageFeeTwd:tr.querySelector(".packageFeeTwd")?.value.trim()||"",packageRemark:tr.dataset.packageRemark||""}));}
-  async function submitTransfer(){const normalized=normalizeDateInput($("transferDate").value.trim()); if($("transferDate").value.trim()&&!normalized){setStatus($("transferMsg"),"❌ 轉運日期請輸入 YYYY-MM-DD 或 YYYY/MM/DD。","err");return;} const transfer={transferNo:$("transferNo").value.trim(),transferDate:normalized||"",shippingFeeOrTax:$("shippingFeeOrTax").value.trim(),extraFeeTwd:$("extraFeeTwd").value.trim(),creditOrTaichung:$("creditOrTaichung").checked,invoiceRef:$("invoiceRef").value.trim()}; const packages=collectSelectedPackages(); if(!transfer.transferNo){setStatus($("transferMsg"),"❌ 請先輸入轉運單號。","err");return;} if(!packages.length){setStatus($("transferMsg"),"❌ 請先勾選要儲存的包裹。","err");return;} const invalid=packages.find(r=>!r.weightLbs); if(invalid){setStatus($("transferMsg"),`❌ 請先填寫重量[磅]：${invalid.packageCode}`,'err');return;} const btn=$("btnSubmitTransfer"); btn.disabled=true; setStatus($("transferMsg"),"送出中...","info"); try{const data=await apiPost(API.transferSave,{transfer,packages}); state.transferSaved=true; updateSteps(); setStatus($("transferMsg"),`✅ 建立／更新成功\n轉運單 ID：${data.transfer_id||""}\n成功包裹筆數：${data.package_updated_count||0}\n失敗包裹筆數：${data.package_failed_count||0}`,'ok'); toast('✅ 轉運資料已儲存','ok'); await loadInbound();}catch(err){setStatus($("transferMsg"),`❌ ${err.message||err}`,'err');}finally{btn.disabled=false;}}
+  async function submitTransfer(){const normalized=normalizeDateInput($("transferDate").value.trim()); if($("transferDate").value.trim()&&!normalized){setStatus($("transferMsg"),"❌ 轉運日期請輸入 YYYY-MM-DD 或 YYYY/MM/DD。","err");return;} const transfer={transferNo:$("transferNo").value.trim(),transferDate:normalized||"",shippingFeeOrTax:$("shippingFeeOrTax").value.trim(),extraFeeTwd:$("extraFeeTwd").value.trim(),creditOrTaichung:$("creditOrTaichung").checked,invoiceRef:$("invoiceRef").value.trim()}; const packages=collectSelectedPackages(); if(!transfer.transferNo){setStatus($("transferMsg"),"❌ 請先輸入轉運單號。","err");return;} if(!packages.length){setStatus($("transferMsg"),"❌ 請先勾選要儲存的包裹。","err");return;} const invalid=packages.find(r=>!r.weightLbs); if(invalid){setStatus($("transferMsg"),`❌ 請先填寫重量[磅]：${invalid.packageCode}`,'err');return;} const btn=$("btnSubmitTransfer"); btn.disabled=true; setStatus($("transferMsg"),"送出中...","info"); try{const data=await apiPost(API.transferSave,{transfer,packages}); state.transferSaved=true; updateSteps(); setStatus($("transferMsg"),`✅ 建立／更新成功\n轉運單 ID：${data.transfer_id||""}\n成功包裹筆數：${data.package_updated_count||0}\n失敗包裹筆數：${data.package_failed_count||0}`,'ok');
+toast('✅ 轉運資料已儲存，轉運區已清空','ok');
+
+await loadInbound();
+
+resetTransfer({
+  message:`✅ 上一張轉運資料已儲存成功，轉運區已清空，可以處理下一張。\n轉運單 ID：${data.transfer_id||""}`,
+  type:"ok"
+});}catch(err){setStatus($("transferMsg"),`❌ ${err.message||err}`,'err');}finally{btn.disabled=false;}}
 
   function applyDict(text,dict){let out=String(text||""); for(const [re,zh] of dict) out=out.replace(re,zh); return out.replace(/\s{2,}/g," ").trim();}
   const COLOR_RULES=[[/black gold/i,"黑金"],[/full pink/i,"滿版粉"],[/milk tea/i,"奶茶"],[/coffee|brown/i,"咖啡"],[/beige/i,"米色"],[/black/i,"黑色"],[/white|chalk/i,"白色"],[/pink/i,"粉色"],[/red/i,"紅色"],[/blue/i,"藍色"],[/green/i,"綠色"],[/gray|grey/i,"灰色"],[/purple/i,"紫色"],[/yellow/i,"黃色"],[/orange/i,"橘色"],[/silver/i,"銀色"],[/gold/i,"金色"]];
