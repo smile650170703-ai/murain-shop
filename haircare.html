@@ -3982,16 +3982,7 @@ body{
         </div>
       </section>
 
-      <section class="preorder-section">
-        <div class="preorder-section-head">
-          <small>FLOW</small>
-          <h2>預購流程</h2>
-        </div>
 
-        <div class="preorder-flow">
-
-    </div>
-  </section>
 </main>
 
   <footer class="site-footer">
@@ -4943,7 +4934,7 @@ const depositBox = document.getElementById("preorderDepositBox");
     }
   });
 
-function selectPreorderProduct(item, plan) {
+function selectPreorderProduct(item, plan, shouldScroll) {
   const p = plan || (Array.isArray(item.plan_options) ? item.plan_options[0] : null) || {};
 
 const planName = String(p.name || "").trim();
@@ -5006,10 +4997,12 @@ const specParts = [
   statusEl.textContent = "";
   statusEl.className = "preorder-status";
 
-  document.getElementById("preorderFormArea")?.scrollIntoView({
-    behavior: "smooth",
-    block: "start"
-  });
+  if (shouldScroll === true) {
+    document.getElementById("preorderFormArea")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
+  }
 }
 
 function renderPreorderProducts(items) {
@@ -5097,7 +5090,7 @@ const options = plans.map((p, planIdx) => {
       const plans = Array.isArray(item.plan_options) ? item.plan_options : [];
       const plan = plans[planIdx] || plans[0] || { name: "預購登記", qty: 1, price: 0 };
 
-      selectPreorderProduct(item, plan);
+      selectPreorderProduct(item, plan, true);
     });
   });
 
@@ -5359,9 +5352,31 @@ const depositAmountText = String(payload.deposit_amount || "").trim();
       return;
     }
 
-    const confirmSend = confirm(
-      "請確認是否送出預購登記？\n\n送出後代表您確認登記此預購商品與方案，小幫手會依序確認商品狀況；若需定金或到貨可付款，會再通知付款方式與後續結帳。"
-    );
+       const preorderDetail = [
+      "商品：" + String(payload.product_name || "預購商品"),
+      payload.product_spec ? "明細：" + String(payload.product_spec) : "",
+      "數量：" + String(payload.qty || 1)
+    ].filter(Boolean).join("\n");
+
+    const confirmText = depositVisible
+      ? [
+          "請確認是否送出預購登記",
+          "",
+          "【預購商品明細】",
+          preorderDetail,
+          "",
+          "請於一天內完成匯款後告知官方 LINE。"
+        ].join("\n")
+      : [
+          "請確認是否送出預購登記",
+          "",
+          "【預購商品明細】",
+          preorderDetail,
+          "",
+          "到貨後會再依序通知結帳。"
+        ].join("\n");
+
+    const confirmSend = confirm(confirmText);
 
     if (!confirmSend) {
       statusEl.textContent = "已取消送出預購登記。";
