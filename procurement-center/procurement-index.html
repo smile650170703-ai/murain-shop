@@ -149,6 +149,80 @@
     .photo-btn{display:inline-flex;align-items:center;justify-content:center;height:22px;padding:0 6px;border:1px solid var(--line);border-radius:7px;background:#fff;font-size:10px;font-weight:800;cursor:pointer;white-space:nowrap;}
     .photo-name{flex:1;min-width:0;font-size:10px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .thumb{width:44px;height:44px;border-radius:8px;object-fit:cover;border:1px solid #dbe4f0;background:#f8fafc;display:block;}
+
+    .photo-zoom-btn{
+      width:auto !important;
+      min-width:0 !important;
+      height:auto !important;
+      padding:0 !important;
+      border:0 !important;
+      background:transparent !important;
+      border-radius:8px !important;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      cursor:zoom-in;
+    }
+
+    .photo-zoom-btn:hover .thumb{
+      box-shadow:0 0 0 3px rgba(34,211,238,.28);
+    }
+
+    .inbound-photo-modal[hidden]{
+      display:none !important;
+    }
+
+    .inbound-photo-modal{
+      position:fixed;
+      inset:0;
+      z-index:100000;
+      background:rgba(2,6,23,.78);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:28px;
+    }
+
+    .inbound-photo-modal-box{
+      position:relative;
+      max-width:92vw;
+      max-height:88vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+
+    .inbound-photo-big{
+      max-width:92vw;
+      max-height:88vh;
+      object-fit:contain;
+      border-radius:16px;
+      background:#fff;
+      box-shadow:0 22px 60px rgba(0,0,0,.35);
+    }
+
+    .inbound-photo-close{
+      position:absolute;
+      top:-14px;
+      right:-14px;
+      width:38px !important;
+      min-width:38px !important;
+      height:38px !important;
+      padding:0 !important;
+      border:0 !important;
+      border-radius:999px !important;
+      background:#ffffff !important;
+      color:#0f172a !important;
+      font-size:24px !important;
+      font-weight:900 !important;
+      line-height:1 !important;
+      cursor:pointer;
+      box-shadow:0 10px 28px rgba(0,0,0,.28);
+    }
+
+    body.inbound-photo-open{
+      overflow:hidden;
+    }
     .empty{color:var(--muted);font-size:13px;padding:14px;text-align:center;}
     .package-detail{margin-top:4px;color:#64748b;font-size:11px;line-height:1.35;word-break:break-word;}
     .collapse-body[hidden]{display:none}.collapse-toggle{min-width:78px;}
@@ -1640,7 +1714,7 @@ resetTransfer({
   async function loadInbound(){setStatus($("inboundMsg"),"載入待入庫清單中...","info"); try{const data=await apiGet(`${API.inboundList}?limit=500`); state.inboundRows=Array.isArray(data.rows)?data.rows:[]; renderInboundRows(state.inboundRows); setStatus($("inboundMsg"),`✅ 已載入 ${state.inboundRows.length} 筆待入庫資料`,'ok');}catch(err){$("inboundRows").innerHTML=`<tr><td colspan="15" class="empty">❌ ${escapeHtml(err.message||String(err))}</td></tr>`; state.inboundRows=[]; refreshInboundSummary(); setStatus($("inboundMsg"),`❌ ${err.message||err}`,'err');}}
   function inboundRowFormValues(tr,row={}){const brand=tr.querySelector('[data-role="brand"]')?.value.trim()||""; return {id:tr.dataset.id||row.id||"",brand,productType:tr.querySelector('[data-role="productType"]')?.value.trim()||"",productName:tr.querySelector('[data-role="productName"]')?.value.trim()||"",labelCode:tr.querySelector('[data-role="labelCode"]')?.value.trim()||"",suggestPrice:tr.querySelector('[data-role="suggestPrice"]')?.value.trim()||"",receivedQty:normalizeInt(tr.querySelector('[data-role="receivedQty"]')?.value||""),stockLocation:tr.querySelector('[data-role="stockLocation"]')?.value.trim()||"",stockDate:todayStr(),category:brand};}
   function isInboundReady(values){return !!(values.id&&values.brand&&values.productName&&values.labelCode&&values.suggestPrice&&(values.receivedQty||values.receivedQty==="0")&&values.category&&values.stockDate);}
-function renderInboundRows(rows){const list=Array.isArray(rows)?rows:[]; if(!list.length){$("inboundRows").innerHTML='<tr><td colspan="15" class="empty">目前沒有待入庫資料。</td></tr>'; refreshInboundSummary(); return;} const defLoc=$("defaultLocation").value||""; $("inboundRows").innerHTML=list.map(row=>{const productName=String(row.productName||"").trim(); const brand=String(row.brand||"").trim(); const received=String(row.receivedQty||"").trim(); const abnormal=computeAbnormalQty(row.qty||"",received); const photo=row.photoUrl?`<img class="thumb" src="${escapeHtml(row.photoUrl)}" alt="">`:'<span class="muted">無</span>'; return `<tr data-id="${escapeHtml(row.id)}" data-name="${escapeHtml(row.name||"")}" data-color="${escapeHtml(row.color||"")}" data-qty="${escapeHtml(row.qty||"")}" data-unit-cost="${escapeHtml(row.refPrice||"")}"><td><input type="checkbox" class="inboundCheck"></td><td>${photo}</td><td>${escapeHtml(row.name||"")}</td><td>${escapeHtml(row.qty||"")}</td><td>${escapeHtml(row.color||"")}</td><td><input data-role="brand" list="brandOptions" value="${escapeHtml(brand)}" placeholder="品牌/分類"></td><td><input data-role="productType" list="typeOptions" value="${escapeHtml(row.productType||"")}" placeholder="種類"></td><td><input data-role="productName" value="${escapeHtml(productName)}" placeholder="商品名稱"></td><td><input data-role="labelCode" value="${escapeHtml(row.labelInputCode||"")}" placeholder="SKU/標籤碼"></td><td>${escapeHtml(formatRefPrice(row.refPrice||""))}</td><td><input data-role="suggestPrice" type="text" inputmode="numeric" value="${escapeHtml(row.suggestPrice||"")}" placeholder="售價"></td><td><input data-role="receivedQty" type="text" inputmode="numeric" value="${escapeHtml(received)}" placeholder="實收"></td><td><span data-role="abnormalQtyText">${escapeHtml(abnormal)}</span></td><td><input data-role="stockLocation" value="${escapeHtml(defLoc)}" placeholder="庫位"></td><td><input data-role="stockDate" type="hidden" value="${escapeHtml(todayStr())}"><input data-role="category" type="hidden" value="${escapeHtml(brand)}"></td></tr>`;}).join(""); bindInboundRows(); refreshInboundSummary(); filterInboundRows();}
+function renderInboundRows(rows){const list=Array.isArray(rows)?rows:[]; if(!list.length){$("inboundRows").innerHTML='<tr><td colspan="15" class="empty">目前沒有待入庫資料。</td></tr>'; refreshInboundSummary(); return;} const defLoc=$("defaultLocation").value||""; $("inboundRows").innerHTML=list.map(row=>{const productName=String(row.productName||"").trim(); const brand=String(row.brand||"").trim(); const received=String(row.receivedQty||"").trim(); const abnormal=computeAbnormalQty(row.qty||"",received); const photo=row.photoUrl?`<button class="photo-zoom-btn jsInboundPhotoZoom" type="button" data-src="${escapeHtml(row.photoUrl)}" title="點圖放大"><img class="thumb" src="${escapeHtml(row.photoUrl)}" alt="商品照片"></button>`:'<span class="muted">無</span>'; return `<tr data-id="${escapeHtml(row.id)}" data-name="${escapeHtml(row.name||"")}" data-color="${escapeHtml(row.color||"")}" data-qty="${escapeHtml(row.qty||"")}" data-unit-cost="${escapeHtml(row.refPrice||"")}"><td><input type="checkbox" class="inboundCheck"></td><td>${photo}</td><td>${escapeHtml(row.name||"")}</td><td>${escapeHtml(row.qty||"")}</td><td>${escapeHtml(row.color||"")}</td><td><input data-role="brand" list="brandOptions" value="${escapeHtml(brand)}" placeholder="品牌/分類"></td><td><input data-role="productType" list="typeOptions" value="${escapeHtml(row.productType||"")}" placeholder="種類"></td><td><input data-role="productName" value="${escapeHtml(productName)}" placeholder="商品名稱"></td><td><input data-role="labelCode" value="${escapeHtml(row.labelInputCode||"")}" placeholder="SKU/標籤碼"></td><td>${escapeHtml(formatRefPrice(row.refPrice||""))}</td><td><input data-role="suggestPrice" type="text" inputmode="numeric" value="${escapeHtml(row.suggestPrice||"")}" placeholder="售價"></td><td><input data-role="receivedQty" type="text" inputmode="numeric" value="${escapeHtml(received)}" placeholder="實收"></td><td><span data-role="abnormalQtyText">${escapeHtml(abnormal)}</span></td><td><input data-role="stockLocation" value="${escapeHtml(defLoc)}" placeholder="庫位"></td><td><input data-role="stockDate" type="hidden" value="${escapeHtml(todayStr())}"><input data-role="category" type="hidden" value="${escapeHtml(brand)}"></td></tr>`;}).join(""); bindInboundRows(); refreshInboundSummary(); filterInboundRows();}
     
     function refreshInboundRowState(tr){
     if(!tr) return;
@@ -1781,6 +1855,77 @@ function renderInboundRows(rows){const list=Array.isArray(rows)?rows:[]; if(!lis
       setStatus($("inboundMsg"),`❌ 複製失敗：${err.message||err}`,"err");
     }
   }
+
+  function ensureInboundPhotoModal(){
+    let modal = $("inboundPhotoModal");
+    if (modal) return modal;
+
+    modal = document.createElement("div");
+    modal.id = "inboundPhotoModal";
+    modal.className = "inbound-photo-modal";
+    modal.hidden = true;
+    modal.innerHTML = `
+      <div class="inbound-photo-modal-box">
+        <button class="inbound-photo-close" type="button" aria-label="關閉圖片">×</button>
+        <img class="inbound-photo-big" alt="商品圖片預覽">
+      </div>
+    `;
+
+    modal.addEventListener("click", e=>{
+      const target = e.target instanceof Element ? e.target : null;
+      if (e.target === modal || target?.closest(".inbound-photo-close")) {
+        closeInboundPhotoModal();
+      }
+    });
+
+    document.body.appendChild(modal);
+    return modal;
+  }
+
+  function openInboundPhotoModal(src){
+    const url = String(src || "").trim();
+    if (!url) return;
+
+    const modal = ensureInboundPhotoModal();
+    const img = modal.querySelector(".inbound-photo-big");
+
+    if (img) img.src = url;
+
+    modal.hidden = false;
+    document.body.classList.add("inbound-photo-open");
+  }
+
+  function closeInboundPhotoModal(){
+    const modal = $("inboundPhotoModal");
+    if (!modal) return;
+
+    modal.hidden = true;
+    document.body.classList.remove("inbound-photo-open");
+
+    const img = modal.querySelector(".inbound-photo-big");
+    if (img) img.src = "";
+  }
+
+  function bindInboundPhotoZoom(){
+    if (document.body.dataset.inboundPhotoZoomBound === "1") return;
+    document.body.dataset.inboundPhotoZoomBound = "1";
+
+    document.addEventListener("click", e=>{
+      const target = e.target instanceof Element ? e.target : null;
+      const btn = target?.closest(".jsInboundPhotoZoom");
+      if (!btn) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      openInboundPhotoModal(btn.dataset.src || btn.querySelector("img")?.src || "");
+    });
+
+    document.addEventListener("keydown", e=>{
+      if (e.key === "Escape") closeInboundPhotoModal();
+    });
+  }
+  
   function buildStockPayloadRows(rows){return rows.map(r=>({SKU:String(r.labelCode||"").trim(),"庫存位置":String(r.stockLocation||"").trim(),Name:String(r.productName||"").trim(),Price:moneyNum(r.suggestPrice),"起標價格":0,"一標多少":0,StockQty:Number(r.receivedQty||0)||0,Cost:moneyNum(r.unitCost||r.refPrice),"商品來源":"自有","寄賣人":"",consignorRecordId:"","入庫日期":todayStr(),sub_category:String(r.brand||"").trim(),"直播截圖Url":""}));}
   function csvCell(v){let s=String(v??""); if(/^[=+\-@]/.test(s.trim())) s="'"+s; return `"${s.replace(/"/g,'""')}"`;}
   function downloadCsv(filename,rows){const arr=Array.isArray(rows)?rows:[]; if(!arr.length)return false; const headers=Object.keys(arr[0]); const csv=[headers,...arr.map(r=>headers.map(h=>r[h]??""))].map(row=>row.map(csvCell).join(",")).join("\r\n"); const blob=new Blob(["\ufeff",csv],{type:"text/csv;charset=utf-8;"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000); return true;}
@@ -1974,6 +2119,8 @@ function renderInboundRows(rows){const list=Array.isArray(rows)?rows:[]; if(!lis
       setStatus($("labelDoneMsg"),`❌ ${err.message || err}`,"err");
     }
   }
+
+  bindInboundPhotoZoom();
 
   document.querySelectorAll(".work-tab[data-go]").forEach(btn=>btn.addEventListener("click",()=>{const id=btn.dataset.go; document.getElementById(id)?.scrollIntoView({behavior:"smooth",block:"start"}); document.querySelectorAll(".work-tab").forEach(b=>b.classList.remove("is-active")); btn.classList.add("is-active");}));
   $("btnImportPdf")?.addEventListener("click",handlePurchasePdfImport);
