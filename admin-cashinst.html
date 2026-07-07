@@ -116,6 +116,12 @@
   font-weight:700;
 }
 
+.cashinst-due-inline{
+  color:#facc15;
+  font-weight:800;
+  white-space:nowrap;
+}
+
 .hidden{display:none !important;}
 
 .btn-badge-wrap{
@@ -2907,7 +2913,11 @@ async function loadOrders(filter='all', extra = {}){
       throw new Error(j.error || 'load_failed');
     }
 
-    currentOrders = j.orders || j.records || [];
+    const rawOrders = j.orders || j.records || [];
+
+    // ✅ LINE 名稱搜尋：固定子頁也要套用，不然 admin-cashinst.html 會重新載入同一批資料
+    currentOrders = applyLineNameSearch(rawOrders);
+
     ORDERS_CACHE = currentOrders.map(rec => rec.fields || rec || {});
     renderOrderList();
     updateSummary();
@@ -3418,6 +3428,136 @@ function statusBadgeShip(st){
   return `<span class="${cls}">${text}</span>`;
 }
 
+function adminPickFilled(...vals){
+  for (const v of vals) {
+    if (v === 0 || v === '0') return v;
+    const s = String(v ?? '').trim();
+    if (s) return v;
+  }
+  return '';
+}
+
+function adminPickNumber(...vals){
+  const v = adminPickFilled(...vals);
+  const n = Number(String(v ?? '').replace(/[^\d.-]/g, '').trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+// ✅ 已收定金未出貨列表：顯示「尾款金額 / 第幾期金額」
+function getCashinstListDueText(f = {}, shipInfoArg = null, amountArg = null){
+  // 只在「已收定金未出貨」頁顯示，避免其他後台清單變太亂
+  if (ADMIN_PAGE_FILE !== 'admin-cashinst.html') return '';
+
+  const shipInfo = shipInfoArg || parseShippingInfo(f);
+  const a = amountArg || calcAmounts(f);
+
+  const pmCode = String(f.payment_method || '').trim().toLowerCase();
+  const isCashInst2 = pmCode === 'cash_inst_2' || pmCode === 'cash_install_2';
+  const isCashInst3 = pmCode === 'cash_inst_3' || pmCode === 'cash_install_3';
+  const isCashInstOrder =
+    isCashInst2 ||
+    isCashInst3 ||
+    pmCode.startsWith('cash_inst_') ||
+    pmCode.startsWith('cash_install_');
+
+  const dep = shipInfo.deposit || {};
+  const cashInst = shipInfo.cash_inst || shipInfo.cashInstallment || shipInfo.installment || {};
+  const cashInstMeta = safeJsonParse(f.cash_inst_due_dates_json, {}) || {};
+  const cashInstSchedule = Array.isArray(cashInstMeta.schedule) ? cashInstMeta.schedule : [];
+
+  const depAmount = adminPickNumber(
+    f.cash_inst_deposit_amount,
+    cashInst.deposit_amount,
+    cashInstMeta.deposit_amount,
+    f.deposit_amount,
+    dep.amount,
+    dep.deposit_amount
+  );
+
+  if (isCashInstOrder) {
+    const totalParts = isCashInst3 ? 3 : (isCashInst2 ? 2 : Number(f.cash_inst_total_parts || cashInst.total_parts || 0) || 0);
+
+    const paidParts = Math.max(
+      Number(f.cash_inst_paid_parts || 0) || 0,
+      Number(f.cash_inst_paid_count || 0) || 0,
+      Number(cashInst.paid_count || 0) || 0
+    );
+
+    const cashInstCompleted =
+      f.cash_inst_completed === true ||
+      String(f.cash_inst_completed || '').trim().toLowerCase() === 'true' ||
+      String(f.cash_inst_status || '').trim().toLowerCase() === 'completed';
+
+    if (totalParts > 0 && (cashInstCompleted || paidParts >= totalParts)) {
+      return '現金分期已收齊';
+    }
+
+    const cashInstAmounts = Array.isArray(cashInst.installment_amounts)
+      ? cashInst.installment_amounts
+      : (
+          Array.isArray(cashInstMeta.installment_amounts)
+            ? cashInstMeta.installment_amounts
+            : (
+                cashInstSchedule.length
+                  ? cashInstSchedule.map(x => Number(x?.amount || 0) || 0)
+                  : safeJsonParse(f.cash_inst_amounts_json, [])
+              )
+        );
+
+    const partAmounts = {
+      1: adminPickNumber(
+        f.cash_inst_part1_amount,
+        cashInst.part1_amount,
+        cashInstMeta.part1_amount,
+        cashInst.amount_1,
+        cashInstAmounts?.[0],
+        cashInstSchedule?.[0]?.amount
+      ),
+      2: adminPickNumber(
+        f.cash_inst_part2_amount,
+        cashInst.part2_amount,
+        cashInstMeta.part2_amount,
+        cashInst.amount_2,
+        cashInstAmounts?.[1],
+        cashInstSchedule?.[1]?.amount
+      ),
+      3: adminPickNumber(
+        f.cash_inst_part3_amount,
+        cashInst.part3_amount,
+        cashInstMeta.part3_amount,
+        cashInst.amount_3,
+        cashInstAmounts?.[2],
+        cashInstSchedule?.[2]?.amount
+      )
+    };
+
+    const nextPart = Math.min(Math.max(paidParts, 0) + 1, totalParts || 1);
+    const remaining = Math.max(0, Number(a.net || 0) - Number(depAmount || 0));
+
+    // 若 Airtable / shipping_info 沒有單期金額，就用「剩餘金額 ÷ 期數」往上取整，避免 11800/3 變 3933.333
+    const fallbackAmount = totalParts ? Math.ceil(remaining / totalParts) : 0;
+    const nextAmount = partAmounts[nextPart] || fallbackAmount;
+
+    return nextAmount > 0
+      ? `第 ${nextPart} 期金額 ${money(Math.round(nextAmount))}`
+      : `第 ${nextPart} 期金額 —`;
+  }
+
+  const tailSnap = safeJsonParse(f.tail_paid_snapshot, {}) || {};
+  const tailAmountFromField = adminPickNumber(
+    f.tail_net_amount,
+    f.tail_total_amount,
+    tailSnap.tail_net_amount,
+    tailSnap.tail_total_amount
+  );
+
+  const tailAmount = tailAmountFromField || Math.max(0, Number(a.net || 0) - Number(depAmount || 0));
+
+  return tailAmount > 0
+    ? `尾款金額 ${money(Math.round(tailAmount))}`
+    : '';
+}
+
 /* ===== 左側列表渲染 ===== */
 function renderOrderList(){
   const listEl = $('#orderList');
@@ -3521,8 +3661,9 @@ const overdueTag = isBankPending
     const ship_b  = statusBadgeShip(f.ship_status);
     const method  = displayPaymentMethod(f.payment_method || '');
     const created = f.CreatedAt || (f.created_at || '');
-    const a = calcAmounts(f);
+const a = calcAmounts(f);
     const total   = money(a.net);
+    const cashinstDueText = getCashinstListDueText(f, shipInfo, a);
 
     const creditTag = a.credit > 0
       ? `<div class="tag-small credit-red">購物金折抵 ${money(a.credit)}</div>`
@@ -3548,7 +3689,10 @@ const overdueTag = isBankPending
   ${lineName ? ' <span class="ln">｜' + escapeHtml(lineName) + '</span>' : ''}
   ${pickReg ? ' <span class="pickup-reg-inline">｜' + escapeHtml(pickReg) + '</span>' : ''}
 </div>
-            <div class="tag-small">${created}</div>
+            <div class="tag-small">
+              ${created}
+              ${cashinstDueText ? ` <span class="cashinst-due-inline">｜${escapeHtml(cashinstDueText)}</span>` : ''}
+            </div>
           </div>
 
           <div class="ord-right">
