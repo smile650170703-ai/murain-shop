@@ -3637,17 +3637,9 @@ body{
         <div class="preorder-hero-copy">
           <div class="preorder-kicker">XUYUAN PREORDER</div>
           <h1>預購商品<br>登記專區</h1>
-         <p>
-            精選預購商品可先完成登記。送出後小幫手會依登記順序確認，到貨或可付款時再通知您完成結帳。
-          </p>
-
-          <div class="preorder-hero-note">
-            <b>登記提醒</b>
-            預購登記不代表保證到貨或保留庫存；若商品需定金，請依頁面顯示填寫匯款資料，方便小幫手核對。
-          </div>
-
-          <div class="preorder-hero-actions">
-            <a class="preorder-btn secondary" href="#" data-official-line-link target="_blank" rel="noopener">私訊 LINE 詢問</a>
+<div class="preorder-hero-note">
+            <b>預購登記說明</b>
+            完成登記後，小幫手會依順序確認商品狀況；若商品需定金或到貨可付款，會再通知付款方式與後續結帳。
           </div>
         </div>
 
@@ -4735,15 +4727,20 @@ const depositBox = document.getElementById("preorderDepositBox");
 function selectPreorderProduct(item, plan) {
   const p = plan || (Array.isArray(item.plan_options) ? item.plan_options[0] : null) || {};
 
-  const planName = String(p.name || "").trim();
-  const planQty = Number(p.qty || 1) || 1;
-  const planPrice = Number(p.price || 0) || 0;
+const planName = String(p.name || "").trim();
+const planQty = Number(p.qty || 1) || 1;
+const planPrice = Number(p.price || 0) || 0;
 
-  const specParts = [
-    item.brand ? "品牌：" + item.brand : "",
-    planName ? "方案：" + planName : "",
-    planPrice ? "金額：" + money(planPrice) : ""
-  ].filter(Boolean);
+const planDisplayName =
+  /^\d+$/.test(planName)
+    ? `${planName} 件`
+    : planName;
+
+const specParts = [
+  item.brand ? "品牌：" + item.brand : "",
+  planDisplayName ? "方案：" + planDisplayName : "",
+  planPrice ? "金額：" + money(planPrice) : ""
+].filter(Boolean);
 
   const mainImage = String(item.main_image || "").trim();
 
@@ -4751,7 +4748,7 @@ function selectPreorderProduct(item, plan) {
   productNameEl.value = item.product_name || "預購商品";
   productSpecEl.value = specParts.join("｜");
 
-  planNameEl.value = planName;
+  planNameEl.value = planDisplayName || planName;
   planQtyEl.value = String(planQty);
   planPriceEl.value = String(planPrice);
 
@@ -4813,10 +4810,16 @@ function renderPreorderProducts(items) {
   productsWrap.innerHTML = items.map((item, idx) => {
     const plans = Array.isArray(item.plan_options) ? item.plan_options : [];
 
-    const options = plans.map((p, planIdx) => {
+const options = plans.map((p, planIdx) => {
       const name = String(p.name || "方案").trim();
       const price = Number(p.price || 0) || 0;
-      const text = price ? `${name}｜${money(price)}` : name;
+
+      const displayName =
+        /^\d+$/.test(name)
+          ? `${name} 件`
+          : name;
+
+      const text = price ? `${displayName}｜${money(price)}` : displayName;
       return `<option value="${planIdx}">${esc(text)}</option>`;
     }).join("");
 
@@ -5115,9 +5118,21 @@ const depositVisible = depositBox ? !depositBox.hidden : false;
       return;
     }
 
-const last5 = String(payload.deposit_last5 || "").trim();
-    if (depositVisible && last5 && !/^\d{5}$/.test(last5)) {
-      statusEl.textContent = "帳號後五碼請填 5 位數字";
+const depositAmountText = String(payload.deposit_amount || "").trim();
+    const last5 = String(payload.deposit_last5 || "").trim();
+
+    if (depositVisible && !depositAmountText) {
+      statusEl.textContent = "此商品需要定金，請填寫預付定金金額";
+      statusEl.className = "preorder-status err";
+      depositAmountEl?.focus();
+
+      submitBtn.disabled = false;
+      submitBtn.textContent = "送出預購登記";
+      return;
+    }
+
+    if (depositVisible && !/^\d{5}$/.test(last5)) {
+      statusEl.textContent = "此商品需要定金，帳號後五碼請填 5 位數字";
       statusEl.className = "preorder-status err";
       depositLast5El?.focus();
 
