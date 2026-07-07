@@ -116,9 +116,10 @@
   font-weight:700;
 }
 
-.cashinst-due-inline{
+.cashinst-due-inline,
+.cashinst-date-inline{
   color:#facc15;
-  font-weight:800;
+  font-weight:400 !important;
   white-space:nowrap;
 }
 
@@ -3443,10 +3444,36 @@ function adminPickNumber(...vals){
   return Number.isFinite(n) ? n : 0;
 }
 
-// ✅ 已收定金未出貨列表：顯示「尾款金額 / 第幾期金額」
-function getCashinstListDueText(f = {}, shipInfoArg = null, amountArg = null){
+function adminDate10(v){
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+
+  let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) {
+    return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+  }
+
+  m = s.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日?/);
+  if (m) {
+    return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+  }
+
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return '';
+
+  return fmtDateInput(d);
+}
+
+function adminPickDate10(...vals){
+  return adminDate10(adminPickFilled(...vals));
+}
+
+// ✅ 已收定金未出貨列表：分開回傳「應收金額文字」與「這筆應收的到期日」
+function getCashinstListDueInfo(f = {}, shipInfoArg = null, amountArg = null){
+  const empty = { amountText:'', dueDateText:'' };
+
   // 只在「已收定金未出貨」頁顯示，避免其他後台清單變太亂
-  if (ADMIN_PAGE_FILE !== 'admin-cashinst.html') return '';
+  if (ADMIN_PAGE_FILE !== 'admin-cashinst.html') return empty;
 
   const shipInfo = shipInfoArg || parseShippingInfo(f);
   const a = amountArg || calcAmounts(f);
@@ -3489,8 +3516,52 @@ function getCashinstListDueText(f = {}, shipInfoArg = null, amountArg = null){
       String(f.cash_inst_status || '').trim().toLowerCase() === 'completed';
 
     if (totalParts > 0 && (cashInstCompleted || paidParts >= totalParts)) {
-      return '現金分期已收齊';
+      return {
+        amountText:'現金分期已收齊',
+        dueDateText:''
+      };
     }
+
+    const cashInstDates = Array.isArray(cashInstMeta.payment_dates)
+      ? cashInstMeta.payment_dates
+      : (
+          Array.isArray(cashInst.payment_dates)
+            ? cashInst.payment_dates
+            : []
+        );
+
+    const partDates = {
+      1: adminPickDate10(
+        f.cash_inst_date_1,
+        cashInst.date_1,
+        cashInst.date1,
+        cashInst.inst1,
+        cashInst.first_date,
+        cashInstMeta.first_date,
+        cashInstDates?.[0],
+        cashInstSchedule?.[0]?.due_date
+      ),
+      2: adminPickDate10(
+        f.cash_inst_date_2,
+        cashInst.date_2,
+        cashInst.date2,
+        cashInst.inst2,
+        cashInst.second_date,
+        cashInstMeta.second_date,
+        cashInstDates?.[1],
+        cashInstSchedule?.[1]?.due_date
+      ),
+      3: adminPickDate10(
+        f.cash_inst_date_3,
+        cashInst.date_3,
+        cashInst.date3,
+        cashInst.inst3,
+        cashInst.third_date,
+        cashInstMeta.third_date,
+        cashInstDates?.[2],
+        cashInstSchedule?.[2]?.due_date
+      )
+    };
 
     const cashInstAmounts = Array.isArray(cashInst.installment_amounts)
       ? cashInst.installment_amounts
@@ -3538,9 +3609,19 @@ function getCashinstListDueText(f = {}, shipInfoArg = null, amountArg = null){
     const fallbackAmount = totalParts ? Math.ceil(remaining / totalParts) : 0;
     const nextAmount = partAmounts[nextPart] || fallbackAmount;
 
-    return nextAmount > 0
-      ? `第 ${nextPart} 期金額 ${money(Math.round(nextAmount))}`
-      : `第 ${nextPart} 期金額 —`;
+    const dueDate = adminPickDate10(
+      f.cash_inst_next_due_date,
+      cashInst.next_due_date,
+      cashInstMeta.next_due_date,
+      partDates[nextPart]
+    );
+
+    return {
+      amountText: nextAmount > 0
+        ? `第 ${nextPart} 期金額 ${money(Math.round(nextAmount))}`
+        : `第 ${nextPart} 期金額 —`,
+      dueDateText: dueDate ? `到期日 ${dueDate}` : ''
+    };
   }
 
   const tailSnap = safeJsonParse(f.tail_paid_snapshot, {}) || {};
@@ -3553,9 +3634,28 @@ function getCashinstListDueText(f = {}, shipInfoArg = null, amountArg = null){
 
   const tailAmount = tailAmountFromField || Math.max(0, Number(a.net || 0) - Number(depAmount || 0));
 
-  return tailAmount > 0
-    ? `尾款金額 ${money(Math.round(tailAmount))}`
-    : '';
+  const tailDueDate = adminPickDate10(
+    f.tail_due_date,
+    f.tail_expire_at,
+    f.hold_until,
+    dep.hold_until,
+    dep.holdUntil,
+    f.deposit_expire_at,
+    dep.deposit_expire_at,
+    dep.expire_at
+  );
+
+  return {
+    amountText: tailAmount > 0
+      ? `尾款金額 ${money(Math.round(tailAmount))}`
+      : '',
+    dueDateText: tailDueDate ? `到期日 ${tailDueDate}` : ''
+  };
+}
+
+// 保留舊函式名稱，避免其他地方若有呼叫會壞掉
+function getCashinstListDueText(f = {}, shipInfoArg = null, amountArg = null){
+  return getCashinstListDueInfo(f, shipInfoArg, amountArg).amountText || '';
 }
 
 /* ===== 左側列表渲染 ===== */
@@ -3663,7 +3763,9 @@ const overdueTag = isBankPending
     const created = f.CreatedAt || (f.created_at || '');
 const a = calcAmounts(f);
     const total   = money(a.net);
-    const cashinstDueText = getCashinstListDueText(f, shipInfo, a);
+    const cashinstDueInfo = getCashinstListDueInfo(f, shipInfo, a);
+    const cashinstDueText = cashinstDueInfo.amountText || '';
+    const cashinstDueDateText = cashinstDueInfo.dueDateText || '';
 
     const creditTag = a.credit > 0
       ? `<div class="tag-small credit-red">購物金折抵 ${money(a.credit)}</div>`
@@ -3687,6 +3789,7 @@ const a = calcAmounts(f);
 <div class="ord-id">
   ${escapeHtml(f.order_id || '(無編號)')}
   ${lineName ? ' <span class="ln">｜' + escapeHtml(lineName) + '</span>' : ''}
+  ${cashinstDueDateText ? ` <span class="cashinst-date-inline">｜${escapeHtml(cashinstDueDateText)}</span>` : ''}
   ${pickReg ? ' <span class="pickup-reg-inline">｜' + escapeHtml(pickReg) + '</span>' : ''}
 </div>
             <div class="tag-small">
