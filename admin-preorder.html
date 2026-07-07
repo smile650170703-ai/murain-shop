@@ -551,6 +551,86 @@
     grid-template-columns:1fr;
   }
 }
+  /* ===== 預購後台：兩個小分類 + 清單狀態化 ===== */
+.preorder-mode-tabs{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin:0 0 10px;
+}
+
+.preorder-mode-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  min-height:34px;
+  padding:6px 14px;
+  border-radius:999px;
+  border:1px solid rgba(148,163,184,.65);
+  background:rgba(15,23,42,.92);
+  color:#e5e7eb;
+  font-size:12px;
+  font-weight:900;
+  cursor:pointer;
+}
+
+.preorder-mode-btn.active{
+  background:#22d3ee;
+  color:#0f172a;
+  border-color:#22d3ee;
+  box-shadow:0 8px 18px rgba(34,211,238,.28);
+}
+
+.preorder-mode-count{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:20px;
+  height:20px;
+  padding:0 6px;
+  border-radius:999px;
+  background:rgba(255,255,255,.14);
+  color:inherit;
+  font-size:11px;
+  font-weight:900;
+}
+
+.item-statuses{
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  margin-top:8px;
+}
+
+.item-statuses .badge{
+  min-height:22px;
+  font-size:10.5px;
+  padding:2px 7px;
+}
+
+.item .meta{
+  margin-top:7px;
+}
+
+.item .meta div{
+  min-width:0;
+}
+
+.item .meta b{
+  word-break:break-word;
+}
+
+.quick-actions{
+  padding:8px;
+  border-radius:14px;
+  border:1px solid rgba(148,163,184,.22);
+  background:rgba(2,6,23,.32);
+}
+
+.quick-actions:empty{
+  display:none;
+}
 </style>
 </head>
 
@@ -685,6 +765,19 @@
 
   <div class="status-line" id="listMsg"></div>
 </section>
+
+      <section class="preorder-mode-tabs" id="preorderModeTabs">
+        <button class="preorder-mode-btn active" type="button" data-mode="deposit_pending">
+          預購待付款定金
+          <span class="preorder-mode-count" id="cntDepositPending">0</span>
+        </button>
+
+        <button class="preorder-mode-btn" type="button" data-mode="ready">
+          已確認定金 / 免定金
+          <span class="preorder-mode-count" id="cntReady">0</span>
+        </button>
+      </section>
+
       <div class="grid">
         <section class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;">
@@ -762,14 +855,18 @@ const btnLoad = $("btnLoad");
 const btnSearch = $("btnSearch");
 const btnClearDate = $("btnClearDate");
 const btnClear = $("btnClear");
-  const listMsg = $("listMsg");
-  const preorderList = $("preorderList");
-  const detailCard = $("detailCard");
-  const countBadge = $("countBadge");
+const listMsg = $("listMsg");
+const preorderList = $("preorderList");
+const detailCard = $("detailCard");
+const countBadge = $("countBadge");
+const preorderModeTabs = $("preorderModeTabs");
+const cntDepositPending = $("cntDepositPending");
+const cntReady = $("cntReady");
 
-  let OP = "";
-  let items = [];
-  let selected = null;
+let OP = "";
+let items = [];
+let selected = null;
+let currentMode = "deposit_pending";
 
   function saveKey(v){
     OP = String(v || "").trim();
@@ -822,6 +919,34 @@ const btnClear = $("btnClear");
     return s === "已取消" || s === "已完成";
   }
 
+    function preorderModeOf(it){
+    if (isFinalPo(it)) return "final";
+
+    if (needDeposit(it) && String(it.payment_status || "") !== "已確認定金") {
+      return "deposit_pending";
+    }
+
+    return "ready";
+  }
+
+  function visibleItems(){
+    return items.filter(it => preorderModeOf(it) === currentMode);
+  }
+
+  function refreshModeCounts(){
+    const depositPending = items.filter(it => preorderModeOf(it) === "deposit_pending").length;
+    const ready = items.filter(it => preorderModeOf(it) === "ready").length;
+
+    if (cntDepositPending) cntDepositPending.textContent = String(depositPending);
+    if (cntReady) cntReady.textContent = String(ready);
+
+    if (preorderModeTabs) {
+      preorderModeTabs.querySelectorAll("[data-mode]").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.mode === currentMode);
+      });
+    }
+  }
+
   function actionButtonsHtml(it){
     const id = esc(it.id || "");
     const s = String(it.preorder_status || "等待到貨");
@@ -834,7 +959,7 @@ const btnClear = $("btnClear");
       btns.push(`<button class="ok" type="button" data-po-action="confirmDeposit" data-id="${id}">確認定金</button>`);
     }
 
-    if (s !== "已到貨待通知" && s !== "已通知" && !isFinalPo(it)) {
+    if ((pay === "已確認定金" || !needDeposit(it)) && s === "等待到貨" && !isFinalPo(it)) {
       btns.push(`<button class="warn" type="button" data-po-action="markArrived" data-id="${id}">標記已到貨</button>`);
     }
 
@@ -842,12 +967,12 @@ const btnClear = $("btnClear");
       btns.push(`<button type="button" data-po-action="sendArrival" data-id="${id}">發到貨 LINE</button>`);
     }
 
-    if (!isFinalPo(it)) {
-      btns.push(`<button class="danger" type="button" data-po-action="cancel" data-id="${id}">取消預購</button>`);
-    }
-
     if (s === "已通知" || arrival === "已發送到貨結帳通知") {
       btns.push(`<button class="ghost" type="button" data-po-action="done" data-id="${id}">標記完成</button>`);
+    }
+
+    if (!isFinalPo(it)) {
+      btns.push(`<button class="danger" type="button" data-po-action="cancel" data-id="${id}">取消預購</button>`);
     }
 
     return btns.join("");
@@ -908,6 +1033,7 @@ const res = await api("/op/preorders/list", {
 });
 
       items = Array.isArray(res.items) ? res.items : [];
+      refreshModeCounts();
       renderList();
 
       listMsg.textContent = items.length ? "已載入預購清單" : "目前沒有符合條件的預購資料";
@@ -925,15 +1051,19 @@ const res = await api("/op/preorders/list", {
   }
 
   function renderList(){
-    countBadge.textContent = items.length + " 筆";
+    refreshModeCounts();
+
+    const viewItems = visibleItems();
+
+    countBadge.textContent = viewItems.length + " 筆";
     preorderList.innerHTML = "";
 
-    if (!items.length) {
-      preorderList.innerHTML = '<div class="empty">尚無預購資料</div>';
+    if (!viewItems.length) {
+      preorderList.innerHTML = '<div class="empty">此分類目前沒有預購資料</div>';
       return;
     }
 
-    items.forEach((it) => {
+    viewItems.forEach((it) => {
       const node = document.createElement("div");
       node.className = "item" + (selected && selected.id === it.id ? " active" : "");
       node.innerHTML = `
@@ -948,15 +1078,16 @@ const res = await api("/op/preorders/list", {
         <div class="meta">
           <div>客人：<b>${esc(it.customer_name || "—")}</b></div>
           <div>電話：<b>${esc(it.phone || "—")}</b></div>
+          <div>單號：<b>${esc(it.preorder_id || "—")}</b></div>
           <div>編號：<b>${esc(it.product_code || "—")}</b></div>
           <div>商品：<b>${esc(it.product_name || "—")}</b></div>
           <div>數量：<b>${esc(it.qty || 1)}</b></div>
-          <div>付款：<b>${esc(it.payment_status || "—")}</b></div>
-          <div>到貨：<b>${esc(it.arrival_notify_status || "未到貨")}</b></div>
         </div>
 
-        <div class="item-actions">
-          ${actionButtonsHtml(it)}
+        <div class="item-statuses">
+          <span class="badge ${badgeClass(it.preorder_status)}">預購：${esc(it.preorder_status || "等待到貨")}</span>
+          <span class="badge ${String(it.payment_status || "").includes("確認") ? "ok" : "wait"}">付款：${esc(it.payment_status || "—")}</span>
+          <span class="badge ${String(it.arrival_notify_status || "").includes("已發送") ? "ok" : "wait"}">到貨：${esc(it.arrival_notify_status || "未到貨")}</span>
         </div>
       `;
 
@@ -1106,6 +1237,8 @@ const res = await api("/op/preorders/list", {
 
     if (action === "confirmDeposit") {
       await quickPatch(it.id, { payment_status:"已確認定金" });
+      currentMode = "ready";
+      renderList();
       return;
     }
 
@@ -1256,6 +1389,18 @@ const res = await api("/op/preorders/list", {
     } catch(e) {
       detailMsg("儲存失敗：" + (e.message || e), "err");
     }
+  }
+
+    if (preorderModeTabs) {
+    preorderModeTabs.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-mode]");
+      if (!btn) return;
+
+      currentMode = btn.dataset.mode || "deposit_pending";
+      selected = null;
+      detailCard.innerHTML = '<div class="empty">請先從左側選擇一筆預購登記</div>';
+      renderList();
+    });
   }
 
     preorderList.addEventListener("click", (e) => {
