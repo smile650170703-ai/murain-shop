@@ -2168,7 +2168,40 @@ function renderInboundRows(rows){const list=Array.isArray(rows)?rows:[]; if(!lis
   });
   let quickTimer=null; $("quickOrderNo")?.addEventListener("input",()=>{clearTimeout(quickTimer); quickTimer=setTimeout(()=>{const kw=$("quickOrderNo").value.trim(); loadRecentPurchases(kw); if(kw.length>=5) checkPurchaseQuick(); else setStatus($("purchaseCheckResult"),kw?`正在篩選包含「${kw}」的訂單...`:"輸入訂單編號幾碼會自動篩選，下方顯示相關訂單。");},250);}); $("quickOrderNo")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();checkPurchaseQuick();}}); ["usdTotal","usdRate"].forEach(id=>$(id)?.addEventListener("input",calcTwd)); $("buyDate")?.addEventListener("blur",()=>$("buyDate").value=normalizeDateInput($("buyDate").value)); MAIN_FIELDS.forEach((id,i)=>$(id)?.addEventListener("keydown",e=>{if(e.key!=="Enter")return;e.preventDefault(); const next=MAIN_FIELDS[i+1]; if(next)$(next).focus(); else $("itemRows").querySelector(".name")?.focus();}));
   $("btnImportTransferPdf")?.addEventListener("click",handleTransferPdfImport); $("transferPdf")?.addEventListener("change",handleTransferPdfImport); $("btnSubmitTransfer")?.addEventListener("click",submitTransfer); $("packageSearch")?.addEventListener("input",filterPackageRows); $("packageSearch")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();filterPackageRows();getVisiblePackageRows()[0]?.querySelector(".weightLbs")?.focus();}}); $("btnClearPackageSearch")?.addEventListener("click",()=>{$("packageSearch").value="";filterPackageRows();}); $("transferDate")?.addEventListener("blur",()=>{const n=normalizeDateInput($("transferDate").value); if(n)$("transferDate").value=n;});
-  $("btnSaveInboundDraft")?.addEventListener("click",()=>saveInboundDraft({selectedOnly:false}).catch(e=>setStatus($("inboundMsg"),`❌ ${e.message||e}`,'err'))); $("btnFinalStockIn")?.addEventListener("click",finalStockInAndExport); $("btnCopyInboundNameColor")?.addEventListener("click",copyInboundNameColorEnglish); $("inboundFilter")?.addEventListener("input",filterInboundRows); ["defaultLocation","stockInDate","defaultCategory"].forEach(id=>$(id)?.addEventListener("change",()=>renderInboundRows(state.inboundRows)));
+  $("btnSaveInboundDraft")?.addEventListener("click",async ()=>{
+    const btn = $("btnSaveInboundDraft");
+    const oldText = btn?.textContent || "暫存到貨／標籤資料";
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "暫存中...";
+    }
+
+    try{
+      const result = await saveInboundDraft({selectedOnly:false});
+
+      setStatus($("inboundMsg"),"重新載入最新到貨清單中...","info");
+      await loadInbound();
+
+      setStatus(
+        $("inboundMsg"),
+        `✅ 已暫存並重新載入最新清單\n待入庫更新：${result.inbound?.updated_count || 0} 筆\n標籤/實收暫存：${result.label?.updated_count || 0} 筆`,
+        "ok"
+      );
+    }catch(e){
+      setStatus($("inboundMsg"),`❌ ${e.message || e}`,"err");
+    }finally{
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = oldText;
+      }
+    }
+  });
+
+  $("btnFinalStockIn")?.addEventListener("click",finalStockInAndExport);
+  $("btnCopyInboundNameColor")?.addEventListener("click",copyInboundNameColorEnglish);
+  $("inboundFilter")?.addEventListener("input",filterInboundRows);
+  ["defaultLocation","stockInDate","defaultCategory"].forEach(id=>$(id)?.addEventListener("change",()=>renderInboundRows(state.inboundRows)));
   $("btnToggleReviewEdit")?.addEventListener("click",()=>{
     const b = $("reviewEditBody");
     const btn = $("btnToggleReviewEdit");
