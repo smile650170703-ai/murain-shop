@@ -473,6 +473,84 @@
       grid-template-columns:1fr;
     }
   }
+
+  /* ===== 預購後台：精簡搜尋區 ===== */
+.search-card{
+  min-height:0 !important;
+  padding:8px 10px !important;
+  margin-bottom:10px !important;
+}
+
+.search-card .row{
+  gap:6px !important;
+}
+
+.search-card label{
+  margin:0 0 2px !important;
+  font-size:11px !important;
+}
+
+.search-card input,
+.search-card select,
+.search-card button{
+  min-height:34px !important;
+  padding:6px 9px !important;
+  font-size:12px !important;
+  border-radius:10px !important;
+}
+
+.search-card .status-line{
+  margin-top:5px !important;
+  margin-bottom:0 !important;
+  min-height:14px !important;
+  font-size:11px !important;
+}
+
+.item-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  margin-top:8px;
+}
+
+.item-actions button{
+  min-height:28px;
+  padding:4px 9px;
+  font-size:11px;
+  border-radius:999px;
+}
+
+.status-boxes{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  margin:10px 0;
+}
+
+.status-box{
+  border:1px solid rgba(148,163,184,.28);
+  background:rgba(2,6,23,.45);
+  border-radius:12px;
+  padding:8px 10px;
+}
+
+.status-box small{
+  display:block;
+  color:#94a3b8;
+  font-size:11px;
+  margin-bottom:4px;
+}
+
+.status-box b{
+  color:#e2e8f0;
+  font-size:13px;
+}
+
+@media (max-width:900px){
+  .status-boxes{
+    grid-template-columns:1fr;
+  }
+}
 </style>
 </head>
 
@@ -553,7 +631,7 @@
     </section>
 
     <section id="app" class="hidden">
-      <section class="card">
+<section class="card search-card">
   <div class="row">
     <div class="col-2">
       <label for="dateFrom">開始日期</label>
@@ -731,6 +809,50 @@ const btnClear = $("btnClear");
     return "wait";
   }
 
+    function needDeposit(it){
+    return Number(it && it.deposit_amount || 0) > 0;
+  }
+
+  function isDepositConfirmed(it){
+    return String(it && it.payment_status || "") === "已確認定金" || !needDeposit(it);
+  }
+
+  function isFinalPo(it){
+    const s = String(it && it.preorder_status || "");
+    return s === "已取消" || s === "已完成";
+  }
+
+  function actionButtonsHtml(it){
+    const id = esc(it.id || "");
+    const s = String(it.preorder_status || "等待到貨");
+    const arrival = String(it.arrival_notify_status || "未到貨");
+    const pay = String(it.payment_status || "");
+
+    const btns = [];
+
+    if (needDeposit(it) && pay !== "已確認定金" && !isFinalPo(it)) {
+      btns.push(`<button class="ok" type="button" data-po-action="confirmDeposit" data-id="${id}">確認定金</button>`);
+    }
+
+    if (s !== "已到貨待通知" && s !== "已通知" && !isFinalPo(it)) {
+      btns.push(`<button class="warn" type="button" data-po-action="markArrived" data-id="${id}">標記已到貨</button>`);
+    }
+
+    if ((s === "已到貨待通知" || arrival === "已到貨待通知") && !isFinalPo(it)) {
+      btns.push(`<button type="button" data-po-action="sendArrival" data-id="${id}">發到貨 LINE</button>`);
+    }
+
+    if (!isFinalPo(it)) {
+      btns.push(`<button class="danger" type="button" data-po-action="cancel" data-id="${id}">取消預購</button>`);
+    }
+
+    if (s === "已通知" || arrival === "已發送到貨結帳通知") {
+      btns.push(`<button class="ghost" type="button" data-po-action="done" data-id="${id}">標記完成</button>`);
+    }
+
+    return btns.join("");
+  }
+
   async function api(path, payload){
     const r = await fetch(API + path, {
       method:"POST",
@@ -826,11 +948,15 @@ const res = await api("/op/preorders/list", {
         <div class="meta">
           <div>客人：<b>${esc(it.customer_name || "—")}</b></div>
           <div>電話：<b>${esc(it.phone || "—")}</b></div>
-<div>編號：<b>${esc(it.product_code || "—")}</b></div>
+          <div>編號：<b>${esc(it.product_code || "—")}</b></div>
           <div>商品：<b>${esc(it.product_name || "—")}</b></div>
           <div>數量：<b>${esc(it.qty || 1)}</b></div>
           <div>付款：<b>${esc(it.payment_status || "—")}</b></div>
           <div>到貨：<b>${esc(it.arrival_notify_status || "未到貨")}</b></div>
+        </div>
+
+        <div class="item-actions">
+          ${actionButtonsHtml(it)}
         </div>
       `;
 
@@ -861,10 +987,7 @@ const res = await api("/op/preorders/list", {
       </div>
 
       <div class="quick-actions">
-        <button class="ok" id="btnConfirmDeposit" type="button">確認定金</button>
-        <button class="warn" id="btnMarkArrived" type="button">標記已到貨</button>
-        <button class="danger" id="btnCancelPo" type="button">取消預購</button>
-        <button class="ghost" id="btnDonePo" type="button">標記完成</button>
+        ${actionButtonsHtml(it)}
       </div>
 
 <div class="kv"><div class="k">預購商品編號</div><div class="v">${esc(it.product_code || "—")}</div></div>
@@ -876,32 +999,27 @@ const res = await api("/op/preorders/list", {
 
       <hr style="border:0;border-top:1px solid rgba(120,80,70,.10);margin:16px 0;">
 
-      <div class="row">
-        <div class="col-6">
-          <label for="fPreStatus">預購狀態</label>
-          <select id="fPreStatus">
-            ${optionHtml(["等待到貨","已到貨待通知","已通知","已取消","已完成"], it.preorder_status || "等待到貨")}
-          </select>
-        </div>
-        <div class="col-6">
-          <label for="fPayStatus">付款狀態</label>
-          <select id="fPayStatus">
-            ${optionHtml(["不需定金","未確認定金","已確認定金","已取消"], it.payment_status || "不需定金")}
-          </select>
-        </div>
+      <input type="hidden" id="fPreStatus" value="${esc(it.preorder_status || "等待到貨")}">
+      <input type="hidden" id="fPayStatus" value="${esc(it.payment_status || "不需定金")}">
+      <input type="hidden" id="fArrivalStatus" value="${esc(it.arrival_notify_status || "未到貨")}">
+      <input type="hidden" id="fCanCheckout" value="${it.arrived_can_checkout ? "1" : "0"}">
 
-        <div class="col-6">
-          <label for="fArrivalStatus">到貨通知狀態</label>
-          <select id="fArrivalStatus">
-            ${optionHtml(["未到貨","已到貨待通知","已發送到貨結帳通知"], it.arrival_notify_status || "未到貨")}
-          </select>
+      <div class="status-boxes">
+        <div class="status-box">
+          <small>預購狀態</small>
+          <b>${esc(it.preorder_status || "等待到貨")}</b>
         </div>
-        <div class="col-6">
-          <label style="display:flex;align-items:center;gap:8px;margin-top:25px;">
-            <input id="fCanCheckout" type="checkbox" ${canCheckoutChecked} style="width:auto;min-height:auto;">
-            到貨可結帳
-          </label>
+        <div class="status-box">
+          <small>付款狀態</small>
+          <b>${esc(it.payment_status || "不需定金")}</b>
         </div>
+        <div class="status-box">
+          <small>到貨通知狀態</small>
+          <b>${esc(it.arrival_notify_status || "未到貨")}</b>
+        </div>
+      </div>
+
+      <div class="row">
 
         <div class="col-6">
           <label for="fSku">到貨商品 SKU</label>
@@ -921,7 +1039,7 @@ const res = await api("/op/preorders/list", {
           <input id="fArrivedQty" type="number" min="0" step="1" value="${esc(val(it.arrived_qty || it.qty || 1))}">
         </div>
         <div class="col-4">
-          <label for="fArrivedPrice">到貨商品單價</label>
+          <label for="fArrivedPrice">到貨結帳總金額</label>
           <input id="fArrivedPrice" type="number" min="0" step="1" value="${esc(val(it.arrived_price || 0))}">
         </div>
 
@@ -941,7 +1059,7 @@ const res = await api("/op/preorders/list", {
       </div>
 
       <div class="small-note">
-        第一版先儲存 PreOrders 欄位，不會建立購物車、不會發到貨結帳 LINE 卡片。下一階段才會把「到貨 SKU → 建購物車 → 發 LINE 結帳卡片」接上。
+        到貨通知前請先確認：已輸入到貨商品 SKU；若此預購有定金，需先完成「確認定金」。系統會建立到貨結帳購物車並發送 LINE 到貨結帳卡片。
       </div>
 
       <div class="footer-actions">
@@ -963,18 +1081,9 @@ const res = await api("/op/preorders/list", {
       }
     });
 
-    $("btnConfirmDeposit").addEventListener("click", () => quickPatch(it.id, { payment_status:"已確認定金" }));
-    $("btnMarkArrived").addEventListener("click", () => {
-      $("fPreStatus").value = "已到貨待通知";
-      $("fArrivalStatus").value = "已到貨待通知";
-      $("fCanCheckout").checked = true;
-      saveDetail(it.id);
-    });
-    $("btnCancelPo").addEventListener("click", () => {
-      if (!confirm("確定要取消這筆預購？")) return;
-      quickPatch(it.id, { preorder_status:"已取消", payment_status:"已取消" });
-    });
-    $("btnDonePo").addEventListener("click", () => quickPatch(it.id, { preorder_status:"已完成" }));
+    if ($("fSku")) {
+      $("fSku").addEventListener("blur", lookupSkuInfo);
+    }
   }
 
   function optionHtml(list, current){
@@ -986,6 +1095,120 @@ const res = await api("/op/preorders/list", {
     if (!el) return;
     el.textContent = text || "";
     el.className = "status-line" + (cls ? " " + cls : "");
+  }
+
+    function selectedById(id){
+    return items.find(x => String(x.id || "") === String(id || "")) || selected;
+  }
+
+  async function runPoAction(action, it){
+    if (!it || !it.id) return;
+
+    if (action === "confirmDeposit") {
+      await quickPatch(it.id, { payment_status:"已確認定金" });
+      return;
+    }
+
+    if (action === "markArrived") {
+      selected = it;
+      renderDetail(it);
+
+      if ($("fPreStatus")) $("fPreStatus").value = "已到貨待通知";
+      if ($("fArrivalStatus")) $("fArrivalStatus").value = "已到貨待通知";
+      if ($("fCanCheckout")) $("fCanCheckout").value = "1";
+
+      await saveDetail(it.id);
+      return;
+    }
+
+    if (action === "sendArrival") {
+      selected = it;
+      renderDetail(it);
+      await sendArrivalCheckout(it.id);
+      return;
+    }
+
+    if (action === "cancel") {
+      if (!confirm("確定要取消這筆預購？")) return;
+      await quickPatch(it.id, { preorder_status:"已取消", payment_status:"已取消" });
+      return;
+    }
+
+    if (action === "done") {
+      await quickPatch(it.id, { preorder_status:"已完成" });
+    }
+  }
+
+  async function lookupSkuInfo(){
+    const sku = String($("fSku")?.value || "").trim();
+    if (!sku) return;
+
+    try {
+      detailMsg("查詢 SKU 中…");
+
+      const res = await api("/op/preorders/sku-info", {
+        op_key: OP,
+        sku
+      });
+
+      const p = res.product || {};
+
+      if ($("fArrivedName") && p.name) $("fArrivedName").value = p.name;
+      if ($("fArrivedRecordId") && p.record_id) $("fArrivedRecordId").value = p.record_id;
+
+      if ($("fArrivedPrice") && !String($("fArrivedPrice").value || "").trim() && p.price) {
+        $("fArrivedPrice").value = p.price;
+      }
+
+      detailMsg("已帶入到貨商品資料", "ok");
+    } catch(e) {
+      detailMsg("SKU 查詢失敗：" + (e.message || e), "err");
+    }
+  }
+
+  async function sendArrivalCheckout(recordId){
+    if (!recordId) return;
+
+    const sku = String($("fSku")?.value || "").trim();
+
+    if (!sku) {
+      detailMsg("請先輸入到貨商品 SKU", "err");
+      $("fSku")?.focus();
+      return;
+    }
+
+    const it = selectedById(recordId);
+    const depositAmount = Number(it?.deposit_amount || 0) || 0;
+    const payStatus = String(it?.payment_status || "");
+
+    if (depositAmount > 0 && payStatus !== "已確認定金") {
+      detailMsg("此預購有定金，請先按「確認定金」後再發到貨 LINE", "err");
+      return;
+    }
+
+    if (!confirm("確定要建立到貨結帳購物車，並發送 LINE 到貨結帳卡片給客人嗎？")) {
+      return;
+    }
+
+    try {
+      detailMsg("建立購物車並發送 LINE 中…");
+
+      const res = await api("/op/preorders/send-arrival-checkout", {
+        op_key: OP,
+        record_id: recordId,
+
+        arrived_sku: $("fSku")?.value || "",
+        arrived_product_name: $("fArrivedName")?.value || "",
+        arrived_product_record_id: $("fArrivedRecordId")?.value || "",
+        arrived_qty: $("fArrivedQty")?.value || "",
+        arrived_price: $("fArrivedPrice")?.value || ""
+      });
+
+      detailMsg("已發送到貨結帳 LINE，購物車：" + (res.cart_token || ""), "ok");
+      await loadList();
+    } catch(e) {
+      detailMsg("發送失敗：" + (e.message || e), "err");
+    }
   }
 
   async function quickPatch(recordId, patch){
@@ -1009,9 +1232,9 @@ const res = await api("/op/preorders/list", {
     const payload = {
       op_key: OP,
       record_id: recordId,
-      preorder_status: $("fPreStatus").value,
-      payment_status: $("fPayStatus").value,
-      arrival_notify_status: $("fArrivalStatus").value,
+      preorder_status: $("fPreStatus") ? $("fPreStatus").value : "",
+      payment_status: $("fPayStatus") ? $("fPayStatus").value : "",
+      arrival_notify_status: $("fArrivalStatus") ? $("fArrivalStatus").value : "",
       internal_note: $("fInternalNote").value,
 
       arrived_sku: $("fSku").value,
@@ -1019,7 +1242,7 @@ const res = await api("/op/preorders/list", {
       arrived_product_record_id: $("fArrivedRecordId").value,
       arrived_qty: $("fArrivedQty").value,
       arrived_price: $("fArrivedPrice").value,
-      arrived_can_checkout: $("fCanCheckout").checked,
+      arrived_can_checkout: $("fCanCheckout") ? ($("fCanCheckout").value === "1") : false,
 
       checkout_url: $("fCheckoutUrl").value,
       checkout_cart_token: $("fCartToken").value
@@ -1034,6 +1257,34 @@ const res = await api("/op/preorders/list", {
       detailMsg("儲存失敗：" + (e.message || e), "err");
     }
   }
+
+    preorderList.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-po-action]");
+    if (!btn) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const action = btn.dataset.poAction || "";
+    const id = btn.dataset.id || "";
+    const it = selectedById(id);
+
+    runPoAction(action, it);
+  });
+
+  detailCard.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-po-action]");
+    if (!btn) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const action = btn.dataset.poAction || "";
+    const id = btn.dataset.id || "";
+    const it = selectedById(id);
+
+    runPoAction(action, it);
+  });
 
   btnLogin.addEventListener("click", () => {
     const k = opKeyInput.value.trim();
