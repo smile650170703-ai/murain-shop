@@ -1306,7 +1306,139 @@
   async function saveMissingPackageItems(){const rows=[...$("missingPackageRows").querySelectorAll("tr")].map(tr=>{const checked=tr.querySelector(".missing-row-check")?.checked; const item_id=tr.getAttribute("data-item-id")||""; const package_code=tr.querySelector(".packageInput")?.value.trim()||""; return checked&&item_id&&package_code?{item_id,package_code}:null;}).filter(Boolean); if(!rows.length){setStatus($("purchaseMsg"),"❌ 請先輸入包裹編號，系統會自動勾選該列。","err");return;} try{const data=await apiPost(API.missingPackageSave,{rows}); setStatus($("purchaseMsg"),`✅ 已儲存 ${data.updated_count||0} 筆包裹編號${data.failed_count?`，失敗 ${data.failed_count} 筆`:""}`,data.failed_count?'err':'ok'); await loadMissingPackageItems(); await loadInbound();}catch(err){setStatus($("purchaseMsg"),'❌ '+(err.message||err),'err');}}
 
   function parseTransferReceiptText(text){const clean=String(text||"").replace(/\u00a0/g," ").replace(/\s+/g," ").trim(); const transferNo=clean.match(/轉運單編號[:：]?\s*([A-Za-z0-9-]+)/)?.[1]||""; const transferDate=normalizeDateInput(clean.match(/發出日期[:：]?\s*(\d{4}[-/.]\d{1,2}[-/.]\d{1,2})/)?.[1]||"")||""; const paidTotal=clean.match(/已付總收費\s*\(新台幣\)\s*NT\$?\s*([\d,]+)/)?.[1]?.replace(/,/g,"")||""; const itemPart=clean.split(/貨物詳情/)[1]||clean; const itemText=itemPart.split(/收費重量|轉運單起運地|派送至|買受人|付款方式|已付總收費/)[0]||itemPart; const packages=[]; const re=/([A-Za-z0-9]{6,})\s*\(\s*([\d.]+)\s*磅\s*\)\s*([\s\S]*?)(?=\s+[A-Za-z0-9]{6,}\s*\(\s*[\d.]+\s*磅\s*\)|$)/g; let m; while((m=re.exec(itemText))!==null){packages.push({package_code:String(m[1]||"").trim(),weight_lbs:String(m[2]||"").trim(),package_remark:String(m[3]||"").replace(/\s+/g," ").trim()});} return {transferNo,transferDate,paidTotal,packages};}
-  async function handleTransferPdfImport(){const file=$("transferPdf")?.files?.[0]; if(!file){setStatus($("transferPdfStatus"),"請先選擇轉運 PDF。","err");return;} setStatus($("transferPdfStatus"),"轉運 PDF 讀取中...","info"); try{const text=await readPdfTextFromFile(file); const parsed=parseTransferReceiptText(text); if(!parsed.transferNo&&!parsed.packages.length) throw new Error("PDF 內容讀不到轉運單資料，請確認是否為 Buy&Ship 付款收據。"); if(parsed.transferNo) $("transferNo").value=parsed.transferNo; if(parsed.transferDate) $("transferDate").value=parsed.transferDate; if(parsed.paidTotal&&!$("shippingFeeOrTax").value.trim()) $("shippingFeeOrTax").value=parsed.paidTotal; if(parsed.packages.length){$("packageRows").innerHTML=""; parsed.packages.forEach((row,i)=>createPackageRow(row,i)); filterPackageRows();} setStatus($("transferPdfStatus"),`✅ PDF 已帶入\n轉運單號：${parsed.transferNo||"-"}\n發出日期：${parsed.transferDate||"-"}\n貨物明細：${parsed.packages.length} 筆\n${parsed.paidTotal?`已付總收費：NT$ ${parsed.paidTotal}`:""}\n\n請手動確認運費、附加費、發票核對金額後，再按「儲存轉運資料」。`,'ok'); toast('✅ 轉運 PDF 已帶入，尚未送出','info');}catch(err){setStatus($("transferPdfStatus"),`❌ ${err.message||err}`,'err');}}
+    function mergeTransferPdfPackages(packages=[]){
+    const list = Array.isArray(packages) ? packages : [];
+    const pdfMap = new Map();
+
+    list.forEach(row=>{
+      const code = String(row?.package_code || "").trim();
+      if (code) pdfMap.set(code, row);
+    });
+
+    let matched = 0;
+    let added = 0;
+
+    packageRowList().forEach(row=>{
+      const code = String(row.dataset.packageCode || "").trim();
+      const pdfRow = pdfMap.get(code);
+
+      if (!pdfRow) return;
+
+      const weightInput = row.querySelector(".weightLbs");
+      const feeInput = row.querySelector(".packageFeeTwd");
+      const remark = String(pdfRow.package_remark || "").trim();
+
+      if (weightInput && String(pdfRow.weight_lbs || "").trim()) {
+        weightInput.value = String(pdfRow.weight_lbs || "").trim();
+      }
+
+      if (feeInput && String(pdfRow.package_fee_twd || "").trim()) {
+        feeInput.value = String(pdfRow.package_fee_twd || "").trim();
+      }
+
+      if (remark) {
+        row.dataset.packageRemark = remark;
+
+        const detail = row.querySelector(".package-detail");
+        if (detail) {
+          detail.textContent = remark;
+        } else {
+          row.querySelector(".package-code-main")?.insertAdjacentHTML(
+            "afterend",
+            `<div class="package-detail">${escapeHtml(remark)}</div>`
+          );
+        }
+      }
+
+      setPackageRowSelected(row, true);
+      matched++;
+      pdfMap.delete(code);
+    });
+
+    if ($("packageRows")?.querySelector(".empty") && !packageRowList().length) {
+      $("packageRows").innerHTML = "";
+    }
+
+    pdfMap.forEach((pdfRow)=>{
+      const index = packageRowList().length;
+      createPackageRow(pdfRow, index);
+
+      const newRow = packageRowList()[index];
+      setPackageRowSelected(newRow, true);
+      added++;
+    });
+
+    packageRowList().forEach((row,i)=>{
+      const no = row.querySelector(".row-no");
+      if (no) no.textContent = i + 1;
+    });
+
+    filterPackageRows();
+
+    return {
+      total: list.length,
+      matched,
+      added
+    };
+  }
+
+  async function handleTransferPdfImport(){
+    const file = $("transferPdf")?.files?.[0];
+
+    if (!file){
+      setStatus($("transferPdfStatus"),"請先選擇轉運 PDF。","err");
+      return;
+    }
+
+    setStatus($("transferPdfStatus"),"轉運 PDF 讀取中...","info");
+
+    try{
+      const text = await readPdfTextFromFile(file);
+      const parsed = parseTransferReceiptText(text);
+
+      if (!parsed.transferNo && !parsed.packages.length) {
+        throw new Error("PDF 內容讀不到轉運單資料，請確認是否為 Buy&Ship 付款收據。");
+      }
+
+      if (parsed.transferNo) $("transferNo").value = parsed.transferNo;
+      if (parsed.transferDate) $("transferDate").value = parsed.transferDate;
+      if (parsed.paidTotal && !$("shippingFeeOrTax").value.trim()) {
+        $("shippingFeeOrTax").value = parsed.paidTotal;
+      }
+
+      let mergeResult = {
+        total: parsed.packages.length,
+        matched: 0,
+        added: 0
+      };
+
+      if (parsed.packages.length){
+        if (!packageRowList().length) {
+          await loadZeroWeightPackages();
+        }
+
+        mergeResult = mergeTransferPdfPackages(parsed.packages);
+      }
+
+      setStatus(
+        $("transferPdfStatus"),
+        `✅ PDF 已帶入
+轉運單號：${parsed.transferNo || "-"}
+發出日期：${parsed.transferDate || "-"}
+PDF 貨物明細：${parsed.packages.length} 筆
+已對應待選包裹：${mergeResult.matched} 筆
+PDF 有但待選清單原本沒有、已補入：${mergeResult.added} 筆
+${parsed.paidTotal ? `已付總收費：NT$ ${parsed.paidTotal}` : ""}
+
+目前不會清空原本待選包裹；PDF 只會自動填入有對到的重量，其餘包裹可手動補重量。`,
+        "ok"
+      );
+
+      toast("✅ 轉運 PDF 已帶入，尚未送出","info");
+    }catch(err){
+      setStatus($("transferPdfStatus"),`❌ ${err.message || err}`,"err");
+    }
+  }
   function packageRowList(){
     return [...$("packageRows").querySelectorAll(".package-mini-row[data-package-code]")];
   }
