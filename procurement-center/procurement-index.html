@@ -1123,8 +1123,8 @@
       <datalist id="categoryOptions"><option value="TORY BURCH"></option><option value="COACH"></option><option value="MARC JACOBS"></option><option value="KATE SPADE"></option><option value="MICHAEL KORS"></option><option value="HAIR"></option><option value="寄賣"></option><option value="預購"></option></datalist>
 
       <div class="toolbar inbound-copy-row">
-        <button class="btn secondary small" type="button" id="btnCopyInboundNameColor">一鍵複製原名稱＋顏色英文</button>
-        <span class="sub">會複製目前清單所有列，每列格式：原名稱 + 顏色。</span>
+        <button class="btn secondary small" type="button" id="btnDownloadInboundPhotos">下載照片</button>
+        <span class="sub">會下載目前清單有照片的列，檔名格式：原名稱＋顏色英文。</span>
       </div>
 
       <div class="table-wrap"><table class="inbound-compact-table" style="min-width:1160px;"><thead><tr><th style="width:42px;">選</th><th style="width:58px;">照片</th><th style="width:190px;">原名稱</th><th style="width:50px;">數量</th><th style="width:86px;">顏色</th><th style="width:92px;">品牌/分類</th><th style="width:92px;">分類</th><th style="width:150px;">正式商品名稱</th><th style="width:94px;">標籤輸入碼 / SKU</th><th style="width:66px;">參考成本</th><th style="width:72px;">建議售價</th><th style="width:64px;">實收數量</th><th style="width:62px;">異常數量</th><th style="width:82px;">庫存位置</th><th style="width:118px;">入庫日期</th></tr></thead><tbody id="inboundRows"><tr><td colspan="15" class="empty">尚未載入待入庫清單</td></tr></tbody></table></div>
@@ -1835,24 +1835,140 @@ function renderInboundRows(rows){const list=Array.isArray(rows)?rows:[]; if(!lis
     ta.remove();
   }
 
-  async function copyInboundNameColorEnglish(){
-    const lines=getInboundTrs().filter(tr=>tr.style.display!=="none").map(tr=>{
-      const name=String(tr.dataset.name||"").trim();
-      const color=String(tr.dataset.color||"").trim();
-      return [name,color].filter(Boolean).join(" ").trim();
-    }).filter(Boolean);
+  function inboundPhotoSafeFileName(text, fallback="商品照片"){
+    const s = String(text || "")
+      .replace(/[\\/:*?"<>|]/g, "_")
+      .replace(/[\u0000-\u001f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120);
 
-    if(!lines.length){
-      setStatus($("inboundMsg"),"❌ 目前沒有可複製的到貨清單。","err");
+    return s || fallback;
+  }
+
+  function inboundPhotoExtFromBlob(blob, url=""){
+    const type = String(blob?.type || "").toLowerCase();
+
+    if (type.includes("png")) return "png";
+    if (type.includes("webp")) return "webp";
+    if (type.includes("gif")) return "gif";
+    if (type.includes("jpeg") || type.includes("jpg")) return "jpg";
+
+    const path = String(url || "").split("?")[0];
+    const m = path.match(/\.([a-z0-9]{3,4})$/i);
+    if (m) return m[1].toLowerCase();
+
+    return "jpg";
+  }
+
+  function triggerBlobDownload(blob, filename){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+
+    a.href = url;
+    a.download = filename;
+    a.style.display = "none";
+
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(()=>URL.revokeObjectURL(url), 1500);
+  }
+
+  function waitMs(ms){
+    return new Promise(resolve=>setTimeout(resolve, ms));
+  }
+
+  async function downloadInboundPhotos(){
+    const btn = $("btnDownloadInboundPhotos");
+    const oldText = btn?.textContent || "下載照片";
+
+    const rows = getInboundTrs()
+      .filter(tr=>tr.style.display!=="none")
+      .map((tr, index)=>{
+        const photoUrl = String(
+          tr.querySelector(".jsInboundPhotoZoom")?.dataset.src ||
+          tr.querySelector("img.thumb")?.src ||
+          ""
+        ).trim();
+
+        const name = String(tr.dataset.name || "").trim();
+        const color = String(tr.dataset.color || "").trim();
+        const baseName = inboundPhotoSafeFileName(
+          [name, color].filter(Boolean).join(" "),
+          `商品照片_${index + 1}`
+        );
+
+        return { photoUrl, baseName };
+      })
+      .filter(row=>row.photoUrl);
+
+    if (!rows.length){
+      setStatus($("inboundMsg"),"❌ 目前清單沒有可下載的照片。","err");
       return;
     }
 
+    const usedNames = new Map();
+    let success = 0;
+    let failed = 0;
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "下載中...";
+    }
+
+    setStatus($("inboundMsg"),`照片下載中，共 ${rows.length} 張...`,"info");
+
     try{
-      await copyTextToClipboard(lines.join("\n"));
-      setStatus($("inboundMsg"),`✅ 已複製 ${lines.length} 筆原名稱＋顏色英文。`,"ok");
-      toast("✅ 已複製原名稱＋顏色英文","ok");
-    }catch(err){
-      setStatus($("inboundMsg"),`❌ 複製失敗：${err.message||err}`,"err");
+      for (const row of rows){
+        try{
+          const res = await fetch(row.photoUrl, {
+            method: "GET",
+            mode: "cors",
+            credentials: "omit"
+          });
+
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+
+          const blob = await res.blob();
+          const ext = inboundPhotoExtFromBlob(blob, row.photoUrl);
+
+          const count = (usedNames.get(row.baseName) || 0) + 1;
+          usedNames.set(row.baseName, count);
+
+          const filename = `${row.baseName}${count > 1 ? "_" + count : ""}.${ext}`;
+
+          triggerBlobDownload(blob, filename);
+          success++;
+
+          setStatus($("inboundMsg"),`照片下載中：${success}/${rows.length}`,"info");
+
+          await waitMs(250);
+        }catch(e){
+          failed++;
+          console.warn("download inbound photo failed", row.photoUrl, e);
+        }
+      }
+
+      if (failed){
+        setStatus(
+          $("inboundMsg"),
+          `⚠️ 已下載 ${success} 張，失敗 ${failed} 張。\n若瀏覽器擋住跨網域圖片下載，就需要再加後端下載代理。`,
+          "warn"
+        );
+        toast(`⚠️ 已下載 ${success} 張，失敗 ${failed} 張`,"warn");
+      }else{
+        setStatus($("inboundMsg"),`✅ 已下載 ${success} 張照片。`,"ok");
+        toast(`✅ 已下載 ${success} 張照片`,"ok");
+      }
+    }finally{
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = oldText;
+      }
     }
   }
 
@@ -2199,7 +2315,7 @@ function renderInboundRows(rows){const list=Array.isArray(rows)?rows:[]; if(!lis
   });
 
   $("btnFinalStockIn")?.addEventListener("click",finalStockInAndExport);
-  $("btnCopyInboundNameColor")?.addEventListener("click",copyInboundNameColorEnglish);
+  $("btnDownloadInboundPhotos")?.addEventListener("click",downloadInboundPhotos);
   $("inboundFilter")?.addEventListener("input",filterInboundRows);
   ["defaultLocation","stockInDate","defaultCategory"].forEach(id=>$(id)?.addEventListener("change",()=>renderInboundRows(state.inboundRows)));
   $("btnToggleReviewEdit")?.addEventListener("click",()=>{
