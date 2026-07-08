@@ -116,6 +116,18 @@
   font-weight:700;
 }
 
+.cashinst-due-inline{
+  color:#facc15;
+  font-weight:400 !important;
+  white-space:nowrap;
+}
+
+.cashinst-date-inline{
+  color:#f87171;
+  font-weight:400 !important;
+  white-space:nowrap;
+}
+
 .hidden{display:none !important;}
 
 .btn-badge-wrap{
@@ -3524,6 +3536,229 @@ function statusBadgeShip(st){
   return `<span class="${cls}">${text}</span>`;
 }
 
+function adminPickFilled(...vals){
+  for (const v of vals) {
+    if (v === 0 || v === '0') return v;
+    const s = String(v ?? '').trim();
+    if (s) return v;
+  }
+  return '';
+}
+
+function adminPickNumber(...vals){
+  const v = adminPickFilled(...vals);
+  const n = Number(String(v ?? '').replace(/[^\d.-]/g, '').trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+function adminDate10(v){
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+
+  let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (m) {
+    return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+  }
+
+  m = s.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日?/);
+  if (m) {
+    return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+  }
+
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return '';
+
+  return fmtDateInput(d);
+}
+
+function adminPickDate10(...vals){
+  return adminDate10(adminPickFilled(...vals));
+}
+
+// ✅ admin-bank 左側列表：顯示「第幾期 / 尾款金額」與「到期日」
+function getCashinstListDueInfo(f = {}, shipInfoArg = null, amountArg = null){
+  const empty = { amountText:'', dueDateText:'' };
+
+  // 只在匯款待確認、已收定金未出貨頁顯示
+  if (!['admin-bank.html', 'admin-cashinst.html'].includes(ADMIN_PAGE_FILE)) return empty;
+
+  const shipInfo = shipInfoArg || parseShippingInfo(f);
+  const a = amountArg || calcAmounts(f);
+
+  const pmCode = String(f.payment_method || '').trim().toLowerCase();
+  const isCashInst2 = pmCode === 'cash_inst_2' || pmCode === 'cash_install_2';
+  const isCashInst3 = pmCode === 'cash_inst_3' || pmCode === 'cash_install_3';
+  const isCashInstOrder =
+    isCashInst2 ||
+    isCashInst3 ||
+    pmCode.startsWith('cash_inst_') ||
+    pmCode.startsWith('cash_install_');
+
+  const dep = shipInfo.deposit || {};
+  const cashInst = shipInfo.cash_inst || shipInfo.cashInstallment || shipInfo.installment || {};
+  const cashInstMeta = safeJsonParse(f.cash_inst_due_dates_json, {}) || {};
+  const cashInstSchedule = Array.isArray(cashInstMeta.schedule) ? cashInstMeta.schedule : [];
+
+  const depAmount = adminPickNumber(
+    f.cash_inst_deposit_amount,
+    cashInst.deposit_amount,
+    cashInstMeta.deposit_amount,
+    f.deposit_amount,
+    dep.amount,
+    dep.deposit_amount
+  );
+
+  if (isCashInstOrder) {
+    const totalParts = isCashInst3 ? 3 : (isCashInst2 ? 2 : Number(f.cash_inst_total_parts || cashInst.total_parts || 0) || 0);
+
+    const paidParts = Math.max(
+      Number(f.cash_inst_paid_parts || 0) || 0,
+      Number(f.cash_inst_paid_count || 0) || 0,
+      Number(cashInst.paid_count || 0) || 0
+    );
+
+    const cashInstCompleted =
+      f.cash_inst_completed === true ||
+      String(f.cash_inst_completed || '').trim().toLowerCase() === 'true' ||
+      String(f.cash_inst_status || '').trim().toLowerCase() === 'completed';
+
+    if (totalParts > 0 && (cashInstCompleted || paidParts >= totalParts)) {
+      return {
+        amountText:'現金分期已收齊',
+        dueDateText:''
+      };
+    }
+
+    const cashInstDates = Array.isArray(cashInstMeta.payment_dates)
+      ? cashInstMeta.payment_dates
+      : (
+          Array.isArray(cashInst.payment_dates)
+            ? cashInst.payment_dates
+            : []
+        );
+
+    const partDates = {
+      1: adminPickDate10(
+        f.cash_inst_date_1,
+        cashInst.date_1,
+        cashInst.date1,
+        cashInst.inst1,
+        cashInst.first_date,
+        cashInstMeta.first_date,
+        cashInstDates?.[0],
+        cashInstSchedule?.[0]?.due_date
+      ),
+      2: adminPickDate10(
+        f.cash_inst_date_2,
+        cashInst.date_2,
+        cashInst.date2,
+        cashInst.inst2,
+        cashInst.second_date,
+        cashInstMeta.second_date,
+        cashInstDates?.[1],
+        cashInstSchedule?.[1]?.due_date
+      ),
+      3: adminPickDate10(
+        f.cash_inst_date_3,
+        cashInst.date_3,
+        cashInst.date3,
+        cashInst.inst3,
+        cashInst.third_date,
+        cashInstMeta.third_date,
+        cashInstDates?.[2],
+        cashInstSchedule?.[2]?.due_date
+      )
+    };
+
+    const cashInstAmounts = Array.isArray(cashInst.installment_amounts)
+      ? cashInst.installment_amounts
+      : (
+          Array.isArray(cashInstMeta.installment_amounts)
+            ? cashInstMeta.installment_amounts
+            : (
+                cashInstSchedule.length
+                  ? cashInstSchedule.map(x => Number(x?.amount || 0) || 0)
+                  : safeJsonParse(f.cash_inst_amounts_json, [])
+              )
+        );
+
+    const partAmounts = {
+      1: adminPickNumber(
+        f.cash_inst_part1_amount,
+        cashInst.part1_amount,
+        cashInstMeta.part1_amount,
+        cashInst.amount_1,
+        cashInstAmounts?.[0],
+        cashInstSchedule?.[0]?.amount
+      ),
+      2: adminPickNumber(
+        f.cash_inst_part2_amount,
+        cashInst.part2_amount,
+        cashInstMeta.part2_amount,
+        cashInst.amount_2,
+        cashInstAmounts?.[1],
+        cashInstSchedule?.[1]?.amount
+      ),
+      3: adminPickNumber(
+        f.cash_inst_part3_amount,
+        cashInst.part3_amount,
+        cashInstMeta.part3_amount,
+        cashInst.amount_3,
+        cashInstAmounts?.[2],
+        cashInstSchedule?.[2]?.amount
+      )
+    };
+
+    const nextPart = Math.min(Math.max(paidParts, 0) + 1, totalParts || 1);
+    const remaining = Math.max(0, Number(a.net || 0) - Number(depAmount || 0));
+
+    const fallbackAmount = totalParts ? Math.ceil(remaining / totalParts) : 0;
+    const nextAmount = partAmounts[nextPart] || fallbackAmount;
+
+    const dueDate = adminPickDate10(
+      f.cash_inst_next_due_date,
+      cashInst.next_due_date,
+      cashInstMeta.next_due_date,
+      partDates[nextPart]
+    );
+
+    return {
+      amountText: nextAmount > 0
+        ? `第 ${nextPart} 期金額 ${money(Math.round(nextAmount))}`
+        : `第 ${nextPart} 期金額 —`,
+      dueDateText: dueDate ? `到期日 ${dueDate}` : ''
+    };
+  }
+
+  const tailSnap = safeJsonParse(f.tail_paid_snapshot, {}) || {};
+  const tailAmountFromField = adminPickNumber(
+    f.tail_net_amount,
+    f.tail_total_amount,
+    tailSnap.tail_net_amount,
+    tailSnap.tail_total_amount
+  );
+
+  const tailAmount = tailAmountFromField || Math.max(0, Number(a.net || 0) - Number(depAmount || 0));
+
+  const tailDueDate = adminPickDate10(
+    f.tail_due_date,
+    f.tail_expire_at,
+    f.hold_until,
+    dep.hold_until,
+    dep.holdUntil,
+    f.deposit_expire_at,
+    dep.deposit_expire_at,
+    dep.expire_at
+  );
+
+  return {
+    amountText: tailAmount > 0
+      ? `尾款金額 ${money(Math.round(tailAmount))}`
+      : '',
+    dueDateText: tailDueDate ? `到期日 ${tailDueDate}` : ''
+  };
+}
+
 /* ===== 左側列表渲染 ===== */
 function renderOrderList(){
   const listEl = $('#orderList');
@@ -3629,6 +3864,9 @@ const overdueTag = isBankPending
     const created = f.CreatedAt || (f.created_at || '');
     const a = calcAmounts(f);
     const total   = money(a.net);
+    const cashinstDueInfo = getCashinstListDueInfo(f, shipInfo, a);
+    const cashinstDueText = cashinstDueInfo.amountText || '';
+    const cashinstDueDateText = cashinstDueInfo.dueDateText || '';
 
     const creditTag = a.credit > 0
       ? `<div class="tag-small credit-red">購物金折抵 ${money(a.credit)}</div>`
@@ -3654,7 +3892,11 @@ const overdueTag = isBankPending
   ${lineName ? ' <span class="ln">｜' + escapeHtml(lineName) + '</span>' : ''}
   ${pickReg ? ' <span class="pickup-reg-inline">｜' + escapeHtml(pickReg) + '</span>' : ''}
 </div>
-            <div class="tag-small">${created}</div>
+            <div class="tag-small">
+              ${created}
+              ${cashinstDueText ? ` <span class="cashinst-due-inline">｜${escapeHtml(cashinstDueText)}</span>` : ''}
+              ${cashinstDueDateText ? ` <span class="cashinst-date-inline">｜${escapeHtml(cashinstDueDateText)}</span>` : ''}
+            </div>
           </div>
 
           <div class="ord-right">
