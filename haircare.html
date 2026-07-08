@@ -4040,7 +4040,12 @@ body{
     </div>
   </div>
 
-  <input id="preorderQty" type="hidden" value="1">
+  <div class="preorder-form-grid">
+    <div class="preorder-field">
+      <label for="preorderQty">購買組數</label>
+      <input id="preorderQty" type="number" min="1" max="99" step="1" value="1">
+    </div>
+  </div>
 
 <div class="preorder-form-grid preorder-deposit-box" id="preorderDepositBox" hidden>
     <div class="preorder-field preorder-deposit-field">
@@ -4851,11 +4856,61 @@ const depositBox = document.getElementById("preorderDepositBox");
 
   if (!form) return;
 
+  if (qtyEl) {
+    qtyEl.addEventListener("input", updatePreorderSelectedSummary);
+    qtyEl.addEventListener("change", () => {
+      qtyEl.value = String(preorderQtyValue());
+      updatePreorderSelectedSummary();
+    });
+  }
+
   let preorderProducts = [];
 
   function money(n) {
     const v = Math.round(Number(n || 0) || 0);
     return "NT$ " + v.toLocaleString("zh-TW");
+  }
+
+    function preorderQtyValue(){
+    const n = Number(qtyEl?.value || 1) || 1;
+    return Math.max(1, Math.min(99, Math.floor(n)));
+  }
+
+  function preorderUnitDepositAmount(){
+    const n = Number(depositAmountEl?.value || 0) || 0;
+    return Math.max(0, Math.round(n));
+  }
+
+  function updatePreorderSelectedSummary(){
+    const qty = preorderQtyValue();
+    const planQty = Number(planQtyEl?.value || 0) || 0;
+    const planPrice = Number(planPriceEl?.value || 0) || 0;
+    const baseSpec = String(productSpecEl?.value || "").trim();
+
+    const totalPieces = planQty > 0 ? planQty * qty : 0;
+    const totalAmount = planPrice > 0 ? planPrice * qty : 0;
+
+    if (selectedSpecEl) {
+      selectedSpecEl.textContent = [
+        baseSpec || "已選擇預購商品",
+        `購買 ${qty} 組`,
+        totalPieces ? `實際 ${totalPieces} 件` : "",
+        totalAmount ? `小計 ${money(totalAmount)}` : ""
+      ].filter(Boolean).join("｜");
+    }
+
+    const depositVisible = depositBox ? !depositBox.hidden : false;
+    const unitDeposit = preorderUnitDepositAmount();
+
+    if (depositVisible && depositAmountViewEl) {
+      const totalDeposit = unitDeposit * qty;
+
+      depositAmountViewEl.textContent = totalDeposit
+        ? money(totalDeposit)
+        : "定金金額待確認";
+
+      depositAmountViewEl.classList.toggle("is-empty", !totalDeposit);
+    }
   }
 
   function esc(s) {
@@ -5058,7 +5113,9 @@ const specParts = [
     }
   }
 
-  qtyEl.value = String(planQty || 1);
+  // ✅ planQty 是方案內含件數，例如 3件組；
+  // ✅ preorderQty 是客人購買幾組，預設 1 組。
+  qtyEl.value = "1";
 
   const needDeposit = item.need_deposit === true || Number(item.deposit_amount || 0) > 0;
 
@@ -5090,6 +5147,8 @@ const specParts = [
       depositAmountViewEl.classList.add("is-empty");
     }
   }
+
+  updatePreorderSelectedSummary();
 
   statusEl.textContent = "";
   statusEl.className = "preorder-status";
@@ -5406,17 +5465,27 @@ const userNote = String(noteEl.value || "").trim();
     const finalNote = userNote;
 
 const depositVisible = depositBox ? !depositBox.hidden : false;
+const orderQty = preorderQtyValue();
+const unitDepositAmount = preorderUnitDepositAmount();
 
     const payload = {
       source_page: "haircare_preorder",
       product_code: productCodeEl.value,
       product_name: productNameEl.value,
       product_spec: productSpecEl.value,
-      qty: qtyEl.value || planQtyEl.value || 1,
+
+      // ✅ qty = 客人購買幾組，不是 3件組裡面的 3
+      qty: String(orderQty),
+
       customer_name: customerNameEl.value,
       phone: phoneEl.value,
       line_name: lineNameEl.value,
-      deposit_amount: depositVisible && depositAmountEl ? depositAmountEl.value : "",
+
+      // ✅ 若需定金，2 組就收 2 組的定金
+      deposit_amount: depositVisible && unitDepositAmount > 0
+        ? String(unitDepositAmount * orderQty)
+        : "",
+
       note: finalNote
     };
 
@@ -5441,10 +5510,16 @@ const depositAmountText = String(payload.deposit_amount || "").trim();
       return;
     }
 
+       const bundleQty = Number(planQtyEl.value || 0) || 0;
+       const orderQtyText = preorderQtyValue();
+       const totalPieces = bundleQty > 0 ? bundleQty * orderQtyText : 0;
+
        const preorderDetail = [
       "商品：" + String(payload.product_name || "預購商品"),
       payload.product_spec ? "明細：" + String(payload.product_spec) : "",
-      "數量：" + String(payload.qty || 1)
+      "購買組數：" + String(orderQtyText) + " 組",
+      totalPieces ? "實際件數：" + String(totalPieces) + " 件" : "",
+      payload.deposit_amount ? "預付定金：" + money(payload.deposit_amount) : ""
     ].filter(Boolean).join("\n");
 
     const confirmText = depositVisible
