@@ -1097,10 +1097,10 @@ let selectedArrivalIds = new Set();
   }
 
   function isCompletedPo(it){
-    const s = String(it && it.preorder_status || "");
     const oid = String(it && it.official_order_id || "").trim();
 
-    return s === "已完成" || !!oid;
+    // 完成 = 客人已經從預購到貨購物車送出正式訂單
+    return !!oid;
   }
 
   function isSentCheckout(it){
@@ -1221,8 +1221,7 @@ let selectedArrivalIds = new Set();
     }
 
     if (mode === "sent") {
-      btns.push(`<button class="ghost" type="button" data-po-action="done" data-id="${id}">標記完成</button>`);
-      return btns.join("");
+      return "";
     }
 
     if (mode === "ready") {
@@ -1420,10 +1419,15 @@ const res = await api("/op/preorders/list", {
         </div>
 
         <div class="meta">
+          <div>客人：<b>${esc(it.customer_name || "—")}</b></div>
           <div>電話：<b>${esc(it.phone || "—")}</b></div>
           <div>編號：<b>${esc(it.product_code || "—")}</b></div>
           <div>商品：<b>${esc(it.product_name || "—")}</b></div>
-          <div>數量：<b>${esc(it.qty || 1)}</b></div>
+          ${
+            currentMode === "deposit_pending" && Number(it.deposit_amount || 0) > 0
+              ? `<div>應付定金金額：<b>${esc(money(it.deposit_amount || 0))}</b></div>`
+              : `<div>數量：<b>${esc(it.qty || 1)}</b></div>`
+          }
         </div>
       `;
 
@@ -1478,8 +1482,8 @@ const res = await api("/op/preorders/list", {
 
       ${Number(it.deposit_amount || 0) > 0 ? `
         <div class="kv deposit-row">
-          <div class="k">已付定金</div>
-          <div class="v">${esc(money(it.deposit_amount || 0))}　後五碼：${esc(it.deposit_last5 || "—")}</div>
+          <div class="k">${String(it.payment_status || "") === "已確認定金" ? "已確認定金" : "應付定金金額"}</div>
+          <div class="v">${esc(money(it.deposit_amount || 0))}</div>
         </div>
       ` : ""}
 
@@ -1601,7 +1605,7 @@ const res = await api("/op/preorders/list", {
         ].filter(Boolean).join("｜");
       }
 
-      detailMsg("已到貨，可發送到貨結帳卡", "ok");
+      detailMsg("", "");
       return true;
     } catch(e) {
       if ($("fPreStatus")) $("fPreStatus").value = "等待到貨";
