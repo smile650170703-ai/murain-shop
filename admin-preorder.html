@@ -716,6 +716,68 @@
     width:100%;
   }
 }
+  /* ===== 預購後台：到貨批次操作 ===== */
+.batch-arrival-bar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:0 0 10px;
+  padding:8px 10px;
+  border-radius:14px;
+  border:1px solid rgba(148,163,184,.28);
+  background:rgba(15,23,42,.88);
+}
+
+.batch-arrival-left{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  color:#cbd5e1;
+  font-size:12px;
+  font-weight:800;
+}
+
+.batch-arrival-bar button{
+  min-height:34px;
+  padding:6px 14px;
+  font-size:12px;
+}
+
+.select-mini{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  margin:0;
+  color:#cbd5e1;
+  font-size:12px;
+  font-weight:800;
+  cursor:pointer;
+}
+
+.select-mini input{
+  width:auto;
+  min-height:auto;
+  margin:0;
+}
+
+.item-select-line{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  margin-right:6px;
+}
+
+@media (max-width:900px){
+  .batch-arrival-bar{
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  .batch-arrival-left{
+    justify-content:space-between;
+  }
+}
 </style>
 </head>
 
@@ -815,7 +877,6 @@
   <button id="btnClearDate" type="button">清除日期</button>
   <button id="btnClear" type="button">清除搜尋</button>
   <div class="status-line" id="listMsg"></div>
-</div>
       <section class="preorder-mode-tabs" id="preorderModeTabs">
         <button class="preorder-mode-btn active" type="button" data-mode="deposit_pending">
           預購待付款定金
@@ -825,6 +886,35 @@
         <button class="preorder-mode-btn" type="button" data-mode="ready">
           已確認定金 / 免定金
           <span class="preorder-mode-count" id="cntReady">0</span>
+        </button>
+
+        <button class="preorder-mode-btn" type="button" data-mode="arrived">
+          已到貨待發結帳卡
+          <span class="preorder-mode-count" id="cntArrived">0</span>
+        </button>
+
+        <button class="preorder-mode-btn" type="button" data-mode="sent">
+          已發結帳卡
+          <span class="preorder-mode-count" id="cntSent">0</span>
+        </button>
+
+        <button class="preorder-mode-btn" type="button" data-mode="completed">
+          完成
+          <span class="preorder-mode-count" id="cntCompleted">0</span>
+        </button>
+      </section>
+
+      <section class="batch-arrival-bar hidden" id="arrivalBatchBar">
+        <div class="batch-arrival-left">
+          <label class="select-mini">
+            <input id="chkSelectAllArrived" type="checkbox">
+            全選此分類
+          </label>
+          <span id="selectedArrivalCount">已選 0 筆</span>
+        </div>
+
+        <button id="btnBatchSendArrival" type="button">
+          批次發送到貨結帳卡
         </button>
       </section>
 
@@ -912,11 +1002,20 @@ const countBadge = $("countBadge");
 const preorderModeTabs = $("preorderModeTabs");
 const cntDepositPending = $("cntDepositPending");
 const cntReady = $("cntReady");
+const cntArrived = $("cntArrived");
+const cntSent = $("cntSent");
+const cntCompleted = $("cntCompleted");
+
+const arrivalBatchBar = $("arrivalBatchBar");
+const chkSelectAllArrived = $("chkSelectAllArrived");
+const selectedArrivalCount = $("selectedArrivalCount");
+const btnBatchSendArrival = $("btnBatchSendArrival");
 
 let OP = "";
 let items = [];
 let selected = null;
 let currentMode = "deposit_pending";
+let selectedArrivalIds = new Set();
 
   function saveKey(v){
     OP = String(v || "").trim();
@@ -986,22 +1085,61 @@ let currentMode = "deposit_pending";
     return s === "已取消" || s === "已完成";
   }
 
-  function preorderClosedFromList(it){
+  function hasCheckoutCart(it){
+    return !!String(it && (
+      it.checkout_cart_token ||
+      it.cart_token ||
+      it["結帳購物車Token"] ||
+      ""
+    )).trim();
+  }
+
+  function isCompletedPo(it){
     const s = String(it && it.preorder_status || "");
     const oid = String(it && it.official_order_id || "").trim();
 
+    return s === "已完成" || !!oid;
+  }
+
+  function isSentCheckout(it){
+    const s = String(it && it.preorder_status || "");
+    const arrival = String(it && it.arrival_notify_status || "");
+
     return (
-      s === "已取消" ||
-      s === "已完成" ||
-      !!oid
+      s === "已通知" ||
+      arrival === "已發送到貨結帳通知" ||
+      hasCheckoutCart(it)
+    );
+  }
+
+  function isArrivedWaitingSend(it){
+    const s = String(it && it.preorder_status || "");
+    const arrival = String(it && it.arrival_notify_status || "");
+
+    if (isCompletedPo(it)) return false;
+    if (isSentCheckout(it)) return false;
+
+    return (
+      s === "已到貨待通知" ||
+      arrival === "已到貨待通知" ||
+      it?.arrived_can_checkout === true ||
+      !!String(it?.arrived_product_record_id || "").trim()
     );
   }
 
   function preorderModeOf(it){
-    if (preorderClosedFromList(it)) return "final";
+    const s = String(it && it.preorder_status || "");
+
+    if (s === "已取消") return "cancelled";
+    if (isCompletedPo(it)) return "completed";
+    if (isSentCheckout(it)) return "sent";
 
     if (needDeposit(it) && String(it.payment_status || "") !== "已確認定金") {
       return "deposit_pending";
+    }
+
+    if (isArrivedWaitingSend(it)) {
+      return "arrived";
     }
 
     return "ready";
@@ -1011,43 +1149,83 @@ let currentMode = "deposit_pending";
     return items.filter(it => preorderModeOf(it) === currentMode);
   }
 
+  function updateBatchToolbar(){
+    if (!arrivalBatchBar) return;
+
+    const isArrivedMode = currentMode === "arrived";
+    arrivalBatchBar.classList.toggle("hidden", !isArrivedMode);
+
+    if (!isArrivedMode) {
+      selectedArrivalIds.clear();
+      if (selectedArrivalCount) selectedArrivalCount.textContent = "已選 0 筆";
+      if (chkSelectAllArrived) chkSelectAllArrived.checked = false;
+      return;
+    }
+
+    const ids = new Set(visibleItems().map(x => String(x.id || "")).filter(Boolean));
+
+    selectedArrivalIds.forEach(id => {
+      if (!ids.has(id)) selectedArrivalIds.delete(id);
+    });
+
+    if (selectedArrivalCount) {
+      selectedArrivalCount.textContent = `已選 ${selectedArrivalIds.size} 筆`;
+    }
+
+    if (chkSelectAllArrived) {
+      chkSelectAllArrived.checked = ids.size > 0 && selectedArrivalIds.size === ids.size;
+    }
+  }
+
   function refreshModeCounts(){
     const depositPending = items.filter(it => preorderModeOf(it) === "deposit_pending").length;
     const ready = items.filter(it => preorderModeOf(it) === "ready").length;
+    const arrived = items.filter(it => preorderModeOf(it) === "arrived").length;
+    const sent = items.filter(it => preorderModeOf(it) === "sent").length;
+    const completed = items.filter(it => preorderModeOf(it) === "completed").length;
 
     if (cntDepositPending) cntDepositPending.textContent = String(depositPending);
     if (cntReady) cntReady.textContent = String(ready);
+    if (cntArrived) cntArrived.textContent = String(arrived);
+    if (cntSent) cntSent.textContent = String(sent);
+    if (cntCompleted) cntCompleted.textContent = String(completed);
 
     if (preorderModeTabs) {
       preorderModeTabs.querySelectorAll("[data-mode]").forEach(btn => {
         btn.classList.toggle("active", btn.dataset.mode === currentMode);
       });
     }
+
+    updateBatchToolbar();
   }
 
   function actionButtonsHtml(it){
     const id = esc(it.id || "");
-    const s = String(it.preorder_status || "等待到貨");
-    const arrival = String(it.arrival_notify_status || "未到貨");
     const pay = String(it.payment_status || "");
+    const mode = preorderModeOf(it);
 
     const btns = [];
 
-    if (needDeposit(it) && pay !== "已確認定金" && !isFinalPo(it)) {
+    if (mode === "deposit_pending" && needDeposit(it) && pay !== "已確認定金") {
       btns.push(`<button class="ok" type="button" data-po-action="confirmDeposit" data-id="${id}">確認定金</button>`);
-    }
-
-    if ((pay === "已確認定金" || !needDeposit(it)) && !isFinalPo(it) && s !== "已通知") {
-      btns.push(`<button type="button" data-po-action="save" data-id="${id}">儲存設定</button>`);
-      btns.push(`<button class="warn" type="button" data-po-action="sendArrival" data-id="${id}">通知到貨＋發結帳卡</button>`);
-    }
-
-    if (s === "已通知" || arrival === "已發送到貨結帳通知" || arrival === "已到貨已發結帳購物車") {
-      btns.push(`<button class="ghost" type="button" data-po-action="done" data-id="${id}">標記完成</button>`);
-    }
-
-    if (!isFinalPo(it)) {
       btns.push(`<button class="danger" type="button" data-po-action="cancel" data-id="${id}">取消預購</button>`);
+      return btns.join("");
+    }
+
+    if (mode === "arrived") {
+      btns.push(`<button class="warn" type="button" data-po-action="sendArrival" data-id="${id}">通知到貨＋發結帳卡</button>`);
+      btns.push(`<button class="danger" type="button" data-po-action="cancel" data-id="${id}">取消預購</button>`);
+      return btns.join("");
+    }
+
+    if (mode === "sent") {
+      btns.push(`<button class="ghost" type="button" data-po-action="done" data-id="${id}">標記完成</button>`);
+      return btns.join("");
+    }
+
+    if (mode === "ready") {
+      btns.push(`<button class="danger" type="button" data-po-action="cancel" data-id="${id}">取消預購</button>`);
+      return btns.join("");
     }
 
     return btns.join("");
@@ -1070,6 +1248,82 @@ let currentMode = "deposit_pending";
     }
 
     return j;
+  }
+
+    async function autoRefreshArrivalState(){
+    const candidates = items.filter(it => {
+      const mode = preorderModeOf(it);
+      if (mode !== "ready") return false;
+
+      const code = String(it.product_code || "").trim();
+      if (!code) return false;
+
+      if (needDeposit(it) && String(it.payment_status || "") !== "已確認定金") {
+        return false;
+      }
+
+      return true;
+    });
+
+    if (!candidates.length) return;
+
+    let changed = 0;
+
+    for (const it of candidates) {
+      const sku = String(it.product_code || "").trim();
+
+      try {
+        const res = await api("/op/preorders/sku-info", {
+          op_key: OP,
+          sku
+        });
+
+        const p = res.product || {};
+
+        const patch = {
+          preorder_status: "已到貨待通知",
+          payment_status: it.payment_status || "不需定金",
+          arrival_notify_status: "已到貨待通知",
+          internal_note: it.internal_note || "",
+
+          arrived_sku: p.sku || sku,
+          arrived_product_name: p.name || it.product_name || "",
+          arrived_product_record_id: p.record_id || "",
+          arrived_qty: it.arrived_qty || it.qty || 1,
+          arrived_price: it.arrived_price || preorderTotalAmount(it),
+          arrived_can_checkout: true,
+
+          checkout_url: it.checkout_url || "",
+          checkout_cart_token: it.checkout_cart_token || ""
+        };
+
+        await api("/op/preorders/update", {
+          op_key: OP,
+          record_id: it.id,
+          ...patch
+        });
+
+        Object.assign(it, {
+          preorder_status: patch.preorder_status,
+          arrival_notify_status: patch.arrival_notify_status,
+          arrived_sku: patch.arrived_sku,
+          arrived_product_name: patch.arrived_product_name,
+          arrived_product_record_id: patch.arrived_product_record_id,
+          arrived_qty: patch.arrived_qty,
+          arrived_price: patch.arrived_price,
+          arrived_can_checkout: true
+        });
+
+        changed++;
+      } catch(e) {
+        // 尚未入庫就略過，不顯示錯誤，避免一進頁面整頁紅字
+      }
+    }
+
+    if (changed && listMsg) {
+      listMsg.textContent = `已自動更新 ${changed} 筆到貨資料`;
+      listMsg.className = "status-line ok";
+    }
   }
 
 function showApp(){
@@ -1108,6 +1362,7 @@ const res = await api("/op/preorders/list", {
 });
 
       items = Array.isArray(res.items) ? res.items : [];
+      await autoRefreshArrivalState();
       refreshModeCounts();
       renderList();
 
@@ -1140,12 +1395,22 @@ const res = await api("/op/preorders/list", {
 
     viewItems.forEach((it) => {
       const node = document.createElement("div");
+      const selectable = currentMode === "arrived";
+      const checked = selectedArrivalIds.has(String(it.id || "")) ? "checked" : "";
+
       node.className = "item" + (selected && selected.id === it.id ? " active" : "");
       node.innerHTML = `
         <div class="item-head">
-          <div>
-            <div class="po">${esc(it.preorder_id || it.id || "—")}</div>
-            <div class="date">${esc(ymd(it.created_at) || "—")}</div>
+          <div style="display:flex;align-items:flex-start;gap:8px;">
+            ${selectable ? `
+              <label class="item-select-line" title="勾選批次發送">
+                <input type="checkbox" data-po-select data-id="${esc(it.id || "")}" ${checked}>
+              </label>
+            ` : ""}
+            <div>
+              <div class="po">${esc(it.preorder_id || it.id || "—")}</div>
+              <div class="date">${esc(ymd(it.created_at) || "—")}</div>
+            </div>
           </div>
           <span class="badge ${badgeClass(it.preorder_status)}">${esc(it.preorder_status || "等待到貨")}</span>
         </div>
@@ -1159,7 +1424,18 @@ const res = await api("/op/preorders/list", {
         </div>
       `;
 
-      node.addEventListener("click", () => {
+      node.addEventListener("click", (e) => {
+        const chk = e.target.closest("[data-po-select]");
+        if (chk) {
+          const id = String(chk.dataset.id || "").trim();
+
+          if (chk.checked) selectedArrivalIds.add(id);
+          else selectedArrivalIds.delete(id);
+
+          updateBatchToolbar();
+          return;
+        }
+
         selected = it;
         renderList();
         renderDetail(it);
@@ -1167,6 +1443,8 @@ const res = await api("/op/preorders/list", {
 
       preorderList.appendChild(node);
     });
+
+    updateBatchToolbar();
   }
 
   function val(v){ return String(v == null ? "" : v); }
@@ -1221,24 +1499,10 @@ const res = await api("/op/preorders/list", {
         <div class="arrival-summary" id="arrivedSkuSummary">
           正在檢查是否已到貨…
         </div>
-
-        <button class="ghost" id="btnCheckArrived" type="button">
-          重新檢查到貨
-        </button>
-      </div>
-
-      <div class="small-note">
-        系統會用預購商品編號 <b>${esc(it.product_code || "—")}</b> 到正式庫存 Products 查詢。若已入庫同編號 SKU，會顯示已到貨，並可發送到貨結帳卡。
       </div>
 
       <div class="status-line" id="detailMsg"></div>
     `;
-    const btnCheckArrived = $("btnCheckArrived");
-
-    if (btnCheckArrived) {
-      btnCheckArrived.addEventListener("click", lookupSkuInfo);
-    }
-
     lookupSkuInfo();
   }
 
@@ -1403,6 +1667,58 @@ const res = await api("/op/preorders/list", {
     }
   }
 
+    async function batchSendArrivalSelected(){
+    const ids = Array.from(selectedArrivalIds).filter(Boolean);
+    const targets = items.filter(it => ids.includes(String(it.id || "")));
+
+    if (!targets.length) {
+      alert("請先勾選要發送的到貨訂單");
+      return;
+    }
+
+    if (!confirm(`確定要批次發送 ${targets.length} 筆到貨結帳卡嗎？\n\n發送後會產生結帳購物車，不能重複發送。`)) {
+      return;
+    }
+
+    let okCount = 0;
+    let failCount = 0;
+
+    for (const it of targets) {
+      try {
+        const sku = String(it.arrived_sku || it.product_code || "").trim();
+
+        if (!sku) {
+          failCount++;
+          continue;
+        }
+
+        await api("/op/preorders/send-arrival-checkout", {
+          op_key: OP,
+          record_id: it.id,
+
+          arrived_sku: sku,
+          arrived_product_name: it.arrived_product_name || it.product_name || "",
+          arrived_product_record_id: it.arrived_product_record_id || "",
+          arrived_qty: it.arrived_qty || it.qty || 1,
+          arrived_price: it.arrived_price || preorderTotalAmount(it)
+        });
+
+        okCount++;
+      } catch(e) {
+        failCount++;
+        console.log("batchSendArrivalSelected failed", it?.preorder_id || it?.id, e?.message || e);
+      }
+    }
+
+    selectedArrivalIds.clear();
+    selected = null;
+    detailCard.innerHTML = '<div class="empty">請先從左側選擇一筆預購登記</div>';
+
+    await loadList();
+
+    alert(`批次發送完成\n成功：${okCount} 筆\n失敗：${failCount} 筆`);
+  }
+
   async function quickPatch(recordId, patch){
     try {
       detailMsg("更新中…");
@@ -1483,11 +1799,30 @@ const res = await api("/op/preorders/list", {
 
       currentMode = btn.dataset.mode || "deposit_pending";
       selected = null;
+      selectedArrivalIds.clear();
       detailCard.innerHTML = '<div class="empty">請先從左側選擇一筆預購登記</div>';
       renderList();
     });
   }
 
+  if (chkSelectAllArrived) {
+    chkSelectAllArrived.addEventListener("change", () => {
+      selectedArrivalIds.clear();
+
+      if (chkSelectAllArrived.checked) {
+        visibleItems().forEach(it => {
+          if (it.id) selectedArrivalIds.add(String(it.id));
+        });
+      }
+
+      renderList();
+    });
+  }
+
+  if (btnBatchSendArrival) {
+    btnBatchSendArrival.addEventListener("click", batchSendArrivalSelected);
+  }
+  
     preorderList.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-po-action]");
     if (!btn) return;
