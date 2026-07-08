@@ -851,6 +851,83 @@
     width:100%;
   }
 }
+
+  /* ===== 預購後台：比照 admin-ship 右側 LINE 搜尋工具列 ===== */
+.toolbar-main{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:12px;
+  margin-bottom:12px;
+}
+
+.toolbar-left{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+
+.toolbar-side{
+  width:min(520px, 44vw);
+  min-width:430px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+
+.side-box-row{
+  display:grid;
+  grid-template-columns:minmax(190px,.9fr);
+  gap:8px;
+  align-items:start;
+}
+
+.side-box{
+  padding:10px;
+  border-radius:12px;
+  border:1px solid rgba(148,163,184,.3);
+  background:rgba(15,23,42,.95);
+}
+
+.side-box label{
+  margin:0 0 6px;
+  font-size:12px;
+  color:#cbd5f5;
+}
+
+.side-box input{
+  min-height:40px;
+  font-size:13px;
+}
+
+.preorder-admin-toolbar .preorder-mode-tabs{
+  margin:0;
+}
+
+.preorder-mode-btn{
+  min-height:36px !important;
+  padding:7px 12px !important;
+  font-size:13px !important;
+  font-weight:800 !important;
+}
+
+.preorder-mode-count{
+  height:18px !important;
+  min-width:18px !important;
+  font-size:11px !important;
+}
+
+@media (max-width:1100px){
+  .toolbar-main{
+    flex-direction:column;
+  }
+
+  .toolbar-side{
+    width:100%;
+    min-width:0;
+  }
+}
 </style>
 </head>
 
@@ -945,49 +1022,53 @@
   </select>
 
   <button id="btnLoad" type="button">重新載入預購清單</button>
+  <button id="btnSearch" type="button">搜尋</button>
   <button id="btnClearDate" type="button">清除日期</button>
+  <button id="btnClear" type="button">清除搜尋</button>
   <div class="status-line" id="listMsg"></div>
 </div>
 
-<div class="preorder-top-tools">
-  <div class="preorder-line-search">
-    <label for="keywordInput">LINE 名稱搜尋</label>
-    <div class="preorder-line-search-row">
-      <input id="keywordInput" placeholder="輸入 LINE 名稱">
-      <button id="btnSearch" type="button">搜尋</button>
-      <button class="ghost" id="btnClear" type="button">清除</button>
+<div class="toolbar-main preorder-admin-toolbar">
+  <div class="toolbar-left">
+    <section class="preorder-mode-tabs" id="preorderModeTabs">
+      <button class="preorder-mode-btn active" type="button" data-mode="deposit_pending">
+        預購待付款定金
+        <span class="preorder-mode-count" id="cntDepositPending">0</span>
+      </button>
+
+      <button class="preorder-mode-btn" type="button" data-mode="ready">
+        已確認定金 / 免定金
+        <span class="preorder-mode-count" id="cntReady">0</span>
+      </button>
+
+      <button class="preorder-mode-btn" type="button" data-mode="arrived">
+        已到貨待發結帳卡
+        <span class="preorder-mode-count" id="cntArrived">0</span>
+      </button>
+
+      <button class="preorder-mode-btn" type="button" data-mode="sent">
+        已發結帳卡
+        <span class="preorder-mode-count" id="cntSent">0</span>
+      </button>
+
+      <button class="preorder-mode-btn" type="button" data-mode="completed">
+        完成
+        <span class="preorder-mode-count" id="cntCompleted">0</span>
+      </button>
+    </section>
+  </div>
+
+  <div class="toolbar-side">
+    <div class="side-box-row">
+      <div class="side-box" id="lineSearchBox">
+        <label for="keywordInput">LINE 名稱搜尋</label>
+        <input id="keywordInput" type="text" placeholder="輸入 LINE 名稱">
+      </div>
     </div>
   </div>
 </div>
 
-      <section class="preorder-mode-tabs" id="preorderModeTabs">
-        <button class="preorder-mode-btn active" type="button" data-mode="deposit_pending">
-          預購待付款定金
-          <span class="preorder-mode-count" id="cntDepositPending">0</span>
-        </button>
-
-        <button class="preorder-mode-btn" type="button" data-mode="ready">
-          已確認定金 / 免定金
-          <span class="preorder-mode-count" id="cntReady">0</span>
-        </button>
-
-        <button class="preorder-mode-btn" type="button" data-mode="arrived">
-          已到貨待發結帳卡
-          <span class="preorder-mode-count" id="cntArrived">0</span>
-        </button>
-
-        <button class="preorder-mode-btn" type="button" data-mode="sent">
-          已發結帳卡
-          <span class="preorder-mode-count" id="cntSent">0</span>
-        </button>
-
-        <button class="preorder-mode-btn" type="button" data-mode="completed">
-          完成
-          <span class="preorder-mode-count" id="cntCompleted">0</span>
-        </button>
-      </section>
-
-      <div class="hidden" id="arrivalBatchBar" aria-hidden="true"></div>
+<div class="hidden" id="arrivalBatchBar" aria-hidden="true"></div>
 
       <div class="grid">
         <section class="card">
@@ -1964,14 +2045,27 @@ if (btnClearDate) {
   });
 }
 
-btnClear.addEventListener("click", () => {
-  keywordInput.value = "";
-  loadList();
-});
+if (btnClear) {
+  btnClear.addEventListener("click", () => {
+    if (keywordInput) keywordInput.value = "";
+    loadList();
+  });
+}
 
-keywordInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") loadList();
-});
+let preorderLineSearchTimer = null;
+
+if (keywordInput) {
+  keywordInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") loadList();
+  });
+
+  keywordInput.addEventListener("input", () => {
+    clearTimeout(preorderLineSearchTimer);
+    preorderLineSearchTimer = setTimeout(() => {
+      loadList();
+    }, 350);
+  });
+}
 
   loadKey();
   if (OP) {
