@@ -1215,32 +1215,31 @@ const res = await api("/op/preorders/list", {
       <input id="fCartToken" type="hidden" value="${esc(val(it.checkout_cart_token))}">
       <input id="fInternalNote" type="hidden" value="${esc(val(it.internal_note))}">
 
+      <input id="fSku" type="hidden" value="${esc(val(it.arrived_sku || it.product_code))}">
+
       <div class="arrival-workbox">
-        <div class="row">
-          <div class="col-12">
-            <label for="fSku">到貨商品 SKU</label>
-            <input id="fSku" value="${esc(val(it.arrived_sku))}" placeholder="輸入正式入庫 SKU，例如：C000123">
-          </div>
+        <div class="arrival-summary" id="arrivedSkuSummary">
+          正在檢查是否已到貨…
         </div>
 
-        <div class="arrival-summary" id="arrivedSkuSummary">
-          ${
-            it.arrived_sku
-              ? `已設定 SKU：<b>${esc(it.arrived_sku)}</b>${it.arrived_product_name ? `｜${esc(it.arrived_product_name)}` : ""}`
-              : "請輸入到貨商品 SKU，系統會自動帶入正式商品名稱與商品 RecordId。"
-          }
-        </div>
+        <button class="ghost" id="btnCheckArrived" type="button">
+          重新檢查到貨
+        </button>
       </div>
 
       <div class="small-note">
-        到貨後只需要輸入 SKU，確認商品無誤後按「通知到貨＋發結帳卡」。若此預購有定金，需先按「確認定金」才可發送。
+        系統會用預購商品編號 <b>${esc(it.product_code || "—")}</b> 到正式庫存 Products 查詢。若已入庫同編號 SKU，會顯示已到貨，並可發送到貨結帳卡。
       </div>
 
       <div class="status-line" id="detailMsg"></div>
     `;
-    if ($("fSku")) {
-      $("fSku").addEventListener("blur", lookupSkuInfo);
+    const btnCheckArrived = $("btnCheckArrived");
+
+    if (btnCheckArrived) {
+      btnCheckArrived.addEventListener("click", lookupSkuInfo);
     }
+
+    lookupSkuInfo();
   }
 
   function optionHtml(list, current){
@@ -1276,7 +1275,6 @@ const res = await api("/op/preorders/list", {
 
     if (action === "sendArrival") {
       selected = it;
-      renderDetail(it);
       await sendArrivalCheckout(it.id);
       return;
     }
@@ -1294,10 +1292,22 @@ const res = await api("/op/preorders/list", {
 
   async function lookupSkuInfo(){
     const sku = String($("fSku")?.value || "").trim();
-    if (!sku) return;
+    const summary = $("arrivedSkuSummary");
+
+    if (!sku) {
+      if (summary) {
+        summary.innerHTML = "尚無預購商品編號，無法檢查到貨。";
+      }
+      detailMsg("尚無預購商品編號，無法檢查到貨", "err");
+      return false;
+    }
 
     try {
-      detailMsg("查詢 SKU 中…");
+      if (summary) {
+        summary.innerHTML = `檢查中：<b>${esc(sku)}</b>`;
+      }
+
+      detailMsg("檢查是否已入庫中…");
 
       const res = await api("/op/preorders/sku-info", {
         op_key: OP,
@@ -1309,29 +1319,49 @@ const res = await api("/op/preorders/list", {
       if ($("fArrivedName") && p.name) $("fArrivedName").value = p.name;
       if ($("fArrivedRecordId") && p.record_id) $("fArrivedRecordId").value = p.record_id;
 
-      const summary = $("arrivedSkuSummary");
+      if ($("fPreStatus")) $("fPreStatus").value = "已到貨待通知";
+      if ($("fArrivalStatus")) $("fArrivalStatus").value = "已到貨待通知";
+      if ($("fCanCheckout")) $("fCanCheckout").value = "1";
+
       if (summary) {
         summary.innerHTML = [
-          `已帶入 SKU：<b>${esc(p.sku || sku)}</b>`,
+          `✅ 已到貨`,
+          `SKU：<b>${esc(p.sku || sku)}</b>`,
           p.name ? `商品：<b>${esc(p.name)}</b>` : "",
           p.stock_qty !== undefined ? `庫存：<b>${esc(p.stock_qty)}</b>` : ""
         ].filter(Boolean).join("｜");
       }
 
-      detailMsg("已帶入到貨商品資料", "ok");
+      detailMsg("已到貨，可發送到貨結帳卡", "ok");
+      return true;
     } catch(e) {
-      detailMsg("SKU 查詢失敗：" + (e.message || e), "err");
+      if ($("fPreStatus")) $("fPreStatus").value = "等待到貨";
+      if ($("fArrivalStatus")) $("fArrivalStatus").value = "未到貨";
+      if ($("fCanCheckout")) $("fCanCheckout").value = "0";
+
+      if (summary) {
+        summary.innerHTML = `尚未到貨：正式庫存 Products 尚未找到 SKU <b>${esc(sku)}</b>`;
+      }
+
+      detailMsg("尚未到貨，請先用同編號 SKU 正式入庫", "err");
+      return false;
     }
   }
 
   async function sendArrivalCheckout(recordId){
     if (!recordId) return;
 
-    const sku = String($("fSku")?.value || "").trim();
+       const sku = String($("fSku")?.value || "").trim();
 
     if (!sku) {
-      detailMsg("請先輸入到貨商品 SKU", "err");
-      $("fSku")?.focus();
+      detailMsg("尚無預購商品編號，無法發送到貨結帳卡", "err");
+      return;
+    }
+
+    const arrivedOk = await lookupSkuInfo();
+
+    if (!arrivedOk) {
+      detailMsg("尚未到貨，請先用同編號 SKU 正式入庫後再發送", "err");
       return;
     }
 
@@ -1413,8 +1443,34 @@ const res = await api("/op/preorders/list", {
     try {
       detailMsg("儲存中…");
       await api("/op/preorders/update", payload);
+      items = items.map(x => {
+        if (String(x.id || "") !== String(recordId || "")) return x;
+
+        return {
+          ...x,
+          preorder_status: payload.preorder_status,
+          payment_status: payload.payment_status,
+          arrival_notify_status: payload.arrival_notify_status,
+          internal_note: payload.internal_note,
+
+          arrived_sku: payload.arrived_sku,
+          arrived_product_name: payload.arrived_product_name,
+          arrived_product_record_id: payload.arrived_product_record_id,
+          arrived_qty: payload.arrived_qty,
+          arrived_price: payload.arrived_price,
+          arrived_can_checkout: payload.arrived_can_checkout,
+
+          checkout_url: payload.checkout_url,
+          checkout_cart_token: payload.checkout_cart_token
+        };
+      });
+
+      selected = items.find(x => String(x.id || "") === String(recordId || "")) || selected;
+
+      renderList();
+      if (selected) renderDetail(selected);
+
       detailMsg("已儲存預購資料", "ok");
-      await loadList();
     } catch(e) {
       detailMsg("儲存失敗：" + (e.message || e), "err");
     }
