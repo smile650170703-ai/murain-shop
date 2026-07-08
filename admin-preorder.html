@@ -1681,9 +1681,7 @@ const res = await api("/op/preorders/list", {
     if (!it || !it.id) return;
 
     if (action === "confirmDeposit") {
-      await quickPatch(it.id, { payment_status:"已確認定金" });
-      currentMode = "ready";
-      renderList();
+      await confirmDepositAndNotify(it.id);
       return;
     }
 
@@ -1885,7 +1883,46 @@ const res = await api("/op/preorders/list", {
 
     alert(`到貨結帳卡發送完成\n成功：${okCount} 筆\n失敗：${failCount} 筆`);
   }
+  async function confirmDepositAndNotify(recordId){
+    if (!recordId) return;
 
+    const it = selectedById(recordId);
+
+    if (!it || !it.id) {
+      detailMsg("找不到這筆預購資料", "err");
+      return;
+    }
+
+    if (Number(it.deposit_amount || 0) <= 0) {
+      detailMsg("這筆預購沒有定金金額，不需要確認定金", "err");
+      return;
+    }
+
+    if (!confirm("確定已收到這筆預購定金，並發送 LINE 通知給客人嗎？")) {
+      return;
+    }
+
+    try {
+      detailMsg("確認定金並發送 LINE 中…");
+
+      const res = await api("/op/preorders/confirm-deposit", {
+        op_key: OP,
+        record_id: recordId
+      });
+
+      currentMode = "ready";
+
+      if (res.line_sent) {
+        detailMsg("已確認定金，並已發送 LINE 通知", "ok");
+      } else {
+        detailMsg("已確認定金，但 LINE 未發送：" + (res.line_message || res.line_error || "未取得 LINE 結果"), "err");
+      }
+
+      await loadList();
+    } catch(e) {
+      detailMsg("確認定金失敗：" + (e.message || e), "err");
+    }
+  }
   async function quickPatch(recordId, patch){
     try {
       detailMsg("更新中…");
