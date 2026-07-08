@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>進貨入庫工作台｜採購／到貨入庫中心</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="/config.js?v=20260627-auth-fix"></script>
 <style>
     :root{
@@ -1123,8 +1124,8 @@
       <datalist id="categoryOptions"><option value="TORY BURCH"></option><option value="COACH"></option><option value="MARC JACOBS"></option><option value="KATE SPADE"></option><option value="MICHAEL KORS"></option><option value="HAIR"></option><option value="寄賣"></option><option value="預購"></option></datalist>
 
       <div class="toolbar inbound-copy-row">
-        <button class="btn secondary small" type="button" id="btnDownloadInboundPhotos">下載照片</button>
-        <span class="sub">會下載目前清單有照片的列，檔名格式：原名稱＋顏色英文。</span>
+        <button class="btn secondary small" type="button" id="btnDownloadInboundPhotos">下載照片壓縮檔</button>
+        <span class="sub">會把目前清單有照片的列，依清單順序放進 ZIP 的「到貨照片」資料夾；檔名格式：001_原名稱＋顏色英文。</span>
       </div>
 
       <div class="table-wrap"><table class="inbound-compact-table" style="min-width:1160px;"><thead><tr><th style="width:42px;">選</th><th style="width:58px;">照片</th><th style="width:190px;">原名稱</th><th style="width:50px;">數量</th><th style="width:86px;">顏色</th><th style="width:92px;">品牌/分類</th><th style="width:92px;">分類</th><th style="width:150px;">正式商品名稱</th><th style="width:94px;">標籤輸入碼 / SKU</th><th style="width:66px;">參考成本</th><th style="width:72px;">建議售價</th><th style="width:64px;">實收數量</th><th style="width:62px;">異常數量</th><th style="width:82px;">庫存位置</th><th style="width:118px;">入庫日期</th></tr></thead><tbody id="inboundRows"><tr><td colspan="15" class="empty">尚未載入待入庫清單</td></tr></tbody></table></div>
@@ -1876,13 +1877,21 @@ function renderInboundRows(rows){const list=Array.isArray(rows)?rows:[]; if(!lis
     setTimeout(()=>URL.revokeObjectURL(url), 1500);
   }
 
-  function waitMs(ms){
-    return new Promise(resolve=>setTimeout(resolve, ms));
+  function inboundPhotoZipFileName(){
+    const d = new Date();
+    const pad = n => String(n).padStart(2, "0");
+
+    return `到貨照片_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.zip`;
   }
 
   async function downloadInboundPhotos(){
     const btn = $("btnDownloadInboundPhotos");
-    const oldText = btn?.textContent || "下載照片";
+    const oldText = btn?.textContent || "下載照片壓縮檔";
+
+    if (!window.JSZip){
+      setStatus($("inboundMsg"),"❌ ZIP 套件尚未載入，請確認 JSZip script 是否已加入。","err");
+      return;
+    }
 
     const rows = getInboundTrs()
       .filter(tr=>tr.style.display!=="none")
@@ -1895,12 +1904,17 @@ function renderInboundRows(rows){const list=Array.isArray(rows)?rows:[]; if(!lis
 
         const name = String(tr.dataset.name || "").trim();
         const color = String(tr.dataset.color || "").trim();
+
         const baseName = inboundPhotoSafeFileName(
           [name, color].filter(Boolean).join(" "),
           `商品照片_${index + 1}`
         );
 
-        return { photoUrl, baseName };
+        return {
+          photoUrl,
+          baseName,
+          orderNo: index + 1
+        };
       })
       .filter(row=>row.photoUrl);
 
@@ -1909,19 +1923,24 @@ function renderInboundRows(rows){const list=Array.isArray(rows)?rows:[]; if(!lis
       return;
     }
 
-    const usedNames = new Map();
+    const zip = new JSZip();
+    const folder = zip.folder("到貨照片") || zip;
+
     let success = 0;
     let failed = 0;
+    const failedLines = [];
 
     if (btn) {
       btn.disabled = true;
-      btn.textContent = "下載中...";
+      btn.textContent = "壓縮中...";
     }
 
-    setStatus($("inboundMsg"),`照片下載中，共 ${rows.length} 張...`,"info");
+    setStatus($("inboundMsg"),`照片讀取中，共 ${rows.length} 張...`,"info");
 
     try{
       for (const row of rows){
+        const no = String(row.orderNo).padStart(3, "0");
+
         try{
           const res = await fetch(row.photoUrl, {
             method: "GET",
@@ -1935,35 +1954,55 @@ function renderInboundRows(rows){const list=Array.isArray(rows)?rows:[]; if(!lis
 
           const blob = await res.blob();
           const ext = inboundPhotoExtFromBlob(blob, row.photoUrl);
+          const filename = `${no}_${row.baseName}.${ext}`;
 
-          const count = (usedNames.get(row.baseName) || 0) + 1;
-          usedNames.set(row.baseName, count);
-
-          const filename = `${row.baseName}${count > 1 ? "_" + count : ""}.${ext}`;
-
-          triggerBlobDownload(blob, filename);
+          folder.file(filename, blob);
           success++;
 
-          setStatus($("inboundMsg"),`照片下載中：${success}/${rows.length}`,"info");
-
-          await waitMs(250);
+          setStatus($("inboundMsg"),`照片加入壓縮檔中：${success}/${rows.length}`,"info");
         }catch(e){
           failed++;
-          console.warn("download inbound photo failed", row.photoUrl, e);
+          failedLines.push(`${no}_${row.baseName}｜${row.photoUrl}｜${e.message || e}`);
+          console.warn("zip inbound photo failed", row.photoUrl, e);
         }
       }
+
+      if (!success){
+        setStatus(
+          $("inboundMsg"),
+          "❌ 沒有任何照片成功加入 ZIP。\n如果圖片可以顯示但無法打包，通常是圖片網址被瀏覽器跨網域下載限制，需要加後端下載代理。",
+          "err"
+        );
+        return;
+      }
+
+      if (failedLines.length){
+        folder.file("下載失敗清單.txt", failedLines.join("\n"));
+      }
+
+      setStatus($("inboundMsg"),"正在產生 ZIP 壓縮檔...","info");
+
+      const zipBlob = await zip.generateAsync({
+        type: "blob",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 }
+      });
+
+      triggerBlobDownload(zipBlob, inboundPhotoZipFileName());
 
       if (failed){
         setStatus(
           $("inboundMsg"),
-          `⚠️ 已下載 ${success} 張，失敗 ${failed} 張。\n若瀏覽器擋住跨網域圖片下載，就需要再加後端下載代理。`,
+          `⚠️ 已產生 ZIP：成功 ${success} 張，失敗 ${failed} 張。\nZIP 內已附「下載失敗清單.txt」。`,
           "warn"
         );
-        toast(`⚠️ 已下載 ${success} 張，失敗 ${failed} 張`,"warn");
+        toast(`⚠️ ZIP 已產生，成功 ${success} 張，失敗 ${failed} 張`,"warn");
       }else{
-        setStatus($("inboundMsg"),`✅ 已下載 ${success} 張照片。`,"ok");
-        toast(`✅ 已下載 ${success} 張照片`,"ok");
+        setStatus($("inboundMsg"),`✅ 已產生 ZIP，共 ${success} 張照片。`,"ok");
+        toast(`✅ 已產生照片 ZIP，共 ${success} 張`,"ok");
       }
+    }catch(err){
+      setStatus($("inboundMsg"),`❌ 產生 ZIP 失敗：${err.message || err}`,"err");
     }finally{
       if (btn) {
         btn.disabled = false;
@@ -1971,7 +2010,6 @@ function renderInboundRows(rows){const list=Array.isArray(rows)?rows:[]; if(!lis
       }
     }
   }
-
   function ensureInboundPhotoModal(){
     let modal = $("inboundPhotoModal");
     if (modal) return modal;
