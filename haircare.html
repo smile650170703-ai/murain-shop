@@ -3235,9 +3235,10 @@ body{
   justify-content:center;
   padding:28px;
   background:rgba(238,238,238,.96);
-  overflow-y:auto;
+  overflow-y:scroll;
   -webkit-overflow-scrolling:touch;
   overscroll-behavior:contain;
+  touch-action:pan-y;
 }
 
 .preorder-modal-overlay[hidden]{
@@ -3246,7 +3247,6 @@ body{
 
 .preorder-modal{
   width:min(480px, calc(100vw - 56px));
-  max-height:calc(100dvh - 56px);
   height:auto;
   min-height:0;
   padding:0 0 28px;
@@ -3254,10 +3254,8 @@ body{
   flex-direction:column;
   gap:16px;
   background:transparent;
-  overflow-y:auto;
+  overflow:visible;
   color:#111;
-  overscroll-behavior:contain;
-  -webkit-overflow-scrolling:touch;
 }
 
 .preorder-preview-main{
@@ -3387,20 +3385,21 @@ body{
 }
 
 .preorder-desc-heading{
-  margin:14px 0 8px;
+  margin:14px 0 9px;
   padding-left:10px;
   border-left:3px solid #8b5a48;
   color:#3b2923;
   font-size:14px;
   font-weight:900;
-  line-height:1.55;
+  line-height:1.5;
 }
 
 .preorder-desc-line{
-  margin:7px 0;
+  margin:8px 0;
   color:#6d554b;
   font-size:13px;
-  line-height:1.9;
+  line-height:1.85;
+  font-weight:500;
 }
 
 .preorder-desc-bullet{
@@ -3440,7 +3439,7 @@ body{
 .preorder-preview-related{
   width:100%;
   margin:0;
-  padding:13px 0 12px;
+  padding:10px 14px 12px;
   border-radius:0;
   background:#fff;
   border-bottom:1px solid rgba(120,90,78,.08);
@@ -3448,10 +3447,11 @@ body{
 }
 
 .preorder-modal-thumbs{
-  display:flex;
-  gap:13px;
-  overflow-x:auto;
-  padding:0 18px 2px;
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:7px;
+  overflow:visible;
+  padding:0;
   scrollbar-width:none;
   -webkit-overflow-scrolling:touch;
   align-items:center;
@@ -3463,17 +3463,16 @@ body{
 
 .preorder-modal-thumb{
   position:relative;
-  flex:0 0 58px;
-  width:58px;
-  height:58px;
+  width:100%;
+  height:100%;
   aspect-ratio:1 / 1;
-  border-radius:8px;
+  border-radius:7px;
   background:transparent;
   border:1px solid transparent;
   box-shadow:none;
   overflow:hidden;
-  padding:3px;
-  object-fit:contain;
+  padding:2px;
+  object-fit:cover;
   object-position:center center;
   cursor:pointer;
 }
@@ -3485,11 +3484,11 @@ body{
 
 .preorder-modal-thumb-btn{
   position:relative;
-  flex:0 0 58px;
-  width:58px;
-  height:58px;
+  width:100%;
+  height:auto;
+  aspect-ratio:1 / 1;
   margin:0;
-  padding:3px;
+  padding:2px;
   border-radius:8px;
   background:transparent;
   border:1px solid transparent;
@@ -3617,13 +3616,11 @@ body{
 .preorder-modal{
   width:100%;
   max-width:none;
-  max-height:calc(100dvh - 20px);
+  max-height:none;
   gap:9px;
   padding-top:28px;
   padding-bottom:34px;
-  overflow-y:auto;
-  overscroll-behavior:contain;
-  -webkit-overflow-scrolling:touch;
+  overflow:visible;
 }
 
   .preorder-preview-main{
@@ -3671,7 +3668,7 @@ body{
 
   .preorder-preview-related{
     margin:0;
-    padding:12px 20px 4px;
+    padding:10px 18px 12px;
     border-radius:0;
     background:#fff;
     border-bottom:1px solid rgba(120,90,78,.08);
@@ -3679,15 +3676,16 @@ body{
   }
 
   .preorder-modal-thumbs{
-    gap:13px;
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:6px;
     padding:0;
   }
 
   .preorder-modal-thumb{
-    flex:0 0 58px;
-    width:58px;
-    height:58px;
-    border-radius:8px;
+    width:100%;
+    height:100%;
+    border-radius:7px;
   }
 }
 
@@ -5859,23 +5857,44 @@ function ensurePreorderProductModal() {
 }
 
 function formatPreorderDescriptionHtml(text){
-  const raw = String(text || "").replace(/\r/g, "").trim();
+  let raw = String(text || "").replace(/\r/g, "").trim();
   if (!raw) return "";
+
+  // 讓「【商品特色】油頭...」也會自動拆成標題 + 內文
+  raw = raw
+    .replace(/(【[^】]+】)/g, "\n$1\n")
+    .replace(/(^|\n)\s*(商品特色|適合對象|適合|使用方式|商品規格|預購說明|團購優惠|注意事項)\s*[:：]/g, "\n【$2】\n")
+    .replace(/(容量\s*[:：])/g, "\n$1")
+    .replace(/(香味\s*[:：])/g, "\n$1")
+    .replace(/(狀態\s*[:：])/g, "\n$1")
+    .replace(/(出貨時間\s*[:：])/g, "\n$1")
+    .replace(/(預購商品，?預計\s*8\s*月出貨)/g, "\n$1")
+    .replace(/(少量試洗價釋出，?數量售完不補)/g, "\n$1")
+    .replace(/(數量有限，?售完不補)/g, "\n$1");
 
   return raw
     .split("\n")
     .map(line => String(line || "").trim())
+    .filter((line, idx, arr) => {
+      // 保留中間空行，但避免連續太多空白
+      if (line) return true;
+      return idx > 0 && arr[idx - 1] && arr[idx + 1];
+    })
     .map(line => {
       if (!line) {
         return '<div class="preorder-desc-gap"></div>';
       }
 
-      if (/^【.+】$/.test(line) || /^【.+】/.test(line)) {
+      if (/^【[^】]+】$/.test(line)) {
         return `<div class="preorder-desc-heading">${highlightPreorderDescLine(line)}</div>`;
       }
 
       if (/^[•・＊*\-–—✅✔★☆]/.test(line)) {
         return `<div class="preorder-desc-bullet">${highlightPreorderDescLine(line)}</div>`;
+      }
+
+      if (/^(容量|香味|狀態|出貨時間|預購商品|少量試洗價|數量有限)/.test(line)) {
+        return `<div class="preorder-desc-bullet">${highlightPreorderDescLine("• " + line)}</div>`;
       }
 
       return `<div class="preorder-desc-line">${highlightPreorderDescLine(line)}</div>`;
