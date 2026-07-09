@@ -4418,7 +4418,7 @@ body{
 
 <input type="hidden" id="preorderNote" value="">
 
-  <button class="preorder-submit" id="preorderSubmit" type="submit">送出預購登記</button>
+  <button class="preorder-submit" id="preorderSubmit" type="submit" disabled>請先選擇商品</button>
   <div class="preorder-status" id="preorderStatus"></div>
 </form>
           </div>
@@ -5283,6 +5283,44 @@ const depositBox = document.getElementById("preorderDepositBox");
     }
   }
 
+    function clearSelectedPreorderProduct(keepStatus){
+    productCodeEl.value = "";
+    productNameEl.value = "";
+    productSpecEl.value = "";
+    planNameEl.value = "";
+    planQtyEl.value = "";
+    planPriceEl.value = "";
+
+    if (qtyEl) qtyEl.value = "1";
+
+    selectedNameEl.textContent = "請先選擇預購商品";
+    selectedSpecEl.textContent = "請點選商品卡片下方的「選擇這個預購」後，再送出登記。";
+
+    if (selectedImageEl) {
+      selectedImageEl.removeAttribute("src");
+      selectedImageEl.alt = "";
+      selectedImageEl.hidden = true;
+    }
+
+    if (depositBox) depositBox.hidden = true;
+    if (depositAmountEl) depositAmountEl.value = "";
+
+    if (depositAmountViewEl) {
+      depositAmountViewEl.textContent = "選擇商品後自動帶入";
+      depositAmountViewEl.classList.add("is-empty");
+    }
+
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "請先選擇商品";
+    }
+
+    if (!keepStatus) {
+      statusEl.textContent = "";
+      statusEl.className = "preorder-status";
+    }
+  }
+
   function esc(s) {
     return String(s ?? "").replace(/[&<>"']/g, c => ({
       "&":"&amp;",
@@ -5441,6 +5479,10 @@ const depositBox = document.getElementById("preorderDepositBox");
   });
 
 function selectPreorderProduct(item, plan, shouldScroll) {
+    if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "送出預購登記";
+  }
   const p = plan || (Array.isArray(item.plan_options) ? item.plan_options[0] : null) || {};
 
 const planName = String(p.name || "").trim();
@@ -5674,11 +5716,7 @@ const options = plans.map((p, planIdx) => {
     });
   });
 
-  const firstDefaultPlanIdx = getDefaultPreorderPlanIndex(items[0]);
-  selectPreorderProduct(
-    items[0],
-    items[0].plan_options?.[firstDefaultPlanIdx] || items[0].plan_options?.[0]
-  );
+  clearSelectedPreorderProduct();
 }
 
   let preorderModalOldOverflow = "";
@@ -6140,8 +6178,9 @@ const depositAmountText = String(payload.deposit_amount || "").trim();
       if (!r.ok || !j.ok) {
         throw new Error(j.message || j.error || "預購登記失敗");
       }
+      clearSelectedPreorderProduct(true);
 
-      statusEl.textContent = "已完成預購登記 ✅ 到貨或確認可訂後，會再通知付款。";
+      statusEl.textContent = "已完成預購登記 ✅ 到貨或確認可訂後，會再通知付款。若要再登記，請重新選擇預購商品。";
       statusEl.className = "preorder-status ok";
 
       noteEl.value = "";
@@ -6149,8 +6188,13 @@ const depositAmountText = String(payload.deposit_amount || "").trim();
       statusEl.textContent = "送出失敗：" + (err.message || err);
       statusEl.className = "preorder-status err";
     } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = "送出預購登記";
+      if (String(productNameEl.value || "").trim()) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "送出預購登記";
+      } else {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "請先選擇商品";
+      }
     }
   });
 
