@@ -1692,17 +1692,71 @@ ${parsed.paidTotal ? `已付總收費：NT$ ${parsed.paidTotal}` : ""}
     setStatus($("transferPdfStatus"),"請先上傳 Buy&Ship 付款收據 PDF。");
     setStatus($("transferMsg"),options.message || "尚未送出", options.type || "");
   }
-  async function loadZeroWeightPackages(){setStatus($("transferMsg"),"載入中...","info"); $("packageRows").innerHTML=""; try{const data=await apiGet(API.zeroWeightPackages); const rows=Array.isArray(data.rows)?data.rows:[]; if(!rows.length) $("packageRows").innerHTML='<div class="empty">目前沒有重量[磅] = 0 的包裹。</div>'; rows.forEach((row,i)=>createPackageRow(row,i)); filterPackageRows(); setStatus($("transferMsg"),`✅ 已載入 ${rows.length} 筆重量[磅] = 0 的包裹`,'ok');}catch(err){setStatus($("transferMsg"),`❌ ${err.message||err}`,'err');}}
+  async function loadZeroWeightPackages(options = {}){
+  const silent = !!options.silent;
+
+  if (!silent) {
+    setStatus($("transferMsg"),"載入中...","info");
+  }
+
+  $("packageRows").innerHTML = "";
+
+  try{
+    const data = await apiGet(API.zeroWeightPackages);
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+
+    if (!rows.length) {
+      $("packageRows").innerHTML = '<div class="empty">目前沒有重量[磅] = 0 的包裹。</div>';
+    }
+
+    rows.forEach((row,i)=>createPackageRow(row,i));
+    filterPackageRows();
+
+    if (!silent) {
+      setStatus($("transferMsg"),`✅ 已載入 ${rows.length} 筆重量[磅] = 0 的包裹`,'ok');
+    }
+
+    return {
+      ok: true,
+      count: rows.length
+    };
+  }catch(err){
+    const msg = `❌ ${err.message || err}`;
+    setStatus($("transferMsg"),msg,'err');
+
+    return {
+      ok: false,
+      count: 0,
+      error: msg
+    };
+  }
+}
   function collectSelectedPackages(){return packageRowList().filter(tr=>tr.querySelector(".rowCheck")?.checked).map(tr=>({packageCode:tr.dataset.packageCode||"",weightLbs:tr.querySelector(".weightLbs")?.value.trim()||"",packageFeeTwd:tr.querySelector(".packageFeeTwd")?.value.trim()||"",packageRemark:tr.dataset.packageRemark||""}));}
   async function submitTransfer(){const normalized=normalizeDateInput($("transferDate").value.trim()); if($("transferDate").value.trim()&&!normalized){setStatus($("transferMsg"),"❌ 轉運日期請輸入 YYYY-MM-DD 或 YYYY/MM/DD。","err");return;} const transfer={transferNo:$("transferNo").value.trim(),transferDate:normalized||"",shippingFeeOrTax:$("shippingFeeOrTax").value.trim(),extraFeeTwd:$("extraFeeTwd").value.trim(),creditOrTaichung:$("creditOrTaichung").checked,invoiceRef:$("invoiceRef").value.trim()}; const packages=collectSelectedPackages(); if(!transfer.transferNo){setStatus($("transferMsg"),"❌ 請先輸入轉運單號。","err");return;} if(!packages.length){setStatus($("transferMsg"),"❌ 請先勾選要儲存的包裹。","err");return;} const invalid=packages.find(r=>!r.weightLbs); if(invalid){setStatus($("transferMsg"),`❌ 請先填寫重量[磅]：${invalid.packageCode}`,'err');return;} const btn=$("btnSubmitTransfer"); btn.disabled=true; setStatus($("transferMsg"),"送出中...","info"); try{const data=await apiPost(API.transferSave,{transfer,packages}); state.transferSaved=true; updateSteps(); setStatus($("transferMsg"),`✅ 建立／更新成功\n轉運單 ID：${data.transfer_id||""}\n成功包裹筆數：${data.package_updated_count||0}\n失敗包裹筆數：${data.package_failed_count||0}`,'ok');
-toast('✅ 轉運資料已儲存，轉運區已清空','ok');
+toast('✅ 轉運資料已儲存，已重新載入待補重量包裹','ok');
 
 await loadInbound();
 
+const doneMessage = `✅ 上一張轉運資料已儲存成功，轉運區已清空，可以直接處理下一張手動轉運資料。\n轉運單 ID：${data.transfer_id||""}`;
+
 resetTransfer({
-  message:`✅ 上一張轉運資料已儲存成功，轉運區已清空，可以處理下一張。\n轉運單 ID：${data.transfer_id||""}`,
+  message: doneMessage,
   type:"ok"
-});}catch(err){setStatus($("transferMsg"),`❌ ${err.message||err}`,'err');}finally{btn.disabled=false;}}
+});
+
+setStatus($("transferMsg"),"重新載入待補重量包裹中...","info");
+
+const reloadResult = await loadZeroWeightPackages({
+  silent: true
+});
+
+setStatus(
+  $("transferMsg"),
+  reloadResult.ok
+    ? `${doneMessage}\n已重新載入待補重量包裹：${reloadResult.count} 筆。`
+    : `${doneMessage}\n⚠️ 但待補重量包裹重新載入失敗，請收合再展開「轉運資料」區塊重試。`,
+  reloadResult.ok ? "ok" : "warn"
+);}catch(err){setStatus($("transferMsg"),`❌ ${err.message||err}`,'err');}finally{btn.disabled=false;}}
 
   function applyDict(text,dict){let out=String(text||""); for(const [re,zh] of dict) out=out.replace(re,zh); return out.replace(/\s{2,}/g," ").trim();}
   const COLOR_RULES=[[/black gold/i,"黑金"],[/full pink/i,"滿版粉"],[/milk tea/i,"奶茶"],[/coffee|brown/i,"咖啡"],[/beige/i,"米色"],[/black/i,"黑色"],[/white|chalk/i,"白色"],[/pink/i,"粉色"],[/red/i,"紅色"],[/blue/i,"藍色"],[/green/i,"綠色"],[/gray|grey/i,"灰色"],[/purple/i,"紫色"],[/yellow/i,"黃色"],[/orange/i,"橘色"],[/silver/i,"銀色"],[/gold/i,"金色"]];
