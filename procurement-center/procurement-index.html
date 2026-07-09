@@ -1124,8 +1124,10 @@
       <datalist id="categoryOptions"><option value="TORY BURCH"></option><option value="COACH"></option><option value="MARC JACOBS"></option><option value="KATE SPADE"></option><option value="MICHAEL KORS"></option><option value="HAIR"></option><option value="寄賣"></option><option value="預購"></option></datalist>
 
       <div class="toolbar inbound-copy-row">
-        <button class="btn secondary small" type="button" id="btnDownloadInboundPhotos">下載照片壓縮檔</button>
-        <span class="sub">會把目前清單有照片的列，依清單順序放進 ZIP 的「到貨照片」資料夾；檔名格式：001_原名稱＋顏色英文。</span>
+        <button class="btn secondary small" type="button" id="btnSelectAllInbound">全選</button>
+        <button class="btn secondary small" type="button" id="btnClearAllInbound">取消全選</button>
+        <button class="btn secondary small" type="button" id="btnDownloadInboundPhotos">下載已勾選照片壓縮檔</button>
+        <span class="sub">只會把「已勾選」且有照片的列，依清單順序放進 ZIP 的「到貨照片」資料夾；檔名格式：001_原名稱＋顏色英文。</span>
       </div>
 
       <div class="table-wrap"><table class="inbound-compact-table" style="min-width:1160px;"><thead><tr><th style="width:42px;">選</th><th style="width:58px;">照片</th><th style="width:190px;">原名稱</th><th style="width:50px;">數量</th><th style="width:86px;">顏色</th><th style="width:92px;">品牌/分類</th><th style="width:92px;">分類</th><th style="width:150px;">正式商品名稱</th><th style="width:94px;">標籤輸入碼 / SKU</th><th style="width:66px;">參考成本</th><th style="width:72px;">建議售價</th><th style="width:64px;">實收數量</th><th style="width:62px;">異常數量</th><th style="width:82px;">庫存位置</th><th style="width:118px;">入庫日期</th></tr></thead><tbody id="inboundRows"><tr><td colspan="15" class="empty">尚未載入待入庫清單</td></tr></tbody></table></div>
@@ -1956,11 +1958,33 @@ function bindInboundRows(){
         refresh({ autoSelect:false });
       });
 
-      refreshInboundRowState(tr);
+      // 載入清單時不要自動勾選；
+      // 只有本次輸入 / 貼上 / 修改欄位時，才會在 input/change 事件裡自動勾選。
+      refreshInboundRowState(tr, { autoSelect:false });
     });
   }
   function focusNextInboundSameRole(input,role){const inputs=[...document.querySelectorAll(`#inboundRows tr[data-id] [data-role="${role}"]`)]; const idx=inputs.indexOf(input); const next=inputs[idx+1]; if(next){next.focus(); next.select?.();}}
-  function getInboundTrs(){return [...document.querySelectorAll("#inboundRows tr[data-id]")];}
+  function getInboundTrs(){
+    return [...document.querySelectorAll("#inboundRows tr[data-id]")];
+  }
+
+  function setAllInboundRowsSelected(selected){
+    getInboundTrs().forEach(tr=>{
+      const ck = tr.querySelector(".inboundCheck");
+      if (!ck) return;
+
+      ck.checked = !!selected;
+      tr.classList.toggle("selected-row", !!selected);
+    });
+
+    refreshInboundSummary();
+
+    setStatus(
+      $("inboundMsg"),
+      selected ? "✅ 已全選目前到貨清單。" : "✅ 已取消全選目前到貨清單。",
+      "ok"
+    );
+  }
   function filterInboundRows(){const kw=String($("inboundFilter")?.value||"").trim().toLowerCase(); getInboundTrs().forEach(tr=>{const text=tr.innerText.toLowerCase()+" "+[...tr.querySelectorAll("input")].map(i=>i.value).join(" ").toLowerCase(); tr.style.display=(!kw||text.includes(kw))?"":"none";}); refreshInboundSummary();}
   function refreshInboundSummary(){const trs=getInboundTrs(); const selected=trs.filter(tr=>tr.querySelector(".inboundCheck")?.checked); const ready=trs.filter(tr=>isInboundReady(inboundRowFormValues(tr))); $("inboundCount").textContent=trs.length; $("selectedInboundCount").textContent=selected.length; $("readyInboundCount").textContent=ready.length;}
   function selectReadyRows(){getInboundTrs().forEach(tr=>{const ck=tr.querySelector(".inboundCheck"); if(ck) ck.checked=isInboundReady(inboundRowFormValues(tr)); tr.classList.toggle("selected-row",ck?.checked);}); refreshInboundSummary();}
@@ -2104,33 +2128,45 @@ function validateFinalRows(rows){
       return;
     }
 
-    const rows = getInboundTrs()
+    const selectedRows = getInboundTrs()
       .filter(tr=>tr.style.display!=="none")
-      .map((tr, index)=>{
-        const photoUrl = String(
-          tr.querySelector(".jsInboundPhotoZoom")?.dataset.src ||
-          tr.querySelector("img.thumb")?.src ||
-          ""
-        ).trim();
+      .filter(tr=>tr.querySelector(".inboundCheck")?.checked);
 
-        const name = String(tr.dataset.name || "").trim();
-        const color = String(tr.dataset.color || "").trim();
+    if (!selectedRows.length){
+      setStatus($("inboundMsg"),"❌ 請先勾選要下載照片的列。","err");
+      return;
+    }
 
-        const baseName = inboundPhotoSafeFileName(
-          [name, color].filter(Boolean).join(" "),
-          `商品照片_${index + 1}`
-        );
+    const rows = [];
 
-        return {
-          photoUrl,
-          baseName,
-          orderNo: index + 1
-        };
-      })
-      .filter(row=>row.photoUrl);
+    selectedRows.forEach(tr=>{
+      const photoUrl = String(
+        tr.querySelector(".jsInboundPhotoZoom")?.dataset.src ||
+        tr.querySelector("img.thumb")?.src ||
+        ""
+      ).trim();
+
+      if (!photoUrl) return;
+
+      const name = String(tr.dataset.name || "").trim();
+      const color = String(tr.dataset.color || "").trim();
+
+      const orderNo = rows.length + 1;
+
+      const baseName = inboundPhotoSafeFileName(
+        [name, color].filter(Boolean).join(" "),
+        `商品照片_${orderNo}`
+      );
+
+      rows.push({
+        photoUrl,
+        baseName,
+        orderNo
+      });
+    });
 
     if (!rows.length){
-      setStatus($("inboundMsg"),"❌ 目前清單沒有可下載的照片。","err");
+      setStatus($("inboundMsg"),"❌ 已勾選的列沒有可下載的照片。","err");
       return;
     }
 
@@ -2812,6 +2848,8 @@ function validateFinalRows(rows){
   });
 
   $("btnFinalStockIn")?.addEventListener("click",finalStockInAndExport);
+  $("btnSelectAllInbound")?.addEventListener("click",()=>setAllInboundRowsSelected(true));
+  $("btnClearAllInbound")?.addEventListener("click",()=>setAllInboundRowsSelected(false));
   $("btnDownloadInboundPhotos")?.addEventListener("click",downloadInboundPhotos);
   $("inboundFilter")?.addEventListener("input",filterInboundRows);
   ["defaultLocation","stockInDate","defaultCategory"].forEach(id=>$(id)?.addEventListener("change",()=>renderInboundRows(state.inboundRows)));
