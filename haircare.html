@@ -3246,6 +3246,7 @@ body{
 
 .preorder-modal{
   width:min(480px, calc(100vw - 56px));
+  max-height:calc(100dvh - 56px);
   height:auto;
   min-height:0;
   padding:0 0 28px;
@@ -3253,8 +3254,10 @@ body{
   flex-direction:column;
   gap:16px;
   background:transparent;
-  overflow:visible;
+  overflow-y:auto;
   color:#111;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
 }
 
 .preorder-preview-main{
@@ -3379,6 +3382,61 @@ body{
   color:#9b8b83;
 }
 
+.preorder-preview-desc.is-formatted{
+  white-space:normal;
+}
+
+.preorder-desc-heading{
+  margin:14px 0 8px;
+  padding-left:10px;
+  border-left:3px solid #8b5a48;
+  color:#3b2923;
+  font-size:14px;
+  font-weight:900;
+  line-height:1.55;
+}
+
+.preorder-desc-line{
+  margin:7px 0;
+  color:#6d554b;
+  font-size:13px;
+  line-height:1.9;
+}
+
+.preorder-desc-bullet{
+  margin:7px 0;
+  padding:9px 10px;
+  border-radius:13px;
+  background:#fff8f5;
+  border:1px solid rgba(118,82,70,.08);
+  color:#5f463d;
+  font-size:13px;
+  font-weight:700;
+  line-height:1.75;
+}
+
+.preorder-desc-gap{
+  height:8px;
+}
+
+.preorder-desc-mark{
+  color:#9f2f22;
+  font-family:"Noto Serif TC","Noto Sans TC",serif;
+  font-weight:900;
+}
+
+@media (max-width:767px){
+  .preorder-desc-heading{
+    font-size:13px;
+    margin-top:12px;
+  }
+
+  .preorder-desc-line,
+  .preorder-desc-bullet{
+    font-size:12.5px;
+  }
+}
+  
 .preorder-preview-related{
   width:100%;
   margin:0;
@@ -3476,6 +3534,77 @@ body{
   text-align:center;
 }
 
+  .preorder-modal-nav{
+  position:absolute;
+  top:50%;
+  z-index:10;
+  width:38px;
+  height:48px;
+  transform:translateY(-50%);
+  border:1px solid rgba(20,20,20,.18);
+  border-radius:999px;
+  background:rgba(255,255,255,.72);
+  color:#2f2926;
+  font-size:34px;
+  font-weight:300;
+  line-height:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:0 0 4px;
+  cursor:pointer;
+  box-shadow:0 8px 22px rgba(17,17,17,.10);
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+}
+
+.preorder-modal-prev{
+  left:10px;
+}
+
+.preorder-modal-next{
+  right:10px;
+}
+
+.preorder-modal-nav[hidden]{
+  display:none !important;
+}
+
+.preorder-modal-count{
+  position:absolute;
+  left:50%;
+  bottom:12px;
+  z-index:10;
+  transform:translateX(-50%);
+  padding:4px 10px;
+  border-radius:999px;
+  background:rgba(30,24,22,.72);
+  color:#fffaf6;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:.08em;
+}
+
+.preorder-modal-count[hidden]{
+  display:none !important;
+}
+
+@media (max-width:767px){
+  .preorder-modal-nav{
+    width:34px;
+    height:44px;
+    font-size:30px;
+  }
+
+  .preorder-modal-prev{
+    left:8px;
+  }
+
+  .preorder-modal-next{
+    right:8px;
+  }
+}
+
 @media (max-width:767px){
   .preorder-modal-overlay{
     align-items:flex-start;
@@ -3488,11 +3617,13 @@ body{
 .preorder-modal{
   width:100%;
   max-width:none;
-  max-height:none;
+  max-height:calc(100dvh - 20px);
   gap:9px;
   padding-top:28px;
   padding-bottom:34px;
-  overflow:visible;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
 }
 
   .preorder-preview-main{
@@ -5450,7 +5581,39 @@ const specParts = [
     }
   }
 }
+function getDefaultPreorderPlanIndex(item){
+  const plans = Array.isArray(item?.plan_options) ? item.plan_options : [];
+  if (!plans.length) return 0;
 
+  const tenIdx = plans.findIndex(p => {
+    const name = String(p?.name || "").trim();
+    const qty = Number(p?.qty || 0) || 0;
+
+    return (
+      qty === 10 ||
+      /10\s*(瓶|罐|件|入|組)?/.test(name)
+    );
+  });
+
+  if (tenIdx >= 0) return tenIdx;
+
+  // 找不到 10 瓶時，預設選件數最多 / 金額最高的方案
+  let bestIdx = 0;
+  let bestScore = -1;
+
+  plans.forEach((p, idx) => {
+    const qty = Number(p?.qty || 0) || 0;
+    const price = Number(p?.price || 0) || 0;
+    const score = qty * 1000000 + price;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = idx;
+    }
+  });
+
+  return bestIdx;
+}
 function renderPreorderProducts(items) {
   if (!productsWrap) return;
 
@@ -5466,7 +5629,8 @@ function renderPreorderProducts(items) {
   }
 
   productsWrap.innerHTML = items.map((item, idx) => {
-    const plans = Array.isArray(item.plan_options) ? item.plan_options : [];
+        const plans = Array.isArray(item.plan_options) ? item.plan_options : [];
+    const defaultPlanIdx = getDefaultPreorderPlanIndex(item);
 
 const options = plans.map((p, planIdx) => {
       const name = String(p.name || "方案").trim();
@@ -5478,7 +5642,9 @@ const options = plans.map((p, planIdx) => {
           : name;
 
       const text = price ? `${displayName}｜${money(price)}` : displayName;
-      return `<option value="${planIdx}">${esc(text)}</option>`;
+      const selected = planIdx === defaultPlanIdx ? " selected" : "";
+
+      return `<option value="${planIdx}"${selected}>${esc(text)}</option>`;
     }).join("");
 
     const productImages = getPreorderProductImages(item);
@@ -5497,20 +5663,7 @@ const options = plans.map((p, planIdx) => {
             : ""
         }
 
-        ${
-          productImages.length > 1
-            ? `<div class="preorder-card-gallery">
-                ${productImages.slice(0, 5).map((url, imgIdx) => `
-                  <button type="button" class="preorder-card-gallery-thumb js-preorder-image-open" data-index="${idx}" aria-label="查看第 ${imgIdx + 1} 張圖片">
-                    <img src="${esc(url)}" alt="${esc(item.product_name || "預購商品圖片")}" loading="lazy" onerror="this.closest('.preorder-card-gallery-thumb')?.classList.add('is-broken'); this.remove();">
-                    <span>${imgIdx + 1}</span>
-                  </button>
-                `).join("")}
-              </div>`
-            : ""
-        }
-
-        <h3>${esc(item.product_name || "預購商品")}</h3>
+       <h3>${esc(item.product_name || "預購商品")}</h3>
 
         <p>
           ${esc(item.brand || "")}
@@ -5568,7 +5721,11 @@ const options = plans.map((p, planIdx) => {
     });
   });
 
-  selectPreorderProduct(items[0], items[0].plan_options?.[0]);
+  const firstDefaultPlanIdx = getDefaultPreorderPlanIndex(items[0]);
+  selectPreorderProduct(
+    items[0],
+    items[0].plan_options?.[firstDefaultPlanIdx] || items[0].plan_options?.[0]
+  );
 }
 
   let preorderModalOldOverflow = "";
@@ -5646,6 +5803,9 @@ function ensurePreorderProductModal() {
       <div class="preorder-preview-main">
         <div class="preorder-preview-image-wrap" id="preorderModalMainBox">
           <button class="preorder-modal-close" id="preorderModalClose" type="button" aria-label="關閉">×</button>
+          <button class="preorder-modal-nav preorder-modal-prev" id="preorderModalPrev" type="button" aria-label="上一張">‹</button>
+          <button class="preorder-modal-nav preorder-modal-next" id="preorderModalNext" type="button" aria-label="下一張">›</button>
+          <div class="preorder-modal-count" id="preorderModalImageCount"></div>
           <img id="preorderModalMainImg" src="" alt="">
         </div>
 
@@ -5683,6 +5843,46 @@ function ensurePreorderProductModal() {
   return overlay;
 }
 
+  function highlightPreorderDescLine(text){
+  let html = esc(text);
+
+  // 後台商品介紹可用 **重點文字** 包起來，前台會變色加粗。
+  html = html.replace(/\*\*(.+?)\*\*/g, '<span class="preorder-desc-mark">$1</span>');
+
+  // 常見重點自動加色
+  html = html.replace(
+    /(PIF\s*認證|有效至\s*2029\.03\.31|2029\.03\.31|數量有限|售完不補|到貨後通知付款|10\s*(瓶|罐)|NT\$\s*[\d,]+|\$[\d,]+)/g,
+    '<span class="preorder-desc-mark">$1</span>'
+  );
+
+  return html;
+}
+
+function formatPreorderDescriptionHtml(text){
+  const raw = String(text || "").replace(/\r/g, "").trim();
+  if (!raw) return "";
+
+  return raw
+    .split("\n")
+    .map(line => String(line || "").trim())
+    .map(line => {
+      if (!line) {
+        return '<div class="preorder-desc-gap"></div>';
+      }
+
+      if (/^【.+】$/.test(line) || /^【.+】/.test(line)) {
+        return `<div class="preorder-desc-heading">${highlightPreorderDescLine(line)}</div>`;
+      }
+
+      if (/^[•・＊*\-–—✅✔★☆]/.test(line)) {
+        return `<div class="preorder-desc-bullet">${highlightPreorderDescLine(line)}</div>`;
+      }
+
+      return `<div class="preorder-desc-line">${highlightPreorderDescLine(line)}</div>`;
+    })
+    .join("");
+}
+
 function openPreorderProductModal(item) {
   const overlay = ensurePreorderProductModal();
 
@@ -5690,6 +5890,9 @@ function openPreorderProductModal(item) {
   const nameEl = overlay.querySelector("#preorderModalProductName");
   const metaEl = overlay.querySelector("#preorderModalMeta");
   const mainImg = overlay.querySelector("#preorderModalMainImg");
+const prevBtn = overlay.querySelector("#preorderModalPrev");
+const nextBtn = overlay.querySelector("#preorderModalNext");
+const countEl = overlay.querySelector("#preorderModalImageCount");
 const thumbsWrap = overlay.querySelector("#preorderModalThumbsWrap");
 const thumbsEl = overlay.querySelector("#preorderModalThumbs");
 const descEl = overlay.querySelector("#preorderModalDesc");
@@ -5705,28 +5908,55 @@ const descEl = overlay.querySelector("#preorderModalDesc");
     item.need_deposit ? "需定金 " + money(item.deposit_amount || 0) : "到貨後通知付款"
   ].filter(Boolean).join("｜");
 
-  mainImg.onerror = function () {
-    const current = String(mainImg.src || "");
-    const next = images.find(url => url && !current.includes(url));
+  let activeImageIndex = 0;
+  const brokenImageIndexes = new Set();
 
-    if (next) {
-      mainImg.src = next;
-      mainImg.style.display = "";
-    } else {
+  function setModalImage(nextIndex){
+    if (!images.length) {
       mainImg.removeAttribute("src");
       mainImg.alt = "";
       mainImg.style.display = "none";
-    }
-  };
 
-  if (firstImage) {
-    mainImg.src = firstImage;
+      if (countEl) countEl.hidden = true;
+      if (prevBtn) prevBtn.hidden = true;
+      if (nextBtn) nextBtn.hidden = true;
+      return;
+    }
+
+    const total = images.length;
+    activeImageIndex = ((Number(nextIndex || 0) % total) + total) % total;
+
+    const url = images[activeImageIndex] || "";
+
+    mainImg.onerror = function () {
+      brokenImageIndexes.add(activeImageIndex);
+
+      const fallbackIdx = images.findIndex((_, idx) => !brokenImageIndexes.has(idx));
+
+      if (fallbackIdx >= 0) {
+        setModalImage(fallbackIdx);
+      } else {
+        mainImg.removeAttribute("src");
+        mainImg.alt = "";
+        mainImg.style.display = "none";
+      }
+    };
+
+    mainImg.src = url;
     mainImg.alt = item.product_name || "預購商品圖片";
     mainImg.style.display = "";
-  } else {
-    mainImg.removeAttribute("src");
-    mainImg.alt = "";
-    mainImg.style.display = "none";
+
+    thumbsEl.querySelectorAll(".preorder-modal-thumb-btn").forEach((btn, idx) => {
+      btn.classList.toggle("is-active", idx === activeImageIndex);
+    });
+
+    if (countEl) {
+      countEl.hidden = total <= 1;
+      countEl.textContent = `${activeImageIndex + 1} / ${total}`;
+    }
+
+    if (prevBtn) prevBtn.hidden = total <= 1;
+    if (nextBtn) nextBtn.hidden = total <= 1;
   }
 
 if (thumbsWrap) {
@@ -5747,23 +5977,33 @@ if (thumbsWrap) {
     </button>
   `).join("");
 
-  thumbsEl.querySelectorAll(".preorder-modal-thumb-btn").forEach(btn => {
+  thumbsEl.querySelectorAll(".preorder-modal-thumb-btn").forEach((btn, idx) => {
     btn.addEventListener("click", () => {
-      const url = btn.getAttribute("data-full") || "";
-      if (!url) return;
-
-      mainImg.src = url;
-      mainImg.style.display = "";
-
-      thumbsEl.querySelectorAll(".preorder-modal-thumb-btn").forEach(x => {
-        x.classList.remove("is-active");
-      });
-
-      btn.classList.add("is-active");
+      setModalImage(idx);
     });
   });
 
-  descEl.textContent = String(item.description || "").trim();
+  if (prevBtn) {
+    prevBtn.onclick = function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      setModalImage(activeImageIndex - 1);
+    };
+  }
+
+  if (nextBtn) {
+    nextBtn.onclick = function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      setModalImage(activeImageIndex + 1);
+    };
+  }
+
+  setModalImage(0);
+
+  const descHtml = formatPreorderDescriptionHtml(item.description || "");
+  descEl.innerHTML = descHtml;
+  descEl.classList.toggle("is-formatted", !!descHtml);
 
   preorderModalOldOverflow = document.body.style.overflow || "";
 
