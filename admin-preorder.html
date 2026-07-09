@@ -869,8 +869,8 @@
 }
 
 .toolbar-side{
-  width:min(520px, 44vw);
-  min-width:430px;
+  width:min(720px, 52vw);
+  min-width:560px;
   display:flex;
   flex-direction:column;
   gap:8px;
@@ -878,7 +878,7 @@
 
 .side-box-row{
   display:grid;
-  grid-template-columns:minmax(190px,.9fr);
+  grid-template-columns:minmax(190px,.9fr) minmax(260px,1.15fr);
   gap:8px;
   align-items:start;
 }
@@ -899,6 +899,67 @@
 .side-box input{
   min-height:40px;
   font-size:13px;
+}
+
+  .preorder-stats-list{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  max-height:132px;
+  overflow:auto;
+}
+
+.preorder-stat-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+  align-items:center;
+  padding:7px 8px;
+  border-radius:10px;
+  background:rgba(2,6,23,.48);
+  border:1px solid rgba(148,163,184,.18);
+}
+
+.preorder-stat-detail{
+  min-width:0;
+  color:#e2e8f0;
+  font-size:12px;
+  font-weight:800;
+  line-height:1.45;
+  word-break:break-word;
+}
+
+.preorder-stat-detail small{
+  display:block;
+  margin-top:2px;
+  color:#94a3b8;
+  font-size:10.5px;
+  font-weight:700;
+}
+
+.preorder-stat-qty{
+  min-width:58px;
+  text-align:right;
+  color:#67e8f9;
+  font-size:13px;
+  font-weight:900;
+  white-space:nowrap;
+}
+
+.preorder-stat-empty{
+  padding:10px 8px;
+  border-radius:10px;
+  background:rgba(2,6,23,.42);
+  border:1px dashed rgba(148,163,184,.28);
+  color:#94a3b8;
+  font-size:12px;
+  line-height:1.5;
+}
+
+@media (max-width:1100px){
+  .side-box-row{
+    grid-template-columns:1fr;
+  }
 }
 
 .preorder-admin-toolbar .preorder-mode-tabs{
@@ -1058,11 +1119,18 @@
     </section>
   </div>
 
-  <div class="toolbar-side">
+<div class="toolbar-side">
     <div class="side-box-row">
       <div class="side-box" id="lineSearchBox">
         <label for="keywordInput">LINE 名稱搜尋</label>
         <input id="keywordInput" type="text" placeholder="輸入 LINE 名稱">
+      </div>
+
+      <div class="side-box" id="preorderStatsBox">
+        <label>預購商品統計</label>
+        <div class="preorder-stats-list" id="preorderProductStats">
+          <div class="preorder-stat-empty">載入後會顯示商品明細與組數統計</div>
+        </div>
       </div>
     </div>
   </div>
@@ -1157,6 +1225,7 @@ const cntReady = $("cntReady");
 const cntArrived = $("cntArrived");
 const cntSent = $("cntSent");
 const cntCompleted = $("cntCompleted");
+const preorderProductStats = $("preorderProductStats");
 
 const arrivalBatchBar = $("arrivalBatchBar");
 const chkSelectAllArrived = $("chkSelectAllArrived");
@@ -1306,6 +1375,68 @@ let selectedArrivalIds = new Set();
     return items.filter(it => preorderModeOf(it) === currentMode);
   }
 
+  function preorderStatDetailText(it){
+    const detail = String(it?.product_spec || "").trim();
+    const name = String(it?.product_name || "").trim();
+
+    if (detail && name && !detail.includes(name)) {
+      return name + "｜" + detail;
+    }
+
+    return detail || name || "未命名預購商品";
+  }
+
+  function renderPreorderProductStats(){
+    if (!preorderProductStats) return;
+
+    const activeRows = items.filter(it => {
+      const mode = preorderModeOf(it);
+
+      // 統計「目前還在處理中的預購」：
+      // 排除已取消、已完成；保留待付定金、已確認/免定金、已到貨、已發結帳卡。
+      return mode !== "cancelled" && mode !== "completed";
+    });
+
+    const map = new Map();
+
+    activeRows.forEach(it => {
+      const detail = preorderStatDetailText(it);
+      const qty = Math.max(1, Math.floor(Number(it?.qty || 0) || 1));
+      const old = map.get(detail) || {
+        detail,
+        qty: 0,
+        count: 0
+      };
+
+      old.qty += qty;
+      old.count += 1;
+
+      map.set(detail, old);
+    });
+
+    const rows = Array.from(map.values()).sort((a, b) => {
+      if (b.qty !== a.qty) return b.qty - a.qty;
+      return a.detail.localeCompare(b.detail, "zh-Hant");
+    });
+
+    if (!rows.length) {
+      preorderProductStats.innerHTML = `
+        <div class="preorder-stat-empty">目前沒有待處理預購商品</div>
+      `;
+      return;
+    }
+
+    preorderProductStats.innerHTML = rows.map(row => `
+      <div class="preorder-stat-row">
+        <div class="preorder-stat-detail">
+          ${esc(row.detail)}
+          <small>共 ${esc(row.count)} 筆預購</small>
+        </div>
+        <div class="preorder-stat-qty">${esc(row.qty)} 組</div>
+      </div>
+    `).join("");
+  }
+
   function updateBatchToolbar(){
     selectedArrivalIds.clear();
 
@@ -1334,6 +1465,7 @@ let selectedArrivalIds = new Set();
     }
 
     updateBatchToolbar();
+    renderPreorderProductStats();
   }
 
   function actionButtonsHtml(it){
@@ -1562,7 +1694,7 @@ const res = await api("/op/preorders/list", {
           <div>客人：<b>${esc(it.customer_name || "—")}</b></div>
           <div>電話：<b>${esc(it.phone || "—")}</b></div>
           <div>編號：<b>${esc(it.product_code || "—")}</b></div>
-          <div>商品：<b>${esc(it.product_name || "—")}</b></div>
+          <div>商品明細：<b>${esc(it.product_spec || it.product_name || "—")}</b></div>
           <div>數量：<b>${esc(preorderQtyText(it))}</b></div>
         </div>
       `;
@@ -1614,7 +1746,7 @@ const res = await api("/op/preorders/list", {
 
       <div class="kv"><div class="k">預購商品編號</div><div class="v">${esc(it.product_code || "—")}</div></div>
       <div class="kv"><div class="k">商品</div><div class="v">${esc(it.product_name || "—")}</div></div>
-      <div class="kv"><div class="k">預購明細</div><div class="v">${esc(it.product_spec || "—")}</div></div>
+      <div class="kv"><div class="k">商品明細</div><div class="v">${esc(it.product_spec || it.product_name || "—")}</div></div>
 
       ${Number(it.deposit_amount || 0) > 0 ? `
         <div class="kv deposit-row">
