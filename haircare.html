@@ -3116,6 +3116,83 @@ body{
   letter-spacing:.04em;
 }
 
+  .preorder-card-gallery{
+  position:relative;
+  z-index:3;
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:6px;
+  margin:0 0 10px;
+}
+
+.preorder-card-gallery-thumb{
+  position:relative;
+  min-height:0 !important;
+  height:auto !important;
+  margin:0 !important;
+  padding:0 !important;
+  border:1px solid rgba(118,82,70,.10) !important;
+  border-radius:10px !important;
+  background:#fff !important;
+  overflow:hidden !important;
+  box-shadow:none !important;
+  cursor:pointer;
+}
+
+.preorder-card-gallery-thumb img{
+  width:100%;
+  aspect-ratio:1/1;
+  object-fit:cover;
+  display:block;
+}
+
+.preorder-card-gallery-thumb span{
+  position:absolute;
+  left:4px;
+  top:4px;
+  min-width:16px;
+  height:16px;
+  padding:0 4px;
+  border-radius:999px;
+  background:rgba(59,41,35,.80);
+  color:#fff;
+  font-size:9px;
+  font-weight:900;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+.preorder-card-gallery-thumb.is-broken{
+  aspect-ratio:1/1;
+  border-style:dashed !important;
+  background:#fff4ef !important;
+}
+
+.preorder-card-gallery-thumb.is-broken::after{
+  content:"無法載入";
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#9a6b5f;
+  font-size:9px;
+  font-weight:900;
+}
+
+@media (max-width:767px){
+  .preorder-card-gallery{
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:4px;
+    margin-bottom:8px;
+  }
+
+  .preorder-card-gallery-thumb{
+    border-radius:8px !important;
+  }
+}
+
 .preorder-detail-toggle{
   background:#fff !important;
   color:#3b2923 !important;
@@ -3169,17 +3246,15 @@ body{
 
 .preorder-modal{
   width:min(480px, calc(100vw - 56px));
-  max-height:calc(100dvh - 56px);
   height:auto;
-  padding:0;
+  min-height:0;
+  padding:0 0 28px;
   display:flex;
   flex-direction:column;
   gap:16px;
   background:transparent;
-  overflow-y:auto;
+  overflow:visible;
   color:#111;
-  overscroll-behavior:contain;
-  -webkit-overflow-scrolling:touch;
 }
 
 .preorder-preview-main{
@@ -3350,6 +3425,57 @@ body{
   background:rgba(255,250,247,.22);
 }
 
+.preorder-modal-thumb-btn{
+  position:relative;
+  flex:0 0 58px;
+  width:58px;
+  height:58px;
+  margin:0;
+  padding:3px;
+  border-radius:8px;
+  background:transparent;
+  border:1px solid transparent;
+  box-shadow:none;
+  overflow:hidden;
+  cursor:pointer;
+}
+
+.preorder-modal-thumb-btn.is-active{
+  border-color:rgba(178,132,102,.58);
+  background:rgba(255,250,247,.22);
+}
+
+.preorder-modal-thumb-btn .preorder-modal-thumb{
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  object-position:center center;
+  display:block;
+  padding:0;
+  border:0;
+  border-radius:6px;
+}
+
+.preorder-modal-thumb-btn.is-broken{
+  background:#fff4ef;
+  border-color:rgba(180,80,60,.25);
+}
+
+.preorder-modal-thumb-btn.is-broken::after{
+  content:"圖片無法載入";
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:4px;
+  color:#9a6b5f;
+  font-size:9px;
+  font-weight:900;
+  line-height:1.25;
+  text-align:center;
+}
+
 @media (max-width:767px){
   .preorder-modal-overlay{
     align-items:flex-start;
@@ -3362,10 +3488,11 @@ body{
 .preorder-modal{
   width:100%;
   max-width:none;
-  max-height:calc(100dvh - 20px);
+  max-height:none;
   gap:9px;
   padding-top:28px;
-  overflow-y:auto;
+  padding-bottom:34px;
+  overflow:visible;
 }
 
   .preorder-preview-main{
@@ -5370,6 +5497,19 @@ const options = plans.map((p, planIdx) => {
             : ""
         }
 
+        ${
+          productImages.length > 1
+            ? `<div class="preorder-card-gallery">
+                ${productImages.slice(0, 5).map((url, imgIdx) => `
+                  <button type="button" class="preorder-card-gallery-thumb js-preorder-image-open" data-index="${idx}" aria-label="查看第 ${imgIdx + 1} 張圖片">
+                    <img src="${esc(url)}" alt="${esc(item.product_name || "預購商品圖片")}" loading="lazy" onerror="this.closest('.preorder-card-gallery-thumb')?.classList.add('is-broken'); this.remove();">
+                    <span>${imgIdx + 1}</span>
+                  </button>
+                `).join("")}
+              </div>`
+            : ""
+        }
+
         <h3>${esc(item.product_name || "預購商品")}</h3>
 
         <p>
@@ -5584,32 +5724,41 @@ if (thumbsWrap) {
   }
 
   thumbsEl.innerHTML = images.map((url, idx) => `
-    <img
-      class="preorder-modal-thumb ${idx === 0 ? "is-active" : ""}"
-      src="${esc(url)}"
-      alt="${esc(item.product_name || "預購商品圖片")}"
+    <button
+      type="button"
+      class="preorder-modal-thumb-btn ${idx === 0 ? "is-active" : ""}"
       data-full="${esc(url)}"
-      onerror="this.remove();">
+      aria-label="查看第 ${idx + 1} 張圖片">
+      <img
+        class="preorder-modal-thumb"
+        src="${esc(url)}"
+        alt="${esc(item.product_name || "預購商品圖片")}"
+        onerror="this.closest('.preorder-modal-thumb-btn')?.classList.add('is-broken'); this.remove();">
+    </button>
   `).join("");
 
-  thumbsEl.querySelectorAll(".preorder-modal-thumb").forEach(img => {
-    img.addEventListener("click", () => {
-      const url = img.getAttribute("data-full") || img.src;
+  thumbsEl.querySelectorAll(".preorder-modal-thumb-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const url = btn.getAttribute("data-full") || "";
+      if (!url) return;
+
       mainImg.src = url;
       mainImg.style.display = "";
 
-      thumbsEl.querySelectorAll(".preorder-modal-thumb").forEach(x => {
+      thumbsEl.querySelectorAll(".preorder-modal-thumb-btn").forEach(x => {
         x.classList.remove("is-active");
       });
 
-      img.classList.add("is-active");
+      btn.classList.add("is-active");
     });
   });
 
   descEl.textContent = String(item.description || "").trim();
 
   preorderModalOldOverflow = document.body.style.overflow || "";
-  document.body.style.overflow = "hidden";
+
+  // 不鎖 body，避免 LINE / iPhone 內建瀏覽器商品介紹不能往下滑。
+  // 彈窗外層 .preorder-modal-overlay 已經是 fixed + overflow-y:auto。
   overlay.hidden = false;
 }
 
@@ -5618,6 +5767,8 @@ function closePreorderProductModal() {
   if (!overlay) return;
 
   overlay.hidden = true;
+
+  // 只有原本真的有 overflow 值才還原，避免關閉彈窗後影響頁面滑動。
   document.body.style.overflow = preorderModalOldOverflow || "";
 }
 
@@ -5635,6 +5786,14 @@ function closePreorderProductModal() {
       }
 
       preorderProducts = Array.isArray(j.items) ? j.items : [];
+
+      console.table(preorderProducts.map(item => ({
+        product_name: item.product_name || "",
+        main_image: item.main_image || "",
+        gallery_count: Array.isArray(item.gallery_images) ? item.gallery_images.length : 0,
+        gallery_images: Array.isArray(item.gallery_images) ? item.gallery_images.join(" | ") : ""
+      })));
+
       renderPreorderProducts(preorderProducts);
     } catch (err) {
       if (productsWrap) {
