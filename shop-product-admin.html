@@ -1647,11 +1647,30 @@ async function saveSitePopup(){
   }
 }
 
-    function getPreGalleryUrlsFromTextarea(){
-  return String($('preGalleryImages')?.value || '')
-    .split(/[\n,，]+/g)
-    .map(x => x.trim())
-    .filter(Boolean);
+function normalizePreorderImageUrls(v){
+  const s = String(v || '').trim();
+  if (!s) return [];
+
+  const matched = s.match(/https?:\/\/[^\s,，]+/g) || [];
+
+  if (matched.length) {
+    return [...new Set(
+      matched
+        .map(x => String(x || '').trim())
+        .filter(Boolean)
+    )];
+  }
+
+  return [...new Set(
+    s
+      .split(/[\n,，\s]+/g)
+      .map(x => String(x || '').trim())
+      .filter(x => /^https?:\/\//i.test(x))
+  )];
+}
+
+function getPreGalleryUrlsFromTextarea(){
+  return normalizePreorderImageUrls($('preGalleryImages')?.value || '');
 }
 
 function renderPreorderImagePreview(){
@@ -1763,10 +1782,7 @@ product_name: $('preProductName').value.trim(),
 brand: $('preBrand').value.trim(),
 
     main_image: $('preMainImage').value.trim(),
-    gallery_images: $('preGalleryImages').value
-      .split(/\n+/g)
-      .map(x => x.trim())
-      .filter(Boolean),
+    gallery_images: getPreGalleryUrlsFromTextarea(),
 
     description: $('preDescription').value.trim(),
 
@@ -1827,12 +1843,9 @@ async function uploadPreorderImages(){
 
     const galleryUrls = mainFile ? urls.slice(1) : urls;
     if (galleryUrls.length) {
-      const old = $('preGalleryImages').value
-        .split(/\n+/g)
-        .map(x => x.trim())
-        .filter(Boolean);
+      const old = getPreGalleryUrlsFromTextarea();
 
-      $('preGalleryImages').value = [...old, ...galleryUrls].join('\n');
+      $('preGalleryImages').value = [...new Set([...old, ...galleryUrls])].join('\n');
     }
 
     $('preMainFile').value = '';
