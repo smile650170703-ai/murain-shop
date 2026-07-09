@@ -1902,7 +1902,23 @@ function bindInboundRows(){
   function filterInboundRows(){const kw=String($("inboundFilter")?.value||"").trim().toLowerCase(); getInboundTrs().forEach(tr=>{const text=tr.innerText.toLowerCase()+" "+[...tr.querySelectorAll("input")].map(i=>i.value).join(" ").toLowerCase(); tr.style.display=(!kw||text.includes(kw))?"":"none";}); refreshInboundSummary();}
   function refreshInboundSummary(){const trs=getInboundTrs(); const selected=trs.filter(tr=>tr.querySelector(".inboundCheck")?.checked); const ready=trs.filter(tr=>isInboundReady(inboundRowFormValues(tr))); $("inboundCount").textContent=trs.length; $("selectedInboundCount").textContent=selected.length; $("readyInboundCount").textContent=ready.length;}
   function selectReadyRows(){getInboundTrs().forEach(tr=>{const ck=tr.querySelector(".inboundCheck"); if(ck) ck.checked=isInboundReady(inboundRowFormValues(tr)); tr.classList.toggle("selected-row",ck?.checked);}); refreshInboundSummary();}
-  function collectInboundDraftRows(selectedOnly=false){return getInboundTrs().filter(tr=>!selectedOnly||tr.querySelector(".inboundCheck")?.checked).map(tr=>{const v=inboundRowFormValues(tr); const base=state.inboundRows.find(r=>String(r.id)===String(v.id))||{}; return {...v,name:base.name||tr.dataset.name||"",qty:base.qty||tr.dataset.qty||"",refPrice:base.refPrice||tr.dataset.unitCost||"",unitCost:base.refPrice||tr.dataset.unitCost||""};});}
+function collectInboundDraftRows(selectedOnly=false){
+  return getInboundTrs()
+    .filter(tr=>!selectedOnly||tr.querySelector(".inboundCheck")?.checked)
+    .map(tr=>{
+      const v=inboundRowFormValues(tr);
+      const base=state.inboundRows.find(r=>String(r.id)===String(v.id))||{};
+
+      return {
+        ...v,
+        name:base.name||tr.dataset.name||"",
+        qty:base.qty||tr.dataset.qty||"",
+        refPrice:base.refPrice||"",
+        unitCost:base.unitCost||"",
+        newBarcode:base.newBarcode||""
+      };
+    });
+}
   async function saveInboundDraft({silent=false, selectedOnly=false}={}){const rows=collectInboundDraftRows(selectedOnly).filter(r=>r.brand||r.productType||r.productName||r.labelCode||r.suggestPrice||r.receivedQty); if(!rows.length){if(!silent)setStatus($("inboundMsg"),"❌ 沒有可暫存的資料。","err"); return {updated:0};} if(!silent)setStatus($("inboundMsg"),"暫存到貨／標籤資料中...","info"); 
                                                                          const inboundRows=rows.map((r,idx)=>({
   id:r.id,
@@ -1916,7 +1932,41 @@ function bindInboundRows(){
   serialNo:(idx%9)+1,
   printable:false
 }));const labelRows=rows.map(r=>({id:r.id,labelCode:r.labelCode,suggestPrice:r.suggestPrice,receivedQty:r.receivedQty})); const [a,b]=await Promise.all([apiPost(API.inboundSave,{rows:inboundRows}),apiPost(API.labelSaveDraft,{items:labelRows})]); state.inboundSaved=true; updateSteps(); if(!silent){setStatus($("inboundMsg"),`✅ 已暫存\n待入庫更新：${a.updated_count||0} 筆\n標籤/實收暫存：${b.updated_count||0} 筆${(a.failed_count||b.failed_count)?"\n⚠️ 有部分失敗，請查看後端回傳。":""}`,'ok'); toast('✅ 到貨／標籤資料已暫存','ok');} return {inbound:a,label:b,updated:(a.updated_count||0)+(b.updated_count||0)};}
-  function validateFinalRows(rows){if(!rows.length) throw new Error("請先勾選要正式入庫的資料。可按『勾選可入庫列』。"); const bad=[]; rows.forEach((r,i)=>{if(!r.id) bad.push(`第 ${i+1} 筆缺少 id`); if(!r.labelCode) bad.push(`${r.name||i+1}：缺少標籤輸入碼 / SKU`); if(!r.productName) bad.push(`${r.name||i+1}：缺少正式商品名稱`); if(!r.brand) bad.push(`${r.name||i+1}：缺少分類`); if(!r.category) bad.push(`${r.name||i+1}：缺少 Products 分類`); if(!r.suggestPrice) bad.push(`${r.name||i+1}：缺少建議售價`); if(r.receivedQty==="") bad.push(`${r.name||i+1}：缺少實收數量`); if(Number(r.receivedQty)<=0) bad.push(`${r.name||i+1}：實收數量需大於 0`);}); if(bad.length) throw new Error(bad.slice(0,12).join("\n")); const dup=rows.map(r=>r.labelCode.trim().toUpperCase()).find((sku,idx,arr)=>sku&&arr.indexOf(sku)!==idx); if(dup) throw new Error(`本次入庫 SKU 重複：${dup}`);}
+function validateFinalRows(rows){
+  if(!rows.length) {
+    throw new Error("請先勾選要正式入庫的資料。");
+  }
+
+  const bad=[];
+
+  rows.forEach((r,i)=>{
+    const title = r.name || r.productName || `第 ${i+1} 筆`;
+    const unitCostText = String(r.unitCost ?? "").trim();
+
+    if(!r.id) bad.push(`第 ${i+1} 筆缺少 id`);
+    if(!r.newBarcode) bad.push(`${title}：缺少新條碼 (主播版)`);
+    if(!r.labelCode) bad.push(`${title}：缺少標籤輸入碼`);
+    if(!r.productName) bad.push(`${title}：缺少正式商品名稱`);
+    if(!r.brand) bad.push(`${title}：缺少分類`);
+    if(!r.category) bad.push(`${title}：缺少 Products 分類`);
+    if(!r.suggestPrice) bad.push(`${title}：缺少建議售價`);
+    if(unitCostText === "") bad.push(`${title}：缺少單品到手成本`);
+    if(r.receivedQty==="") bad.push(`${title}：缺少實收數量`);
+    if(Number(r.receivedQty)<=0) bad.push(`${title}：實收數量需大於 0`);
+  });
+
+  if(bad.length) {
+    throw new Error(bad.slice(0,12).join("\n"));
+  }
+
+  const dup = rows
+    .map(r=>String(r.newBarcode||"").trim().toUpperCase())
+    .find((sku,idx,arr)=>sku&&arr.indexOf(sku)!==idx);
+
+  if(dup) {
+    throw new Error(`本次入庫新條碼重複：${dup}`);
+  }
+}
   
     async function copyTextToClipboard(text){
     if(navigator.clipboard&&window.isSecureContext){
@@ -2179,11 +2229,259 @@ function bindInboundRows(){
     });
   }
   
-  function buildStockPayloadRows(rows){return rows.map(r=>({SKU:String(r.labelCode||"").trim(),"庫存位置":String(r.stockLocation||"").trim(),Name:String(r.productName||"").trim(),Price:moneyNum(r.suggestPrice),"起標價格":0,"一標多少":0,StockQty:Number(r.receivedQty||0)||0,Cost:moneyNum(r.unitCost||r.refPrice),"商品來源":"自有","寄賣人":"",consignorRecordId:"","入庫日期":todayStr(),sub_category:String(r.brand||"").trim(),"直播截圖Url":""}));}
-  function csvCell(v){let s=String(v??""); if(/^[=+\-@]/.test(s.trim())) s="'"+s; return `"${s.replace(/"/g,'""')}"`;}
-  function downloadCsv(filename,rows){const arr=Array.isArray(rows)?rows:[]; if(!arr.length)return false; const headers=Object.keys(arr[0]); const csv=[headers,...arr.map(r=>headers.map(h=>r[h]??""))].map(row=>row.map(csvCell).join(",")).join("\r\n"); const blob=new Blob(["\ufeff",csv],{type:"text/csv;charset=utf-8;"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000); return true;}
-  function buildLabelFileName(){const d=new Date(); const pad=n=>String(n).padStart(2,"0"); return `正式入庫標籤_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.csv`;}
-  async function finalStockInAndExport(){const selected=collectInboundDraftRows(true); try{validateFinalRows(selected);}catch(err){setStatus($("inboundMsg"),`❌ ${err.message||err}`,'err'); return;} const op_key=getSharedStockInAdminKey(); if(!op_key){setStatus($("inboundMsg"),"❌ 找不到共用後台主管密碼 / op_key。請先用上方共用後台登入，或先開啟 stock-in.html 登入一次。","err"); return;} const ok=confirm(`確定要正式入庫 ${selected.length} 筆到 Products 庫存，並匯出標籤 CSV 嗎？\n\n注意：這一步會真的新增 Products，請勿重複按。`); if(!ok)return; const btn=$("btnFinalStockIn"); btn.disabled=true; setStatus($("inboundMsg"),"1/4 暫存到貨與標籤資料中...","info"); try{await saveInboundDraft({silent:true,selectedOnly:true}); const stockItems=buildStockPayloadRows(selected); setStatus($("inboundMsg"),"2/4 正式入庫 Products 中...","info"); const stock=await apiPost(API.stockInBatch,{op_key,items:stockItems}); setStatus($("inboundMsg"),"3/4 標記列印完成並產生 CSV 中...","info"); const labelItems=selected.map(r=>({id:r.id,labelCode:r.labelCode,suggestPrice:r.suggestPrice,receivedQty:r.receivedQty,newBarcode:r.labelCode,brand:r.brand,productName:r.productName,qty:r.qty,unitCost:r.unitCost||r.refPrice})); const label=await apiPost(API.labelSaveExport,{items:labelItems}); const exportRows=Array.isArray(label.export_rows)?label.export_rows:[]; if(exportRows.length) downloadCsv(buildLabelFileName(),exportRows); state.stockDone=true; state.inboundSaved=true; updateSteps(); setStatus($("inboundMsg"),`✅ 正式入庫完成＋標籤已匯出\nProducts 新增：${stock.createdCount||0} 筆\nSKU：${Array.isArray(stock.skus)?stock.skus.join(', '):''}\n標籤更新：${label.updated_count||0} 筆`,'ok'); toast('✅ 正式入庫完成＋標籤已下載','ok'); await loadInbound(); await loadPendingReview();}catch(err){setStatus($("inboundMsg"),`❌ 正式入庫流程中斷：${err.message||err}\n\n如果訊息顯示 Products 已新增但標籤下載失敗，請不要重複按正式入庫，避免 SKU 重複。`,'err'); toast('❌ 正式入庫失敗，請看訊息','err');}finally{btn.disabled=false;}}
+ function buildStockPayloadRows(rows){
+  return rows.map(r=>({
+    SKU:String(r.newBarcode||"").trim(),
+    "庫存位置":String(r.stockLocation||"").trim(),
+    Name:String(r.productName||"").trim(),
+    Price:moneyNum(r.suggestPrice),
+    "起標價格":0,
+    "一標多少":0,
+    StockQty:Number(r.receivedQty||0)||0,
+    Cost:moneyNum(r.unitCost),
+    "商品來源":"自有",
+    "寄賣人":"",
+    consignorRecordId:"",
+    "入庫日期":todayStr(),
+    sub_category:String(r.brand||"").trim(),
+    "直播截圖Url":""
+  }));
+}
+  function xlsxXmlEscape(value){
+    return String(value ?? "")
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;");
+  }
+
+  function xlsxColName(n){
+    let s="";
+    let x=Number(n||0);
+
+    while(x>=0){
+      s=String.fromCharCode((x%26)+65)+s;
+      x=Math.floor(x/26)-1;
+    }
+
+    return s;
+  }
+
+  function xlsxSheetXml(rows){
+    const safeRows=Array.isArray(rows)?rows:[];
+
+    const rowsXml=safeRows.map((row,rIdx)=>{
+      const arr=Array.isArray(row)?row:[];
+      const cells=arr.map((value,cIdx)=>{
+        const ref=`${xlsxColName(cIdx)}${rIdx+1}`;
+
+        if(typeof value==="number"&&Number.isFinite(value)){
+          return `<c r="${ref}"><v>${value}</v></c>`;
+        }
+
+        return `<c r="${ref}" t="inlineStr"><is><t>${xlsxXmlEscape(value)}</t></is></c>`;
+      }).join("");
+
+      return `<row r="${rIdx+1}">${cells}</row>`;
+    }).join("");
+
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>${rowsXml}</sheetData>
+</worksheet>`;
+  }
+
+  async function downloadXlsxFile(filename, rows, sheetName="自有入庫標籤"){
+    if(!window.JSZip){
+      throw new Error("XLSX 產生失敗：JSZip 尚未載入");
+    }
+
+    const safeName = String(filename || "正式入庫標籤.xlsx")
+      .replace(/[\\/:*?"<>|#%{}^~[\]`]/g,"_")
+      .replace(/\.csv$/i,".xlsx")
+      .replace(/\.xls$/i,".xlsx")
+      .replace(/\.xlsx$/i,"") + ".xlsx";
+
+    const safeSheetName = String(sheetName || "Sheet1").slice(0,31);
+
+    const zip = new JSZip();
+
+    zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`);
+
+    zip.folder("_rels").file(".rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`);
+
+    zip.folder("xl").file("workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="${xlsxXmlEscape(safeSheetName)}" sheetId="1" r:id="rId1"/>
+  </sheets>
+</workbook>`);
+
+    zip.folder("xl").folder("_rels").file("workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`);
+
+    zip.folder("xl").folder("worksheets").file("sheet1.xml", xlsxSheetXml(rows));
+
+    const blob = await zip.generateAsync({
+      type:"blob",
+      mimeType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    });
+
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+
+    a.href=url;
+    a.download=safeName;
+    a.style.display="none";
+
+    document.body.appendChild(a);
+    a.click();
+
+    setTimeout(()=>{
+      URL.revokeObjectURL(url);
+      a.remove();
+    },800);
+
+    return true;
+  }
+
+  function buildOwnStockLabelExcelRows(rows){
+    const outputRows = [
+      ["標籤碼","名稱","售價","數量","品牌"]
+    ];
+
+    for(const row of rows){
+      const qty = Math.max(0, Math.floor(Number(row.receivedQty||0)||0));
+
+      for(let i=0;i<qty;i++){
+        outputRows.push([
+          String(row.newBarcode||"").trim(),
+          String(row.productName||"").trim(),
+          moneyNum(row.suggestPrice),
+          qty,
+          String(row.brand||"").trim()
+        ]);
+      }
+    }
+
+    return outputRows;
+  }
+
+  function buildLabelFileName(){
+    const d=new Date();
+    const pad=n=>String(n).padStart(2,"0");
+    return `自有入庫標籤_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.xlsx`;
+  }
+  async function finalStockInAndExport(){
+    const selected=collectInboundDraftRows(true);
+
+    try{
+      validateFinalRows(selected);
+    }catch(err){
+      setStatus($("inboundMsg"),`❌ ${err.message||err}`,"err");
+      return;
+    }
+
+    const op_key=getSharedStockInAdminKey();
+
+    if(!op_key){
+      setStatus($("inboundMsg"),"❌ 找不到共用後台主管密碼 / op_key。請先用上方共用後台登入，或先開啟 stock-in.html 登入一次。","err");
+      return;
+    }
+
+    const ok=confirm(`確定要正式入庫 ${selected.length} 筆到 Products 庫存，並匯出自有入庫格式 Excel 嗎？\n\n注意：這一步會真的新增 Products，請勿重複按。`);
+
+    if(!ok) return;
+
+    const btn=$("btnFinalStockIn");
+    btn.disabled=true;
+
+    setStatus($("inboundMsg"),"1/4 暫存到貨與標籤資料中...","info");
+
+    try{
+      await saveInboundDraft({
+        silent:true,
+        selectedOnly:true
+      });
+
+      const stockItems=buildStockPayloadRows(selected);
+
+      setStatus($("inboundMsg"),"2/4 正式入庫 Products 中...","info");
+
+      const stock=await apiPost(API.stockInBatch,{
+        op_key,
+        items:stockItems
+      });
+
+      setStatus($("inboundMsg"),"3/4 標記列印完成中...","info");
+
+      const labelItems=selected.map(r=>({
+        id:r.id,
+        labelCode:r.labelCode,
+        suggestPrice:r.suggestPrice,
+        receivedQty:r.receivedQty,
+        newBarcode:r.newBarcode,
+        brand:r.brand,
+        productName:r.productName,
+        qty:r.qty,
+        unitCost:r.unitCost
+      }));
+
+      const label=await apiPost(API.labelSaveExport,{
+        items:labelItems
+      });
+
+      setStatus($("inboundMsg"),"4/4 產生自有入庫格式 Excel 中...","info");
+
+      const excelRows=buildOwnStockLabelExcelRows(selected);
+
+      if(excelRows.length>1){
+        await downloadXlsxFile(
+          buildLabelFileName(),
+          excelRows,
+          "自有入庫標籤"
+        );
+      }
+
+      state.stockDone=true;
+      state.inboundSaved=true;
+      updateSteps();
+
+      setStatus(
+        $("inboundMsg"),
+        `✅ 正式入庫完成＋Excel 標籤已匯出\nProducts 新增：${stock.createdCount||0} 筆\nSKU：${Array.isArray(stock.skus)?stock.skus.join(", "):""}\n標籤更新：${label.updated_count||0} 筆`,
+        "ok"
+      );
+
+      toast("✅ 正式入庫完成＋Excel 已下載","ok");
+
+      await loadInbound();
+      await loadPendingReview();
+
+    }catch(err){
+      setStatus(
+        $("inboundMsg"),
+        `❌ 正式入庫流程中斷：${err.message||err}\n\n如果訊息顯示 Products 已新增但 Excel 下載失敗，請不要重複按正式入庫，避免 SKU 重複。`,
+        "err"
+      );
+
+      toast("❌ 正式入庫失敗，請看訊息","err");
+    }finally{
+      btn.disabled=false;
+    }
+  }
 
   function buildReviewSelectOptions(list, value){
     return (Array.isArray(list) ? list : []).map(v=>{
