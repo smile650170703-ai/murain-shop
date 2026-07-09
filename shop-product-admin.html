@@ -492,6 +492,100 @@
   color:#5a4744;
 }
 
+    .preorder-image-preview-card{
+  display:grid;
+  grid-template-columns:120px minmax(0,1fr);
+  gap:14px;
+  align-items:start;
+  padding:14px;
+  border:1px solid rgba(120,90,86,.10);
+  border-radius:18px;
+  background:#fff;
+}
+
+.preorder-image-preview-main{
+  width:120px;
+  height:120px;
+  border-radius:18px;
+  overflow:hidden;
+  background:#f7f4f2;
+  border:1px solid rgba(120,90,86,.08);
+}
+
+.preorder-image-preview-main img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+}
+
+.preorder-image-preview-main.is-empty{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#9a857d;
+  font-size:12px;
+  font-weight:800;
+  text-align:center;
+  padding:10px;
+}
+
+.preorder-image-preview-list{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+}
+
+.preorder-image-preview-thumb{
+  position:relative;
+  border-radius:14px;
+  overflow:hidden;
+  background:#f7f4f2;
+  border:1px solid rgba(120,90,86,.08);
+}
+
+.preorder-image-preview-thumb img{
+  width:100%;
+  aspect-ratio:1/1;
+  object-fit:cover;
+  display:block;
+}
+
+.preorder-image-preview-thumb span{
+  position:absolute;
+  left:6px;
+  top:6px;
+  padding:3px 6px;
+  border-radius:999px;
+  background:rgba(60,42,36,.82);
+  color:#fff;
+  font-size:10px;
+  font-weight:900;
+}
+
+.preorder-image-preview-note{
+  margin-top:8px;
+  color:#8b7470;
+  font-size:12px;
+  line-height:1.6;
+}
+
+@media (max-width:767px){
+  .preorder-image-preview-card{
+    grid-template-columns:1fr;
+  }
+
+  .preorder-image-preview-main{
+    width:100%;
+    height:auto;
+    aspect-ratio:1/1;
+  }
+
+  .preorder-image-preview-list{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+}
+
 .popup-switch-row{
   display:flex;
   align-items:center;
@@ -857,7 +951,21 @@
               <div class="field w6">
                 <label for="preGalleryFiles">商品多圖</label>
                 <input id="preGalleryFiles" type="file" accept="image/*" multiple>
-                <textarea id="preGalleryImages" placeholder="多圖網址，一行一張；上傳後自動帶入"></textarea>
+<textarea id="preGalleryImages" placeholder="多圖網址，一行一張；上傳後自動帶入"></textarea>
+                <div class="hint">上傳後請確認下方預覽，再按「儲存預購商品」才會正式寫入前台。</div>
+              </div>
+
+              <div class="field w12">
+                <label>預購圖片預覽</label>
+                <div class="preorder-image-preview-card" id="preorderImagePreviewWrap">
+                  <div class="preorder-image-preview-main is-empty" id="preorderMainPreview">尚未設定主圖</div>
+                  <div>
+                    <div class="preorder-image-preview-list" id="preorderGalleryPreview"></div>
+                    <div class="preorder-image-preview-note" id="preorderImagePreviewNote">
+                      商品主圖會顯示在前台第一張；商品多圖會顯示在商品介紹內。
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div class="field w12">
@@ -1539,6 +1647,47 @@ async function saveSitePopup(){
   }
 }
 
+    function getPreGalleryUrlsFromTextarea(){
+  return String($('preGalleryImages')?.value || '')
+    .split(/[\n,，]+/g)
+    .map(x => x.trim())
+    .filter(Boolean);
+}
+
+function renderPreorderImagePreview(){
+  const mainUrl = String($('preMainImage')?.value || '').trim();
+  const galleryUrls = getPreGalleryUrlsFromTextarea();
+
+  const mainWrap = $('preorderMainPreview');
+  const galleryWrap = $('preorderGalleryPreview');
+  const note = $('preorderImagePreviewNote');
+
+  if (mainWrap) {
+    if (mainUrl) {
+      mainWrap.classList.remove('is-empty');
+      mainWrap.innerHTML = `
+        <img src="${escHtml(mainUrl)}" alt="預購商品主圖" onerror="this.parentElement.classList.add('is-empty'); this.parentElement.textContent='主圖無法預覽';">
+      `;
+    } else {
+      mainWrap.classList.add('is-empty');
+      mainWrap.textContent = '尚未設定主圖';
+    }
+  }
+
+  if (galleryWrap) {
+    galleryWrap.innerHTML = galleryUrls.map((url, idx) => `
+      <div class="preorder-image-preview-thumb">
+        <img src="${escHtml(url)}" alt="預購商品多圖 ${idx + 1}" onerror="this.closest('.preorder-image-preview-thumb')?.remove();">
+        <span>${idx + 1}</span>
+      </div>
+    `).join('');
+  }
+
+  if (note) {
+    note.textContent = `目前主圖 ${mainUrl ? '1' : '0'} 張，多圖 ${galleryUrls.length} 張。儲存預購商品後，前台才會讀到最新多圖。`;
+  }
+}
+
     function clearPreorderProductForm(){
   state.preorderEditId = '';
 
@@ -1569,6 +1718,8 @@ async function saveSitePopup(){
 
   $('preMainFile').value = '';
   $('preGalleryFiles').value = '';
+
+  renderPreorderImagePreview();
 
   setStatus('preorderProductMsg', '已清空，可新增預購商品。');
 }
@@ -1687,7 +1838,13 @@ async function uploadPreorderImages(){
     $('preMainFile').value = '';
     $('preGalleryFiles').value = '';
 
-    setStatus('preorderProductMsg', '預購圖片上傳完成。');
+    renderPreorderImagePreview();
+
+    const galleryCount = getPreGalleryUrlsFromTextarea().length;
+    setStatus(
+      'preorderProductMsg',
+      `預購圖片上傳完成。主圖 ${$('preMainImage').value.trim() ? '1' : '0'} 張，多圖 ${galleryCount} 張。請記得按「儲存預購商品」。`
+    );
   } catch (err) {
     setStatus('preorderProductMsg', '預購圖片上傳失敗：' + err.message, true);
   }
@@ -1797,6 +1954,8 @@ function fillPreorderProductForm(item){
   $('preActive').checked = item.active !== false;
   $('preSort').value = item.sort || '';
 
+  renderPreorderImagePreview();
+
   setStatus('preorderProductMsg', '已帶入預購商品，可編輯後儲存。');
 }
 
@@ -1827,8 +1986,9 @@ if (data.item && data.item.product_code) {
   $('preProductCode').value = data.item.product_code;
 }
 
-setStatus('preorderProductMsg', '預購商品已儲存。');
 await loadPreorderProducts();
+renderPreorderImagePreview();
+setStatus('preorderProductMsg', '預購商品已儲存。前台重新整理後會讀取最新主圖 / 多圖。');
   } catch (err) {
     setStatus('preorderProductMsg', '預購商品儲存失敗：' + err.message, true);
   }
@@ -2102,6 +2262,15 @@ $('btnNewPreorderProduct').addEventListener('click', clearPreorderProductForm);
 $('btnUploadPreorderImages').addEventListener('click', uploadPreorderImages);
 $('btnSavePreorderProduct').addEventListener('click', savePreorderProduct);
 $('btnSavePreorderProductBottom').addEventListener('click', savePreorderProduct);
+
+['preMainImage', 'preGalleryImages'].forEach(id => {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener('input', renderPreorderImagePreview);
+  el.addEventListener('change', renderPreorderImagePreview);
+});
+
+renderPreorderImagePreview();
 
 restoreSession();
 
