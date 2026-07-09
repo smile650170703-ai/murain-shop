@@ -901,12 +901,59 @@
   font-size:13px;
 }
 
-  .preorder-stats-list{
+.preorder-stats-toggle{
+  width:100%;
+  min-height:36px !important;
+  padding:7px 9px !important;
+  border-radius:10px !important;
+  border:1px solid rgba(148,163,184,.26) !important;
+  background:rgba(2,6,23,.48) !important;
+  color:#e2e8f0 !important;
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  gap:8px;
+  align-items:center;
+  text-align:left;
+  box-shadow:none !important;
+}
+
+.preorder-stats-toggle span{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:12px;
+  font-weight:900;
+}
+
+.preorder-stats-toggle b{
+  color:#67e8f9;
+  font-size:12px;
+  font-weight:900;
+  white-space:nowrap;
+}
+
+.preorder-stats-arrow{
+  color:#94a3b8;
+  font-size:12px;
+  transition:transform .16s ease;
+}
+
+.preorder-stats-toggle[aria-expanded="true"] .preorder-stats-arrow{
+  transform:rotate(180deg);
+}
+
+.preorder-stats-list{
   display:flex;
   flex-direction:column;
   gap:6px;
   max-height:132px;
   overflow:auto;
+  margin-top:8px;
+}
+
+.preorder-stats-list.is-collapsed{
+  display:none;
 }
 
 .preorder-stat-row{
@@ -1127,8 +1174,13 @@
       </div>
 
       <div class="side-box" id="preorderStatsBox">
-        <label>預購商品統計</label>
-        <div class="preorder-stats-list" id="preorderProductStats">
+        <button class="preorder-stats-toggle" id="preorderStatsToggle" type="button" aria-expanded="false">
+          <span>預購商品統計</span>
+          <b id="preorderStatsSummary">0 組 / 0 種</b>
+          <span class="preorder-stats-arrow">⌄</span>
+        </button>
+
+        <div class="preorder-stats-list is-collapsed" id="preorderProductStats">
           <div class="preorder-stat-empty">載入後會顯示商品明細與組數統計</div>
         </div>
       </div>
@@ -1226,6 +1278,8 @@ const cntArrived = $("cntArrived");
 const cntSent = $("cntSent");
 const cntCompleted = $("cntCompleted");
 const preorderProductStats = $("preorderProductStats");
+const preorderStatsToggle = $("preorderStatsToggle");
+const preorderStatsSummary = $("preorderStatsSummary");
 
 const arrivalBatchBar = $("arrivalBatchBar");
 const chkSelectAllArrived = $("chkSelectAllArrived");
@@ -1419,7 +1473,17 @@ let selectedArrivalIds = new Set();
       return a.detail.localeCompare(b.detail, "zh-Hant");
     });
 
+    const totalQty = rows.reduce((sum, row) => sum + Number(row.qty || 0), 0);
+
+    if (preorderStatsSummary) {
+      preorderStatsSummary.textContent = `${totalQty} 組 / ${rows.length} 種`;
+    }
+
     if (!rows.length) {
+      if (preorderStatsSummary) {
+        preorderStatsSummary.textContent = "0 組 / 0 種";
+      }
+
       preorderProductStats.innerHTML = `
         <div class="preorder-stat-empty">目前沒有待處理預購商品</div>
       `;
@@ -2218,6 +2282,15 @@ if (btnClear) {
   btnClear.addEventListener("click", () => {
     if (keywordInput) keywordInput.value = "";
     loadList();
+  });
+}
+
+  if (preorderStatsToggle && preorderProductStats) {
+  preorderStatsToggle.addEventListener("click", () => {
+    const willOpen = preorderProductStats.classList.contains("is-collapsed");
+
+    preorderProductStats.classList.toggle("is-collapsed", !willOpen);
+    preorderStatsToggle.setAttribute("aria-expanded", willOpen ? "true" : "false");
   });
 }
 
