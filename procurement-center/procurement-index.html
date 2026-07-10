@@ -2006,21 +2006,135 @@ function collectInboundDraftRows(selectedOnly=false){
       };
     });
 }
-  async function saveInboundDraft({silent=false, selectedOnly=false}={}){const rows=collectInboundDraftRows(selectedOnly).filter(r=>r.brand||r.productType||r.productName||r.labelCode||r.suggestPrice||r.receivedQty||r.stockLocation); if(!rows.length){if(!silent)setStatus($("inboundMsg"),"❌ 沒有可暫存的資料。","err"); return {updated:0};} if(!silent)setStatus($("inboundMsg"),"暫存到貨／標籤資料中...","info"); 
-                                                                         const inboundRows=rows.map((r,idx)=>({
-  id:r.id,
-  name:r.name||"",
-  brand:r.brand,
-  productType:r.productType,
-  productName:r.productName,
-  labelInputCode:r.labelCode,
-  suggestPrice:r.suggestPrice,
-  receivedQty:r.receivedQty,
-  stockLocation:r.stockLocation,
-  serialNo:(idx%9)+1,
-  printable:false
-}));const labelRows=rows.map(r=>({id:r.id,labelCode:r.labelCode,suggestPrice:r.suggestPrice,receivedQty:r.receivedQty})); const [a,b]=await Promise.all([apiPost(API.inboundSave,{rows:inboundRows}),apiPost(API.labelSaveDraft,{items:labelRows})]); state.inboundSaved=true; updateSteps(); if(!silent){setStatus($("inboundMsg"),`✅ 已暫存\n待入庫更新：${a.updated_count||0} 筆\n標籤/實收暫存：${b.updated_count||0} 筆${(a.failed_count||b.failed_count)?"\n⚠️ 有部分失敗，請查看後端回傳。":""}`,'ok'); toast('✅ 到貨／標籤資料已暫存','ok');} return {inbound:a,label:b,updated:(a.updated_count||0)+(b.updated_count||0)};}
-function validateFinalRows(rows){
+async function saveInboundDraft({silent=false, selectedOnly=false}={}){
+  const rows=collectInboundDraftRows(selectedOnly).filter(r=>
+    r.brand ||
+    r.productType ||
+    r.productName ||
+    r.labelCode ||
+    r.suggestPrice ||
+    r.receivedQty ||
+    r.stockLocation
+  );
+
+  if(!rows.length){
+    if(!silent){
+      setStatus(
+        $("inboundMsg"),
+        "❌ 沒有可暫存的資料。",
+        "err"
+      );
+    }
+
+    return {updated:0};
+  }
+
+  if(!silent){
+    setStatus(
+      $("inboundMsg"),
+      "暫存到貨／標籤資料中...",
+      "info"
+    );
+  }
+
+  const inboundRows=rows.map((r,idx)=>({
+    id:r.id,
+    name:r.name||"",
+    brand:r.brand,
+    productType:r.productType,
+    productName:r.productName,
+    labelInputCode:r.labelCode,
+    suggestPrice:r.suggestPrice,
+    receivedQty:r.receivedQty,
+    stockLocation:r.stockLocation,
+    serialNo:(idx%9)+1,
+    printable:false
+  }));
+
+  const labelRows=rows.map(r=>({
+    id:r.id,
+    labelCode:r.labelCode,
+    suggestPrice:r.suggestPrice,
+    receivedQty:r.receivedQty
+  }));
+
+  const stockLocationRequestCount=inboundRows.filter(r=>
+    String(r.stockLocation||"").trim()!==""
+  ).length;
+
+  const [a,b]=await Promise.all([
+    apiPost(API.inboundSave,{
+      rows:inboundRows
+    }),
+    apiPost(API.labelSaveDraft,{
+      items:labelRows
+    })
+  ]);
+
+  const inboundFailed=Number(a.failed_count||0);
+  const labelFailed=Number(b.failed_count||0);
+
+  if(inboundFailed>0 || labelFailed>0){
+    const details=[
+      ...(Array.isArray(a.failed)?a.failed:[]),
+      ...(Array.isArray(b.failed)?b.failed:[])
+    ]
+      .slice(0,5)
+      .map(x=>
+        `${x.name||x.id||"資料"}：${x.error||"寫入失敗"}`
+      )
+      .join("\n");
+
+    throw new Error(
+      `暫存有資料寫入失敗。\n` +
+      `待入庫失敗：${inboundFailed} 筆\n` +
+      `標籤暫存失敗：${labelFailed} 筆` +
+      `${details?`\n${details}`:""}`
+    );
+  }
+
+  if(
+    stockLocationRequestCount>0 &&
+    Number(
+      a.stock_location_saved_count??-1
+    )<stockLocationRequestCount
+  ){
+    throw new Error(
+      `庫存位置沒有被正式 API 確認儲存。\n` +
+      `本次有填庫位：${stockLocationRequestCount} 筆\n` +
+      `後端確認儲存：${a.stock_location_saved_count??"未回傳"} 筆\n` +
+      `請確認 index (75).js 已部署到 api.murain.tw，且入單-商品總表有可寫入的庫存位置欄位。`
+    );
+  }
+
+  state.inboundSaved=true;
+  updateSteps();
+
+  if(!silent){
+    setStatus(
+      $("inboundMsg"),
+      `✅ 已暫存\n` +
+      `待入庫更新：${a.updated_count||0} 筆\n` +
+      `庫存位置儲存：${a.stock_location_saved_count||0} 筆\n` +
+      `標籤/實收暫存：${b.updated_count||0} 筆`,
+      "ok"
+    );
+
+    toast(
+      "✅ 到貨／標籤資料已暫存",
+      "ok"
+    );
+  }
+
+  return {
+    inbound:a,
+    label:b,
+    updated:
+      (a.updated_count||0)+
+      (b.updated_count||0)
+  };
+}
+  function validateFinalRows(rows){
   if(!rows.length) {
     throw new Error("請先勾選要正式入庫的資料。");
   }
