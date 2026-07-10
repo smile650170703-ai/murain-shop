@@ -1818,6 +1818,7 @@ function renderInboundRows(rows){
     const productName=String(row.productName||"").trim();
     const brand=String(row.brand||"").trim();
     const received=String(row.receivedQty||"").trim();
+    const stockLocation=String(row.stockLocation||defLoc||"").trim();
     const unitCost=String(row.unitCost||"").trim();
     const newBarcode=String(row.newBarcode||"").trim();
     const refPrice=String(row.refPrice||"").trim();
@@ -1827,7 +1828,7 @@ function renderInboundRows(rows){
       ? `<button class="photo-zoom-btn jsInboundPhotoZoom" type="button" data-src="${escapeHtml(row.photoUrl)}" title="點圖放大"><img class="thumb" src="${escapeHtml(row.photoUrl)}" alt="商品照片"></button>`
       : '<span class="muted">無</span>';
 
-    return `<tr data-id="${escapeHtml(row.id)}" data-name="${escapeHtml(row.name||"")}" data-color="${escapeHtml(row.color||"")}" data-qty="${escapeHtml(row.qty||"")}" data-unit-cost="${escapeHtml(unitCost)}" data-new-barcode="${escapeHtml(newBarcode)}"><td><input type="checkbox" class="inboundCheck"></td><td>${photo}</td><td>${escapeHtml(row.name||"")}</td><td>${escapeHtml(row.qty||"")}</td><td>${escapeHtml(row.color||"")}</td><td><input data-role="productType" list="typeOptions" value="${escapeHtml(row.productType||"")}" placeholder="品牌/分類"></td><td><input data-role="brand" list="brandOptions" value="${escapeHtml(brand)}" placeholder="分類"></td><td><input data-role="productName" value="${escapeHtml(productName)}" placeholder="商品名稱"></td><td><input data-role="labelCode" value="${escapeHtml(row.labelInputCode||"")}" placeholder="標籤輸入碼"></td><td>${escapeHtml(formatRefPrice(refPrice))}</td><td><input data-role="suggestPrice" type="text" inputmode="numeric" value="${escapeHtml(row.suggestPrice||"")}" placeholder="售價"></td><td><input data-role="receivedQty" type="text" inputmode="numeric" value="${escapeHtml(received)}" placeholder="實收"></td><td><span data-role="abnormalQtyText">${escapeHtml(abnormal)}</span></td><td><input data-role="stockLocation" value="${escapeHtml(defLoc)}" placeholder="庫位"></td><td><input data-role="stockDate" type="hidden" value="${escapeHtml(todayStr())}"><input data-role="category" type="hidden" value="${escapeHtml(brand)}"></td></tr>`;
+    return `<tr data-id="${escapeHtml(row.id)}" data-name="${escapeHtml(row.name||"")}" data-color="${escapeHtml(row.color||"")}" data-qty="${escapeHtml(row.qty||"")}" data-unit-cost="${escapeHtml(unitCost)}" data-new-barcode="${escapeHtml(newBarcode)}"><td><input type="checkbox" class="inboundCheck"></td><td>${photo}</td><td>${escapeHtml(row.name||"")}</td><td>${escapeHtml(row.qty||"")}</td><td>${escapeHtml(row.color||"")}</td><td><input data-role="productType" list="typeOptions" value="${escapeHtml(row.productType||"")}" placeholder="品牌/分類"></td><td><input data-role="brand" list="brandOptions" value="${escapeHtml(brand)}" placeholder="分類"></td><td><input data-role="productName" value="${escapeHtml(productName)}" placeholder="商品名稱"></td><td><input data-role="labelCode" value="${escapeHtml(row.labelInputCode||"")}" placeholder="標籤輸入碼"></td><td>${escapeHtml(formatRefPrice(refPrice))}</td><td><input data-role="suggestPrice" type="text" inputmode="numeric" value="${escapeHtml(row.suggestPrice||"")}" placeholder="售價"></td><td><input data-role="receivedQty" type="text" inputmode="numeric" value="${escapeHtml(received)}" placeholder="實收"></td><td><span data-role="abnormalQtyText">${escapeHtml(abnormal)}</span></td><td><input data-role="stockLocation" value="${escapeHtml(stockLocation)}" placeholder="庫位"></td><td><input data-role="stockDate" type="hidden" value="${escapeHtml(todayStr())}"><input data-role="category" type="hidden" value="${escapeHtml(brand)}"></td></tr>`;
   }).join("");
 
   bindInboundRows();
@@ -2005,7 +2006,7 @@ function collectInboundDraftRows(selectedOnly=false){
       };
     });
 }
-  async function saveInboundDraft({silent=false, selectedOnly=false}={}){const rows=collectInboundDraftRows(selectedOnly).filter(r=>r.brand||r.productType||r.productName||r.labelCode||r.suggestPrice||r.receivedQty); if(!rows.length){if(!silent)setStatus($("inboundMsg"),"❌ 沒有可暫存的資料。","err"); return {updated:0};} if(!silent)setStatus($("inboundMsg"),"暫存到貨／標籤資料中...","info"); 
+  async function saveInboundDraft({silent=false, selectedOnly=false}={}){const rows=collectInboundDraftRows(selectedOnly).filter(r=>r.brand||r.productType||r.productName||r.labelCode||r.suggestPrice||r.receivedQty||r.stockLocation); if(!rows.length){if(!silent)setStatus($("inboundMsg"),"❌ 沒有可暫存的資料。","err"); return {updated:0};} if(!silent)setStatus($("inboundMsg"),"暫存到貨／標籤資料中...","info"); 
                                                                          const inboundRows=rows.map((r,idx)=>({
   id:r.id,
   name:r.name||"",
@@ -2015,6 +2016,7 @@ function collectInboundDraftRows(selectedOnly=false){
   labelInputCode:r.labelCode,
   suggestPrice:r.suggestPrice,
   receivedQty:r.receivedQty,
+  stockLocation:r.stockLocation,
   serialNo:(idx%9)+1,
   printable:false
 }));const labelRows=rows.map(r=>({id:r.id,labelCode:r.labelCode,suggestPrice:r.suggestPrice,receivedQty:r.receivedQty})); const [a,b]=await Promise.all([apiPost(API.inboundSave,{rows:inboundRows}),apiPost(API.labelSaveDraft,{items:labelRows})]); state.inboundSaved=true; updateSteps(); if(!silent){setStatus($("inboundMsg"),`✅ 已暫存\n待入庫更新：${a.updated_count||0} 筆\n標籤/實收暫存：${b.updated_count||0} 筆${(a.failed_count||b.failed_count)?"\n⚠️ 有部分失敗，請查看後端回傳。":""}`,'ok'); toast('✅ 到貨／標籤資料已暫存','ok');} return {inbound:a,label:b,updated:(a.updated_count||0)+(b.updated_count||0)};}
