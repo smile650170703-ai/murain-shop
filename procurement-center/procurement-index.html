@@ -741,6 +741,46 @@
       font-weight:400;
     }
 
+  .package-quick-box{
+  width:min(100%,360px);
+  margin:12px 0;
+}
+
+.package-quick-box #recentPackageList{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  column-gap:10px;
+  row-gap:3px;
+  margin-top:0;
+  max-height:118px;
+  overflow:auto;
+  padding:0 4px 0 0;
+  align-items:start;
+  background:transparent;
+  border:0;
+  box-shadow:none;
+}
+
+.package-quick-box #recentPackageList::-webkit-scrollbar{
+  width:8px;
+}
+
+.package-quick-box #recentPackageList::-webkit-scrollbar-thumb{
+  background:#94a3b8;
+  border-radius:999px;
+}
+
+.package-quick-box #recentPackageList::-webkit-scrollbar-track{
+  background:#e2e8f0;
+  border-radius:999px;
+}
+
+.package-quick-box #recentPackageList .muted{
+  color:#64748b;
+  font-size:11px;
+  font-weight:400;
+}
+
     .purchase-main-box{
       border:1px solid var(--line);
       border-radius:14px;
@@ -1079,7 +1119,39 @@
         <div><label>發票核對金額</label><input id="invoiceRef" type="number" step="1" placeholder="有要建立發票核對才填"></div>
         <div><label>購物金 or 台中</label><div class="toolbar" style="height:37px;"><input id="creditOrTaichung" type="checkbox"><span class="sub">勾選代表購物金／台中處理</span></div></div>
       </div>
-      <div class="toolbar" style="margin:12px 0;"><input id="packageSearch" placeholder="搜尋包裹編號，可輸入其中幾碼" style="max-width:320px;"><button class="btn secondary small" type="button" id="btnClearPackageSearch">清除搜尋</button></div>
+<div class="purchase-quick-box package-quick-box">
+  <div class="purchase-quick-head">
+    <label>快速查詢 / 全包裹</label>
+    <input
+      id="quickPackageCode"
+      placeholder="輸入幾碼"
+      inputmode="numeric"
+      autocomplete="off"
+    >
+  </div>
+
+  <div
+    id="packageCheckResult"
+    class="purchase-check-mini"
+  ></div>
+
+  <div id="recentPackageList"></div>
+</div>
+
+<div class="toolbar" style="margin:12px 0;">
+  <input
+    id="packageSearch"
+    placeholder="篩選下方待補重量包裹"
+    style="max-width:320px;"
+  >
+  <button
+    class="btn secondary small"
+    type="button"
+    id="btnClearPackageSearch"
+  >
+    清除篩選
+  </button>
+</div>
            <div class="package-dual-list">
         <div class="package-dual-head">
           <div class="package-head-unit">
@@ -1242,7 +1314,9 @@
     missingPackageList: "https://api.murain.tw/op/procurement/purchase/items-missing-package",
     missingPackageSave: "https://api.murain.tw/op/procurement/purchase/items-package-update",
     imageDirectUpload: "https://api.murain.tw/op/procurement/image/direct-upload",
-    zeroWeightPackages: "https://api.murain.tw/op/procurement/package/list-zero-weight",
+packageCheck: "https://api.murain.tw/op/procurement/package/check",
+packageRecentList: "https://api.murain.tw/op/procurement/package/recent-list",
+zeroWeightPackages: "https://api.murain.tw/op/procurement/package/list-zero-weight",
     transferSave: "https://api.murain.tw/op/procurement/transfer/save",
     transferCheck: "https://api.murain.tw/op/procurement/transfer/check",
     inboundList: "https://api.murain.tw/op/procurement/inbound/list",
@@ -1458,6 +1532,134 @@ setStatus($("purchaseMsg"),options.message || "尚未送出", options.type || ""
   async function loadMissingPackageItems(){const tbody=$("missingPackageRows"); if(!tbody)return; tbody.innerHTML='<tr><td colspan="11" class="empty">載入中...</td></tr>'; try{const data=await apiGet(`${API.missingPackageList}?limit=300`); renderMissingPackageRows(data.rows||[]);}catch(err){tbody.innerHTML=`<tr><td colspan="11" class="empty">❌ ${escapeHtml(err.message||String(err))}</td></tr>`;}}
   async function saveMissingPackageItems(){const rows=[...$("missingPackageRows").querySelectorAll("tr")].map(tr=>{const checked=tr.querySelector(".missing-row-check")?.checked; const item_id=tr.getAttribute("data-item-id")||""; const package_code=tr.querySelector(".packageInput")?.value.trim()||""; return checked&&item_id&&package_code?{item_id,package_code}:null;}).filter(Boolean); if(!rows.length){setStatus($("purchaseMsg"),"❌ 請先輸入包裹編號，系統會自動勾選該列。","err");return;} try{const data=await apiPost(API.missingPackageSave,{rows}); setStatus($("purchaseMsg"),`✅ 已儲存 ${data.updated_count||0} 筆包裹編號${data.failed_count?`，失敗 ${data.failed_count} 筆`:""}`,data.failed_count?'err':'ok'); await loadMissingPackageItems(); await loadInbound();}catch(err){setStatus($("purchaseMsg"),'❌ '+(err.message||err),'err');}}
 
+async function checkPackageQuick(){
+  const kw = String(
+    $("quickPackageCode")?.value || ""
+  ).trim();
+
+  if (!kw) {
+    setStatus(
+      $("packageCheckResult"),
+      "輸入包裹編號幾碼會自動篩選，下方顯示相關包裹。"
+    );
+    return;
+  }
+
+  setStatus(
+    $("packageCheckResult"),
+    "查詢中...",
+    "info"
+  );
+
+  try {
+    const data = await apiGet(
+      `${API.packageCheck}?code=${encodeURIComponent(kw)}`
+    );
+
+    if (!data.exists) {
+      setStatus(
+        $("packageCheckResult"),
+        `目前沒有完全相同的包裹編號：${kw}`
+      );
+      return;
+    }
+
+    const linkedNames = Array.isArray(data.linked_names)
+      ? data.linked_names.filter(Boolean)
+      : [];
+
+    setStatus(
+      $("packageCheckResult"),
+      [
+        `✅ 已存在：${data.package_code || kw}`,
+        `關聯商品數：${data.linked_count ?? 0}`,
+        `商品：${linkedNames.length ? linkedNames.slice(0,3).join("、") : "-"}`
+      ].join("\n"),
+      "ok"
+    );
+  } catch (err) {
+    setStatus(
+      $("packageCheckResult"),
+      `❌ ${err.message || err}`,
+      "err"
+    );
+  }
+}
+
+async function loadRecentPackages(keyword=""){
+  const wrap = $("recentPackageList");
+  if (!wrap) return;
+
+  const kw = String(keyword || "").trim();
+
+  wrap.innerHTML =
+    '<span class="muted">載入中...</span>';
+
+  try {
+    const data = await apiGet(
+      `${API.packageRecentList}?limit=80${
+        kw
+          ? `&keyword=${encodeURIComponent(kw)}`
+          : ""
+      }`
+    );
+
+    const rows = Array.isArray(data.rows)
+      ? data.rows
+      : [];
+
+    if (!rows.length) {
+      wrap.innerHTML = `
+        <span class="muted">
+          ${kw ? "沒有找到相關包裹。" : "目前沒有可顯示包裹。"}
+        </span>
+      `;
+      return;
+    }
+
+    wrap.innerHTML = rows.slice(0,12).map(row => {
+      const weight = Number(row.weightLbs || 0);
+      const weightText = weight > 0
+        ? `${weight} 磅`
+        : "待補重量";
+
+      return `
+        <button
+          class="recent-order-chip"
+          type="button"
+          data-package-code="${escapeHtml(row.packageCode || "")}"
+        >
+          <span class="recent-order-date">
+            ${escapeHtml(weightText)}
+          </span>
+
+          <span class="recent-order-no">
+            ${escapeHtml(row.packageCode || "-")}
+          </span>
+        </button>
+      `;
+    }).join("");
+
+    wrap
+      .querySelectorAll("button[data-package-code]")
+      .forEach(button => {
+        button.addEventListener("click", () => {
+          const code =
+            button.getAttribute("data-package-code") || "";
+
+          $("quickPackageCode").value = code;
+          checkPackageQuick();
+        });
+      });
+  } catch (err) {
+    wrap.innerHTML = `
+      <span class="muted">
+        ❌ ${escapeHtml(err.message || String(err))}
+      </span>
+    `;
+  }
+}
+  
   function parseTransferReceiptText(text){const clean=String(text||"").replace(/\u00a0/g," ").replace(/\s+/g," ").trim(); const transferNo=clean.match(/轉運單編號[:：]?\s*([A-Za-z0-9-]+)/)?.[1]||""; const transferDate=normalizeDateInput(clean.match(/發出日期[:：]?\s*(\d{4}[-/.]\d{1,2}[-/.]\d{1,2})/)?.[1]||"")||""; const paidTotal=clean.match(/已付總收費\s*\(新台幣\)\s*NT\$?\s*([\d,]+)/)?.[1]?.replace(/,/g,"")||""; const itemPart=clean.split(/貨物詳情/)[1]||clean; const itemText=itemPart.split(/收費重量|轉運單起運地|派送至|買受人|付款方式|已付總收費/)[0]||itemPart; const packages=[]; const re=/([A-Za-z0-9]{6,})\s*\(\s*([\d.]+)\s*磅\s*\)\s*([\s\S]*?)(?=\s+[A-Za-z0-9]{6,}\s*\(\s*[\d.]+\s*磅\s*\)|$)/g; let m; while((m=re.exec(itemText))!==null){packages.push({package_code:String(m[1]||"").trim(),weight_lbs:String(m[2]||"").trim(),package_remark:String(m[3]||"").replace(/\s+/g," ").trim()});} return {transferNo,transferDate,paidTotal,packages};}
     function mergeTransferPdfPackages(packages=[]){
     const list = Array.isArray(packages) ? packages : [];
@@ -1672,7 +1874,7 @@ ${parsed.paidTotal ? `已付總收費：NT$ ${parsed.paidTotal}` : ""}
   function filterPackageRows(){const kw=String($("packageSearch")?.value||"").trim().toLowerCase(); packageRowList().forEach(tr=>{const code=String(tr.dataset.packageCode||"").toLowerCase(); tr.style.display=(!kw||code.includes(kw))?"":"none";}); refreshPackageSummary();}
   function refreshPackageSummary(){const rows=packageRowList(); const sel=rows.filter(tr=>tr.querySelector(".rowCheck")?.checked); const total=sel.reduce((sum,tr)=>sum+(Number(tr.querySelector(".weightLbs")?.value||0)||0),0); $("packageCount").textContent=rows.length; $("selectedPackageCount").textContent=sel.length; $("weightTotal").textContent=String(Math.round(total*10)/10);}
     function resetTransfer(options={}){
-    ["transferNo","transferDate","shippingFeeOrTax","extraFeeTwd","invoiceRef","packageSearch"].forEach(id=>{
+    ["transferNo","transferDate","shippingFeeOrTax","extraFeeTwd","invoiceRef","packageSearch","quickPackageCode"].forEach(id=>{
       const el=$(id);
       if(el) el.value="";
     });
@@ -1691,8 +1893,14 @@ ${parsed.paidTotal ? `已付總收費：NT$ ${parsed.paidTotal}` : ""}
     state.transferSaved=false;
     updateSteps();
 
-    setStatus($("transferPdfStatus"),"請先上傳 Buy&Ship 付款收據 PDF。");
-    setStatus($("transferMsg"),options.message || "尚未送出", options.type || "");
+setStatus($("transferPdfStatus"),"請先上傳 Buy&Ship 付款收據 PDF。");
+setStatus(
+  $("packageCheckResult"),
+  "輸入包裹編號幾碼會自動篩選，下方顯示相關包裹。"
+);
+setStatus($("transferMsg"),options.message || "尚未送出", options.type || "");
+
+loadRecentPackages();
   }
   async function loadZeroWeightPackages(options = {}){
   const silent = !!options.silent;
@@ -2951,6 +3159,38 @@ const inboundRows=rows.map((r,idx)=>{
     }
   });
   let quickTimer=null; $("quickOrderNo")?.addEventListener("input",()=>{clearTimeout(quickTimer); quickTimer=setTimeout(()=>{const kw=$("quickOrderNo").value.trim(); loadRecentPurchases(kw); if(kw.length>=5) checkPurchaseQuick(); else setStatus($("purchaseCheckResult"),kw?`正在篩選包含「${kw}」的訂單...`:"輸入訂單編號幾碼會自動篩選，下方顯示相關訂單。");},250);}); $("quickOrderNo")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();checkPurchaseQuick();}}); ["usdTotal","usdRate"].forEach(id=>$(id)?.addEventListener("input",calcTwd)); $("buyDate")?.addEventListener("blur",()=>$("buyDate").value=normalizeDateInput($("buyDate").value)); MAIN_FIELDS.forEach((id,i)=>$(id)?.addEventListener("keydown",e=>{if(e.key!=="Enter")return;e.preventDefault(); const next=MAIN_FIELDS[i+1]; if(next)$(next).focus(); else $("itemRows").querySelector(".name")?.focus();}));
+  let packageQuickTimer = null;
+
+$("quickPackageCode")?.addEventListener("input",()=>{
+  clearTimeout(packageQuickTimer);
+
+  packageQuickTimer = setTimeout(()=>{
+    const kw = String(
+      $("quickPackageCode")?.value || ""
+    ).trim();
+
+    loadRecentPackages(kw);
+
+    if (kw.length >= 5) {
+      checkPackageQuick();
+    } else {
+      setStatus(
+        $("packageCheckResult"),
+        kw
+          ? `正在篩選包含「${kw}」的包裹...`
+          : "輸入包裹編號幾碼會自動篩選，下方顯示相關包裹。"
+      );
+    }
+  },250);
+});
+
+$("quickPackageCode")?.addEventListener("keydown",e=>{
+  if (e.key !== "Enter") return;
+
+  e.preventDefault();
+  checkPackageQuick();
+});
+  
   $("btnImportTransferPdf")?.addEventListener("click",handleTransferPdfImport); $("transferPdf")?.addEventListener("change",handleTransferPdfImport); $("btnSubmitTransfer")?.addEventListener("click",submitTransfer); $("packageSearch")?.addEventListener("input",filterPackageRows); $("packageSearch")?.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();filterPackageRows();getVisiblePackageRows()[0]?.querySelector(".weightLbs")?.focus();}}); $("btnClearPackageSearch")?.addEventListener("click",()=>{$("packageSearch").value="";filterPackageRows();}); $("transferDate")?.addEventListener("blur",()=>{const n=normalizeDateInput($("transferDate").value); if(n)$("transferDate").value=n;});
   $("btnSaveInboundDraft")?.addEventListener("click",async ()=>{
     const btn = $("btnSaveInboundDraft");
@@ -3032,9 +3272,10 @@ const inboundRows=rows.map((r,idx)=>{
   $("stockInDate").value=todayStr();
   createPurchaseRow();
   updateSteps();
-  loadRecentPurchases();
-  loadMissingPackageItems();
-  loadPendingReview();
+loadRecentPurchases();
+loadRecentPackages();
+loadMissingPackageItems();
+loadPendingReview();
 })();
 </script>
 </body>
