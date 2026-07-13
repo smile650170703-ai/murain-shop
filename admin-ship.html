@@ -5238,7 +5238,50 @@ if (ciCompleted) {
 
     msgEl.textContent = '已儲存 ✅';
 
-    if (skipReload) return true;
+    // ✅ 儲存成功後，同步更新目前畫面與清單暫存
+    const savedRecordId = String(currentRecord?.id || '').trim();
+    const savedOrderId = String(f.order_id || '').trim();
+
+    const isSameOrder = (rec) => {
+      if (!rec) return false;
+
+      const recFields = rec.fields || rec || {};
+      const recId = String(rec.id || '').trim();
+      const recOrderId = String(recFields.order_id || '').trim();
+
+      return (
+        (savedRecordId && recId === savedRecordId) ||
+        (savedOrderId && recOrderId === savedOrderId)
+      );
+    };
+
+    const applySavedFields = (rec) => {
+      if (!rec) return;
+
+      const recFields = rec.fields || rec;
+      if (recFields && typeof recFields === 'object') {
+        Object.assign(recFields, fields);
+      }
+    };
+
+    // 目前右側選中的訂單
+    applySavedFields(currentRecord);
+
+    // 左側目前清單、完整清單與統計暫存
+    [currentOrders, ALL_ORDERS_CACHE, ORDERS_CACHE].forEach(rows => {
+      if (!Array.isArray(rows)) return;
+
+      rows.forEach(rec => {
+        if (isSameOrder(rec)) {
+          applySavedFields(rec);
+        }
+      });
+    });
+
+    if (skipReload) {
+      updateVendorStats();
+      return true;
+    }
 
     const keepF = currentRecord.fields || currentRecord || {};
     const keepKey = keepF.order_id || currentRecord.id || '';
