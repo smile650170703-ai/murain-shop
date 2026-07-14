@@ -710,9 +710,11 @@ function displayRoundLabel(it){
     return "主動改價";
   }
 
-  if (usedCount >= 3) {
-    return "已達三次上限";
-  }
+if (usedCount >= 3) {
+  return mode === "fail_notice"
+    ? "最終處理"
+    : "已達三次上限";
+}
 
   const nextRound =
     usedCount === 0 ? "第一次" :
@@ -741,8 +743,28 @@ function applyAutoMetaToItem(it){
     };
   }
 
-  // 流標通知 / 流標後改價：才自動累計流標次數
-  const meta = roundByFailCount(it.baseFailCount ?? it.failCount ?? 0);
+const usedCount = Math.max(
+  0,
+  Number(
+    String(it.baseFailCount ?? it.failCount ?? "0")
+      .replace(/[^\d.-]/g, "")
+  ) || 0
+);
+
+// 已經完成三次改價後又再次流標：改走最終處理
+if (mode === "fail_notice" && usedCount >= 3) {
+  return {
+    ...it,
+    round: "最終處理",
+    failCount: String(usedCount),
+    note: ""
+  };
+}
+
+// 一般流標通知／流標後改價，才累計流標次數
+const meta = roundByFailCount(
+  it.baseFailCount ?? it.failCount ?? 0
+);
 
   return {
     ...it,
@@ -1026,14 +1048,30 @@ if (mode !== "price_update" && mode !== "owner_price_update") {
             const picked = pickedItems();
       if (!picked.length) { showToast("請先勾選要更新價格的商品"); return; }
 
-      if (mode === "price_update") {
-        const overLimit = picked.filter(it => Number(it.baseFailCount || 0) >= 3);
+if (mode === "price_update") {
+  const invalidFinalPrice = picked.filter(it => {
+    const usedCount = Number(it.baseFailCount || 0) || 0;
 
-        if (overLimit.length) {
-          showPopup(`有 ${overLimit.length} 筆商品已完成三次流標後再次上架確認，不可再更新價格，請改安排寄回或另外處理。`);
-          return;
-        }
-      }
+    // 尚未完成三次的商品，可以正常改價
+    if (usedCount < 3) return false;
+
+    // 完成三次後，只能改成 0 元起標／一標 500 元
+    const newStart = numberOnly(it.newStartPrice);
+    const newStep = numberOnly(it.newStepPrice);
+
+    return !(newStart === 0 && newStep === 500);
+  });
+
+  if (invalidFinalPrice.length) {
+    showPopup(
+      `有 ${invalidFinalPrice.length} 筆商品已完成三次改價。\n\n` +
+      `最終處理只能選擇：\n` +
+      `1. 新起標價格填 0、新一標多少填 500\n` +
+      `2. 直接按該商品的「寄賣出庫」安排取回`
+    );
+    return;
+  }
+}
 
       const invalid = picked.filter(it => !it.newStartPrice && !it.newStepPrice);
       if (invalid.length) { showToast("勾選商品請至少填新起標價格或新一標多少"); return; }
@@ -1102,6 +1140,27 @@ function buildPrint(){
     return false;
   }
 
+  const finalDecisionRows = pdfRows.filter(
+  it => Number(it.baseFailCount || 0) >= 3
+);
+
+// 一般流標商品與最終處理商品不可混在同一份 PDF
+if (
+  isFailNotice &&
+  finalDecisionRows.length > 0 &&
+  finalDecisionRows.length !== pdfRows.length
+) {
+  showPopup(
+    "一般流標商品與三次調價後再次流標的商品，不能放在同一份 PDF。\n\n請分開勾選後產生。"
+  );
+  return false;
+}
+
+const isFinalFailNotice =
+  isFailNotice &&
+  finalDecisionRows.length > 0 &&
+  finalDecisionRows.length === pdfRows.length;
+
   if (mode === "price_update") {
     const overLimit = pdfRows.filter(it => Number(it.baseFailCount || 0) >= 3);
 
@@ -1111,24 +1170,30 @@ function buildPrint(){
     }
   }
 
-  const title = isFailNotice
-  ? "寄賣商品流標通知與是否調價確認單"
-  : isOwnerPriceUpdate
-    ? "寄賣人主動價格調整確認單"
-    : "寄賣商品流標後再次上架價格確認單";
+const title = isFinalFailNotice
+  ? "寄賣商品三次調價後最終處理選擇單"
+  : isFailNotice
+    ? "寄賣商品流標通知與是否調價確認單"
+    : isOwnerPriceUpdate
+      ? "寄賣人主動價格調整確認單"
+      : "寄賣商品流標後再次上架價格確認單";
 
   const consignor = $("consignorName").value || (pdfRows[0]?.consignor || "-");
   const docDate = $("docDate").value || todayLocal();
   const due = $("confirmDue").value || "-";
 
-    const mainNote = isFailNotice
-  ? "以下商品本次競標未售出，請寄賣人確認後續處理方式。可選擇維持原價格再次上架，或填寫希望調整後的價格再次上架。"
-  : isOwnerPriceUpdate
-    ? "以下為寄賣人主動提出的價格調整結果，請確認調整後起標價格與調整後一標多少是否正確。"
-    : "以下為流標後寄賣人確認再次上架的價格內容；不論維持原價格或更改價格，請確認下方價格是否正確。";
+const mainNote = isFinalFailNotice
+  ? "以下商品已完成三次流標後的價格調整，並於再次上架後仍未售出。請寄賣人於期限內選擇以 0 元起標、一標 500 元進行最後一次競標，或直接取回商品。"
+  : isFailNotice
+    ? "以下商品本次競標未售出，請寄賣人確認後續處理方式。可選擇維持原價格再次上架，或填寫希望調整後的價格再次上架。"
+    : isOwnerPriceUpdate
+      ? "以下為寄賣人主動提出的價格調整結果，請確認調整後起標價格與調整後一標多少是否正確。"
+      : "以下為流標後寄賣人確認再次上架的價格內容；不論維持原價格或更改價格，請確認下方價格是否正確。";
 
-  const ruleHtml = isFailNotice
-    ? `<div class="pdf-rule"><b>流標提醒：</b>商品流標後可選擇維持原價再次上架、調整價格後再次上架、暫停寄賣或安排寄回。若商品累計流標三次，將建議寄回或重新討論寄賣方式。</div>`
+const ruleHtml = isFinalFailNotice
+  ? `<div class="pdf-rule"><b>最終處理規則：</b>本次僅能選擇「0 元起標、一標 500 元進行最後一次競標」或「直接取回商品」。本次處理完成後，無論選擇最後競標或直接取回，後續均不再接受同包款再次寄賣。</div>`
+  : isFailNotice
+    ? `<div class="pdf-rule"><b>流標提醒：</b>商品流標後可選擇維持原價再次上架、調整價格後再次上架、暫停寄賣或安排寄回。第三次流標後仍可再確認一次價格；若第三次調價後再次流標，將改進入最終處理。</div>`
     : isOwnerPriceUpdate
       ? `<div class="pdf-rule"><b>主動改價確認：</b>本確認單用於確認寄賣人主動提出的調整後起標價格與一標加價金額。確認後，系統才會依調整後價格進行後續處理。</div>`
       : `<div class="pdf-rule"><b>再次上架價格確認：</b>本確認單用於確認流標後再次上架的起標價格與一標加價金額；價格可維持原設定或依寄賣人同意內容調整。確認後，系統才會依確認後價格再次上架或後續處理。</div>`;
@@ -1165,27 +1230,41 @@ function buildPrint(){
     const afterStart = it.newStartPrice || it.startPrice || "";
     const afterStep = it.newStepPrice || it.stepPrice || "";
 
-    if (isFailNotice) {
-      return `
-        <tr>
-          <td style="text-align:center;">${i + 1}</td>
-          <td>${pdfImgHtml(it.image || it.media)}</td>
-          <td>${esc(it.sku || "-")}</td>
-          <td>${esc(it.name || "-")}</td>
-          <td style="text-align:center;">${esc(it.qty || "-")}</td>
-          <td>${esc(itemRound)}流標</td>
-          <td>${money(it.startPrice)}</td>
-          <td>${money(it.stepPrice)}</td>
-          <td style="min-width:210px;line-height:1.8;">
-            □ 維持原價格再次上架<br>
-            □ 同意調整價格<br>
-            新起標價：__________<br>
-            新一標多少：________<br>
-            □ 暫停寄賣<br>
-            □ 安排寄回
-          </td>
-        </tr>`;
-    }
+if (isFailNotice) {
+  const statusText = isFinalFailNotice
+    ? "三次調價後再次流標"
+    : `${itemRound}流標`;
+
+  const choiceHtml = isFinalFailNotice
+    ? `
+      □ 0 元起標／一標 500 元，進行最後一次競標<br><br>
+      □ 直接取回商品，不再繼續寄賣<br><br>
+      <b>本次處理完成後，不再接受同包款再次寄賣。</b>
+    `
+    : `
+      □ 維持原價格再次上架<br>
+      □ 同意調整價格<br>
+      新起標價：__________<br>
+      新一標多少：________<br>
+      □ 暫停寄賣<br>
+      □ 安排寄回
+    `;
+
+  return `
+    <tr>
+      <td style="text-align:center;">${i + 1}</td>
+      <td>${pdfImgHtml(it.image || it.media)}</td>
+      <td>${esc(it.sku || "-")}</td>
+      <td>${esc(it.name || "-")}</td>
+      <td style="text-align:center;">${esc(it.qty || "-")}</td>
+      <td>${esc(statusText)}</td>
+      <td>${money(it.startPrice)}</td>
+      <td>${money(it.stepPrice)}</td>
+      <td style="min-width:240px;line-height:1.8;">
+        ${choiceHtml}
+      </td>
+    </tr>`;
+}
 
        const adjustmentText = isOwnerPriceUpdate
       ? "主動改價"
@@ -1204,7 +1283,18 @@ function buildPrint(){
       </tr>`;
   }).join("");
 
-  const signBoxHtml = isFailNotice ? `
+const signBoxHtml = isFinalFailNotice ? `
+  <div class="sign-box">
+    <div>
+      <b>寄賣人最終選擇：</b>
+      <div style="margin-top:10px;line-height:1.8;">
+        請在上方商品欄位勾選最終處理方式。<br>
+        勾選完成後，請將本檔案回傳給小編。
+      </div>
+    </div>
+    <div><b>處理人員：</b><div class="sign-line"></div></div>
+  </div>
+` : isFailNotice ? `
       <div class="sign-box">
         <div>
           <b>寄賣人回覆方式：</b>
@@ -1234,8 +1324,10 @@ function buildPrint(){
       <h1 class="pdf-title">${esc(title)}</h1>
            <div class="pdf-sub">
         ${
-          isFailNotice
-            ? "本單為流標通知與是否調價詢問，尚未更新商品價格"
+isFinalFailNotice
+  ? "本單為三次調價後再次流標的最終處理選擇"
+  : isFailNotice
+    ? "本單為流標通知與是否調價詢問，尚未更新商品價格"
             : isOwnerPriceUpdate
               ? "本單為寄賣人主動價格調整確認使用"
               : "本單為流標後再次上架價格確認使用"
@@ -1246,8 +1338,10 @@ function buildPrint(){
         <div><b>寄賣人：</b>${esc(consignor)}</div>
         <div><b>產出日期：</b>${esc(docDate)}</div>
         <div><b>本次用途：</b>${
-          isFailNotice
-            ? "流標通知 / 詢問是否調整價格"
+isFinalFailNotice
+  ? "三次調價後再次流標／最終處理選擇"
+  : isFailNotice
+    ? "流標通知 / 詢問是否調整價格"
             : isOwnerPriceUpdate
               ? "寄賣人主動更改價格確認"
               : "流標後再次上架價格確認"
@@ -1811,10 +1905,20 @@ $("btnPreview").addEventListener("click", () => {
     saveDraft();
 
     const mode = $("actionMode")?.value || "";
-    const prefix =
-      mode === "fail_notice" ? "流標通知" :
-      mode === "owner_price_update" ? "主動改價確認" :
-      "流標後改價確認";
+const previewRows = pickedItems();
+
+const isFinalFailNotice =
+  mode === "fail_notice" &&
+  previewRows.length > 0 &&
+  previewRows.every(
+    it => Number(it.baseFailCount || 0) >= 3
+  );
+
+const prefix =
+  isFinalFailNotice ? "最終處理選擇" :
+  mode === "fail_notice" ? "流標通知" :
+  mode === "owner_price_update" ? "主動改價確認" :
+  "流標後改價確認";
 
     await printWithFileName(
       auctionPrintFileName(prefix, selectedConsignorLineName(), $("docDate").value || todayLocal())
