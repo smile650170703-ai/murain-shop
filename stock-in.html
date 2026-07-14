@@ -775,19 +775,26 @@
   <div class="card-header">
     <div>
       <h2 class="card-title">2️⃣ 更改資料</h2>
-      <p class="hint">輸入條碼後查詢商品；每個欄位旁邊都有「存」，只會更新那一個欄位。</p>
+      <p class="hint">先用條碼或商品名稱關鍵字搜尋，再從結果中確認要修改的產品。</p>
     </div>
     <div class="badge-row">
-      <div class="badge green">更改資料模式：只改指定欄位</div>
+      <div class="badge green">選定產品後，才可修改指定欄位</div>
     </div>
   </div>
 
   <div class="search-grid">
-    <input id="patchSku" type="text" placeholder="請輸入目前條碼，例如 1234567890 / C000123" />
-    <button id="btnPatchSearch" class="btn btn-search" type="button">查詢條碼</button>
+    <input
+      id="patchSku"
+      type="text"
+      placeholder="輸入條碼關鍵字或商品名稱關鍵字"
+    />
+    <button id="btnPatchSearch" class="btn btn-search" type="button">
+      搜尋產品
+    </button>
   </div>
 
   <div id="patchSearchError" class="error"></div>
+  <div id="patchSearchResults" class="member-results"></div>
 
   <div id="patchResultBox" class="patch-result-box hidden">
     <div class="grid">
@@ -1051,6 +1058,7 @@ const CONFIG = {
   createItemUrl: '',
   nextSkuUrl: 'https://api.murain.tw/op/products/next-sku',
 
+  searchProductKeywordUrl: 'https://api.murain.tw/op/products/search-basic',
   searchProductUrl: 'https://api.murain.tw/op/products/by-sku',
   updateProductFieldUrl: 'https://api.murain.tw/op/products/field/update',
 consignLedgerDataUrl: 'https://api.murain.tw/op/consign/ledger-print-data',
@@ -1072,6 +1080,7 @@ const state = {
   selectedConsignor: null,
   selectedConsignorRecordId: '',
 patchProduct: null,
+patchSearchResults: [],
 consignLedgerConsignors: [],
 liveScreenshotPastedUrl: ''
 };
@@ -1159,6 +1168,7 @@ liveScreenshotPreview: $('liveScreenshotPreview')
   patchSku: $('patchSku'),
   btnPatchSearch: $('btnPatchSearch'),
   patchSearchError: $('patchSearchError'),
+  patchSearchResults: $('patchSearchResults'),
   patchResultBox: $('patchResultBox'),
   patchSkuView: $('patchSkuView'),
   patchNameView: $('patchNameView'),
@@ -1263,9 +1273,14 @@ liveScreenshotPreview: $('liveScreenshotPreview')
 
 function resetPatchUi(clearKeyword = false) {
   state.patchProduct = null;
+  state.patchSearchResults = [];
 
   if (clearKeyword) {
     el.patchSku.value = '';
+  }
+
+  if (el.patchSearchResults) {
+    el.patchSearchResults.innerHTML = '';
   }
 
   el.patchResultBox.classList.add('hidden');
@@ -1407,31 +1422,158 @@ state.liveScreenshotPastedUrl = '';
   showError(el.formError, '');
   showError(el.submitError, '');
 }
- async function searchProductBySku() {
-  const sku = String(el.patchSku.value || '').trim();
-  showError(el.patchSearchError, '');
-  showError(el.patchSaveError, '');
+function renderPatchSearchResults(list) {
+  const rows = Array.isArray(list) ? list : [];
 
-  if (!sku) {
-    showError(el.patchSearchError, '請先輸入條碼');
+  if (!rows.length) {
+    el.patchSearchResults.innerHTML = `
+      <div class="empty" style="border:1px dashed #d1d5db;border-radius:12px;">
+        查無符合條碼或商品名稱的產品
+      </div>
+    `;
     return;
   }
 
+  el.patchSearchResults.innerHTML = rows.map((product, index) => {
+    const sku = escapeHtml(product.sku || product.SKU || '');
+    const name = escapeHtml(product.name || product.Name || '未命名商品');
+    const location = escapeHtml(
+      product.stock_location ||
+      product['庫存位置'] ||
+      '未填庫存位置'
+    );
+
+    const stockQtyRaw =
+      product.stock_qty ??
+      product.StockQty ??
+      0;
+
+    const stockQty = Number(stockQtyRaw);
+    const stockQtyText = Number.isFinite(stockQty) ? stockQty : 0;
+
+    return `
+      <div class="member-item">
+        <div class="member-meta">
+          <div class="name">${sku || '無條碼'}｜${name}</div>
+          <div class="sub">
+            庫存位置：${location}｜目前數量：${stockQtyText}
+          </div>
+        </div>
+
+        <button
+          class="btn btn-secondary"
+          type="button"
+          onclick="window.__selectPatchSearchResult(${index})"
+        >
+          選擇這項產品
+        </button>
+      </div>
+    `;
+  }).join('');
+}
+
+async function fetchPatchProductBySku(sku) {
   if (!CONFIG.searchProductUrl) {
-    showError(el.patchSearchError, '尚未設定 searchProductUrl');
+    throw new Error('尚未設定完整商品查詢 API');
+  }
+
+  const resp = await fetch(CONFIG.searchProductUrl, {
+    method: 'POST',
+    headers: CONFIG.requestHeaders,
+    body: JSON.stringify({
+      op_key: CONFIG.opKey,
+      sku
+    })
+  });
+
+  const data = await resp.json().catch(() => ({}));
+
+  if (!resp.ok || data.ok === false) {
+    throw new Error(
+      data.detail ||
+      data.message ||
+      data.error ||
+      `讀取商品資料失敗：HTTP ${resp.status}`
+    );
+  }
+
+  const product = data.product || data.item || data.record || null;
+
+  if (!product) {
+    throw new Error('查無這項產品的完整資料');
+  }
+
+  return product;
+}
+
+async function selectPatchSearchResult(index) {
+  const selected = state.patchSearchResults[index] || {};
+  const sku = String(selected.sku || selected.SKU || '').trim();
+
+  if (!sku) {
+    showError(el.patchSearchError, '這項產品缺少條碼，無法選擇');
+    return;
+  }
+
+  showError(el.patchSearchError, '');
+  showError(el.patchSaveError, '');
+
+  el.patchSku.value = sku;
+  el.patchSearchResults.innerHTML = `
+    <div class="empty">正在帶入 ${escapeHtml(sku)} 的完整商品資料...</div>
+  `;
+
+  try {
+    const product = await fetchPatchProductBySku(sku);
+
+    renderPatchProduct(product);
+
+    state.patchSearchResults = [];
+    el.patchSearchResults.innerHTML = '';
+
+  } catch (err) {
+    resetPatchUi(false);
+    showError(
+      el.patchSearchError,
+      err.message || '帶入商品資料失敗'
+    );
+  }
+}
+
+async function searchPatchProducts() {
+  const keyword = String(el.patchSku.value || '').trim();
+
+  showError(el.patchSearchError, '');
+  showError(el.patchSaveError, '');
+  resetPatchUi(false);
+
+  if (!keyword) {
+    showError(
+      el.patchSearchError,
+      '請先輸入條碼關鍵字或商品名稱關鍵字'
+    );
+    return;
+  }
+
+  if (!CONFIG.searchProductKeywordUrl) {
+    showError(el.patchSearchError, '尚未設定商品關鍵字搜尋 API');
     return;
   }
 
   el.btnPatchSearch.disabled = true;
-  el.btnPatchSearch.textContent = '查詢中...';
+  el.btnPatchSearch.textContent = '搜尋中...';
+
+  el.patchSearchResults.innerHTML = `
+    <div class="empty">正在搜尋符合的產品...</div>
+  `;
 
   try {
-    const resp = await fetch(CONFIG.searchProductUrl, {
+    const resp = await fetch(CONFIG.searchProductKeywordUrl, {
       method: 'POST',
       headers: CONFIG.requestHeaders,
       body: JSON.stringify({
         op_key: CONFIG.opKey,
-        sku
+        keyword
       })
     });
 
@@ -1442,22 +1584,30 @@ state.liveScreenshotPastedUrl = '';
         data.detail ||
         data.message ||
         data.error ||
-        `查詢失敗：HTTP ${resp.status}`
+        `搜尋失敗：HTTP ${resp.status}`
       );
     }
 
-    const product = data.product || data.item || data.record || null;
-    if (!product) {
-      throw new Error('查無此條碼');
-    }
+    const rows = Array.isArray(data.rows)
+      ? data.rows
+      : Array.isArray(data.items)
+        ? data.items
+        : [];
 
-    renderPatchProduct(product);
+    state.patchSearchResults = rows;
+    renderPatchSearchResults(rows);
+
   } catch (err) {
-    resetPatchUi(false);
-    showError(el.patchSearchError, err.message || '查詢失敗');
+    state.patchSearchResults = [];
+    el.patchSearchResults.innerHTML = '';
+
+    showError(
+      el.patchSearchError,
+      err.message || '搜尋產品失敗'
+    );
   } finally {
     el.btnPatchSearch.disabled = false;
-    el.btnPatchSearch.textContent = '查詢條碼';
+    el.btnPatchSearch.textContent = '搜尋產品';
   }
 }
 
@@ -4265,7 +4415,10 @@ async function saveConsignor() {
   }
 }
 
-   window.__pickMember = (idx) => pickMember(state.memberResults[idx] || {});
+window.__pickMember = (idx) => pickMember(state.memberResults[idx] || {});
+window.__selectPatchSearchResult = (idx) => {
+  selectPatchSearchResult(idx);
+};
 window.__updateDraft = (id, key, value) => updateDraft(id, key, value);
 window.__refreshDraftUi = () => {
   saveDrafts();
@@ -4319,14 +4472,14 @@ el.btnModeConsign.addEventListener('click', () => setMode('consign'));
 el.btnModePatch.addEventListener('click', () => setMode('patch'));
 el.btnOpenConsignLedger.addEventListener('click', openConsignLedgerCard);
 
-el.btnPatchSearch.addEventListener('click', searchProductBySku);
+el.btnPatchSearch.addEventListener('click', searchPatchProducts);
 el.btnPatchSaveLocation.addEventListener('click', () => savePatchField('庫存位置'));
 el.btnPatchSaveName.addEventListener('click', () => savePatchField('Name'));
 el.btnPatchSaveAuctionStartPrice.addEventListener('click', () => savePatchField('起標價格'));
 el.btnPatchSaveBidStep.addEventListener('click', () => savePatchField('一標多少'));
 
 el.patchSku.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') searchProductBySku();
+  if (e.key === 'Enter') searchPatchProducts();
 });
 
 el.patchLocationNew.addEventListener('keydown', (e) => {
