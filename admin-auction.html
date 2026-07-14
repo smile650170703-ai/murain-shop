@@ -330,7 +330,57 @@
     .pdf-img{ width:52px; height:52px; object-fit:cover; border:1px solid #cbd5e1; border-radius:8px; }
     .sign-box{ display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-top:28px; font-size:13px; }
     .sign-line{ border-bottom:1px solid #111827; height:36px; }
+    .live-batch-summary{
+      margin-top:12px;
+      padding:10px 12px;
+      border-radius:12px;
+      background:#eff6ff;
+      color:#1e3a8a;
+      font-size:13px;
+      font-weight:800;
+      line-height:1.6;
+    }
 
+    #liveBatchBody tr{
+      cursor:pointer;
+    }
+
+    #liveBatchBody tr:hover{
+      background:#eff6ff;
+    }
+
+    #liveBatchBody input{
+      cursor:auto;
+    }
+
+    .batch-pdf-root{
+      position:fixed;
+      left:-100000px;
+      top:0;
+      width:277mm;
+      padding:8mm;
+      background:#fff;
+      color:#111827;
+      z-index:-9999;
+      font-family:"Microsoft JhengHei","PingFang TC",Arial,sans-serif;
+    }
+
+    .batch-pdf-root .pdf-section-title{
+      margin:18px 0 8px;
+      padding:8px 10px;
+      border-left:5px solid #2563eb;
+      background:#eff6ff;
+      color:#1e3a8a;
+      font-size:15px;
+      font-weight:900;
+    }
+
+    .batch-pdf-root tr,
+    .batch-pdf-root .pdf-rule,
+    .batch-pdf-root .sign-box{
+      break-inside:avoid;
+      page-break-inside:avoid;
+    }
     @media (max-width:900px){
       .page{ padding:18px 14px 42px; }
       .page-tabs-bar{ gap:8px; padding:10px; }
@@ -364,6 +414,8 @@
     }
   </style>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.14.0/dist/html2pdf.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <script src="/config.js?v=20260627-auth-fix"></script>
 </head>
 <body>
@@ -388,6 +440,117 @@
       <div>
         <h1>寄賣價格調整確認</h1>
         
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-hd">
+        <h2>寄賣直播場次安排 / 批次未售出通知</h2>
+        <div class="mini">
+          直播前先安排本場商品；直播後依同一日期，自動找出數量仍大於 0 的未售出商品。
+        </div>
+      </div>
+
+      <div class="card-bd">
+        <div class="grid three">
+          <div>
+            <label for="consignLiveDate">寄賣直播日期</label>
+            <input id="consignLiveDate" type="date">
+          </div>
+
+          <div>
+            <label for="liveBatchSearch">清單搜尋</label>
+            <input
+              id="liveBatchSearch"
+              type="text"
+              placeholder="輸入 SKU、商品名稱或寄賣人"
+            >
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button
+            class="blue"
+            type="button"
+            id="btnLoadLiveCandidates"
+          >
+            載入全部在庫寄賣品
+          </button>
+
+          <button
+            class="soft"
+            type="button"
+            id="btnLiveToggleAll"
+          >
+            全選 / 取消全選
+          </button>
+
+          <button
+            class="green"
+            type="button"
+            id="btnSaveLiveBatch"
+          >
+            儲存本場直播商品
+          </button>
+
+          <button
+            class="orange"
+            type="button"
+            id="btnLoadLiveUnsold"
+          >
+            查詢本場未售出商品
+          </button>
+
+          <button
+            class="primary"
+            type="button"
+            id="btnGenerateLiveZip"
+          >
+            批次產生未售出通知 PDF（ZIP）
+          </button>
+        </div>
+
+        <div
+          class="live-batch-summary"
+          id="liveBatchSummary"
+        >
+          尚未載入寄賣商品
+        </div>
+
+        <div class="table-wrap" style="margin-top:12px;">
+          <table>
+            <thead>
+              <tr>
+                <th class="check-cell">勾選</th>
+                <th style="width:72px">截圖</th>
+                <th style="width:126px">SKU</th>
+                <th style="width:240px">Name</th>
+                <th style="width:140px">寄賣人</th>
+                <th style="width:86px">數量</th>
+                <th style="width:130px">目前直播日期</th>
+                <th style="width:120px">起標價格</th>
+                <th style="width:110px">一標多少</th>
+              </tr>
+            </thead>
+
+            <tbody id="liveBatchBody">
+              <tr>
+                <td
+                  colspan="9"
+                  style="text-align:center;color:#64748b;"
+                >
+                  請先選擇直播日期並載入商品
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="notice">
+          「儲存本場直播商品」會以目前勾選結果更新這一天的場次；
+          未勾選且原本排在同一天的在庫商品，會從該場次移除。
+          已售出且數量為 0 的歷史資料不會被清除。
+        </div>
       </div>
     </section>
 
@@ -501,9 +664,21 @@
 const API = {
   consignors: `${API_BASE}/op/consign/ledger-print-data`,
   fetchProducts: `${API_BASE}/api/admin/consign-auction/products`,
-  updatePrices: `${API_BASE}/api/admin/consign-auction/update-prices`,
-  failNotice: `${API_BASE}/api/admin/consign-auction/fail-notice`,
-  consignOut: `${API_BASE}/op/stock/consign-out`
+
+  liveBatchList:
+    `${API_BASE}/api/admin/consign-auction/live-batch/list`,
+
+  liveBatchSave:
+    `${API_BASE}/api/admin/consign-auction/live-batch/save`,
+
+  updatePrices:
+    `${API_BASE}/api/admin/consign-auction/update-prices`,
+
+  failNotice:
+    `${API_BASE}/api/admin/consign-auction/fail-notice`,
+
+  consignOut:
+    `${API_BASE}/op/stock/consign-out`
 };
     const $ = (id) => document.getElementById(id);
     function syncSharedAuctionAdminKey(){
@@ -515,6 +690,10 @@ const API = {
   return key;
 }
     const itemBody = $("itemBody");
+    const liveBatchBody = $("liveBatchBody");
+
+    let liveBatchItems = [];
+    let liveBatchViewMode = "none";
 
     const blankItem = () => ({
   checked:false,
