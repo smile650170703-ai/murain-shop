@@ -870,8 +870,27 @@
   <div class="actions" style="margin-top:0;">
   <button id="btnAddRow" class="btn btn-secondary" type="button">新增一列</button>
 <button id="btnExportAndSubmit" class="btn btn-success" type="button">確認送出</button>
-<button id="btnPrintCurrentConsign" class="btn btn-secondary hidden" type="button">下載當次寄賣PDF</button>
-<button id="btnDownloadCurrentConsignImages" class="btn btn-secondary hidden" type="button">下載當次圖片</button>
+
+<button
+  id="btnPrintCurrentConsign"
+  class="btn btn-secondary hidden"
+  type="button"
+  style="display:none !important;"
+>下載當次寄賣PDF</button>
+
+<button
+  id="btnDownloadCurrentConsignImages"
+  class="btn btn-secondary hidden"
+  type="button"
+  style="display:none !important;"
+>下載當次圖片</button>
+
+<button
+  id="btnRetryLastConsignFiles"
+  class="btn btn-secondary hidden"
+  type="button"
+>補下載上次寄賣檔案</button>
+
 <button id="btnClearDrafts" class="btn btn-danger" type="button">清空本次清單</button>
 </div>
 </div>
@@ -1043,6 +1062,7 @@ consignLedgerDataUrl: 'https://api.murain.tw/op/consign/ledger-print-data',
 
     const STORAGE_KEY = 'stock_in_drafts_v1';
     const MODE_KEY = 'stock_in_mode_v1';
+    const LAST_CONSIGN_EXPORT_KEY = 'stock_in_last_consign_export_v1';
 
 const state = {
   mode: localStorage.getItem(MODE_KEY) || 'own',
@@ -1103,6 +1123,7 @@ btnAddRow: $('btnAddRow'),
 btnExportAndSubmit: $('btnExportAndSubmit'),
 btnPrintCurrentConsign: $('btnPrintCurrentConsign'),
 btnDownloadCurrentConsignImages: $('btnDownloadCurrentConsignImages'),
+btnRetryLastConsignFiles: $('btnRetryLastConsignFiles'),
 btnClearDrafts: $('btnClearDrafts'),
 submitError: $('submitError'),
 
@@ -1166,6 +1187,56 @@ liveScreenshotPreview: $('liveScreenshotPreview')
 
     function saveDrafts() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.drafts));
+    }
+
+    function loadLastConsignExportRows() {
+      try {
+        const raw = localStorage.getItem(LAST_CONSIGN_EXPORT_KEY);
+        if (!raw) return [];
+
+        const saved = JSON.parse(raw);
+        const rows = Array.isArray(saved?.rows) ? saved.rows : [];
+
+        return rows.filter(row => {
+          return String(row?.商品來源 || '').trim() === '寄賣';
+        });
+      } catch (err) {
+        console.error('讀取上次寄賣產檔資料失敗', err);
+        return [];
+      }
+    }
+
+    function refreshLastConsignExportButton() {
+      if (!el.btnRetryLastConsignFiles) return;
+
+      const hasSavedRows = loadLastConsignExportRows().length > 0;
+      const shouldShow = state.mode === 'consign' && hasSavedRows;
+
+      el.btnRetryLastConsignFiles.classList.toggle('hidden', !shouldShow);
+    }
+
+    function saveLastConsignExportRows(rows) {
+      const consignRows = (Array.isArray(rows) ? rows : []).filter(row => {
+        return String(row?.商品來源 || '').trim() === '寄賣';
+      });
+
+      if (!consignRows.length) return false;
+
+      try {
+        localStorage.setItem(
+          LAST_CONSIGN_EXPORT_KEY,
+          JSON.stringify({
+            savedAt: new Date().toISOString(),
+            rows: consignRows
+          })
+        );
+
+        refreshLastConsignExportButton();
+        return true;
+      } catch (err) {
+        console.error('保存上次寄賣產檔資料失敗', err);
+        return false;
+      }
     }
 
     function todayStr() {
@@ -1271,12 +1342,14 @@ function setMode(mode) {
 el.patchCard.classList.toggle('hidden', !isPatch);
 el.draftsCard.classList.toggle('hidden', isPatch);
 if (el.btnPrintCurrentConsign) {
-  el.btnPrintCurrentConsign.classList.toggle('hidden', !isConsign);
+  el.btnPrintCurrentConsign.classList.add('hidden');
 }
 
 if (el.btnDownloadCurrentConsignImages) {
-  el.btnDownloadCurrentConsignImages.classList.toggle('hidden', !isConsign);
+  el.btnDownloadCurrentConsignImages.classList.add('hidden');
 }
+
+refreshLastConsignExportButton();
 if (!isConsign) {
   el.consignLedgerCard.classList.add('hidden');
 }
@@ -2897,7 +2970,25 @@ async function fetchConsignorForCurrentPdf(rows = []) {
   const first = list.find(row => String(row.商品來源 || '') === '寄賣') || {};
   const current = state.selectedConsignor || {};
 
+  const rowConsignorRecordId = String(
+    first.consignorRecordId || ''
+  ).trim();
+
+  const currentConsignorRecordId = String(
+    current.recordId ||
+    state.selectedConsignorRecordId ||
+    ''
+  ).trim();
+
+  const currentMatchesRows =
+    !rowConsignorRecordId ||
+    (
+      currentConsignorRecordId &&
+      currentConsignorRecordId === rowConsignorRecordId
+    );
+
   if (
+    currentMatchesRows &&
     current &&
     (
       current.name ||
@@ -2910,14 +3001,18 @@ async function fetchConsignorForCurrentPdf(rows = []) {
     return current;
   }
 
-  const consignorRecordId = String(
-    first.consignorRecordId ||
-    state.selectedConsignorRecordId ||
-    ''
-  ).trim();
+  const consignorRecordId =
+    rowConsignorRecordId ||
+    currentConsignorRecordId;
+
+  const fallbackConsignor = currentMatchesRows
+    ? current
+    : {
+        name: String(first.寄賣人 || '').trim()
+      };
 
   if (!consignorRecordId || !CONFIG.consignLedgerDataUrl) {
-    return current || {};
+    return fallbackConsignor || {};
   }
 
   try {
@@ -2934,7 +3029,7 @@ async function fetchConsignorForCurrentPdf(rows = []) {
     console.warn('fetchConsignorForCurrentPdf failed', err);
   }
 
-  return current || {};
+  return fallbackConsignor || {};
 }
 function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
   const consignRows = Array.isArray(rows)
@@ -3419,6 +3514,115 @@ function downloadLabelExcel() {
   return downloadLabelExcelForRows(state.drafts, state.mode);
 }
 
+async function downloadConsignFilesForRows(rows) {
+  const consignRows = (Array.isArray(rows) ? rows : []).filter(row => {
+    return String(row?.商品來源 || '').trim() === '寄賣';
+  });
+
+  const errors = [];
+
+  if (!consignRows.length) {
+    return {
+      ok: false,
+      errors: ['找不到可產生檔案的寄賣入庫資料']
+    };
+  }
+
+  try {
+    const labelOk = downloadLabelExcelForRows(consignRows, 'consign');
+
+    if (!labelOk) {
+      errors.push('寄賣入庫標籤 XLSX 下載失敗');
+    }
+  } catch (err) {
+    errors.push(
+      '寄賣入庫標籤 XLSX 下載失敗：' + (err.message || err)
+    );
+  }
+
+  const hasImages = consignRows.some(row => {
+    return String(row['直播截圖Url'] || '').trim();
+  });
+
+  if (hasImages) {
+    try {
+      const imageOk = await downloadCurrentConsignImages(consignRows, {
+        auto: true,
+        silent: true
+      });
+
+      if (!imageOk) {
+        errors.push('當次寄賣圖片下載失敗');
+      }
+    } catch (err) {
+      errors.push(
+        '當次寄賣圖片下載失敗：' + (err.message || err)
+      );
+    }
+  }
+
+  try {
+    const pdfOk = await downloadCurrentConsignPdf(consignRows, {
+      auto: true,
+      silent: true
+    });
+
+    if (!pdfOk) {
+      errors.push('當次寄賣 PDF 下載失敗');
+    }
+  } catch (err) {
+    errors.push(
+      '當次寄賣 PDF 下載失敗：' + (err.message || err)
+    );
+  }
+
+  return {
+    ok: errors.length === 0,
+    errors
+  };
+}
+
+async function retryLastConsignFiles() {
+  showError(el.submitError, '');
+
+  const rows = loadLastConsignExportRows();
+
+  if (!rows.length) {
+    showError(el.submitError, '目前沒有上一次成功寄賣入庫的資料可以補下載');
+    refreshLastConsignExportButton();
+    return;
+  }
+
+  el.btnRetryLastConsignFiles.disabled = true;
+  el.btnRetryLastConsignFiles.textContent = '補下載中...';
+
+  try {
+    const result = await downloadConsignFilesForRows(rows);
+
+    if (!result.ok) {
+      const message = result.errors.join('；');
+
+      showError(
+        el.submitError,
+        `補下載未全部完成：${message}。請確認瀏覽器已允許自動下載及多個檔案下載。`
+      );
+      return;
+    }
+
+    showError(el.submitError, '');
+    alert('上次寄賣入庫的標籤、圖片及 PDF 已重新產生。');
+
+  } catch (err) {
+    showError(
+      el.submitError,
+      '補下載上次寄賣檔案失敗：' + (err.message || err)
+    );
+  } finally {
+    el.btnRetryLastConsignFiles.disabled = false;
+    el.btnRetryLastConsignFiles.textContent = '補下載上次寄賣檔案';
+  }
+}
+
 async function exportAndSubmit() {
   showError(el.submitError, '');
 
@@ -3435,35 +3639,10 @@ async function exportAndSubmit() {
       }
 
       if (submittedMode === 'consign') {
-        const labelOk = downloadLabelExcelForRows(submittedRows, 'consign');
+        const result = await downloadConsignFilesForRows(submittedRows);
 
-        if (!labelOk) {
-          throw new Error('寄賣入庫標籤 XLSX 下載失敗');
-        }
-
-        const hasImages = submittedRows.some(row => {
-          return String(row.商品來源 || '').trim() === '寄賣' &&
-            String(row['直播截圖Url'] || '').trim();
-        });
-
-        if (hasImages) {
-          const imgOk = await downloadCurrentConsignImages(submittedRows, {
-            auto: true,
-            silent: true
-          });
-
-          if (!imgOk) {
-            throw new Error('當次寄賣圖片下載失敗，請確認瀏覽器是否允許多個檔案下載');
-          }
-        }
-
-        const pdfOk = await downloadCurrentConsignPdf(submittedRows, {
-          auto: true,
-          silent: true
-        });
-
-        if (!pdfOk) {
-          throw new Error('當次寄賣 PDF 下載失敗');
+        if (!result.ok) {
+          throw new Error(result.errors.join('；'));
         }
       }
     }
@@ -3598,6 +3777,8 @@ async function submitAll(options = {}) {
   el.btnExportAndSubmit.textContent = '送出中...';
 
   const submittedIds = [];
+  const successfulRowsForRecovery = [];
+  let recoverySaveFailed = false;
 
   try {
     for (let i = 0; i < batches.length; i++) {
@@ -3611,20 +3792,46 @@ async function submitAll(options = {}) {
 
       submittedIds.push(...batch.map(row => row.id));
 
+      if (submittedMode === 'consign') {
+        successfulRowsForRecovery.push(
+          ...batch.map(row => ({ ...row }))
+        );
+
+        const recoverySaved = saveLastConsignExportRows(
+          successfulRowsForRecovery
+        );
+
+        if (!recoverySaved) {
+          recoverySaveFailed = true;
+        }
+      }
+
       // 避免連續太快打 API
       if (batchNo < batches.length) {
         await wait(250);
       }
     }
 
-    let afterSuccessWarning = '';
+    let afterSuccessWarning = recoverySaveFailed
+      ? '瀏覽器無法保存補下載資料，請勿關閉目前頁面，並確認瀏覽器沒有封鎖網站儲存空間'
+      : '';
 
     if (typeof options.afterSuccess === 'function') {
       try {
         await options.afterSuccess(submittedRowsSnapshot, submittedMode);
       } catch (downloadErr) {
         console.error(downloadErr);
-        afterSuccessWarning = String(downloadErr.message || downloadErr || '檔案下載失敗');
+
+        const downloadMessage = String(
+          downloadErr.message ||
+          downloadErr ||
+          '檔案下載失敗'
+        );
+
+        afterSuccessWarning = [
+          afterSuccessWarning,
+          downloadMessage
+        ].filter(Boolean).join('；');
       }
     }
 
@@ -4118,6 +4325,13 @@ el.btnAddRow.addEventListener('click', addBlankRow);
 el.btnClearForm.addEventListener('click', () => clearForm(true));
 el.btnClearDrafts.addEventListener('click', clearDrafts);
 el.btnExportAndSubmit.addEventListener('click', exportAndSubmit);
+
+if (el.btnRetryLastConsignFiles) {
+  el.btnRetryLastConsignFiles.addEventListener(
+    'click',
+    retryLastConsignFiles
+  );
+}
 
 if (el.btnPrintCurrentConsign) {
   el.btnPrintCurrentConsign.addEventListener('click', printCurrentConsignStockInPdf);
