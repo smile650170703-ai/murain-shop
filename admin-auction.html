@@ -363,6 +363,7 @@
       @page{ size:A4 landscape; margin:10mm; }
     }
   </style>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="/config.js?v=20260627-auth-fix"></script>
 </head>
 <body>
@@ -473,7 +474,7 @@
 
     <section class="card">
       <div class="card-hd">
-        <h2>③ PDF / CSV 標籤</h2>
+        <h2>③ PDF / Excel 標籤</h2>
         </div>
       <div class="card-bd">
         <div class="grid two">
@@ -484,7 +485,7 @@
   <button class="blue" type="button" id="btnPreview">產生 PDF / 列印</button>
 <button class="green" type="button" id="btnLedgerPrint">產生目前寄賣包總表 PDF</button>
 <button class="soft" type="button" id="btnExportImages">產生勾選直播截圖</button>
-<button class="orange" type="button" id="btnExportChecked">匯出勾選商品標籤 CSV</button>
+<button class="orange" type="button" id="btnExportChecked">匯出勾選商品標籤 Excel</button>
 </div>
 
       </div>
@@ -543,14 +544,36 @@ const API = {
 
     let items = loadDraft() || [blankItem(), blankItem(), blankItem()];
 
-    function todayLocal(offsetDays = 0){
-      const d = new Date();
-      d.setDate(d.getDate() + offsetDays);
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, "0");
-      const day = String(d.getDate()).padStart(2, "0");
-      return `${y}-${m}-${day}`;
-    }
+function todayLocal(offsetDays = 0){
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+
+  return `${y}-${m}-${day}`;
+}
+
+function dateInputPlusDays(dateText, offsetDays = 1){
+  const match = String(dateText || "")
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  if (!match) {
+    return todayLocal(offsetDays);
+  }
+
+  const date = new Date(Date.UTC(
+    Number(match[1]),
+    Number(match[2]) - 1,
+    Number(match[3])
+  ));
+
+  date.setUTCDate(date.getUTCDate() + offsetDays);
+
+  return date.toISOString().slice(0, 10);
+}
 
     function esc(s){
       return String(s ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
@@ -889,10 +912,8 @@ $("pdfNote").value =
           consignorName: $("consignorName").value,
           batchNo: $("batchNo").value,
           actionMode: $("actionMode").value,
-          failRound: $("failRound").value,
-          docDate: $("docDate").value,
-          confirmDue: $("confirmDue").value,
-          pdfTitle: $("pdfTitle").value,
+failRound: $("failRound").value,
+pdfTitle: $("pdfTitle").value,
           pdfNote: $("pdfNote").value
         },
         items
@@ -910,7 +931,15 @@ if (!options?.silent) {
         const data = JSON.parse(raw);
         setTimeout(() => {
           if (data?.fields) {
-            Object.entries(data.fields).forEach(([k,v]) => { if ($(k)) $(k).value = v || ""; });
+            Object.entries(data.fields).forEach(([k, v]) => {
+  if (["docDate", "confirmDue", "consignOutDate"].includes(k)) {
+    return;
+  }
+
+  if ($(k)) {
+    $(k).value = v || "";
+  }
+});
             updateSummary();
           }
         }, 0);
@@ -1627,51 +1656,142 @@ printWithFileName(
     showPopup("目前寄賣包總表產生失敗，請確認主管登入 / 寄賣人資料");
   }
 }
-    function exportExcel(type){
-      syncItemsFromDom();
-      const rows = type === "checked" ? pickedItems() : activeItems();
-      if (!rows.length) { showToast("沒有可匯出的商品"); return; }
+function exportExcel(type){
+  syncItemsFromDom();
 
-      const csvRows = rows.map(it => ({
-        "SKU": it.sku || "",
-        "Name": it.name || "",
-        "寄賣人": it.consignor || $("consignorName").value || "",
-        "起標價格": it.newStartPrice || it.startPrice || "",
-        "一標多少": it.newStepPrice || it.stepPrice || ""
-      }));
+  const rows =
+    type === "checked"
+      ? pickedItems()
+      : activeItems();
 
-      const headers = ["SKU","Name","寄賣人","起標價格","一標多少"];
+  if (!rows.length) {
+    showToast("沒有可匯出的商品");
+    return;
+  }
 
-      const csvCell = (value) => {
-        let s = String(value ?? "");
-        if (/^[=+\-@]/.test(s.trim())) s = "'" + s;
-        return `"${s.replace(/"/g, '""')}"`;
-      };
+  const XLSXLib = window.XLSX;
 
-      const csv = [
-        headers,
-        ...csvRows.map(row => headers.map(h => row[h] ?? ""))
-      ]
-        .map(row => row.map(csvCell).join(","))
-        .join("\r\n");
+  if (!XLSXLib) {
+    showPopup(
+      "Excel 產生元件載入失敗，請確認網路連線後重新整理頁面再試一次。"
+    );
+    return;
+  }
 
-      const blob = new Blob(["\ufeff" + csv], { type:"text/csv;charset=utf-8;" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      const consignor = ($("consignorName").value || "寄賣人").replace(/[\\/:*?"<>|]/g, "_");
-      const labelType = type === "checked" ? "勾選商品" : "全部數量大於0";
-      a.href = url;
-      a.download = `寄賣標籤_${consignor}_${labelType}_${todayLocal()}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      showToast(`已匯出 ${rows.length} 筆 CSV 標籤`);
-    }
+  const preferredValue = (newValue, currentValue) => {
+    return String(newValue ?? "").trim() !== ""
+      ? newValue
+      : currentValue;
+  };
 
-$("docDate").value = $("docDate").value || todayLocal();
-$("confirmDue").value = $("confirmDue").value || todayLocal(2);
-$("consignOutDate").value = $("consignOutDate").value || todayLocal();
+  const excelNumberOrBlank = (value) => {
+    const raw = String(value ?? "")
+      .replace(/,/g, "")
+      .trim();
+
+    if (!raw) return "";
+
+    const numberValue = Number(
+      raw.replace(/[^\d.-]/g, "")
+    );
+
+    return Number.isFinite(numberValue)
+      ? numberValue
+      : raw;
+  };
+
+  const excelRows = rows.map(it => {
+    const startPrice = preferredValue(
+      it.newStartPrice,
+      it.startPrice
+    );
+
+    const stepPrice = preferredValue(
+      it.newStepPrice,
+      it.stepPrice
+    );
+
+    return {
+      "SKU": String(it.sku || ""),
+      "Name": String(it.name || ""),
+      "寄賣人": String(
+        it.consignor ||
+        $("consignorName").value ||
+        ""
+      ),
+      "起標價格": excelNumberOrBlank(startPrice),
+      "一標多少": excelNumberOrBlank(stepPrice)
+    };
+  });
+
+  const headers = [
+    "SKU",
+    "Name",
+    "寄賣人",
+    "起標價格",
+    "一標多少"
+  ];
+
+  const worksheet = XLSXLib.utils.json_to_sheet(
+    excelRows,
+    { header: headers }
+  );
+
+  worksheet["!cols"] = [
+    { wch: 18 },
+    { wch: 38 },
+    { wch: 20 },
+    { wch: 14 },
+    { wch: 14 }
+  ];
+
+  const workbook = XLSXLib.utils.book_new();
+
+  XLSXLib.utils.book_append_sheet(
+    workbook,
+    worksheet,
+    "寄賣商品標籤"
+  );
+
+  const consignor = (
+    $("consignorName").value ||
+    "寄賣人"
+  ).replace(/[\\/:*?"<>|]/g, "_");
+
+  const labelType =
+    type === "checked"
+      ? "勾選商品"
+      : "全部數量大於0";
+
+  const filename =
+    `寄賣標籤_${consignor}_${labelType}_${todayLocal()}.xlsx`;
+
+  XLSXLib.writeFile(workbook, filename);
+
+  showToast(
+    `已匯出 ${rows.length} 筆 Excel 標籤`
+  );
+}
+
+function initializeOperationDates(){
+  const today = todayLocal();
+
+  $("docDate").value = today;
+  $("consignOutDate").value = today;
+  $("confirmDue").value = dateInputPlusDays(today, 1);
+}
+
+initializeOperationDates();
+
+$("docDate").addEventListener("change", () => {
+  if (!$("docDate").value) {
+    $("docDate").value = todayLocal();
+  }
+
+  $("confirmDue").value =
+    dateInputPlusDays($("docDate").value, 1);
+});
+
 render();
 
 $("opKey").addEventListener("change", loadConsignors);
