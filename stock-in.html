@@ -3776,6 +3776,10 @@ async function submitAll(options = {}) {
   el.btnExportAndSubmit.disabled = true;
   el.btnExportAndSubmit.textContent = '送出中...';
 
+  if (el.btnRetryLastConsignFiles) {
+    el.btnRetryLastConsignFiles.disabled = true;
+  }
+
   const submittedIds = [];
   const successfulRowsForRecovery = [];
   let recoverySaveFailed = false;
@@ -3851,7 +3855,7 @@ async function submitAll(options = {}) {
     if (afterSuccessWarning) {
       showError(
         el.submitError,
-        '提醒：Airtable 已寫入成功，但有檔案下載失敗。請確認瀏覽器下載紀錄，不要再次按確認送出。'
+        '提醒：Airtable 已寫入成功，但有檔案下載失敗。請按「補下載上次寄賣檔案」重新取得檔案，不要再次按「確認送出」。'
       );
     } else {
       showError(el.submitError, '');
@@ -3868,15 +3872,26 @@ async function submitAll(options = {}) {
 
     const remainCount = state.drafts.length;
 
+    const recoveryHint =
+      submittedMode === 'consign' && successCount > 0
+        ? '請先按「補下載上次寄賣檔案」，確認成功入庫部分的檔案已取得後，再按「確認送出」處理剩下的資料。'
+        : '請先確認 Airtable 後，再按一次「確認送出」處理剩下的資料。';
+
     showError(
       el.submitError,
       `送出中斷：已成功 ${successCount} 筆，尚未送出 ${remainCount} 筆。` +
-      `請先確認 Airtable 後，再按一次確認送出剩下的資料。原因：${err.message || '送出失敗'}`
+      `${recoveryHint}原因：${err.message || '送出失敗'}`
     );
 
   } finally {
     el.btnExportAndSubmit.disabled = false;
     el.btnExportAndSubmit.textContent = '確認送出';
+
+    if (el.btnRetryLastConsignFiles) {
+      el.btnRetryLastConsignFiles.disabled = false;
+    }
+
+    refreshLastConsignExportButton();
 
     if (state.drafts.length) {
       el.statusText.textContent = `尚有 ${state.drafts.length} 筆未送出，可再次按確認送出。`;
