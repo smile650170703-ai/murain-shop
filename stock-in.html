@@ -709,12 +709,24 @@
 
 <div id="auctionStartPriceField" class="field span-3 hidden">
   <label for="auctionStartPrice">起標價格</label>
-  <input id="auctionStartPrice" type="number" inputmode="decimal" min="0" step="1" placeholder="可空白" />
+  <input
+    id="auctionStartPrice"
+    type="text"
+    inputmode="decimal"
+    autocomplete="off"
+    placeholder="可空白，可輸入 0"
+  />
 </div>
 
 <div id="bidStepField" class="field span-3 hidden">
   <label for="bidStep">一標多少</label>
-  <input id="bidStep" type="number" inputmode="decimal" min="0" step="1" placeholder="可空白" />
+  <input
+    id="bidStep"
+    type="text"
+    inputmode="decimal"
+    autocomplete="off"
+    placeholder="可空白"
+  />
 </div>
 
 <div class="field span-3">
@@ -808,10 +820,15 @@
         <input id="patchNameView" type="text" readonly />
       </div>
 
-      <div class="field span-4">
-        <label for="patchLocationOld">目前庫存位置</label>
-        <input id="patchLocationOld" type="text" readonly />
-      </div>
+<div class="field span-4">
+  <label for="patchLocationOld">目前庫存位置</label>
+  <input id="patchLocationOld" type="text" readonly />
+</div>
+
+<div class="field span-3">
+  <label for="patchStockQtyView">目前數量</label>
+  <input id="patchStockQtyView" type="text" readonly />
+</div>
 
       <div class="field span-3">
         <label for="patchAuctionStartPriceView">目前寄賣價格</label>
@@ -841,21 +858,25 @@
         </div>
       </div>
 
-      <div class="field span-3">
-        <label for="patchAuctionStartPriceNew">更改寄賣價格</label>
-        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;">
-          <input id="patchAuctionStartPriceNew" type="number" min="0" step="1" placeholder="起標價格" />
-          <button id="btnPatchSaveAuctionStartPrice" class="btn btn-success" type="button">存</button>
-        </div>
-      </div>
-
-      <div class="field span-3">
-        <label for="patchBidStepNew">更改一標多少</label>
-        <div style="display:grid;grid-template-columns:1fr auto;gap:8px;">
-          <input id="patchBidStepNew" type="number" min="0" step="1" placeholder="一標多少" />
-          <button id="btnPatchSaveBidStep" class="btn btn-success" type="button">存</button>
-        </div>
-      </div>
+<div class="field span-3">
+  <label for="patchStockQtyNew">更改數量</label>
+  <div style="display:grid;grid-template-columns:1fr auto;gap:8px;">
+    <input
+      id="patchStockQtyNew"
+      type="text"
+      inputmode="numeric"
+      autocomplete="off"
+      placeholder="0 以上整數"
+    />
+    <button
+      id="btnPatchSaveStockQty"
+      class="btn btn-success"
+      type="button"
+    >
+      存
+    </button>
+  </div>
+</div>
     </div>
 
     <div id="patchSaveError" class="error"></div>
@@ -1172,17 +1193,16 @@ liveScreenshotPreview: $('liveScreenshotPreview')
   patchResultBox: $('patchResultBox'),
   patchSkuView: $('patchSkuView'),
   patchNameView: $('patchNameView'),
-  patchLocationOld: $('patchLocationOld'),
-  patchAuctionStartPriceView: $('patchAuctionStartPriceView'),
-  patchBidStepView: $('patchBidStepView'),
-  patchLocationNew: $('patchLocationNew'),
-  patchNameNew: $('patchNameNew'),
-  patchAuctionStartPriceNew: $('patchAuctionStartPriceNew'),
-  patchBidStepNew: $('patchBidStepNew'),
-  btnPatchSaveLocation: $('btnPatchSaveLocation'),
-  btnPatchSaveName: $('btnPatchSaveName'),
-  btnPatchSaveAuctionStartPrice: $('btnPatchSaveAuctionStartPrice'),
-  btnPatchSaveBidStep: $('btnPatchSaveBidStep'),
+patchLocationOld: $('patchLocationOld'),
+patchStockQtyView: $('patchStockQtyView'),
+patchAuctionStartPriceView: $('patchAuctionStartPriceView'),
+patchBidStepView: $('patchBidStepView'),
+patchLocationNew: $('patchLocationNew'),
+patchNameNew: $('patchNameNew'),
+patchStockQtyNew: $('patchStockQtyNew'),
+btnPatchSaveLocation: $('btnPatchSaveLocation'),
+btnPatchSaveName: $('btnPatchSaveName'),
+btnPatchSaveStockQty: $('btnPatchSaveStockQty'),
   patchSaveError: $('patchSaveError')
     };
 
@@ -1287,12 +1307,13 @@ function resetPatchUi(clearKeyword = false) {
   el.patchSkuView.value = '';
   el.patchNameView.value = '';
   el.patchLocationOld.value = '';
+  el.patchStockQtyView.value = '';
   el.patchAuctionStartPriceView.value = '';
   el.patchBidStepView.value = '';
   el.patchLocationNew.value = '';
   el.patchNameNew.value = '';
-  el.patchAuctionStartPriceNew.value = '';
-  el.patchBidStepNew.value = '';
+  el.patchStockQtyNew.value = '';
+
   showError(el.patchSearchError, '');
   showError(el.patchSaveError, '');
 }
@@ -1305,15 +1326,38 @@ function renderPatchProduct(product) {
     return;
   }
 
-  const sku = String(product.SKU || product.sku || '').trim();
-  const name = String(product.Name || product.name || '').trim();
-  const location = String(product['庫存位置'] || product.location || '').trim();
+  const sku = String(
+    product.SKU ||
+    product.sku ||
+    ''
+  ).trim();
+
+  const name = String(
+    product.Name ||
+    product.name ||
+    ''
+  ).trim();
+
+  const location = String(
+    product['庫存位置'] ||
+    product.location ||
+    ''
+  ).trim();
+
+  const stockQty = String(
+    product.StockQty ??
+    product.stock_qty ??
+    product.qty ??
+    0
+  ).trim();
+
   const auctionStartPrice = String(
     product['起標價格'] ??
     product.auctionStartPrice ??
     product.startPrice ??
     ''
   ).trim();
+
   const bidStep = String(
     product['一標多少'] ??
     product.bidStep ??
@@ -1325,13 +1369,13 @@ function renderPatchProduct(product) {
   el.patchSkuView.value = sku;
   el.patchNameView.value = name;
   el.patchLocationOld.value = location;
+  el.patchStockQtyView.value = stockQty;
   el.patchAuctionStartPriceView.value = auctionStartPrice;
   el.patchBidStepView.value = bidStep;
 
   el.patchNameNew.value = name;
   el.patchLocationNew.value = location;
-  el.patchAuctionStartPriceNew.value = auctionStartPrice;
-  el.patchBidStepNew.value = bidStep;
+  el.patchStockQtyNew.value = stockQty;
 
   showError(el.patchSaveError, '');
 }
@@ -1612,43 +1656,50 @@ async function searchPatchProducts() {
 }
 
 function patchFieldButton(fieldKey) {
-const map = {
-  '庫存位置': el.btnPatchSaveLocation,
-  'Name': el.btnPatchSaveName,
-  '起標價格': el.btnPatchSaveAuctionStartPrice,
-  '一標多少': el.btnPatchSaveBidStep
-};
+  const map = {
+    '庫存位置': el.btnPatchSaveLocation,
+    Name: el.btnPatchSaveName,
+    StockQty: el.btnPatchSaveStockQty
+  };
 
   return map[fieldKey] || null;
 }
 
 function patchFieldLabel(fieldKey) {
-const map = {
-  '庫存位置': '庫存位置',
-  'Name': '商品名稱',
-  '起標價格': '寄賣價格',
-  '一標多少': '一標多少'
-};
+  const map = {
+    '庫存位置': '庫存位置',
+    Name: '商品名稱',
+    StockQty: '數量'
+  };
 
   return map[fieldKey] || fieldKey;
 }
 
 function patchFieldValue(fieldKey) {
-  if (fieldKey === '庫存位置') return String(el.patchLocationNew.value || '').trim();
-  if (fieldKey === 'Name') return String(el.patchNameNew.value || '').trim();
-
-  if (fieldKey === '起標價格') {
-    const raw = String(el.patchAuctionStartPriceNew.value || '').replace(/,/g, '').trim();
-    if (!raw) return '';
-    const n = Number(raw);
-    return Number.isFinite(n) ? n : NaN;
+  if (fieldKey === '庫存位置') {
+    return String(el.patchLocationNew.value || '').trim();
   }
 
-  if (fieldKey === '一標多少') {
-    const raw = String(el.patchBidStepNew.value || '').replace(/,/g, '').trim();
+  if (fieldKey === 'Name') {
+    return String(el.patchNameNew.value || '').trim();
+  }
+
+  if (fieldKey === 'StockQty') {
+    const raw = String(
+      el.patchStockQtyNew.value || ''
+    ).replace(/,/g, '').trim();
+
     if (!raw) return '';
+
+    if (!/^\d+$/.test(raw)) {
+      return NaN;
+    }
+
     const n = Number(raw);
-    return Number.isFinite(n) ? n : NaN;
+
+    return Number.isSafeInteger(n)
+      ? n
+      : NaN;
   }
 
   return '';
@@ -1678,10 +1729,27 @@ async function savePatchField(fieldKey) {
     return;
   }
 
-  if (typeof value === 'number' && !Number.isFinite(value)) {
-    showError(el.patchSaveError, `${label}請輸入正確數字`);
-    return;
-  }
+if (
+  fieldKey === 'StockQty' &&
+  (!Number.isInteger(value) || value < 0)
+) {
+  showError(
+    el.patchSaveError,
+    '數量只能輸入 0 以上整數'
+  );
+  return;
+}
+
+if (
+  typeof value === 'number' &&
+  !Number.isFinite(value)
+) {
+  showError(
+    el.patchSaveError,
+    `${label}請輸入正確數字`
+  );
+  return;
+}
 
   if (!CONFIG.updateProductFieldUrl) {
     showError(el.patchSaveError, '尚未設定 updateProductFieldUrl');
@@ -1813,9 +1881,37 @@ function validateItem(item) {
 
   if (item.商品來源 === '寄賣') {
     if (!item.寄賣人) return '寄賣請先帶入寄賣人';
-    if (!item.consignorRecordId) return '寄賣請先用會員查詢並選擇寄賣人';
-    if (normalizeNumber(item['起標價格'], 0) <= 0) return '寄賣請填寫 起標價格';
-    if (normalizeNumber(item['一標多少'], 0) <= 0) return '寄賣請填寫 一標多少';
+    if (!item.consignorRecordId) {
+      return '寄賣請先用會員查詢並選擇寄賣人';
+    }
+
+    const startPriceRaw = String(
+      item['起標價格'] ?? ''
+    ).replace(/,/g, '').trim();
+
+    if (startPriceRaw === '') {
+      return '寄賣請填寫 起標價格';
+    }
+
+    const startPrice = Number(startPriceRaw);
+
+    if (!Number.isFinite(startPrice) || startPrice < 0) {
+      return '起標價格請輸入 0 以上數字';
+    }
+
+    const bidStepRaw = String(
+      item['一標多少'] ?? ''
+    ).replace(/,/g, '').trim();
+
+    if (bidStepRaw === '') {
+      return '寄賣請填寫 一標多少';
+    }
+
+    const bidStep = Number(bidStepRaw);
+
+    if (!Number.isFinite(bidStep) || bidStep <= 0) {
+      return '一標多少請輸入大於 0 的數字';
+    }
   }
 
   return '';
@@ -2016,8 +2112,8 @@ function getDraftColumns(mode = state.mode) {
       { key: '直播截圖Url', label: '直播截圖', type: 'text', placeholder: '可貼圖片或圖片網址', paste: true },
       { key: 'Name', label: '商品名稱', type: 'text', placeholder: '輸入品牌+商品名稱', paste: true },
       { key: 'StockQty', label: '數量', type: 'number', paste: true },
-      { key: '起標價格', label: '起標價格', type: 'number', placeholder: '可空白', paste: true },
-      { key: '一標多少', label: '一標多少', type: 'number', placeholder: '可空白', paste: true },
+{ key: '起標價格', label: '起標價格', type: 'text', inputmode: 'decimal', placeholder: '可空白', paste: true },
+{ key: '一標多少', label: '一標多少', type: 'text', inputmode: 'decimal', placeholder: '可空白', paste: true },
       { key: '入庫日期', label: '入庫日期', type: 'date', paste: true },
       { key: 'sub_category', label: '分類', type: 'text', readonly: true }
     ];
@@ -2162,6 +2258,7 @@ const attrs = [
   `class="${inputClass}"`,
   `style="${widthStyle}"`,
   `type="${col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}"`,
+  col.inputmode ? `inputmode="${col.inputmode}"` : '',
   `value="${escapeHtml(value)}"`,
   col.placeholder ? `placeholder="${escapeHtml(col.placeholder)}"` : '',
   col.readonly ? 'readonly' : '',
@@ -2172,9 +2269,6 @@ const attrs = [
   ...extraAttrs,
   !col.readonly
     ? `oninput="window.__updateDraft('${escapeHtml(row.id)}','${col.key}',this.value)"`
-    : '',
-  !col.readonly
-    ? `onblur="window.__refreshDraftUi()"`
     : '',
   !col.readonly
     ? `onkeydown="window.__handleDraftKeydown(event)"`
@@ -2313,15 +2407,11 @@ if (state.mode === 'consign' && startKey === '直播截圖Url') {
     .map(col => col.key);
 }
 
-async function focusDraftInput(rowIndex, colKey) {
+function focusDraftInput(rowIndex, colKey) {
   if (!state.drafts.length) return;
 
-  const maxRow = state.drafts.length - 1;
-  const rowNo = Math.min(maxRow, Math.max(0, Number(rowIndex || 0)));
-  const key = String(colKey || '');
-
   const input = el.draftTableBody.querySelector(
-    `input[data-row-index="${rowNo}"][data-col-key="${key}"]`
+    `input[data-row-index="${rowIndex}"][data-col-key="${colKey}"]`
   );
 
   if (input) {
@@ -2331,17 +2421,24 @@ async function focusDraftInput(rowIndex, colKey) {
 }
 
 async function handleDraftKeydown(e) {
-  const moveKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'];
+  const moveKeys = [
+    'ArrowUp',
+    'ArrowDown',
+    'ArrowLeft',
+    'ArrowRight',
+    'Enter'
+  ];
+
   if (!moveKeys.includes(e.key)) return;
   if (e.ctrlKey || e.metaKey || e.altKey) return;
 
   const target = e.target;
-  if (!target || !target.dataset) return;
+  if (!target?.dataset) return;
 
   const editableKeys = getEditableDraftKeys();
   const currentRow = Number(target.dataset.rowIndex || 0);
   const currentKey = String(target.dataset.colKey || '');
-  let currentCol = editableKeys.indexOf(currentKey);
+  const currentCol = editableKeys.indexOf(currentKey);
 
   if (currentCol < 0) return;
 
@@ -2351,28 +2448,42 @@ async function handleDraftKeydown(e) {
   let nextCol = currentCol;
 
   if (e.key === 'ArrowUp') {
-    nextRow = Math.max(0, currentRow - 1);
-  } else if (e.key === 'ArrowDown' || e.key === 'Enter') {
-    nextRow = currentRow + 1;
-  } else if (e.key === 'ArrowRight') {
+    nextRow -= 1;
+  } else if (e.key === 'ArrowDown') {
+    nextRow += 1;
+  } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
     nextCol += 1;
+
     if (nextCol >= editableKeys.length) {
       nextCol = 0;
-      nextRow = currentRow + 1;
+      nextRow += 1;
     }
   } else if (e.key === 'ArrowLeft') {
     nextCol -= 1;
+
     if (nextCol < 0) {
-      if (currentRow <= 0) {
-        nextCol = 0;
-      } else {
-        nextRow = currentRow - 1;
-        nextCol = editableKeys.length - 1;
-      }
+      nextCol = editableKeys.length - 1;
+      nextRow -= 1;
     }
   }
 
-  await focusDraftInput(nextRow, editableKeys[nextCol]);
+  if (
+    nextRow < 0 ||
+    nextRow >= state.drafts.length
+  ) {
+    nextRow = currentRow;
+    nextCol = currentCol;
+  }
+
+  saveDrafts();
+  renderDrafts();
+
+  requestAnimationFrame(() => {
+    focusDraftInput(
+      nextRow,
+      editableKeys[nextCol]
+    );
+  });
 }
 
 function buildPayload(row) {
@@ -4473,10 +4584,20 @@ el.btnModePatch.addEventListener('click', () => setMode('patch'));
 el.btnOpenConsignLedger.addEventListener('click', openConsignLedgerCard);
 
 el.btnPatchSearch.addEventListener('click', searchPatchProducts);
-el.btnPatchSaveLocation.addEventListener('click', () => savePatchField('庫存位置'));
-el.btnPatchSaveName.addEventListener('click', () => savePatchField('Name'));
-el.btnPatchSaveAuctionStartPrice.addEventListener('click', () => savePatchField('起標價格'));
-el.btnPatchSaveBidStep.addEventListener('click', () => savePatchField('一標多少'));
+el.btnPatchSaveLocation.addEventListener(
+  'click',
+  () => savePatchField('庫存位置')
+);
+
+el.btnPatchSaveName.addEventListener(
+  'click',
+  () => savePatchField('Name')
+);
+
+el.btnPatchSaveStockQty.addEventListener(
+  'click',
+  () => savePatchField('StockQty')
+);
 
 el.patchSku.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') searchPatchProducts();
@@ -4488,11 +4609,10 @@ el.patchLocationNew.addEventListener('keydown', (e) => {
 el.patchNameNew.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') savePatchField('Name');
 });
-el.patchAuctionStartPriceNew.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') savePatchField('起標價格');
-});
-el.patchBidStepNew.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') savePatchField('一標多少');
+el.patchStockQtyNew.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    savePatchField('StockQty');
+  }
 });
 el.btnAddDraft.addEventListener('click', addDraft);
 el.btnAddRow.addEventListener('click', addBlankRow);
