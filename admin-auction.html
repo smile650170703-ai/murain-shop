@@ -1141,6 +1141,299 @@ if (!options?.silent) {
 }
       return data;
     }
+
+    function selectedLiveDate(){
+  return String($("consignLiveDate")?.value || "").trim();
+}
+
+function filteredLiveBatchItems(){
+  const keyword = String($("liveBatchSearch")?.value || "")
+    .trim()
+    .toLowerCase();
+
+  if (!keyword) return liveBatchItems;
+
+  return liveBatchItems.filter(it => {
+    return [
+      it.sku,
+      it.name,
+      it.consignorName,
+      it.lineName,
+      it.liveDate
+    ].some(v =>
+      String(v || "").toLowerCase().includes(keyword)
+    );
+  });
+}
+
+function updateLiveBatchSummary(){
+  const box = $("liveBatchSummary");
+  if (!box) return;
+
+  if (liveBatchViewMode === "none") {
+    box.textContent = "尚未載入寄賣商品";
+    return;
+  }
+
+  const filteredCount = filteredLiveBatchItems().length;
+  const checkedCount =
+    liveBatchItems.filter(it => it.checked).length;
+
+  const consignorCount = new Set(
+    liveBatchItems
+      .map(it =>
+        String(
+          it.consignorRecordId ||
+          it.consignorName ||
+          ""
+        ).trim()
+      )
+      .filter(Boolean)
+  ).size;
+
+  if (liveBatchViewMode === "unsold") {
+    box.textContent =
+      `直播日期 ${selectedLiveDate()}｜` +
+      `未售出 ${liveBatchItems.length} 款｜` +
+      `寄賣人 ${consignorCount} 位` +
+      (
+        filteredCount !== liveBatchItems.length
+          ? `｜搜尋顯示 ${filteredCount} 款`
+          : ""
+      );
+
+    return;
+  }
+
+  box.textContent =
+    `全部在庫寄賣品 ${liveBatchItems.length} 款｜` +
+    `本場已勾選 ${checkedCount} 款` +
+    (
+      filteredCount !== liveBatchItems.length
+        ? `｜搜尋顯示 ${filteredCount} 款`
+        : ""
+    );
+}
+
+function renderLiveBatch(){
+  if (!liveBatchBody) return;
+
+  const rows = filteredLiveBatchItems();
+
+  if (!rows.length) {
+    const message = liveBatchItems.length
+      ? "沒有符合搜尋條件的商品"
+      : (
+          liveBatchViewMode === "unsold"
+            ? "這個直播日期目前沒有數量大於 0 的未售出寄賣商品"
+            : "目前沒有數量大於 0 的在庫寄賣商品"
+        );
+
+    liveBatchBody.innerHTML =
+      `<tr>
+        <td
+          colspan="9"
+          style="text-align:center;color:#64748b;"
+        >
+          ${esc(message)}
+        </td>
+      </tr>`;
+
+    updateLiveBatchSummary();
+    return;
+  }
+
+  liveBatchBody.innerHTML = rows.map(it => `
+    <tr data-live-record-id="${esc(it.recordId || "")}">
+      <td class="check-cell">
+        <input
+          type="checkbox"
+          data-live-check="${esc(it.recordId || "")}"
+          ${it.checked ? "checked" : ""}
+        >
+      </td>
+
+      <td class="thumb-cell">
+        ${imgHtml(it.image || "")}
+      </td>
+
+      <td>
+        <span class="readonly-cell">
+          ${esc(it.sku || "-")}
+        </span>
+      </td>
+
+      <td>
+        <span class="readonly-cell">
+          ${esc(it.name || "-")}
+        </span>
+      </td>
+
+      <td>
+        <span class="readonly-cell">
+          ${esc(it.consignorName || "未設定寄賣人")}
+        </span>
+      </td>
+
+      <td style="text-align:center;">
+        ${esc(it.qty || "0")}
+      </td>
+
+      <td>
+        ${esc(it.liveDate || "未安排")}
+      </td>
+
+      <td>
+        ${money(it.startPrice)}
+      </td>
+
+      <td>
+        ${money(it.stepPrice)}
+      </td>
+    </tr>
+  `).join("");
+
+  updateLiveBatchSummary();
+}
+
+async function loadLiveBatchItems(mode){
+  syncSharedAuctionAdminKey();
+
+  const opKey =
+    String($("opKey")?.value || "").trim();
+
+  const liveDate = selectedLiveDate();
+
+  if (!opKey) {
+    showPopup("請先使用後台共用主管密碼登入");
+    return false;
+  }
+
+  if (!liveDate) {
+    showPopup("請先選擇寄賣直播日期");
+    return false;
+  }
+
+  const data = await fetchJSON(
+    API.liveBatchList,
+    {
+      op_key: opKey,
+      mode,
+      liveDate
+    }
+  );
+
+  const rows =
+    Array.isArray(data.items)
+      ? data.items
+      : [];
+
+  liveBatchViewMode = mode;
+
+  liveBatchItems = rows.map(it => ({
+    ...it,
+    checked:
+      mode === "unsold" ||
+      String(it.liveDate || "") === liveDate
+  }));
+
+  renderLiveBatch();
+
+  if (mode === "unsold") {
+    showToast(
+      `已找到 ${liveBatchItems.length} 款本場未售出寄賣商品`
+    );
+  } else {
+    showToast(
+      `已載入 ${liveBatchItems.length} 款在庫寄賣商品`
+    );
+  }
+
+  return true;
+}
+
+async function saveLiveBatch(){
+  syncSharedAuctionAdminKey();
+
+  const opKey =
+    String($("opKey")?.value || "").trim();
+
+  const liveDate = selectedLiveDate();
+
+  if (!opKey) {
+    showPopup("請先使用後台共用主管密碼登入");
+    return;
+  }
+
+  if (!liveDate) {
+    showPopup("請先選擇寄賣直播日期");
+    return;
+  }
+
+  if (
+    liveBatchViewMode !== "all" ||
+    !liveBatchItems.length
+  ) {
+    showPopup(
+      "請先按「載入全部在庫寄賣品」，再勾選本場商品"
+    );
+
+    return;
+  }
+
+  const selectedRecordIds = liveBatchItems
+    .filter(it => it.checked)
+    .map(it => String(it.recordId || "").trim())
+    .filter(Boolean);
+
+  const visibleRecordIds = liveBatchItems
+    .map(it => String(it.recordId || "").trim())
+    .filter(Boolean);
+
+  const confirmed = confirm(
+    `確定要儲存 ${liveDate} 的寄賣直播商品嗎？\n\n` +
+    `本場共勾選 ${selectedRecordIds.length} 款。\n` +
+    `未勾選但原本排在同一天的在庫商品，會從這一場移除。`
+  );
+
+  if (!confirmed) return;
+
+  const data = await fetchJSON(
+    API.liveBatchSave,
+    {
+      op_key: opKey,
+      liveDate,
+      selectedRecordIds,
+      visibleRecordIds
+    }
+  );
+
+  liveBatchItems = liveBatchItems.map(it => {
+    if (it.checked) {
+      return {
+        ...it,
+        liveDate
+      };
+    }
+
+    if (String(it.liveDate || "") === liveDate) {
+      return {
+        ...it,
+        liveDate:""
+      };
+    }
+
+    return it;
+  });
+
+  renderLiveBatch();
+
+  showPopup(
+    data.message ||
+    `已儲存 ${selectedRecordIds.length} 款本場寄賣直播商品`
+  );
+}
+    
 async function loadConsignors(){
   const sel = $("consignorName");
   if (!sel) return;
@@ -1740,6 +2033,655 @@ async function printWithFileName(fileBaseName){
     document.title = oldTitle;
   }, 1500);
 }
+
+    function batchPdfImgHtml(src){
+  const url = String(src || "").trim();
+
+  if (!url) return "-";
+
+  return `
+    <img
+      class="pdf-img"
+      crossorigin="anonymous"
+      src="${esc(url)}"
+      alt="商品截圖"
+      onerror="this.outerHTML='-'"
+    >
+  `;
+}
+
+function failRoundText(failCount){
+  const count = Math.max(
+    0,
+    Number(failCount || 0) || 0
+  );
+
+  if (count === 0) return "第一次流標";
+  if (count === 1) return "第二次流標";
+
+  return "第三次流標";
+}
+
+function liveBatchPdfHtml(
+  group,
+  liveDate,
+  docDate,
+  dueDate
+){
+  const allRows =
+    Array.isArray(group.items)
+      ? group.items
+      : [];
+
+  const normalRows = allRows.filter(
+    it => Number(it.failCount || 0) < 3
+  );
+
+  const finalRows = allRows.filter(
+    it => Number(it.failCount || 0) >= 3
+  );
+
+  const normalTable = normalRows.length
+    ? `
+      <div class="pdf-section-title">
+        一般流標商品｜請確認是否維持或更改價格
+      </div>
+
+      <div class="pdf-rule">
+        <b>流標提醒：</b>
+        商品流標後可選擇維持原價再次上架、
+        調整價格後再次上架、暫停寄賣或安排取回。
+        第三次流標後仍可再確認一次價格；
+        若第三次調價後再次流標，將改進入最終處理。
+      </div>
+
+      <table class="pdf-table">
+        <thead>
+          <tr>
+            <th>序</th>
+            <th>截圖</th>
+            <th>SKU</th>
+            <th>Name</th>
+            <th>數量</th>
+            <th>本次狀態</th>
+            <th>目前起標價格</th>
+            <th>目前一標多少</th>
+            <th>寄賣人選擇</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${normalRows.map((it, index) => `
+            <tr>
+              <td style="text-align:center;">
+                ${index + 1}
+              </td>
+
+              <td>
+                ${batchPdfImgHtml(it.image)}
+              </td>
+
+              <td>
+                ${esc(it.sku || "-")}
+              </td>
+
+              <td>
+                ${esc(it.name || "-")}
+              </td>
+
+              <td style="text-align:center;">
+                ${esc(it.qty || "-")}
+              </td>
+
+              <td>
+                ${esc(failRoundText(it.failCount))}
+              </td>
+
+              <td>
+                ${money(it.startPrice)}
+              </td>
+
+              <td>
+                ${money(it.stepPrice)}
+              </td>
+
+              <td style="min-width:235px;line-height:1.8;">
+                □ 維持原價格再次上架<br>
+                □ 更改價格後再次上架<br>
+                新起標價格：____________<br>
+                新一標多少：____________<br>
+                □ 暫停寄賣<br>
+                □ 安排取回
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `
+    : "";
+
+  const finalTable = finalRows.length
+    ? `
+      <div
+        class="pdf-section-title"
+        style="
+          border-left-color:#dc2626;
+          background:#fef2f2;
+          color:#991b1b;
+        "
+      >
+        三次調價後再次流標｜最終處理選擇
+      </div>
+
+      <div
+        class="pdf-rule"
+        style="
+          border-color:#dc2626;
+          background:#fef2f2;
+          color:#991b1b;
+        "
+      >
+        <b>最終處理規則：</b>
+        本次僅能選擇「0 元起標、一標 500 元進行最後一次競標」
+        或「直接取回商品」。
+
+        本次處理完成後，無論選擇最後競標或直接取回，
+        後續均不再接受同包款再次寄賣。
+      </div>
+
+      <table class="pdf-table">
+        <thead>
+          <tr>
+            <th>序</th>
+            <th>截圖</th>
+            <th>SKU</th>
+            <th>Name</th>
+            <th>數量</th>
+            <th>本次狀態</th>
+            <th>目前起標價格</th>
+            <th>目前一標多少</th>
+            <th>寄賣人最終選擇</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          ${finalRows.map((it, index) => `
+            <tr>
+              <td style="text-align:center;">
+                ${index + 1}
+              </td>
+
+              <td>
+                ${batchPdfImgHtml(it.image)}
+              </td>
+
+              <td>
+                ${esc(it.sku || "-")}
+              </td>
+
+              <td>
+                ${esc(it.name || "-")}
+              </td>
+
+              <td style="text-align:center;">
+                ${esc(it.qty || "-")}
+              </td>
+
+              <td>
+                三次調價後再次流標
+              </td>
+
+              <td>
+                ${money(it.startPrice)}
+              </td>
+
+              <td>
+                ${money(it.stepPrice)}
+              </td>
+
+              <td style="min-width:235px;line-height:1.9;">
+                □ 0 元起標／一標 500 元，進行最後一次競標
+                <br><br>
+
+                □ 直接取回商品，不再繼續寄賣
+                <br><br>
+
+                <b>
+                  本次處理完成後，不再接受同包款再次寄賣。
+                </b>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `
+    : "";
+
+  return `
+    <div class="pdf-preview">
+      <h1 class="pdf-title">
+        寄賣商品直播未售出通知與後續處理確認單
+      </h1>
+
+      <div class="pdf-sub">
+        本單僅列出指定直播日期中，
+        直播結束後數量仍大於 0 的寄賣商品
+      </div>
+
+      <div class="pdf-info">
+        <div>
+          <b>寄賣人：</b>
+          ${esc(group.consignorName || "-")}
+        </div>
+
+        <div>
+          <b>LINE 名稱：</b>
+          ${esc(group.lineName || "-")}
+        </div>
+
+        <div>
+          <b>寄賣直播日期：</b>
+          ${esc(liveDate)}
+        </div>
+
+        <div>
+          <b>產出日期：</b>
+          ${esc(docDate)}
+        </div>
+
+        <div>
+          <b>回覆期限：</b>
+          ${esc(dueDate)}
+        </div>
+
+        <div>
+          <b>未售出商品：</b>
+          ${allRows.length} 款
+        </div>
+      </div>
+
+      <p
+        style="
+          font-size:13px;
+          line-height:1.8;
+          margin:0 0 12px;
+        "
+      >
+        以下商品於本場寄賣直播後仍未售出，
+        請於回覆期限內確認每款商品的後續處理方式。
+        不同流標階段的商品已分區列出，
+        請依各區選項回覆。
+      </p>
+
+      ${normalTable}
+      ${finalTable}
+
+      <div class="sign-box">
+        <div>
+          <b>寄賣人回覆方式：</b>
+
+          <div style="margin-top:10px;line-height:1.8;">
+            請在商品欄位勾選後續處理方式。<br>
+            如需更改價格，請填寫新起標價格與新一標多少。<br>
+            填寫完成後，請將本檔案回傳給小編。
+          </div>
+        </div>
+
+        <div>
+          <b>處理人員：</b>
+          <div class="sign-line"></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function waitElementImages(
+  root,
+  timeoutMs = 12000
+){
+  const images = Array.from(
+    root?.querySelectorAll("img") || []
+  );
+
+  if (!images.length) return;
+
+  const tasks = images.map(
+    img => new Promise(resolve => {
+      if (img.complete) {
+        resolve();
+        return;
+      }
+
+      let done = false;
+
+      const finish = () => {
+        if (done) return;
+
+        done = true;
+        resolve();
+      };
+
+      img.addEventListener(
+        "load",
+        finish,
+        { once:true }
+      );
+
+      img.addEventListener(
+        "error",
+        finish,
+        { once:true }
+      );
+
+      if (typeof img.decode === "function") {
+        img.decode()
+          .then(finish)
+          .catch(finish);
+      }
+    })
+  );
+
+  await Promise.race([
+    Promise.all(tasks),
+    sleep(timeoutMs)
+  ]);
+}
+
+function downloadBlobFile(blob, filename){
+  const objectUrl =
+    URL.createObjectURL(blob);
+
+  const link =
+    document.createElement("a");
+
+  link.href = objectUrl;
+  link.download = filename;
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  setTimeout(
+    () => URL.revokeObjectURL(objectUrl),
+    5000
+  );
+}
+
+async function generateLiveUnsoldZip(){
+  syncSharedAuctionAdminKey();
+
+  const opKey =
+    String($("opKey")?.value || "").trim();
+
+  const liveDate = selectedLiveDate();
+
+  if (!opKey) {
+    showPopup("請先使用後台共用主管密碼登入");
+    return;
+  }
+
+  if (!liveDate) {
+    showPopup("請先選擇寄賣直播日期");
+    return;
+  }
+
+  if (
+    typeof window.html2pdf !== "function" ||
+    typeof window.JSZip !== "function"
+  ) {
+    showPopup(
+      "PDF／ZIP 元件載入失敗，請重新整理頁面後再試一次"
+    );
+
+    return;
+  }
+
+  const data = await fetchJSON(
+    API.liveBatchList,
+    {
+      op_key:opKey,
+      mode:"unsold",
+      liveDate
+    }
+  );
+
+  const rows =
+    Array.isArray(data.items)
+      ? data.items
+      : [];
+
+  liveBatchViewMode = "unsold";
+
+  liveBatchItems = rows.map(it => ({
+    ...it,
+    checked:true
+  }));
+
+  renderLiveBatch();
+
+  if (!rows.length) {
+    showPopup(
+      "這個直播日期沒有數量大於 0 的未售出寄賣商品"
+    );
+
+    return;
+  }
+
+  const missingConsignor = rows.filter(
+    it => !String(it.consignorName || "").trim()
+  );
+
+  if (missingConsignor.length) {
+    const skus = missingConsignor
+      .slice(0, 8)
+      .map(
+        it =>
+          it.sku ||
+          it.name ||
+          "未命名商品"
+      )
+      .join("、");
+
+    showPopup(
+      `有 ${missingConsignor.length} 款商品沒有寄賣人資料，` +
+      `無法正確分組：${skus}`
+    );
+
+    return;
+  }
+
+  const groupMap = new Map();
+
+  for (const it of rows) {
+    const key = String(
+      it.consignorRecordId ||
+      it.consignorName ||
+      ""
+    ).trim();
+
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        consignorRecordId:
+          String(it.consignorRecordId || ""),
+
+        consignorName:
+          String(it.consignorName || "").trim(),
+
+        lineName:
+          String(it.lineName || "").trim(),
+
+        items:[]
+      });
+    }
+
+    groupMap.get(key).items.push(it);
+  }
+
+  const groups = Array.from(
+    groupMap.values()
+  ).sort((a, b) =>
+    String(a.consignorName).localeCompare(
+      String(b.consignorName),
+      "zh-Hant"
+    )
+  );
+
+  const docDate = todayLocal();
+
+  const dueDate =
+    dateInputPlusDays(docDate, 1);
+
+  const folderName = safeFilePart(
+    `${liveDate}_寄賣直播未售出通知`,
+    "寄賣直播未售出通知"
+  );
+
+  const zip = new window.JSZip();
+  const usedFileNames = new Map();
+
+  const button =
+    $("btnGenerateLiveZip");
+
+  for (
+    let i = 0;
+    i < groups.length;
+    i++
+  ) {
+    const group = groups[i];
+
+    if (button) {
+      button.textContent =
+        `產生 PDF ${i + 1}/${groups.length}…`;
+    }
+
+    const preferredName =
+      group.lineName ||
+      group.consignorName ||
+      "寄賣人";
+
+    const baseName = safeFilePart(
+      `${preferredName}_${liveDate}_未售出通知`,
+      `寄賣人_${i + 1}_未售出通知`
+    );
+
+    const usedCount =
+      (usedFileNames.get(baseName) || 0) + 1;
+
+    usedFileNames.set(
+      baseName,
+      usedCount
+    );
+
+    const fileName =
+      `${baseName}` +
+      `${usedCount > 1 ? `_${usedCount}` : ""}` +
+      `.pdf`;
+
+    const root =
+      document.createElement("div");
+
+    root.className = "batch-pdf-root";
+
+    root.innerHTML = liveBatchPdfHtml(
+      group,
+      liveDate,
+      docDate,
+      dueDate
+    );
+
+    document.body.appendChild(root);
+
+    try {
+      await waitElementImages(
+        root,
+        12000
+      );
+
+      await sleep(150);
+
+      const output = await window
+        .html2pdf()
+        .set({
+          margin:[8, 8, 8, 8],
+
+          filename:fileName,
+
+          image:{
+            type:"jpeg",
+            quality:0.94
+          },
+
+          html2canvas:{
+            scale:1.7,
+            useCORS:true,
+            allowTaint:false,
+            logging:false,
+            backgroundColor:"#ffffff",
+            imageTimeout:12000
+          },
+
+          jsPDF:{
+            unit:"mm",
+            format:"a4",
+            orientation:"landscape"
+          },
+
+          pagebreak:{
+            mode:["css", "legacy"],
+            avoid:[
+              "tr",
+              ".pdf-rule",
+              ".sign-box"
+            ]
+          }
+        })
+        .from(root)
+        .outputPdf("blob");
+
+      const pdfBlob =
+        output instanceof Blob
+          ? output
+          : new Blob(
+              [output],
+              { type:"application/pdf" }
+            );
+
+      zip.file(
+        `${folderName}/${fileName}`,
+        pdfBlob
+      );
+
+    } finally {
+      root.remove();
+    }
+
+    await sleep(80);
+  }
+
+  if (button) {
+    button.textContent =
+      "正在壓縮 ZIP…";
+  }
+
+  const zipBlob =
+    await zip.generateAsync({
+      type:"blob",
+      compression:"DEFLATE",
+      compressionOptions:{
+        level:6
+      }
+    });
+
+  downloadBlobFile(
+    zipBlob,
+    `${folderName}.zip`
+  );
+
+  showPopup(
+    `已產生 ${groups.length} 位寄賣人的未售出通知 PDF，並打包成 ZIP`
+  );
+}
 async function buildLedgerPrint(){
   const opKey = $("opKey").value;
   const consignorRecordId = selectedConsignorRecordId();
@@ -1958,6 +2900,7 @@ function initializeOperationDates(){
   $("docDate").value = today;
   $("consignOutDate").value = today;
   $("confirmDue").value = dateInputPlusDays(today, 1);
+  $("consignLiveDate").value = today;
 }
 
 initializeOperationDates();
@@ -1970,6 +2913,281 @@ $("docDate").addEventListener("change", () => {
   $("confirmDue").value =
     dateInputPlusDays($("docDate").value, 1);
 });
+
+
+$("consignLiveDate").addEventListener(
+  "change",
+  () => {
+    if (!$("consignLiveDate").value) {
+      $("consignLiveDate").value =
+        todayLocal();
+    }
+
+    if (liveBatchViewMode === "all") {
+      const liveDate =
+        selectedLiveDate();
+
+      liveBatchItems =
+        liveBatchItems.map(it => ({
+          ...it,
+          checked:
+            String(it.liveDate || "") ===
+            liveDate
+        }));
+
+      renderLiveBatch();
+
+    } else if (
+      liveBatchViewMode === "unsold"
+    ) {
+      liveBatchItems = [];
+      liveBatchViewMode = "none";
+      renderLiveBatch();
+    }
+  }
+);
+
+
+$("liveBatchSearch").addEventListener(
+  "input",
+  renderLiveBatch
+);
+
+
+liveBatchBody.addEventListener(
+  "change",
+  e => {
+    const checkbox =
+      e.target.closest("[data-live-check]");
+
+    if (!checkbox) return;
+
+    const recordId = String(
+      checkbox.dataset.liveCheck || ""
+    );
+
+    liveBatchItems =
+      liveBatchItems.map(it => (
+        String(it.recordId || "") === recordId
+          ? {
+              ...it,
+              checked:checkbox.checked
+            }
+          : it
+      ));
+
+    updateLiveBatchSummary();
+  }
+);
+
+
+liveBatchBody.addEventListener(
+  "click",
+  e => {
+    if (
+      e.target.closest(
+        "input, button, a"
+      )
+    ) {
+      return;
+    }
+
+    const row = e.target.closest(
+      "[data-live-record-id]"
+    );
+
+    if (!row) return;
+
+    const recordId = String(
+      row.dataset.liveRecordId || ""
+    );
+
+    liveBatchItems =
+      liveBatchItems.map(it => (
+        String(it.recordId || "") === recordId
+          ? {
+              ...it,
+              checked:!it.checked
+            }
+          : it
+      ));
+
+    renderLiveBatch();
+  }
+);
+
+
+$("btnLoadLiveCandidates")
+  .addEventListener(
+    "click",
+    () => {
+      withButtonLoading(
+        $("btnLoadLiveCandidates"),
+        "載入中…",
+        async () => {
+          try {
+            await loadLiveBatchItems("all");
+
+          } catch (err) {
+            console.warn(
+              "[loadLiveCandidates failed]",
+              err
+            );
+
+            showPopup(
+              `在庫寄賣商品載入失敗：` +
+              `${String(
+                err?.message ||
+                err ||
+                "未知錯誤"
+              )}`
+            );
+          }
+        }
+      );
+    }
+  );
+
+
+$("btnLoadLiveUnsold")
+  .addEventListener(
+    "click",
+    () => {
+      withButtonLoading(
+        $("btnLoadLiveUnsold"),
+        "查詢中…",
+        async () => {
+          try {
+            await loadLiveBatchItems(
+              "unsold"
+            );
+
+          } catch (err) {
+            console.warn(
+              "[loadLiveUnsold failed]",
+              err
+            );
+
+            showPopup(
+              `本場未售出商品查詢失敗：` +
+              `${String(
+                err?.message ||
+                err ||
+                "未知錯誤"
+              )}`
+            );
+          }
+        }
+      );
+    }
+  );
+
+
+$("btnLiveToggleAll")
+  .addEventListener(
+    "click",
+    () => {
+      const rows =
+        filteredLiveBatchItems();
+
+      if (!rows.length) {
+        showToast(
+          "目前沒有可勾選的商品"
+        );
+
+        return;
+      }
+
+      const rowIds = new Set(
+        rows.map(
+          it =>
+            String(it.recordId || "")
+        )
+      );
+
+      const shouldCheck =
+        !rows.every(it => it.checked);
+
+      liveBatchItems =
+        liveBatchItems.map(it => (
+          rowIds.has(
+            String(it.recordId || "")
+          )
+            ? {
+                ...it,
+                checked:shouldCheck
+              }
+            : it
+        ));
+
+      renderLiveBatch();
+    }
+  );
+
+
+$("btnSaveLiveBatch")
+  .addEventListener(
+    "click",
+    () => {
+      withButtonLoading(
+        $("btnSaveLiveBatch"),
+        "儲存中…",
+        async () => {
+          try {
+            await saveLiveBatch();
+
+          } catch (err) {
+            console.warn(
+              "[saveLiveBatch failed]",
+              err
+            );
+
+            showPopup(
+              `本場直播商品儲存失敗：` +
+              `${String(
+                err?.message ||
+                err ||
+                "未知錯誤"
+              )}`
+            );
+          }
+        }
+      );
+    }
+  );
+
+
+$("btnGenerateLiveZip")
+  .addEventListener(
+    "click",
+    () => {
+      withButtonLoading(
+        $("btnGenerateLiveZip"),
+        "準備產生…",
+        async () => {
+          try {
+            await generateLiveUnsoldZip();
+
+          } catch (err) {
+            console.warn(
+              "[generateLiveUnsoldZip failed]",
+              err
+            );
+
+            showPopup(
+              `未售出通知 PDF 產生失敗：` +
+              `${String(
+                err?.message ||
+                err ||
+                "未知錯誤"
+              )}`
+            );
+          }
+        }
+      );
+    }
+  );
+
 
 render();
 
