@@ -3505,13 +3505,14 @@ async function fetchConsignorForCurrentPdf(rows = []) {
 
   return fallbackConsignor || {};
 }
-function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
+
+    function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
   const consignRows = Array.isArray(rows)
     ? rows.filter(row => String(row.商品來源 || '') === '寄賣')
     : [];
 
   const first = consignRows[0] || {};
-    const consignor = consignorOverride || state.selectedConsignor || {};
+  const consignor = consignorOverride || state.selectedConsignor || {};
 
   const consignorName = String(
     consignor.name ||
@@ -3553,8 +3554,18 @@ function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
     </tr>
   `).join('');
 
-  const itemHtml = consignRows.length
-    ? consignRows.map((row, index) => {
+  function buildItemRowsHtml(pageRows, startIndex) {
+    if (!pageRows.length) {
+      return `
+        <tr>
+          <td colspan="7" class="center muted">
+            目前沒有當次寄賣入庫資料
+          </td>
+        </tr>
+      `;
+    }
+
+    return pageRows.map((row, pageRowIndex) => {
       const photoUrl = String(
         row['直播截圖Url'] ||
         row.livePhotoUrl ||
@@ -3568,7 +3579,7 @@ function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
 
       return `
         <tr>
-          <td class="center">${index + 1}</td>
+          <td class="center">${startIndex + pageRowIndex + 1}</td>
 
           <td class="photo-cell">
             ${
@@ -3595,14 +3606,82 @@ function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
           </td>
         </tr>
       `;
-    }).join('')
-    : `
-      <tr>
-        <td colspan="7" class="center muted">
-          目前沒有當次寄賣入庫資料
-        </td>
-      </tr>
+    }).join('');
+  }
+
+  function buildItemsTable(pageRows, startIndex) {
+    return `
+      <table class="items-table">
+        <thead>
+          <tr>
+            <th class="col-no">序號</th>
+            <th class="col-photo">直播截圖</th>
+            <th class="col-name">商品名稱</th>
+            <th class="col-qty">數量</th>
+            <th class="col-method">寄賣方式</th>
+            <th class="col-price">起標價格</th>
+            <th class="col-step">一標多少</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${buildItemRowsHtml(pageRows, startIndex)}
+        </tbody>
+      </table>
     `;
+  }
+
+  // 第一頁有寄賣人資料，安全放 1 筆商品。
+  // 後續頁沒有寄賣人資料，每頁固定最多 4 筆，避免 html2pdf 把同一列切成兩頁。
+  const pages = [];
+
+  if (!consignRows.length) {
+    pages.push({
+      rows: [],
+      startIndex: 0,
+      showInfo: true
+    });
+  } else {
+    pages.push({
+      rows: consignRows.slice(0, 1),
+      startIndex: 0,
+      showInfo: true
+    });
+
+    for (let i = 1; i < consignRows.length; i += 4) {
+      pages.push({
+        rows: consignRows.slice(i, i + 4),
+        startIndex: i,
+        showInfo: false
+      });
+    }
+  }
+
+  const pagesHtml = pages.map((page, pageIndex) => `
+    <section class="pdf-page">
+      <h1 class="title">
+        ${pageIndex === 0 ? '當次寄賣入庫確認單' : '當次寄賣入庫確認單（續）'}
+      </h1>
+
+      <div class="sub">
+        產生日期：${excelEscape(todayFileDate())}
+        ${pages.length > 1 ? `｜第 ${pageIndex + 1} / ${pages.length} 頁` : ''}
+      </div>
+
+      ${
+        page.showInfo
+          ? `
+            <table class="info-table">
+              <tbody>
+                ${infoHtml}
+              </tbody>
+            </table>
+          `
+          : ''
+      }
+
+      ${buildItemsTable(page.rows, page.startIndex)}
+    </section>
+  `).join('<div class="html2pdf__page-break"></div>');
 
   return `
     <div class="current-consign-pdf">
@@ -3610,7 +3689,8 @@ function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
         .current-consign-pdf {
           width: 1020px;
           max-width: 1020px;
-          padding: 24px;
+          margin: 0;
+          padding: 0;
           box-sizing: border-box;
           background: #ffffff;
           color: #111827;
@@ -3624,16 +3704,29 @@ function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
           box-sizing: border-box;
         }
 
+        .current-consign-pdf .pdf-page {
+          width: 1020px;
+          height: 700px;
+          margin: 0;
+          padding: 24px;
+          overflow: hidden;
+          background: #ffffff;
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+
         .current-consign-pdf .title {
           text-align: center;
           font-size: 22px;
           font-weight: 900;
+          line-height: 1.2;
           margin: 0 0 8px;
         }
 
         .current-consign-pdf .sub {
           text-align: center;
           color: #6b7280;
+          line-height: 1.3;
           margin-bottom: 14px;
         }
 
@@ -3645,6 +3738,8 @@ function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
 
         .current-consign-pdf .info-table {
           margin-bottom: 14px;
+          break-inside: avoid;
+          page-break-inside: avoid;
         }
 
         .current-consign-pdf .info-table th {
@@ -3663,11 +3758,26 @@ function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
           word-break: break-word;
         }
 
+        .current-consign-pdf .items-table {
+          break-inside: auto;
+          page-break-inside: auto;
+        }
+
+        .current-consign-pdf .items-table thead {
+          display: table-header-group;
+        }
+
         .current-consign-pdf .items-table thead th {
           background: #e8dfcf;
           color: #111827;
           font-weight: 900;
           text-align: center;
+        }
+
+        .current-consign-pdf .items-table tbody tr {
+          height: 125px;
+          break-inside: avoid !important;
+          page-break-inside: avoid !important;
         }
 
         .current-consign-pdf .center {
@@ -3697,59 +3807,16 @@ function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
           background: #f9fafb;
         }
 
-.current-consign-pdf .col-no { width: 55px; }
-.current-consign-pdf .col-photo { width: 150px; }
-.current-consign-pdf .col-name { width: 280px; }
-.current-consign-pdf .col-qty { width: 70px; }
-.current-consign-pdf .col-method { width: 90px; }
-.current-consign-pdf .col-price { width: 135px; }
-.current-consign-pdf .col-step { width: 140px; }
-        .current-consign-pdf .info-table {
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
-.current-consign-pdf .items-table {
-  width: 100%;
-  max-width: 100%;
-  margin: 0;
-  break-inside: auto;
-  page-break-inside: auto;
-  outline: 1px solid #111827;
-  outline-offset: -1px;
-}
-
-.current-consign-pdf .items-table tr {
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
+        .current-consign-pdf .col-no { width: 55px; }
+        .current-consign-pdf .col-photo { width: 150px; }
+        .current-consign-pdf .col-name { width: 280px; }
+        .current-consign-pdf .col-qty { width: 70px; }
+        .current-consign-pdf .col-method { width: 90px; }
+        .current-consign-pdf .col-price { width: 135px; }
+        .current-consign-pdf .col-step { width: 140px; }
       </style>
 
-      <h1 class="title">當次寄賣入庫確認單</h1>
-      <div class="sub">產生日期：${excelEscape(todayFileDate())}</div>
-
-      <table class="info-table">
-        <tbody>
-          ${infoHtml}
-        </tbody>
-      </table>
-
-      <table class="items-table">
-        <thead>
-          <tr>
-            <th class="col-no">序號</th>
-            <th class="col-photo">直播截圖</th>
-            <th class="col-name">商品名稱</th>
-            <th class="col-qty">數量</th>
-<th class="col-method">寄賣方式</th>
-<th class="col-price">起標價格</th>
-<th class="col-step">一標多少</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${itemHtml}
-        </tbody>
-      </table>
+      ${pagesHtml}
     </div>
   `;
 }
