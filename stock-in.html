@@ -3064,8 +3064,124 @@ function todayFileDate() {
 }
 
 function moneyText(value) {
-  const n = Number(value || 0);
-  return Number.isFinite(n) && n > 0 ? n : '';
+  const raw = String(value ?? '')
+    .replace(/,/g, '')
+    .trim();
+
+  if (raw === '') return '';
+
+  const n = Number(raw);
+
+  return Number.isFinite(n)
+    ? n.toLocaleString('zh-TW')
+    : '';
+}
+
+function pickFirstNonBlank(row, keys) {
+  const source = row || {};
+
+  for (const key of keys) {
+    const value = source[key];
+
+    if (
+      value !== undefined &&
+      value !== null &&
+      String(value).trim() !== ''
+    ) {
+      return value;
+    }
+  }
+
+  return '';
+}
+
+function getConsignPdfPrices(row) {
+  return {
+    suggestPrice: pickFirstNonBlank(row, [
+      'Price',
+      'price',
+      '建議售價',
+      'suggestPrice'
+    ]),
+
+    startPrice: pickFirstNonBlank(row, [
+      '起標價格',
+      'auctionStartPrice',
+      'startPrice',
+      'start_price',
+      '競標底價'
+    ]),
+
+    bidStep: pickFirstNonBlank(row, [
+      '一標多少',
+      'bidStep',
+      'stepPrice',
+      'bid_step',
+      '每標加價'
+    ])
+  };
+}
+
+async function hydrateCurrentConsignPdfRows(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+
+  return Promise.all(
+    list.map(async row => {
+      const sku = String(row?.SKU || row?.sku || '').trim();
+
+      if (!sku) {
+        return { ...row };
+      }
+
+      try {
+        const product = await fetchPatchProductBySku(sku);
+
+        const productPrices = getConsignPdfPrices(product);
+        const localPrices = getConsignPdfPrices(row);
+
+        return {
+          ...row,
+
+          Name: String(
+            product?.Name ||
+            product?.name ||
+            row?.Name ||
+            ''
+          ).trim(),
+
+          Price:
+            productPrices.suggestPrice !== ''
+              ? productPrices.suggestPrice
+              : localPrices.suggestPrice,
+
+          起標價格:
+            productPrices.startPrice !== ''
+              ? productPrices.startPrice
+              : localPrices.startPrice,
+
+          一標多少:
+            productPrices.bidStep !== ''
+              ? productPrices.bidStep
+              : localPrices.bidStep,
+
+          StockQty:
+            product?.StockQty ??
+            product?.stock_qty ??
+            row?.StockQty ??
+            0
+        };
+
+      } catch (err) {
+        console.warn(
+          '寄賣 PDF 重新讀取 Products 價格失敗：',
+          sku,
+          err
+        );
+
+        return { ...row };
+      }
+    })
+  );
 }
 
     function buildConsignLedgerPrintHtml(data) {
@@ -3439,11 +3555,22 @@ function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
 
   const itemHtml = consignRows.length
     ? consignRows.map((row, index) => {
-      const photoUrl = String(row['直播截圖Url'] || '').trim();
+      const photoUrl = String(
+        row['直播截圖Url'] ||
+        row.livePhotoUrl ||
+        ''
+      ).trim();
+
+      const {
+        suggestPrice,
+        startPrice,
+        bidStep
+      } = getConsignPdfPrices(row);
 
       return `
         <tr>
           <td class="center">${index + 1}</td>
+
           <td class="photo-cell">
             ${
               photoUrl
@@ -3451,17 +3578,34 @@ function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
                 : '<span class="muted">無</span>'
             }
           </td>
-          <td>${excelEscape(row.Name || '')}</td>
-          <td class="center">${Number(row.StockQty || 0) || 0}</td>
+
+          <td>${excelEscape(row.Name || row['商品名稱'] || '')}</td>
+
+          <td class="center">
+            ${Number(row.StockQty || row.qty || 0) || 0}
+          </td>
+
           <td class="center">直播競標</td>
-          <td class="right">${excelEscape(moneyText(row['起標價格']) || '')}</td>
-          <td class="right">${excelEscape(moneyText(row['一標多少']) || '')}</td>
+
+          <td class="right">
+            ${excelEscape(moneyText(suggestPrice) || '-')}
+          </td>
+
+          <td class="right">
+            ${excelEscape(moneyText(startPrice) || '-')}
+          </td>
+
+          <td class="right">
+            ${excelEscape(moneyText(bidStep) || '-')}
+          </td>
         </tr>
       `;
     }).join('')
     : `
       <tr>
-        <td colspan="7" class="center muted">目前沒有當次寄賣入庫資料</td>
+        <td colspan="8" class="center muted">
+          目前沒有當次寄賣入庫資料
+        </td>
       </tr>
     `;
 
@@ -3550,13 +3694,14 @@ function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
           background: #f9fafb;
         }
 
-        .current-consign-pdf .col-no { width: 52px; }
-        .current-consign-pdf .col-photo { width: 135px; }
-        .current-consign-pdf .col-name { width: 260px; }
-        .current-consign-pdf .col-qty { width: 64px; }
-        .current-consign-pdf .col-method { width: 95px; }
-        .current-consign-pdf .col-price { width: 100px; }
-        .current-consign-pdf .col-step { width: 100px; }
+.current-consign-pdf .col-no { width: 48px; }
+.current-consign-pdf .col-photo { width: 130px; }
+.current-consign-pdf .col-name { width: 230px; }
+.current-consign-pdf .col-qty { width: 60px; }
+.current-consign-pdf .col-method { width: 90px; }
+.current-consign-pdf .col-suggest { width: 95px; }
+.current-consign-pdf .col-price { width: 95px; }
+.current-consign-pdf .col-step { width: 85px; }
         .current-consign-pdf .info-table {
   break-inside: avoid;
   page-break-inside: avoid;
@@ -3589,9 +3734,10 @@ function buildCurrentConsignPdfDownloadHtml(rows, consignorOverride = null) {
             <th class="col-photo">直播截圖</th>
             <th class="col-name">商品名稱</th>
             <th class="col-qty">數量</th>
-            <th class="col-method">寄賣方式</th>
-            <th class="col-price">競標底價</th>
-            <th class="col-step">每標加價</th>
+<th class="col-method">寄賣方式</th>
+<th class="col-suggest">建議售價</th>
+<th class="col-price">起標價格</th>
+<th class="col-step">一標多少</th>
           </tr>
         </thead>
         <tbody>
@@ -3622,7 +3768,68 @@ async function downloadCurrentConsignPdf(rowsOverride = null, options = {}) {
     return false;
   }
 
-  const first = consignRows[0] || {};
+  // 以正式入庫後的 Products 資料為準，
+  // 避免舊暫存欄位名稱不同而產生空白價格。
+  const pdfRows = await hydrateCurrentConsignPdfRows(consignRows);
+
+  const priceIssues = pdfRows.map((row, index) => {
+    const {
+      startPrice,
+      bidStep
+    } = getConsignPdfPrices(row);
+
+    const startRaw = String(startPrice ?? '')
+      .replace(/,/g, '')
+      .trim();
+
+    const bidRaw = String(bidStep ?? '')
+      .replace(/,/g, '')
+      .trim();
+
+    const startNumber = Number(startRaw);
+    const bidNumber = Number(bidRaw);
+
+    const missing = [];
+
+    if (
+      startRaw === '' ||
+      !Number.isFinite(startNumber) ||
+      startNumber < 0
+    ) {
+      missing.push('起標價格');
+    }
+
+    if (
+      bidRaw === '' ||
+      !Number.isFinite(bidNumber) ||
+      bidNumber <= 0
+    ) {
+      missing.push('一標多少');
+    }
+
+    if (!missing.length) return '';
+
+    const itemName = String(
+      row.Name ||
+      row['商品名稱'] ||
+      row.SKU ||
+      `第 ${index + 1} 筆`
+    ).trim();
+
+    return `${index + 1}. ${itemName}（缺少：${missing.join('、')}）`;
+  }).filter(Boolean);
+
+  if (priceIssues.length) {
+    showError(
+      el.submitError,
+      `PDF 未產生，以下商品價格資料不完整：${priceIssues.join('；')}`
+    );
+
+    return false;
+  }
+
+  const first = pdfRows[0] || {};
+
   const fileBaseName = [
     safeFilePart(first.寄賣人 || '未命名寄賣人'),
     todayFileDate(),
@@ -3634,8 +3841,15 @@ async function downloadCurrentConsignPdf(rowsOverride = null, options = {}) {
   container.style.left = '-99999px';
   container.style.top = '0';
   container.style.background = '#ffffff';
-  const consignorForPdf = await fetchConsignorForCurrentPdf(consignRows);
-  container.innerHTML = buildCurrentConsignPdfDownloadHtml(consignRows, consignorForPdf);
+
+  const consignorForPdf =
+    await fetchConsignorForCurrentPdf(pdfRows);
+
+  container.innerHTML =
+    buildCurrentConsignPdfDownloadHtml(
+      pdfRows,
+      consignorForPdf
+    );
 
   document.body.appendChild(container);
 
