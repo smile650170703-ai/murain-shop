@@ -947,10 +947,12 @@ strong.amount-green{
 <th>✅ 公司｜本月結算</th>
 
 <th>✅ 妹妹｜本月個人費用*2</th>
+
+<th>🧮 現金支出｜妹妹請款總額</th>
   </tr>
 </thead>
 <tbody id="confirmedRows">
-  <tr><td colspan="4" class="empty">載入中...</td></tr>
+  <tr><td colspan="5" class="empty">載入中...</td></tr>
 </tbody>
     </table>
   </div>
@@ -1131,7 +1133,8 @@ function signedMoneyHtml(v, mode = "auto") {
   "cashCompanyShippingSister",
   "accountantInvoiceCheck",
   "cardSisterExpense",
-  "cashBorrowSister"
+  "cashBorrowSister",
+  "paySisterCompanyCash"
 ]);
 
 const INCOME_DETAIL_KEYS = new Set([
@@ -1507,6 +1510,18 @@ function sisterPersonalExpenseValue(r) {
   ], 0);
 }
 
+// ✅ 已確認清單：現金支出｜妹妹請款總額
+// 優先使用後端標準化欄位 paySisterSourceAmount，
+// 同時保留 Airtable 新舊欄位名稱相容。
+function sisterCashClaimTotalValue(r) {
+  return getVal(r, [
+    "paySisterSourceAmount",
+    "🧮 現金支出｜妹妹請款總額",
+    "現金支出｜妹妹請款總額",
+    "支付妹妹公司費用_來源金額"
+  ], 0);
+}
+
 function transferMortgageAmountValue(r) {
   return 0;
 }
@@ -1562,7 +1577,7 @@ function renderBreakdownRow(r, type) {
 }[type] || "明細";
   return `
     <tr class="detail-row" data-detail-row="${escHtml(monthLabel(r))}-${type}">
-<td colspan="4">
+<td colspan="5">
 <strong>${escHtml(monthLabel(r))}｜${title}</strong>
         <div class="breakdown" style="margin-top:10px;">
           ${items.map(([label,value,key]) => `
@@ -1673,6 +1688,9 @@ function renderConfirmedProfitRowHtml(r){
   const companySettlement = companyMonthlySettlementValue(r);
   const sisterExpense = sisterPersonalExpenseValue(r);
 
+  // ✅ 現金支出中屬於「妹妹代墊、要請款」的來源總額
+  const sisterCashClaimTotal = sisterCashClaimTotalValue(r);
+
   return `
     <tr data-row-id="${escHtml(id)}" data-month="${escHtml(month)}">
       <td><strong>${escHtml(month)}</strong></td>
@@ -1692,6 +1710,17 @@ function renderConfirmedProfitRowHtml(r){
         <span class="money-inline">
           ${amountLink(r, "sisterPersonalExpense", "✅ 妹妹｜本月個人費用總額（×2）", sisterExpense)}
           <button class="plus-btn" data-expand="sisterPersonal" data-id="${escHtml(id)}">＋</button>
+        </span>
+      </td>
+
+      <td>
+        <span class="money-inline">
+          ${amountLink(
+            r,
+            "paySisterCompanyCash",
+            "🧮 現金支出｜妹妹請款總額",
+            sisterCashClaimTotal
+          )}
         </span>
       </td>
     </tr>
@@ -1744,7 +1773,7 @@ function renderRows() {
 
   $("confirmedRows").innerHTML = confirmedRows.length
     ? confirmedRows.map(renderConfirmedProfitRowHtml).join("")
-    : `<tr><td colspan="4" class="empty">目前沒有已確認資料。</td></tr>`;
+    : `<tr><td colspan="5" class="empty">目前沒有已確認資料。</td></tr>`;
 
   $("unconfirmedMiniRows").innerHTML = unconfirmedRows.length
     ? unconfirmedRows.map(renderUnconfirmedMiniRowHtml).join("")
@@ -1770,7 +1799,7 @@ async function loadRows({ keepScroll = false } = {}) {
       setTimeout(() => { document.querySelector(".table-wrap").scrollTop = oldScroll; }, 0);
     }
   } catch (err) {
-    const errHtmlConfirmed = `<tr><td colspan="4" class="empty">❌ ${escHtml(err.message || err)}</td></tr>`;
+    const errHtmlConfirmed = `<tr><td colspan="5" class="empty">❌ ${escHtml(err.message || err)}</td></tr>`;
 const errHtmlUnconfirmed = `<div class="empty">❌ ${escHtml(err.message || err)}</div>`;
 $("confirmedRows").innerHTML = errHtmlConfirmed;
 $("unconfirmedMiniRows").innerHTML = errHtmlUnconfirmed;
@@ -1922,13 +1951,14 @@ function renderSisterExpenseSummaryTable(items) {
   const keep = (arr) => arr.filter(k => has(k));
 
   // 公司1、公司5、公司6、公司7、妹妹2：現金支出類
-  if ([
+if ([
   "companyGoodsExpense",
   "cashCompanyLumi",
   "cashCompanySister",
   "cashCompanyShippingSister",
   "accountantInvoiceCheck",
-  "cashBorrowSister"
+  "cashBorrowSister",
+  "paySisterCompanyCash"
 ].includes(detailKey)) {
 return keep([
   "date",
