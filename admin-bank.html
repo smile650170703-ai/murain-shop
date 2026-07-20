@@ -3611,16 +3611,31 @@ function getCashinstListDueInfo(f = {}, shipInfoArg = null, amountArg = null){
   if (isCashInstOrder) {
     const totalParts = isCashInst3 ? 3 : (isCashInst2 ? 2 : Number(f.cash_inst_total_parts || cashInst.total_parts || 0) || 0);
 
-    const paidParts = Math.max(
+     const paidParts = Math.max(
       Number(f.cash_inst_paid_parts || 0) || 0,
       Number(f.cash_inst_paid_count || 0) || 0,
       Number(cashInst.paid_count || 0) || 0
     );
 
+    // ✅ 現金分期尚在「確認定金」階段：
+    // 左側只顯示分期定金金額，不提前顯示第 1 期與到期日
+    const cashInstStatus = String(
+      f.cash_inst_status || ''
+    ).trim().toLowerCase();
+
+    if (cashInstStatus === 'pending_deposit') {
+      return {
+        amountText: depAmount > 0
+          ? `分期定金金額：${money(Math.round(depAmount))}`
+          : '分期定金金額：—',
+        dueDateText: ''
+      };
+    }
+
     const cashInstCompleted =
       f.cash_inst_completed === true ||
       String(f.cash_inst_completed || '').trim().toLowerCase() === 'true' ||
-      String(f.cash_inst_status || '').trim().toLowerCase() === 'completed';
+      cashInstStatus === 'completed';
 
     if (totalParts > 0 && (cashInstCompleted || paidParts >= totalParts)) {
       return {
