@@ -3745,33 +3745,101 @@ function getCashinstListDueInfo(f = {}, shipInfoArg = null, amountArg = null){
     };
   }
 
-  const tailSnap = safeJsonParse(f.tail_paid_snapshot, {}) || {};
-  const tailAmountFromField = adminPickNumber(
-    f.tail_net_amount,
-    f.tail_total_amount,
-    tailSnap.tail_net_amount,
-    tailSnap.tail_total_amount
-  );
+  // ✅ 先明確判斷：這筆是不是真正的 TL 尾款單
+  const orderId = String(f.order_id || '').trim();
+  const parentOrderId = String(f.parent_order_id || '').trim();
+  const orderType = String(f.order_type || '').trim().toLowerCase();
 
-  const tailAmount = tailAmountFromField || Math.max(0, Number(a.net || 0) - Number(depAmount || 0));
+  const isTailFlag =
+    f.is_tail === true ||
+    ['true', '1', 'yes'].includes(
+      String(f.is_tail || '').trim().toLowerCase()
+    );
 
-  const tailDueDate = adminPickDate10(
-    f.tail_due_date,
-    f.tail_expire_at,
-    f.hold_until,
-    dep.hold_until,
-    dep.holdUntil,
-    f.deposit_expire_at,
-    dep.deposit_expire_at,
-    dep.expire_at
-  );
+  const isActualTailOrder =
+    isTailFlag ||
+    orderType === 'tail' ||
+    orderId.toUpperCase().startsWith('TL') ||
+    !!parentOrderId ||
+    pmCode === 'atm_full_tail';
 
-  return {
-    amountText: tailAmount > 0
-      ? `尾款金額 ${money(Math.round(tailAmount))}`
-      : '',
-    dueDateText: tailDueDate ? `到期日 ${tailDueDate}` : ''
-  };
+  // ✅ 只有真正的 TL 尾款單，才顯示：
+  // 尾款金額＋到期日
+  if (isActualTailOrder) {
+    const tailSnap = safeJsonParse(f.tail_paid_snapshot, {}) || {};
+
+    const tailAmount = adminPickNumber(
+      f.net_amount,
+      f.total_amount,
+      f.total,
+      f.tail_net_amount,
+      f.tail_total_amount,
+      tailSnap.tail_net_amount,
+      tailSnap.tail_total_amount,
+      a.net
+    );
+
+    const tailDueDate = adminPickDate10(
+      f.tail_due_date,
+      f.tail_expire_at,
+
+      shipInfo.tail_due_date,
+      shipInfo.tail_expire_at,
+      shipInfo.hold_until,
+      shipInfo.deposit_expire_at,
+
+      f.deposit_expire_at,
+      f.hold_until,
+
+      dep.deposit_expire_at,
+      dep.expire_at,
+      dep.hold_until,
+      dep.holdUntil
+    );
+
+    return {
+      amountText: tailAmount > 0
+        ? `尾款金額：${money(Math.round(tailAmount))}`
+        : '尾款金額：—',
+      dueDateText: tailDueDate
+        ? `到期日 ${tailDueDate}`
+        : ''
+    };
+  }
+
+  // ✅ 一般定金保留訂單
+  // 只顯示「定金金額」，不要顯示保留日／到期日
+  const isDepositReserveOrder =
+    [
+      'deposit_old',
+      'deposit_old_partial',
+      'atm_deposit',
+      'deposit_new',
+      'deposit_new_partial'
+    ].includes(pmCode) ||
+    (
+      pmCode.includes('deposit') &&
+      !pmCode.includes('full')
+    );
+
+  if (isDepositReserveOrder) {
+    const normalDepositAmount = adminPickNumber(
+      f.deposit_amount,
+      dep.amount,
+      dep.deposit_amount,
+      shipInfo.deposit_amount
+    );
+
+    return {
+      amountText: normalDepositAmount > 0
+        ? `定金金額：${money(Math.round(normalDepositAmount))}`
+        : '定金金額：—',
+      dueDateText: ''
+    };
+  }
+
+  // ✅ 匯款全額等其他訂單不額外顯示定金／尾款資訊
+  return empty;
 }
 
 /* ===== 左側列表渲染 ===== */
