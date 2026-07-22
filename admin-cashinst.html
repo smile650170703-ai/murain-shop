@@ -6455,11 +6455,10 @@ const slipsHtml = records.map(rec => {
   `;
 }).join('');
 
-const printedKeysJson = JSON.stringify(
-  records
-    .map(rec => getOrderKey(rec))
-    .filter(Boolean)
-);
+// ✅ 保存這次實際列印的訂單編號
+const printedKeys = records
+  .map(rec => getOrderKey(rec))
+  .filter(Boolean);
 
 doc.write(`<!doctype html>
 <html lang="zh-Hant">
@@ -6668,36 +6667,34 @@ body {
 
 <body>
 ${slipsHtml}
-
-<script>
-window.addEventListener('afterprint', function () {
-  try {
-    if (
-      window.opener &&
-      typeof window.opener.confirmAndMarkHoldSlipsPrinted === 'function'
-    ) {
-      window.opener.confirmAndMarkHoldSlipsPrinted(
-        ${printedKeysJson}
-      );
-    }
-  } catch (e) {
-    console.error(e);
-  }
-
-  setTimeout(function () {
-    window.close();
-  }, 300);
-});
-<\/script>
-
 </body>
 </html>`);
 
 doc.close();
 
-setTimeout(() => {
-  win.focus();
-  win.print();
+setTimeout(async () => {
+  try {
+    win.focus();
+
+    // ✅ Chrome 會在列印視窗關閉或取消後，才繼續執行下一行
+    win.print();
+
+    // ✅ 不再依賴不穩定的 afterprint
+    // 列印／取消列印視窗結束後，直接在後台頁面詢問
+    await confirmAndMarkHoldSlipsPrinted(printedKeys);
+
+  } catch (e) {
+    console.error('print hold slips failed', e);
+    alert('列印完成確認發生錯誤：' + (e.message || e));
+
+  } finally {
+    // ✅ 完成確認後才關閉白色列印頁
+    try {
+      if (win && !win.closed) {
+        win.close();
+      }
+    } catch (e) {}
+  }
 }, 300);
   } catch (e) {
     console.error(e);
