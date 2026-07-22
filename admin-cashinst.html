@@ -5859,33 +5859,184 @@ async function markHoldSlipsPrinted(orderKeys = []){
   setActionMsg(`✅ 已將 ${successCount} 筆標記為已列印待出貨保留單。`);
 }
 
-// ✅ 列印視窗關閉後，由使用者確認是否真的完成列印
-async function confirmAndMarkHoldSlipsPrinted(orderKeys = []){
-  const count = Array.isArray(orderKeys)
-    ? orderKeys.length
-    : 0;
+// ✅ 關閉待出貨保留單的隱藏列印 iframe
+function closeHoldSlipPrintFrame(){
+  const frame = document.getElementById('holdSlipPrintFrame');
 
-  if (!count) return;
-
-  const confirmed = confirm(
-    `列印視窗已關閉。\n\n` +
-    `這 ${count} 筆待出貨保留單是否已確實完成列印？\n\n` +
-    `按「確定」後，才會寫入 Airtable：\n` +
-    `・是否已列印出貨單＝已勾選\n` +
-    `・出貨單列印時間＝目前時間\n\n` +
-    `如果剛才取消列印、印表機沒紙或列印失敗，請按「取消」。`
-  );
-
-  if (!confirmed) {
-    setActionMsg('未標記已列印，可重新列印。');
-    return;
+  if (frame) {
+    frame.remove();
   }
-
-  await markHoldSlipsPrinted(orderKeys);
 }
 
-window.confirmAndMarkHoldSlipsPrinted =
-  confirmAndMarkHoldSlipsPrinted;
+// ✅ 使用後台頁面內的自製視窗確認列印結果
+// 不再使用容易被 Chrome 列印預覽擋掉的原生 confirm()
+function showHoldSlipPrintConfirmModal(orderKeys = []){
+  const keys = Array.from(
+    new Set(
+      (Array.isArray(orderKeys) ? orderKeys : [])
+        .map(x => String(x || '').trim())
+        .filter(Boolean)
+    )
+  );
+
+  if (!keys.length) return;
+
+  const oldModal = document.getElementById(
+    'holdSlipPrintConfirmModal'
+  );
+
+  if (oldModal) {
+    oldModal.remove();
+  }
+
+  const wrap = document.createElement('div');
+
+  wrap.id = 'holdSlipPrintConfirmModal';
+
+  wrap.style.cssText = `
+    position:fixed;
+    inset:0;
+    z-index:999999;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:18px;
+    background:rgba(2,6,23,.78);
+  `;
+
+  wrap.innerHTML = `
+    <div style="
+      width:min(520px,100%);
+      padding:20px;
+      border-radius:18px;
+      border:1px solid rgba(148,163,184,.45);
+      background:#020617;
+      color:#e2e8f0;
+      box-shadow:0 24px 80px rgba(0,0,0,.55);
+    ">
+      <div style="
+        margin-bottom:8px;
+        font-size:19px;
+        font-weight:900;
+        color:#ffffff;
+      ">
+        確認待出貨保留單列印結果
+      </div>
+
+      <div style="
+        font-size:14px;
+        line-height:1.75;
+        color:#cbd5e1;
+      ">
+        這次共有
+        <b style="color:#facc15;">${keys.length}</b>
+        筆待出貨保留單。
+        <br><br>
+        請確認印表機是否已確實完成列印。
+      </div>
+
+      <div style="
+        margin-top:14px;
+        padding:12px;
+        border-radius:12px;
+        border:1px solid rgba(56,189,248,.35);
+        background:rgba(56,189,248,.08);
+        color:#bae6fd;
+        font-size:12px;
+        line-height:1.65;
+      ">
+        按「已完成列印」後，系統才會寫入 Airtable：
+        <br>
+        ・是否已列印出貨單＝已勾選
+        <br>
+        ・出貨單列印時間＝目前時間
+      </div>
+
+      <div style="
+        display:flex;
+        flex-wrap:wrap;
+        justify-content:flex-end;
+        gap:10px;
+        margin-top:18px;
+      ">
+        <button
+          id="btnHoldSlipPrintNotDone"
+          type="button"
+          style="
+            padding:10px 16px;
+            border-radius:999px;
+            border:1px solid rgba(148,163,184,.6);
+            background:transparent;
+            color:#e2e8f0;
+            font-size:14px;
+            cursor:pointer;
+          "
+        >
+          取消／尚未完成
+        </button>
+
+        <button
+          id="btnHoldSlipPrintDone"
+          type="button"
+          style="
+            padding:10px 16px;
+            border-radius:999px;
+            border:none;
+            background:#22d3ee;
+            color:#0f172a;
+            font-size:14px;
+            font-weight:900;
+            cursor:pointer;
+          "
+        >
+          已完成列印
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(wrap);
+
+  const cancelBtn = wrap.querySelector(
+    '#btnHoldSlipPrintNotDone'
+  );
+
+  const doneBtn = wrap.querySelector(
+    '#btnHoldSlipPrintDone'
+  );
+
+  cancelBtn.addEventListener('click', () => {
+    closeHoldSlipPrintFrame();
+    wrap.remove();
+
+    setActionMsg(
+      '未標記為已列印，這些訂單仍會保留在未列印清單。'
+    );
+  });
+
+  doneBtn.addEventListener('click', async () => {
+    cancelBtn.disabled = true;
+    doneBtn.disabled = true;
+    doneBtn.textContent = '正在寫入列印狀態…';
+
+    try {
+      await markHoldSlipsPrinted(keys);
+    } catch (e) {
+      console.error(
+        'mark printed hold slips failed',
+        e
+      );
+
+      alert(
+        '列印狀態寫入失敗：' +
+        (e.message || e)
+      );
+    } finally {
+      closeHoldSlipPrintFrame();
+      wrap.remove();
+    }
+  });
+}
  
 // 列印「出貨明細」：抓 JSON → 開新視窗 → 80mm 熱感版面（和匯出中心一樣）
 async function printShipSlipsRange(){
@@ -5925,13 +6076,40 @@ async function printShipSlipsRange(){
       return;
     }
 
-const win = window.open('', '_blank');
-    if (!win) {
-      alert('瀏覽器阻擋了列印視窗，請允許彈出視窗後再試一次。');
-      return;
-    }
+// ✅ 使用同頁隱藏 iframe 列印
+// 避免 Chrome 新分頁／列印預覽造成確認視窗消失
+closeHoldSlipPrintFrame();
 
-    const doc = win.document;
+const printFrame = document.createElement('iframe');
+
+printFrame.id = 'holdSlipPrintFrame';
+printFrame.setAttribute('aria-hidden', 'true');
+
+printFrame.style.cssText = `
+  position:fixed;
+  right:0;
+  bottom:0;
+  width:1px;
+  height:1px;
+  border:0;
+  opacity:0;
+  pointer-events:none;
+`;
+
+document.body.appendChild(printFrame);
+
+const win = printFrame.contentWindow;
+const doc = win ? win.document : null;
+
+if (!win || !doc) {
+  closeHoldSlipPrintFrame();
+
+  alert(
+    '無法建立列印頁面，請重新整理後再試一次。'
+  );
+
+  return;
+}
 
 const cleanPrintNote = (v) => {
   return String(v || '')
@@ -6672,28 +6850,34 @@ ${slipsHtml}
 
 doc.close();
 
-setTimeout(async () => {
+// ✅ 在開啟列印預覽前，先把確認視窗放在原後台頁面
+// 列印預覽關閉後回到後台，就一定會看見
+showHoldSlipPrintConfirmModal(printedKeys);
+
+setTimeout(() => {
   try {
     win.focus();
-
-    // ✅ Chrome 會在列印視窗關閉或取消後，才繼續執行下一行
     win.print();
-
-    // ✅ 不再依賴不穩定的 afterprint
-    // 列印／取消列印視窗結束後，直接在後台頁面詢問
-    await confirmAndMarkHoldSlipsPrinted(printedKeys);
-
   } catch (e) {
-    console.error('print hold slips failed', e);
-    alert('列印完成確認發生錯誤：' + (e.message || e));
+    console.error(
+      'print hold slips failed',
+      e
+    );
 
-  } finally {
-    // ✅ 完成確認後才關閉白色列印頁
-    try {
-      if (win && !win.closed) {
-        win.close();
-      }
-    } catch (e) {}
+    closeHoldSlipPrintFrame();
+
+    const modal = document.getElementById(
+      'holdSlipPrintConfirmModal'
+    );
+
+    if (modal) {
+      modal.remove();
+    }
+
+    alert(
+      '開啟列印預覽失敗：' +
+      (e.message || e)
+    );
   }
 }, 300);
   } catch (e) {
