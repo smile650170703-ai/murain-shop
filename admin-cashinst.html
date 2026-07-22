@@ -719,7 +719,16 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 
   <div class="field">
     <label>&nbsp;</label>
-    <button class="small-btn" id="btnClearPrintSlipSelection" type="button" disabled>清除勾選</button>
+    <button class="small-btn" id="btnClearPrintSlipSelection" type="button" disabled>
+      清除勾選
+    </button>
+  </div>
+
+  <div class="field">
+    <label>&nbsp;</label>
+    <button class="small-btn" id="btnSelectUnprintedHoldSlips" type="button">
+      未列印待保留訂單
+    </button>
   </div>
 </div>
 
@@ -1905,20 +1914,55 @@ function getOrderKey(rec){
   return String(f.order_id || rec?.id || '').trim();
 }
 
+// ✅ 判斷 Airtable「是否已列印出貨單」
+function isHoldSlipPrinted(f = {}){
+  const raw = f['是否已列印出貨單'];
+
+  if (raw === true) return true;
+
+  const text = String(raw ?? '').trim().toLowerCase();
+
+  return [
+    '1',
+    'true',
+    'yes',
+    'y',
+    'on',
+    'checked',
+    '是',
+    '已列印'
+  ].includes(text);
+}
+
 function updatePrintSlipsBtn(){
   const count = PRINT_SLIP_SELECTED.size || 0;
 
+  const unprintedCount = (currentOrders || []).filter(rec => {
+    const f = rec?.fields || rec || {};
+    return !isHoldSlipPrinted(f);
+  }).length;
+
   const btn = $('#btnPrintSlipsRange');
-  if(btn){
+  if (btn) {
     btn.textContent = count
-      ? `⭐列印出貨單（勾選${count}）`
-      : '⭐列印出貨單';
+      ? `⭐列印待出貨保留單（勾選 ${count}）`
+      : '⭐列印待出貨保留單';
   }
 
   const clearBtn = $('#btnClearPrintSlipSelection');
-  if(clearBtn){
+  if (clearBtn) {
     clearBtn.disabled = !count;
-    clearBtn.textContent = count ? `清除勾選（${count}）` : '清除勾選';
+    clearBtn.textContent = count
+      ? `清除勾選（${count}）`
+      : '清除勾選';
+  }
+
+  const unprintedBtn = $('#btnSelectUnprintedHoldSlips');
+  if (unprintedBtn) {
+    unprintedBtn.disabled = unprintedCount === 0;
+    unprintedBtn.textContent = unprintedCount > 0
+      ? `未列印待保留訂單（${unprintedCount}）`
+      : '沒有未列印待保留訂單';
   }
 }
 
@@ -3703,6 +3747,16 @@ const overdue48 = overdueMs >= 48 * 60 * 60 * 1000;
 const pmLower = String(f.payment_method || '').trim().toLowerCase();
 const psLower = String(f.pay_status || '').trim().toLowerCase();
 
+   const holdSlipPrinted = isHoldSlipPrinted(f);
+
+const holdSlipPrintedAt = String(
+  f['出貨單列印時間'] || ''
+).trim();
+
+const holdSlipPrintTag = holdSlipPrinted
+  ? `<span class="badge green" title="${escapeHtml(fmtAdminDateTime(holdSlipPrintedAt) || '')}">已列印保留單</span>`
+  : '<span class="badge yellow">待列印保留單</span>';
+
 const forfeitTag = isDepositForfeitOrder(f)
   ? '<span class="badge red">已棄標｜定金沒收</span>'
   : '';
@@ -3812,7 +3866,8 @@ const a = calcAmounts(f);
         </div>
 
         <div class="ord-sub">${line2 || '&nbsp;'}</div>
-        <div class="badges">
+<div class="badges">
+  ${holdSlipPrintTag}
   ${forfeitTag}
   ${restockAlertTag}
   ${pay_b}
@@ -5708,6 +5763,130 @@ async function copyNotice(){
     alert('複製失敗，請手動選取文字複製。');
   }
 }
+
+ // ✅ 將已完成列印的待出貨保留單寫回 Airtable
+async function markHoldSlipsPrinted(orderKeys = []){
+  const keySet = new Set(
+    (orderKeys || [])
+      .map(x => String(x || '').trim())
+      .filter(Boolean)
+  );
+
+  const targets = (currentOrders || []).filter(rec => {
+    return keySet.has(getOrderKey(rec));
+  });
+
+  if (!targets.length) {
+    alert('找不到需要標記已列印的訂單。');
+    return;
+  }
+
+  const printedAt = new Date().toISOString();
+
+  let successCount = 0;
+  const failedRows = [];
+
+  setActionMsg(`正在寫入 ${targets.length} 筆列印狀態…`);
+
+  for (const rec of targets) {
+    const f = rec?.fields || rec || {};
+    const orderId = String(f.order_id || '').trim();
+
+    if (!orderId && !rec?.id) {
+      failedRows.push('缺少訂單編號');
+      continue;
+    }
+
+    try {
+      const r = await fetch(
+        `${API}/admin/order/update?op_key=${encodeURIComponent(OP_KEY)}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            record_id: rec?.id || null,
+            order_id: orderId || null,
+            fields: {
+              '是否已列印出貨單': true,
+              '出貨單列印時間': printedAt
+            }
+          })
+        }
+      );
+
+      const j = await r.json().catch(() => ({}));
+
+      if (!r.ok || !j.ok) {
+        throw new Error(
+          j.message ||
+          j.error ||
+          `HTTP ${r.status}`
+        );
+      }
+
+      successCount++;
+
+    } catch (e) {
+      console.error('markHoldSlipsPrinted failed', orderId, e);
+
+      failedRows.push(
+        `${orderId || rec?.id || '未知訂單'}：${e.message || e}`
+      );
+    }
+  }
+
+  PRINT_SLIP_SELECTED.clear();
+
+  await reloadCurrentView();
+
+  if (failedRows.length) {
+    setActionMsg(
+      `列印狀態已寫入 ${successCount} 筆，失敗 ${failedRows.length} 筆。`
+    );
+
+    alert(
+      `列印狀態寫入完成\n` +
+      `成功：${successCount} 筆\n` +
+      `失敗：${failedRows.length} 筆\n\n` +
+      failedRows.slice(0, 10).join('\n')
+    );
+
+    return;
+  }
+
+  setActionMsg(`✅ 已將 ${successCount} 筆標記為已列印待出貨保留單。`);
+}
+
+// ✅ 列印視窗關閉後，由使用者確認是否真的完成列印
+async function confirmAndMarkHoldSlipsPrinted(orderKeys = []){
+  const count = Array.isArray(orderKeys)
+    ? orderKeys.length
+    : 0;
+
+  if (!count) return;
+
+  const confirmed = confirm(
+    `列印視窗已關閉。\n\n` +
+    `這 ${count} 筆待出貨保留單是否已確實完成列印？\n\n` +
+    `按「確定」後，才會寫入 Airtable：\n` +
+    `・是否已列印出貨單＝已勾選\n` +
+    `・出貨單列印時間＝目前時間\n\n` +
+    `如果剛才取消列印、印表機沒紙或列印失敗，請按「取消」。`
+  );
+
+  if (!confirmed) {
+    setActionMsg('未標記已列印，可重新列印。');
+    return;
+  }
+
+  await markHoldSlipsPrinted(orderKeys);
+}
+
+window.confirmAndMarkHoldSlipsPrinted =
+  confirmAndMarkHoldSlipsPrinted;
+ 
 // 列印「出貨明細」：抓 JSON → 開新視窗 → 80mm 熱感版面（和匯出中心一樣）
 async function printShipSlipsRange(){
   if (!OP_KEY){
@@ -5715,29 +5894,27 @@ async function printShipSlipsRange(){
     return;
   }
 
-  const url = `${API}/admin/export-view?key=${
-  encodeURIComponent(OP_KEY)
-}&kind=orders&format=json`;
-
   try {
-    // ✅ 有勾選 → 只印勾選；沒勾選 → 維持「日期區間全印」
-    const picked = Array.from(PRINT_SLIP_SELECTED || []);
-    let records = [];
+    // ✅ 待出貨保留單只列印目前勾選的訂單
+    const picked = Array.from(
+      PRINT_SLIP_SELECTED || []
+    )
+      .map(x => String(x || '').trim())
+      .filter(Boolean);
 
-    if (picked.length) {
-      const set = new Set(picked.map(String));
-      records = (currentOrders || []).filter(rec => set.has(getOrderKey(rec)));
-    } else {
-      const res = await fetch(url);
-      if (!res.ok) {
-        const txt = await res.text();
-        alert(`讀取出貨明細失敗（${res.status}）：${txt}`);
-        return;
-      }
-
-      const data = await res.json();
-      records = data.records || [];
+    if (!picked.length) {
+      alert(
+        '請先勾選要列印的待出貨保留單。\n\n' +
+        '也可以按「未列印待保留訂單」，一次勾選全部未列印資料。'
+      );
+      return;
     }
+
+    const pickedSet = new Set(picked);
+
+    const records = (currentOrders || []).filter(rec => {
+      return pickedSet.has(getOrderKey(rec));
+    });
 
     if (!records.length) {
       alert(
@@ -6053,194 +6230,288 @@ function getSlipMeetupText(shipInfoObj = {}, f = {}){
   );
 }
 
-     // ↓ SHIP 版型為基底，cashinst 額外顯示保留/分期日期，並清掉英文系統備註 ↓
-   const slipsHtml = records.map((rec) => {
-  const f = rec.fields || {};
+// ===== 待出貨保留單專用內容 =====
 
-  const shipInfoObj  = (typeof parseShippingInfo === 'function') ? (parseShippingInfo(f) || {}) : {};
-  const lp = shipInfoObj.line_profile || shipInfoObj.line || shipInfoObj.lineProfile || {};
+const getHoldSlipTailOrderId = (f = {}) => {
+  const tailSnap = safeJsonParse(
+    f.tail_paid_snapshot,
+    {}
+  ) || {};
 
-  const lineName = firstNonEmpty(
-    f['LINE名稱'],
-    f['LINE 名稱'],
-    f['line_name'],
-    lp.displayName,
-    lp.display_name,
-    lp.name
+  return firstNonEmpty(
+    f.tail_order_id,
+    f.tail_pending_order_id,
+    tailSnap.tail_order_id,
+    tailSnap.order_id
+  );
+};
+
+const getHoldSlipItems = (f = {}) => {
+  // ✅ 優先讀 items_json，可最準確抓 SKU、品名與數量
+  const jsonItems = safeJsonParse(f.items_json, []);
+
+  if (Array.isArray(jsonItems) && jsonItems.length) {
+    return jsonItems.map(item => {
+      return {
+        sku: firstNonEmpty(
+          item?.sku,
+          item?.SKU,
+          item?.product_sku,
+          item?.code
+        ),
+
+        name: firstNonEmpty(
+          item?.name,
+          item?.Name,
+          item?.title,
+          item?.product_name,
+          '未填商品名稱'
+        ),
+
+        qty: Math.max(
+          1,
+          Math.round(
+            Number(
+              item?.qty ??
+              item?.quantity ??
+              item?.Qty ??
+              1
+            ) || 1
+          )
+        )
+      };
+    });
+  }
+
+  // ✅ 舊資料沒有 items_json 時，改讀 items_text＋商品編號
+  const itemsText = firstNonEmpty(
+    f['商品明細'],
+    f.items_text,
+    f['items_text']
   );
 
-  const sku = firstNonEmpty(
+  const skuText = firstNonEmpty(
     f['商品編號'],
     f['SKU'],
-    f['sku'],
+    f.sku,
     f['商品SKU']
   );
 
-  if (!window.__slip_debug_once) {
-    window.__slip_debug_once = true;
-    console.log("[slip] keys:", Object.keys(f));
-    console.log("[slip] sample fields:", f);
+  const parsedItems = parseSlipItems(itemsText);
+  const parsedSkus = parseSlipSkus(skuText);
+
+  return parsedItems.map((item, index) => {
+    return {
+      sku: parsedSkus[index] || '',
+      name: String(item?.name || '未填商品名稱')
+        .replace(/^・\s*/, '')
+        .trim(),
+
+      qty: Math.max(
+        1,
+        Math.round(Number(item?.qty || 1) || 1)
+      )
+    };
+  });
+};
+
+const renderHoldSlipItems = (f = {}) => {
+  const items = getHoldSlipItems(f);
+
+  if (!items.length) {
+    return `
+      <div class="hold-item">
+        <span class="hold-item-name">未取得商品明細</span>
+      </div>
+    `;
   }
 
-const orderId = firstNonEmpty(f['訂單編號'], f.order_id);
+  return items.map(item => {
+    const sku = String(item.sku || '').trim();
+    const name = String(item.name || '').trim();
+    const qty = Math.max(1, Number(item.qty || 1) || 1);
 
-const product = firstNonEmpty(f['商品明細'], f.items_text, f['items_text']);
-const itemQtyField = slipNum(firstNonEmpty(f['商品總數量'], f.item_count, f.items_count));
-const itemQty = itemQtyField > 0 ? itemQtyField : getItemTotalQty(product);
-const productHtml = renderSlipItems(product, sku);
+    return `
+      <div class="hold-item">
+        ${
+          sku
+            ? `<span class="hold-item-sku">${slipEscape(sku)}</span>`
+            : ''
+        }
+        <span class="hold-item-name">${slipEscape(name || '-')}</span>
+        <span class="hold-item-qty">× ${slipEscape(qty)}</span>
+      </div>
+    `;
+  }).join('');
+};
 
-const customerNote = f['客戶備註'] || '';
+const slipsHtml = records.map(rec => {
+  const f = rec?.fields || rec || {};
 
-// ✅ cashinst 不照 SHIP 直接印 f['備註']，要先清英文系統標籤
-const note = Array.from(new Set(
-  cleanPrintNote([f.internal_note, f['備註']].filter(Boolean).join('\n'))
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .split('\n')
-    .map(x => String(x || '').trim())
-    .filter(Boolean)
-)).join('\n');
+  const shipInfoObj =
+    typeof parseShippingInfo === 'function'
+      ? (parseShippingInfo(f) || {})
+      : {};
 
-const shipObj = shipInfoObj.ship || {};
-const storeObj = shipObj.store || shipInfoObj.store || {};
-const postObj = shipObj.post || shipInfoObj.post || {};
+  const lineName = firstNonEmpty(
+    getLineName(f, shipInfoObj),
+    f['LINE名稱'],
+    f['LINE 名稱'],
+    f.line_name
+  );
 
-const rawShipType = firstNonEmpty(f['出貨方式'], f.shipping_type, shipObj.type);
-const shipType = rawShipType === '711'
-  ? '7-11 超商取貨'
-  : rawShipType === 'post'
-    ? '郵寄'
-    : rawShipType === 'meetup'
-      ? '面交'
-      : rawShipType;
+  const orderId = firstNonEmpty(
+    f.order_id,
+    f['訂單編號']
+  );
 
-const paymentMethod = firstNonEmpty(f.payment_method, f['付款方式']);
-const paymentText = (typeof displayPaymentMethod === 'function')
-  ? (displayPaymentMethod(paymentMethod) || paymentMethod)
-  : paymentMethod;
+  const tailOrderId = getHoldSlipTailOrderId(f);
 
-const amountInfo = getSlipAmountInfo(f);
-const payableAmountText = slipMoney(amountInfo.net);
+  const customerNote = firstNonEmpty(
+    f['客戶備註'],
+    shipInfoObj.note
+  );
 
-const meetupText = getSlipMeetupText(shipInfoObj, f);
-const isMeetupSlip =
-  rawShipType === 'meetup' ||
-  shipType === '面交' ||
-  String(paymentMethod || '').toLowerCase() === 'meetup_cash';
+  // ✅ 只保留人工內部備註，移除系統英文標籤
+  const internalNote = Array.from(
+    new Set(
+      cleanPrintNote(
+        [
+          f.internal_note,
+          f['備註']
+        ]
+          .filter(Boolean)
+          .join('\n')
+      )
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .split('\n')
+        .map(x => String(x || '').trim())
+        .filter(Boolean)
+    )
+  ).join('\n');
 
-const zip = firstNonEmpty(f['郵遞區號'], postObj.zip, shipObj.zip);
-const addr = firstNonEmpty(f['收件地址'], postObj.addr, shipObj.addr);
-const name = firstNonEmpty(f['收件人姓名'], shipObj.name, shipInfoObj.name);
-const phone = firstNonEmpty(f['收件人電話'], shipObj.phone, shipInfoObj.phone);
-const storeName = firstNonEmpty(f['超商店名'], storeObj.name, shipObj.store_name, shipInfoObj.store_name);
+  const productHtml = renderHoldSlipItems(f);
 
+  return `
+    <div class="slip">
+      <div class="hold-title">待出貨保留單</div>
 
-
-      return `
-        <div class="slip">
-          <!-- 上半部：內部用資訊 -->
-          <div class="line small">訂單編號：${slipEscape(orderId)}</div>
-
-          <div class="line total-qty">商品總數量：<b>${slipEscape(itemQty)}</b> 件</div>
-
-          ${lineName ? `
-  <div class="badge badge-line">
-    <span class="t">LINE 名稱：</span><span class="v">${slipEscape(lineName)}</span>
-  </div>
-` : ``}
-
-          <!-- 商品 -->
-          <div class="section-title">商品</div>
-         <div class="block items">
-  ${productHtml}
-</div>
-
-          ${(customerNote || note) ? `
-            <div class="remark">
-              <div class="title">備註</div>
-              ${customerNote ? `<div class="text">客戶：${slipEscape(customerNote)}</div>` : ''}
-              ${note ? `<div class="sub">內部：${slipEscape(note)}</div>` : ''}
-            </div>
-          ` : ``}
-
-          <!-- 分隔線：下面這塊可以剪下來貼在包裹上 -->
-          <div class="cut-line"></div>
-
-          <!-- 下半部：收件資料（剪下用） -->
-          <div class="shipbox">
-${isMeetupSlip ? `
-              <div class="meetup-ship">
-                <div class="row"><div class="k">面交</div><div class="v">${slipEscape(meetupText || '-')}</div></div>
-                <div class="row"><div class="k">付款</div><div class="v">${slipEscape(paymentText || '面交現金')}</div></div>
-                <div class="row"><div class="k">應收</div><div class="v payable">${slipEscape(payableAmountText)}</div></div>
-              </div>
-            ` : `
-              ${storeName ? `
-                <div class="row"><div class="k">門市</div><div class="v">${slipEscape(storeName)}</div></div>
-              ` : ``}
-
-              ${(zip || addr) ? `
-                <div class="row"><div class="k">地址</div><div class="v">${slipEscape([zip, addr].filter(Boolean).join(' '))}</div></div>
-              ` : ``}
-            `}
-
-            <div class="row">
-              <div class="k">收件人</div>
-              <div class="v name">${slipEscape(name || '')}</div>
-            </div>
-
-            ${phone ? `
-              <div class="row">
-                <div class="k">電話</div>
-                <div class="v phone">${slipEscape(phone)}</div>
-              </div>
-            ` : ``}
-          </div>
+      <div class="hold-meta">
+        <div class="hold-row">
+          <div class="hold-key">LINE 名稱：</div>
+          <div class="hold-value">${slipEscape(lineName || '')}</div>
         </div>
-       `;
-    }).join('');
 
-    doc.write(`<!doctype html>
+        <div class="hold-row">
+          <div class="hold-key">訂單編號：</div>
+          <div class="hold-value">${slipEscape(orderId || '')}</div>
+        </div>
+
+        <div class="hold-row">
+          <div class="hold-key">尾款單號：</div>
+          <div class="hold-value">${slipEscape(tailOrderId || '')}</div>
+        </div>
+      </div>
+
+      <div class="hold-section-title">商品</div>
+
+      <div class="hold-items">
+        ${productHtml}
+      </div>
+
+      <div class="hold-section-title">備註</div>
+
+      <div class="hold-notes">
+        ${
+          customerNote
+            ? `
+              <div class="hold-note-row">
+                <div class="hold-note-label">客戶：</div>
+                <div class="hold-note-text">${slipEscape(customerNote)}</div>
+              </div>
+            `
+            : ''
+        }
+
+        ${
+          internalNote
+            ? `
+              <div class="hold-note-row">
+                <div class="hold-note-label">內部：</div>
+                <div class="hold-note-text">${slipEscape(internalNote)}</div>
+              </div>
+            `
+            : ''
+        }
+
+        ${
+          !customerNote && !internalNote
+            ? '<div class="hold-note-empty">—</div>'
+            : ''
+        }
+      </div>
+    </div>
+  `;
+}).join('');
+
+const printedKeysJson = JSON.stringify(
+  records
+    .map(rec => getOrderKey(rec))
+    .filter(Boolean)
+);
+
+doc.write(`<!doctype html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8" />
-<title>出貨明細列印</title>
+
+<title>待出貨保留單</title>
+
 <style>
 @page {
   size: 80mm 300mm;
   margin: 0;
 }
 
-html, body {
+html,
+body {
   width: 80mm;
   min-width: 80mm;
   max-width: 80mm;
-  margin: 0 !important;
-  padding: 0 !important;
-  overflow: visible;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  width: 80mm;
-  margin: 0 !important;
-  padding: 0 !important;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 16px;
-  line-height: 1.22;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Noto Sans TC",
+    "Microsoft JhengHei",
+    sans-serif;
+
+  color: #000;
+  background: #fff;
+  font-size: 14px;
+  line-height: 1.4;
+
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
 
 .slip {
-  width: 75mm;
-  min-width: 75mm;
-  max-width: 75mm;
+  width: 76mm;
+  min-width: 76mm;
+  max-width: 76mm;
+
   box-sizing: border-box;
-  overflow: visible;
-  page-break-inside: avoid;
-  break-inside: avoid;
+  padding: 4mm 3mm;
+
   page-break-after: always;
   break-after: page;
+  page-break-inside: avoid;
+  break-inside: avoid;
 }
 
 .slip:last-child {
@@ -6248,228 +6519,186 @@ body {
   break-after: auto;
 }
 
-.line {
-  margin-bottom: 3px;
-  white-space: pre-wrap;
+.hold-title {
+  text-align: center;
+  font-size: 21px;
+  line-height: 1.25;
+  font-weight: 900;
+
+  padding-bottom: 5px;
+  margin-bottom: 8px;
+
+  border-bottom: 3px solid #000;
+}
+
+.hold-meta {
+  border: 2px solid #000;
+  padding: 6px;
+}
+
+.hold-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+
+  margin-bottom: 4px;
+}
+
+.hold-row:last-child {
+  margin-bottom: 0;
+}
+
+.hold-key {
+  flex: 0 0 25mm;
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.hold-value {
+  flex: 1;
+  min-height: 20px;
+
+  font-size: 15px;
+  font-weight: 800;
+
   word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
-.line.big {
+.hold-section-title {
+  margin-top: 10px;
+  padding: 3px 5px;
+
+  border-left: 5px solid #000;
+  border-bottom: 1px solid #000;
+
   font-size: 17px;
-  font-weight: 700;
+  font-weight: 900;
 }
 
-/* 商品區塊 */
-.section-title{
-  margin-top:5px;
-  font-size:16px;
-  font-weight:900;
-  letter-spacing:0.2px;
+.hold-items {
+  border: 1px solid #000;
+  border-top: none;
+
+  padding: 3px 6px;
 }
 
-.block{
-  width:100%;
-  max-width:100%;
-  box-sizing:border-box;
-  border:1px solid #000;
-  padding:4px 3px;
-  margin-top:3px;
+.hold-item {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 4px;
+
+  padding: 6px 0;
+
+  font-size: 15px;
+  line-height: 1.35;
 }
 
-.item-sku{
-  font-weight:900;
-  font-size:14px;
-  line-height:1.2;
-  word-break:break-word;
-  margin-bottom:2px;
-}
-
-.total-qty{
-  border:2px solid #000;
-  padding:3px 5px;
-  margin:3px 0 3px;
-  font-size:15px !important;
-  font-weight:900;
-  color:#000 !important;
-}
-
-.total-qty b{
-  font-size:18px;
-}
-
-.item-row{
-  padding:4px 0;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}
-
-.item-row + .item-row{
-  border-top:1px dashed #000;
-  margin-top:4px;
-  padding-top:5px;
-}
-
-.item-name{
-  font-size:14px;
-  line-height:1.25;
-  font-weight:900;
-  word-break:break-all;
-  overflow-wrap:anywhere;
-  letter-spacing:-0.3px;
-}
-
-.item-qty{
-  display:inline-block;
-  margin-top:3px;
-  padding:2px 6px;
-  border:2px solid #000;
-  font-size:18px;
-  line-height:1.08;
-  font-weight:900;
-}
-
-.item-price{
-  display:none;
-}
-
-/* 備註 */
-.remark{
-  border:1px solid #000;
-  padding:4px 5px;
-  margin-top:4px;
-}
-
-.remark .title{
-  font-size:14px;
-  font-weight:900;
-  margin-bottom:2px;
-}
-
-.remark .text{
-  font-size:15px;
-  font-weight:900;
-  white-space:pre-wrap;
-  word-break:break-word;
-}
-
-.remark .sub{
-  font-size:13px;
-  font-weight:700;
-  white-space:pre-wrap;
-  word-break:break-word;
-  margin-top:2px;
-}
-
-/* LINE 名稱框 */
-.badge{
-  width:100%;
-  box-sizing:border-box;
-  border:1px solid #000;
-  padding:4px 5px;
-  margin-top:4px;
-  line-height:1.25;
-}
-
-.badge-line{
-  white-space:nowrap;
-}
-
-.badge .t{
-  display:inline;
-  font-size:14px;
-  font-weight:900;
-  margin:0;
-}
-
-.badge .v{
-  display:inline;
-  font-size:15px;
-  font-weight:900;
-  word-break:break-word;
-}
-
-/* 收件資訊框（剪下用） */
-.shipbox{
-  border: none;
-  padding: 0;
-  margin-top: 7px;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}
-
-.shipbox .row{
-  display:flex;
-  gap:6px;
-  margin-bottom:5px;
-  page-break-inside: avoid;
-  break-inside: avoid;
-}
-
-.shipbox .k{
-  width:36px;
-  font-size:15px;
-  font-weight:900;
-  white-space:nowrap;
-}
-
-.shipbox .v{
-  flex:1;
-  font-size:15px;
-  word-break:break-word;
-}
-
-.shipbox .name{
-  font-size:17px;
-  font-weight:900;
-}
-
-.shipbox .phone{
-  font-size:16px;
-  font-weight:900;
-}
-
-.meetup-ship{
-  border:none;
-  padding:0;
-  margin:3px 0 5px;
-}
-
-.meetup-ship .row{
-  margin-bottom:4px;
-}
-
-.meetup-ship .payable{
-  font-size:17px;
-  font-weight:900;
-}
-
-.line.small {
-  font-size: 12px;
-  color: #555;
-}
-
-.cut-line{
-  width: 38mm;
+.hold-item + .hold-item {
   border-top: 1px dashed #000;
-  margin: 5px 0 5px 0;
-  height: 1px;
 }
 
-.page-break {
-  display: none;
+.hold-item-sku {
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.hold-item-name {
+  flex: 1;
+  min-width: 25mm;
+
+  font-weight: 800;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.hold-item-qty {
+  font-size: 17px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.hold-notes {
+  border: 1px solid #000;
+  border-top: none;
+
+  padding: 5px 6px;
+  min-height: 18mm;
+}
+
+.hold-note-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+
+  margin-bottom: 5px;
+}
+
+.hold-note-row:last-child {
+  margin-bottom: 0;
+}
+
+.hold-note-label {
+  flex: 0 0 13mm;
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.hold-note-text {
+  flex: 1;
+
+  font-size: 14px;
+  font-weight: 700;
+
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.hold-note-empty {
+  font-size: 14px;
 }
 </style>
+
 <meta name="robots" content="noindex, nofollow">
 </head>
+
 <body>
 ${slipsHtml}
+
+<script>
+window.addEventListener('afterprint', function () {
+  try {
+    if (
+      window.opener &&
+      typeof window.opener.confirmAndMarkHoldSlipsPrinted === 'function'
+    ) {
+      window.opener.confirmAndMarkHoldSlipsPrinted(
+        ${printedKeysJson}
+      );
+    }
+  } catch (e) {
+    console.error(e);
+  }
+
+  setTimeout(function () {
+    window.close();
+  }, 300);
+});
+<\/script>
+
 </body>
 </html>`);
-    doc.close();
-    setTimeout(() => {
-      win.focus();
-      win.print();
-    }, 300);
+
+doc.close();
+
+setTimeout(() => {
+  win.focus();
+  win.print();
+}, 300);
   } catch (e) {
     console.error(e);
     alert('列印出貨明細時發生錯誤：' + (e.message || e));
@@ -6839,11 +7068,59 @@ const btnClearPrintSlipSelection = $('#btnClearPrintSlipSelection');
 if (btnClearPrintSlipSelection) {
   btnClearPrintSlipSelection.addEventListener('click', () => {
     PRINT_SLIP_SELECTED.clear();
-    $$('.ord-cb').forEach(cb => { cb.checked = false; });
+
+    $$('.ord-cb').forEach(cb => {
+      cb.checked = false;
+    });
+
     updatePrintSlipsBtn();
 
     const msgEl = $('#msg');
-    if (msgEl) msgEl.textContent = '已清除列印勾選。';
+    if (msgEl) {
+      msgEl.textContent = '已清除列印勾選。';
+    }
+  });
+}
+
+// ✅ 一鍵勾選目前清單內所有「尚未列印」的待出貨保留單
+const btnSelectUnprintedHoldSlips = $('#btnSelectUnprintedHoldSlips');
+
+if (btnSelectUnprintedHoldSlips) {
+  btnSelectUnprintedHoldSlips.addEventListener('click', () => {
+    const unprintedRows = (currentOrders || []).filter(rec => {
+      const f = rec?.fields || rec || {};
+      return !isHoldSlipPrinted(f);
+    });
+
+    PRINT_SLIP_SELECTED.clear();
+
+    unprintedRows.forEach(rec => {
+      const key = getOrderKey(rec);
+      if (key) {
+        PRINT_SLIP_SELECTED.add(key);
+      }
+    });
+
+    $$('.ord-cb').forEach(cb => {
+      const key = String(cb.dataset.id || '').trim();
+      cb.checked = PRINT_SLIP_SELECTED.has(key);
+    });
+
+    updatePrintSlipsBtn();
+
+    const msgEl = $('#msg');
+
+    if (!unprintedRows.length) {
+      if (msgEl) {
+        msgEl.textContent = '目前沒有未列印的待出貨保留單。';
+      }
+      return;
+    }
+
+    if (msgEl) {
+      msgEl.textContent =
+        `已勾選 ${unprintedRows.length} 筆未列印待出貨保留單。`;
+    }
   });
 }
   // ✅ 上方「棄標／沒收定金」按鈕：走專用 forfeit API，不走一般取消
