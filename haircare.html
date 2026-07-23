@@ -2481,7 +2481,56 @@ body{
   font-size:13px;
   line-height:1.75;
 }
+/* ===== 預購商品：方案即時預購組數 ===== */
+.preorder-plan-proof{
+  position:relative;
+  z-index:3;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:32px;
+  margin-top:9px;
+  padding:7px 10px;
+  border-radius:999px;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255,245,239,.98),
+      rgba(255,233,226,.90)
+    );
+  border:1px solid rgba(190,105,82,.16);
+  color:#7a4b3b;
+  font-size:11.5px;
+  font-weight:900;
+  line-height:1.35;
+  text-align:center;
+}
 
+.preorder-plan-proof b{
+  margin:0 3px;
+  color:#b42318;
+  font-size:14px;
+  font-variant-numeric:tabular-nums;
+}
+
+.preorder-plan-proof.is-zero{
+  background:rgba(255,255,255,.82);
+  border-color:rgba(118,82,70,.09);
+  color:#8a746c;
+}
+
+@media (max-width:767px){
+  .preorder-plan-proof{
+    min-height:29px;
+    margin-top:7px;
+    padding:6px 7px;
+    font-size:9.5px;
+  }
+
+  .preorder-plan-proof b{
+    font-size:11.5px;
+  }
+}
 .preorder-card button{
   position:relative;
   z-index:2;
@@ -5624,23 +5673,70 @@ function renderPreorderProducts(items) {
   }
 
   productsWrap.innerHTML = items.map((item, idx) => {
-        const plans = Array.isArray(item.plan_options) ? item.plan_options : [];
-    const defaultPlanIdx = getDefaultPreorderPlanIndex(item);
+    const plans = Array.isArray(item.plan_options)
+      ? item.plan_options
+      : [];
 
-const options = plans.map((p, planIdx) => {
-      const name = String(p.name || "方案").trim();
+    const defaultPlanIdx =
+      getDefaultPreorderPlanIndex(item);
+
+    const planCountMap =
+      item?.plan_preorder_counts &&
+      typeof item.plan_preorder_counts === "object"
+        ? item.plan_preorder_counts
+        : {};
+
+    const planDisplayName = (plan) => {
+      const rawName = String(
+        plan?.name || "方案"
+      ).trim();
+
+      return /^\d+$/.test(rawName)
+        ? `${rawName} 件`
+        : rawName;
+    };
+
+    const options = plans.map((p, planIdx) => {
+      const displayName = planDisplayName(p);
       const price = Number(p.price || 0) || 0;
 
-      const displayName =
-        /^\d+$/.test(name)
-          ? `${name} 件`
-          : name;
+      const preorderCount = Math.max(
+        0,
+        Number(planCountMap[displayName] || 0) || 0
+      );
 
-      const text = price ? `${displayName}｜${money(price)}` : displayName;
-      const selected = planIdx === defaultPlanIdx ? " selected" : "";
+      const text = price
+        ? `${displayName}｜${money(price)}`
+        : displayName;
 
-      return `<option value="${planIdx}"${selected}>${esc(text)}</option>`;
+      const selected =
+        planIdx === defaultPlanIdx
+          ? " selected"
+          : "";
+
+      return `
+        <option
+          value="${planIdx}"
+          data-preorder-count="${preorderCount}"
+          ${selected}
+        >${esc(text)}</option>
+      `.trim();
     }).join("");
+
+    const defaultPlan =
+      plans[defaultPlanIdx] ||
+      plans[0] ||
+      { name: "預購方案" };
+
+    const defaultPlanName =
+      planDisplayName(defaultPlan);
+
+    const defaultPlanCount = Math.max(
+      0,
+      Number(
+        planCountMap[defaultPlanName] || 0
+      ) || 0
+    );
 
     const productImages = getPreorderProductImages(item);
     const mainImage = productImages[0] || "";
@@ -5666,8 +5762,24 @@ const options = plans.map((p, planIdx) => {
         </p>
 
         <select class="preorder-plan-select" data-index="${idx}">
-          ${options || `<option value="0">預購登記｜金額待確認</option>`}
+          ${
+            options ||
+            `<option value="0" data-preorder-count="0">
+              預購登記｜金額待確認
+            </option>`
+          }
         </select>
+
+        <div
+          class="preorder-plan-proof ${defaultPlanCount > 0 ? "" : "is-zero"}"
+          data-preorder-proof="${idx}"
+        >
+          ${
+            defaultPlanCount > 0
+              ? `🔥 ${esc(defaultPlanName)} 已有 <b>${defaultPlanCount}</b> 組預購`
+              : `✨ ${esc(defaultPlanName)} 開放搶先預購`
+          }
+        </div>
 
         <button type="button" class="preorder-detail-toggle" data-index="${idx}">
           查看商品介紹
@@ -5679,6 +5791,66 @@ const options = plans.map((p, planIdx) => {
       </article>
     `;
   }).join("");
+
+    productsWrap
+    .querySelectorAll(".preorder-plan-select")
+    .forEach(sel => {
+
+      sel.addEventListener("change", () => {
+        const idx =
+          Number(sel.dataset.index || 0) || 0;
+
+        const item = preorderProducts[idx];
+
+        if (!item) return;
+
+        const plans = Array.isArray(item.plan_options)
+          ? item.plan_options
+          : [];
+
+        const planIdx =
+          Number(sel.value || 0) || 0;
+
+        const plan =
+          plans[planIdx] ||
+          plans[0] ||
+          { name: "預購方案" };
+
+        const rawName = String(
+          plan?.name || "預購方案"
+        ).trim();
+
+        const displayName = /^\d+$/.test(rawName)
+          ? `${rawName} 件`
+          : rawName;
+
+        const countMap =
+          item?.plan_preorder_counts &&
+          typeof item.plan_preorder_counts === "object"
+            ? item.plan_preorder_counts
+            : {};
+
+        const count = Math.max(
+          0,
+          Number(countMap[displayName] || 0) || 0
+        );
+
+        const proof = sel
+          .closest(".preorder-card")
+          ?.querySelector(".preorder-plan-proof");
+
+        if (!proof) return;
+
+        proof.classList.toggle(
+          "is-zero",
+          count <= 0
+        );
+
+        proof.innerHTML = count > 0
+          ? `🔥 ${esc(displayName)} 已有 <b>${count}</b> 組預購`
+          : `✨ ${esc(displayName)} 開放搶先預購`;
+      });
+    });
 
     productsWrap.querySelectorAll(".js-preorder-image-open").forEach(btn => {
     btn.addEventListener("click", () => {
