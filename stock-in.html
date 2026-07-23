@@ -1097,12 +1097,52 @@
         <input id="consignorNote" type="text" placeholder="可不填" />
       </div>
 
-      <div class="field span-6">
-        <label for="consignorIdFront">身分證正面</label>
-        <input id="consignorIdFront" type="file" accept="image/*" />
-        <div class="muted" style="margin-top:6px;">可直接選圖，下一步再補貼上功能。</div>
-        <div id="consignorIdFrontPreview" class="muted" style="margin-top:6px;"></div>
-      </div>
+<div class="field span-6">
+  <label for="consignorIdBack">身分證反面</label>
+  <input
+    id="consignorIdBack"
+    type="file"
+    accept="image/*"
+  />
+
+  <div
+    class="muted"
+    style="margin-top:6px;"
+  >
+    可直接選圖，下一步再補貼上功能。
+  </div>
+
+  <div
+    id="consignorIdBackPreview"
+    class="muted"
+    style="margin-top:6px;"
+  ></div>
+</div>
+
+<div class="field span-12">
+  <label for="consignorTradePdf">
+    一時貿易 PDF
+  </label>
+
+  <input
+    id="consignorTradePdf"
+    type="file"
+    accept=".pdf,application/pdf"
+  />
+
+  <div
+    class="muted"
+    style="margin-top:6px;"
+  >
+    此檔案會儲存在這位寄賣人的主檔，可不重複上傳。
+  </div>
+
+  <div
+    id="consignorTradePdfPreview"
+    class="muted"
+    style="margin-top:6px;"
+  ></div>
+</div>
 
       <div class="field span-6">
         <label for="consignorIdBack">身分證反面</label>
@@ -1177,9 +1217,20 @@ function getSharedStockInAdminKey() {
 const CONFIG = {
   opKey: getSharedStockInAdminKey(),
   memberSearchUrl: 'https://api.murain.tw/op/line-member/search',
-  consignorByMemberUrl: 'https://api.murain.tw/op/consignor/by-member',
-  consignorUpsertUrl: 'https://api.murain.tw/op/consignor/upsert',
-  imageUploadUrl: 'https://api.murain.tw/op/upload/image',
+consignorByMemberUrl:
+  'https://api.murain.tw/op/consignor/by-member',
+
+consignorUpsertUrl:
+  'https://api.murain.tw/op/consignor/upsert',
+
+consignorTradePdfUploadUrl:
+  'https://api.murain.tw/op/consignor/upload-trade-pdf',
+
+privateConsignFileUrl:
+  'https://api.murain.tw/op/consign-intake/file',
+
+imageUploadUrl:
+  'https://api.murain.tw/op/upload/image',
   createBatchUrl: 'https://api.murain.tw/op/products/stock-in/batch',
   createItemUrl: '',
   nextSkuUrl: 'https://api.murain.tw/op/products/next-sku',
@@ -1283,10 +1334,23 @@ consignLedgerError: $('consignLedgerError'),
       consignorAccountName: $('consignorAccountName'),
       consignorAccountNo: $('consignorAccountNo'),
       consignorNote: $('consignorNote'),
-      consignorIdFront: $('consignorIdFront'),
-      consignorIdBack: $('consignorIdBack'),
-            consignorIdFrontPreview: $('consignorIdFrontPreview'),
-      consignorIdBackPreview: $('consignorIdBackPreview'),
+consignorIdFront:
+  $('consignorIdFront'),
+
+consignorIdBack:
+  $('consignorIdBack'),
+
+consignorTradePdf:
+  $('consignorTradePdf'),
+
+consignorIdFrontPreview:
+  $('consignorIdFrontPreview'),
+
+consignorIdBackPreview:
+  $('consignorIdBackPreview'),
+
+consignorTradePdfPreview:
+  $('consignorTradePdfPreview'),
 liveScreenshotField: $('liveScreenshotField'),
 liveScreenshot: $('liveScreenshot'),
 liveScreenshotPreview: $('liveScreenshotPreview')
@@ -1394,6 +1458,92 @@ patchSaveError: $('patchSaveError')
       target.textContent = msg || '';
       target.classList.toggle('active', !!msg);
     }
+
+    function normalizeTradePdfFiles(value) {
+  if (Array.isArray(value)) {
+    return value.filter(file => {
+      return String(
+        file?.key || ''
+      ).trim();
+    });
+  }
+
+  if (!value) {
+    return [];
+  }
+
+  try {
+    const parsed =
+      JSON.parse(String(value));
+
+    return Array.isArray(parsed)
+      ? parsed.filter(file => {
+          return String(
+            file?.key || ''
+          ).trim();
+        })
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function tradePdfOpenUrl(file) {
+  const key = String(
+    file?.key || ''
+  ).trim();
+
+  if (
+    !key ||
+    !CONFIG.privateConsignFileUrl
+  ) {
+    return '';
+  }
+
+  return (
+    `${CONFIG.privateConsignFileUrl}` +
+    `?op_key=${encodeURIComponent(CONFIG.opKey)}` +
+    `&key=${encodeURIComponent(key)}`
+  );
+}
+
+function tradePdfPreviewHtml(value) {
+  const files =
+    normalizeTradePdfFiles(value);
+
+  if (!files.length) {
+    return '尚未上傳一時貿易 PDF';
+  }
+
+  return files.map((file, index) => {
+    const filename = String(
+      file?.filename ||
+      `一時貿易PDF_${index + 1}.pdf`
+    ).trim();
+
+    const openUrl =
+      tradePdfOpenUrl(file);
+
+    if (!openUrl) {
+      return `
+        <div>
+          已上傳：${escapeHtml(filename)}
+        </div>
+      `;
+    }
+
+    return `
+      <div>
+        已上傳：${escapeHtml(filename)}
+        ｜<a
+          href="${escapeHtml(openUrl)}"
+          target="_blank"
+          rel="noopener noreferrer"
+        >查看 PDF</a>
+      </div>
+    `;
+  }).join('');
+}
 
 function resetPatchUi(clearKeyword = false) {
   state.patchProduct = null;
@@ -4881,21 +5031,68 @@ async function pickMember(member) {
 }
 
 function openConsignorModal(prefill = {}) {
-  el.consignorModal.classList.remove('hidden');
-  showError(el.consignorModalError, '');
+  el.consignorModal.classList.remove(
+    'hidden'
+  );
 
-  el.consignorName.value = prefill.name || state.selectedLineMember?.name || state.selectedLineMember?.displayName || '';
-  el.consignorNationalId.value = prefill.nationalId || '';
-  el.consignorPhone.value = prefill.phone || state.selectedLineMember?.phone || '';
-  el.consignorEmail.value = prefill.email || state.selectedLineMember?.email || '';
-  el.consignorBankCode.value = prefill.bankCode || '';
-  el.consignorBankName.value = prefill.bankName || '';
-  el.consignorAccountName.value = prefill.accountName || '';
-  el.consignorAccountNo.value = prefill.accountNo || '';
-  el.consignorNote.value = prefill.note || '';
+  showError(
+    el.consignorModalError,
+    ''
+  );
 
-  el.consignorIdFrontPreview.textContent = prefill.idFrontUrl ? `已存在：${prefill.idFrontUrl}` : '';
-  el.consignorIdBackPreview.textContent = prefill.idBackUrl ? `已存在：${prefill.idBackUrl}` : '';
+  el.consignorName.value =
+    prefill.name ||
+    state.selectedLineMember?.name ||
+    state.selectedLineMember?.displayName ||
+    '';
+
+  el.consignorNationalId.value =
+    prefill.nationalId || '';
+
+  el.consignorPhone.value =
+    prefill.phone ||
+    state.selectedLineMember?.phone ||
+    '';
+
+  el.consignorEmail.value =
+    prefill.email ||
+    state.selectedLineMember?.email ||
+    '';
+
+  el.consignorBankCode.value =
+    prefill.bankCode || '';
+
+  el.consignorBankName.value =
+    prefill.bankName || '';
+
+  el.consignorAccountName.value =
+    prefill.accountName || '';
+
+  el.consignorAccountNo.value =
+    prefill.accountNo || '';
+
+  el.consignorNote.value =
+    prefill.note || '';
+
+  // 每次開啟視窗都清空這次尚未送出的選檔。
+  el.consignorIdFront.value = '';
+  el.consignorIdBack.value = '';
+  el.consignorTradePdf.value = '';
+
+  el.consignorIdFrontPreview.textContent =
+    prefill.idFrontUrl
+      ? `已存在：${prefill.idFrontUrl}`
+      : '';
+
+  el.consignorIdBackPreview.textContent =
+    prefill.idBackUrl
+      ? `已存在：${prefill.idBackUrl}`
+      : '';
+
+  el.consignorTradePdfPreview.innerHTML =
+    tradePdfPreviewHtml(
+      prefill.tradePdfFiles
+    );
 }
 
 function closeConsignorModal() {
@@ -4903,26 +5100,80 @@ function closeConsignorModal() {
 }
 
 function renderConsignorStatus(consignor) {
-  el.consignorStatusBox.classList.remove('hidden');
+  el.consignorStatusBox.classList.remove(
+    'hidden'
+  );
 
   if (!consignor) {
     el.consignorStatusBox.innerHTML = `
-      <div style="font-weight:800;margin-bottom:6px;">寄賣人主檔狀態</div>
-      <div class="muted">此會員尚未建立寄賣人資料，請先按「新增寄賣人資料」。</div>
+      <div style="font-weight:800;margin-bottom:6px;">
+        寄賣人主檔狀態
+      </div>
+
+      <div class="muted">
+        此會員尚未建立寄賣人資料，請先按「新增寄賣人資料」。
+      </div>
     `;
-    el.btnEditConsignor.classList.add('hidden');
+
+    el.btnEditConsignor.classList.add(
+      'hidden'
+    );
+
     return;
   }
 
+  const tradePdfFiles =
+    normalizeTradePdfFiles(
+      consignor.tradePdfFiles
+    );
+
+  const tradePdfText =
+    tradePdfFiles.length
+      ? tradePdfPreviewHtml(
+          tradePdfFiles
+        )
+      : '尚未上傳';
+
   el.consignorStatusBox.innerHTML = `
-    <div style="font-weight:800;margin-bottom:6px;">寄賣人主檔狀態</div>
-    <div class="muted">姓名：${escapeHtml(consignor.name || '')}</div>
-    <div class="muted">手機：${escapeHtml(consignor.phone || '')}</div>
-    <div class="muted">Email：${escapeHtml(consignor.email || '')}</div>
-    <div class="muted">匯款資料：${escapeHtml(consignor.bankCode || '')} ${escapeHtml(consignor.bankName || '')} / ${escapeHtml(consignor.accountLast5 || '')}</div>
-        <div class="muted">身分證圖：${consignor.idFrontUrl ? '正面已上傳' : '正面未上傳'}｜${consignor.idBackUrl ? '反面已上傳' : '反面未上傳'}</div>
+    <div style="font-weight:800;margin-bottom:6px;">
+      寄賣人主檔狀態
+    </div>
+
+    <div class="muted">
+      姓名：${escapeHtml(consignor.name || '')}
+    </div>
+
+    <div class="muted">
+      手機：${escapeHtml(consignor.phone || '')}
+    </div>
+
+    <div class="muted">
+      Email：${escapeHtml(consignor.email || '')}
+    </div>
+
+    <div class="muted">
+      匯款資料：
+      ${escapeHtml(consignor.bankCode || '')}
+      ${escapeHtml(consignor.bankName || '')}
+      /
+      ${escapeHtml(consignor.accountLast5 || '')}
+    </div>
+
+    <div class="muted">
+      身分證圖：
+      ${consignor.idFrontUrl ? '正面已上傳' : '正面未上傳'}
+      ｜
+      ${consignor.idBackUrl ? '反面已上傳' : '反面未上傳'}
+    </div>
+
+    <div class="muted">
+      一時貿易 PDF：${tradePdfText}
+    </div>
   `;
-  el.btnEditConsignor.classList.remove('hidden');
+
+  el.btnEditConsignor.classList.remove(
+    'hidden'
+  );
 }
 
 async function loadConsignorByMember(lineMemberRecordId) {
@@ -4979,6 +5230,97 @@ if (!resp.ok || !data.ok) {
 
   return data.url || '';
 }
+
+    async function uploadConsignorTradePdf(
+  file
+) {
+  if (!file) {
+    return [];
+  }
+
+  const filename = String(
+    file.name || ''
+  ).trim();
+
+  const contentType = String(
+    file.type || ''
+  ).trim().toLowerCase();
+
+  const isPdf =
+    contentType === 'application/pdf' ||
+    filename.toLowerCase().endsWith(
+      '.pdf'
+    );
+
+  if (!isPdf) {
+    throw new Error(
+      '一時貿易檔案只能選擇 PDF'
+    );
+  }
+
+  const maxSize =
+    20 * 1024 * 1024;
+
+  if (
+    Number(file.size || 0) >
+    maxSize
+  ) {
+    throw new Error(
+      '一時貿易 PDF 不可超過 20MB'
+    );
+  }
+
+  const form = new FormData();
+
+  form.append(
+    'op_key',
+    CONFIG.opKey
+  );
+
+  form.append(
+    'file',
+    file
+  );
+
+  const resp = await fetch(
+    CONFIG.consignorTradePdfUploadUrl,
+    {
+      method: 'POST',
+      body: form
+    }
+  );
+
+  const data =
+    await resp.json().catch(
+      () => ({})
+    );
+
+  if (
+    !resp.ok ||
+    data.ok === false
+  ) {
+    throw new Error(
+      data.detail ||
+      data.message ||
+      data.error ||
+      `PDF 上傳失敗：HTTP ${resp.status}`
+    );
+  }
+
+  const files =
+    normalizeTradePdfFiles(
+      data.files
+    );
+
+  if (!files.length) {
+    throw new Error(
+      'PDF 已上傳，但後端沒有回傳檔案資料'
+    );
+  }
+
+  return files;
+}
+    
     function getClipboardImageFile(e) {
   const cd = e.clipboardData || window.clipboardData;
   if (!cd) return null;
@@ -5095,8 +5437,18 @@ async function saveConsignor() {
     accountNo: el.consignorAccountNo.value.trim(),
     accountLast5: el.consignorAccountNo.value.trim().slice(-5),
     note: el.consignorNote.value.trim(),
-    idFrontUrl: state.selectedConsignor?.idFrontUrl || '',
-    idBackUrl: state.selectedConsignor?.idBackUrl || ''
+idFrontUrl:
+  state.selectedConsignor?.idFrontUrl ||
+  '',
+
+idBackUrl:
+  state.selectedConsignor?.idBackUrl ||
+  '',
+
+tradePdfFiles:
+  normalizeTradePdfFiles(
+    state.selectedConsignor?.tradePdfFiles
+  )
   };
 
   if (!payload.name) {
@@ -5111,14 +5463,28 @@ async function saveConsignor() {
     if (el.consignorIdFront.files?.[0]) {
       payload.idFrontUrl = await uploadSingleImage(el.consignorIdFront.files[0]);
     }
-    if (el.consignorIdBack.files?.[0]) {
-      payload.idBackUrl = await uploadSingleImage(el.consignorIdBack.files[0]);
-    }
+if (el.consignorIdBack.files?.[0]) {
+  payload.idBackUrl =
+    await uploadSingleImage(
+      el.consignorIdBack.files[0]
+    );
+}
 
-       // 合約照片 / PDF 改為 Airtable 後台 Attachment 手動上傳
-    // 不再從前端上傳到 Cloudflare Images，避免 PDF 出現 415 錯誤
+if (
+  el.consignorTradePdf.files?.[0]
+) {
+  el.consignorTradePdfPreview.textContent =
+    'PDF 上傳中...';
 
-    const resp = await fetch(CONFIG.consignorUpsertUrl, {
+  payload.tradePdfFiles =
+    await uploadConsignorTradePdf(
+      el.consignorTradePdf.files[0]
+    );
+}
+
+const resp = await fetch(
+  CONFIG.consignorUpsertUrl,
+  {
       method: 'POST',
       headers: CONFIG.requestHeaders,
       body: JSON.stringify(payload)
