@@ -3486,6 +3486,42 @@ body.product-detail-page.is-hair-product-page .qty-box{
     margin-top:4px !important;
   }
 }
+
+    /* ===== 商品詳情第一張支援影片 ===== */
+.product-detail-page .gallery-main #mainVideo{
+  width:100% !important;
+  height:100% !important;
+  max-width:100% !important;
+  max-height:100% !important;
+  margin:0 !important;
+  padding:0 !important;
+  object-fit:contain !important;
+  object-position:center center !important;
+  background:#f4f4f2 !important;
+}
+
+.product-detail-page .thumb-btn.is-video{
+  position:relative !important;
+}
+
+.product-detail-page .thumb-btn.is-video::after{
+  content:"▶";
+  position:absolute;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  width:24px;
+  height:24px;
+  border-radius:999px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding-left:2px;
+  background:rgba(35,28,25,.72);
+  color:#fff;
+  font-size:10px;
+  pointer-events:none;
+}
   </style>
   <link rel="stylesheet" href="/common-shell.css" />
 </head>
@@ -3666,6 +3702,15 @@ body.product-detail-page.is-hair-product-page .qty-box{
 <div class="gallery-main" id="galleryMain">
                 <button class="gallery-arrow prev" id="galleryPrev" type="button">‹</button>
                 <img id="mainImage" src="" alt="商品圖">
+
+<video
+  id="mainVideo"
+  style="display:none;"
+  muted
+  playsinline
+  controls
+  preload="metadata"
+></video>
                 <button class="gallery-arrow next" id="galleryNext" type="button">›</button>
               </div>
 
@@ -3824,7 +3869,7 @@ const PRODUCT_LINE_UID_KEY = 'murain_line_user_id';
     let cartCount = 0;
     let isDemoMode = false;
     let currentProduct = null;
-    let currentImages = [];
+    let currentMedia = [];
     let currentIdx = 0;
     let allItems = [];
     let authReturnRefreshRunning = false;
@@ -4005,6 +4050,69 @@ function getProductBindUrl(){
       const mainImage = imageUrlFromValue(p.image_url) || imageUrlFromValue(p.image) || imageUrlFromValue(p.thumb_url) || dedupImages[0] || '';
       const thumbImage = imageUrlFromValue(p.thumb_url) || imageUrlFromValue(p.image_url) || imageUrlFromValue(p.image) || mainImage;
 
+      const coverMediaType =
+        String(
+          p.cover_media_type ||
+          p.coverMediaType ||
+          ''
+        ).trim().toLowerCase() === 'video' &&
+        String(
+          p.cover_video_url ||
+          p.coverVideoUrl ||
+          ''
+        ).trim()
+          ? 'video'
+          : 'image';
+
+      const coverVideoUrl = String(
+        p.cover_video_url ||
+        p.coverVideoUrl ||
+        ''
+      ).trim();
+
+      const mediaUrlKey = url =>
+        String(url || '')
+          .trim()
+          .split('?')[0]
+          .replace(/\/+$/, '');
+
+      const posterKey = mediaUrlKey(mainImage);
+
+      const galleryImages =
+        coverMediaType === 'video'
+          ? dedupImages.filter(
+              url => mediaUrlKey(url) !== posterKey
+            )
+          : dedupImages;
+
+      const media = [];
+
+      if (coverMediaType === 'video' && coverVideoUrl) {
+        media.push({
+          type: 'video',
+          src: coverVideoUrl,
+          poster: mainImage
+        });
+      }
+
+      galleryImages.forEach(url => {
+        if (!url) return;
+
+        media.push({
+          type: 'image',
+          src: url,
+          poster: ''
+        });
+      });
+
+      if (!media.length && mainImage) {
+        media.push({
+          type: 'image',
+          src: mainImage,
+          poster: ''
+        });
+      }
+      
       return {
         raw: p,
         sku: firstNonEmpty(p.sku, p.id),
@@ -4017,6 +4125,10 @@ function getProductBindUrl(){
         image: mainImage,
         thumb: thumbImage,
         images: dedupImages,
+
+        media,
+        coverMediaType,
+        coverVideoUrl,
         description: firstNonEmpty(p.description, p.desc, p.content, p.body),
         color: firstNonEmpty(p.color, p.colour, p['顏色']),
         size: firstNonEmpty(p.size, p.dimension, p['尺寸']),
@@ -4371,41 +4483,135 @@ function buildBreadcrumb(product){
       updateMobileBuyBar(product);
     }
 
-    function renderGallery(product){
-      currentImages = (product.images || []).filter(Boolean);
-      if(!currentImages.length && product.image) currentImages = [product.image];
-      currentIdx = 0;
-      updateMainImage();
-      $('thumbRow').innerHTML = currentImages.map((src, idx) => `
-        <button class="thumb-btn ${idx === currentIdx ? 'active' : ''}" type="button" data-idx="${idx}">
-          <img src="${escapeHtml(src)}" alt="縮圖 ${idx+1}" loading="lazy">
-        </button>
-      `).join('');
-      $('thumbRow').querySelectorAll('.thumb-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          currentIdx = Number(btn.dataset.idx || 0);
-          updateMainImage();
-        });
-      });
+function renderGallery(product){
+  currentMedia = Array.isArray(product.media)
+    ? product.media.filter(x => x && x.src)
+    : [];
 
-      const showArrow = currentImages.length > 1;
-      $('galleryPrev').style.display = showArrow ? 'flex' : 'none';
-      $('galleryNext').style.display = showArrow ? 'flex' : 'none';
+  if (!currentMedia.length && product.image) {
+    currentMedia = [{
+      type: 'image',
+      src: product.image,
+      poster: ''
+    }];
+  }
+
+  currentIdx = 0;
+  updateMainMedia();
+
+  $('thumbRow').innerHTML = currentMedia.map((item, idx) => {
+    const thumbSrc =
+      item.type === 'video'
+        ? item.poster
+        : item.src;
+
+    return `
+      <button
+        class="thumb-btn ${idx === currentIdx ? 'active' : ''} ${item.type === 'video' ? 'is-video' : ''}"
+        type="button"
+        data-idx="${idx}"
+      >
+        <img
+          src="${escapeHtml(thumbSrc || '')}"
+          alt="${item.type === 'video' ? '影片封面' : '縮圖 ' + (idx + 1)}"
+          loading="lazy"
+        >
+      </button>
+    `;
+  }).join('');
+
+  $('thumbRow').querySelectorAll('.thumb-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentIdx = Number(btn.dataset.idx || 0);
+      updateMainMedia();
+    });
+  });
+
+  const showArrow = currentMedia.length > 1;
+
+  $('galleryPrev').style.display =
+    showArrow ? 'flex' : 'none';
+
+  $('galleryNext').style.display =
+    showArrow ? 'flex' : 'none';
+}
+
+function stopMainVideo(){
+  const video = $('mainVideo');
+  if (!video) return;
+
+  try {
+    video.pause();
+  } catch (_) {}
+
+  video.style.display = 'none';
+}
+
+function updateMainMedia(){
+  const item = currentMedia[currentIdx] || null;
+  const img = $('mainImage');
+  const video = $('mainVideo');
+
+  if (!item) {
+    img.style.display = 'none';
+    stopMainVideo();
+    return;
+  }
+
+  if (item.type === 'video') {
+    img.style.display = 'none';
+    img.removeAttribute('src');
+
+    video.poster = item.poster || '';
+
+    if (video.src !== item.src) {
+      video.src = item.src;
+      video.load();
     }
 
-    function updateMainImage(){
-      const img = currentImages[currentIdx] || '';
-      $('mainImage').src = img;
-      $('mainImage').alt = currentProduct ? currentProduct.title : '商品圖';
-      $('galleryDots').innerHTML = currentImages.map((_, idx) => `<div class="gallery-dot ${idx === currentIdx ? 'active' : ''}"></div>`).join('');
-      $('thumbRow').querySelectorAll('.thumb-btn').forEach((btn, idx) => btn.classList.toggle('active', idx === currentIdx));
-    }
+    video.style.display = 'block';
 
-    function stepImage(delta){
-      if(currentImages.length <= 1) return;
-      currentIdx = (currentIdx + delta + currentImages.length) % currentImages.length;
-      updateMainImage();
-    }
+  } else {
+    stopMainVideo();
+
+    video.removeAttribute('src');
+    video.removeAttribute('poster');
+
+    img.style.display = 'block';
+    img.src = item.src || '';
+    img.alt = currentProduct
+      ? currentProduct.title
+      : '商品圖';
+  }
+
+  $('galleryDots').innerHTML = currentMedia
+    .map((_, idx) => `
+      <div class="gallery-dot ${idx === currentIdx ? 'active' : ''}"></div>
+    `)
+    .join('');
+
+  $('thumbRow')
+    .querySelectorAll('.thumb-btn')
+    .forEach((btn, idx) => {
+      btn.classList.toggle(
+        'active',
+        idx === currentIdx
+      );
+    });
+}
+
+function stepImage(delta){
+  if (currentMedia.length <= 1) return;
+
+  currentIdx =
+    (
+      currentIdx +
+      delta +
+      currentMedia.length
+    ) % currentMedia.length;
+
+  updateMainMedia();
+}
 
     function renderTabs(product){
       $('detailDesc').innerHTML = formatDetailDesc(product.description || '【商品介紹】\n這裡可放妳 Airtable 商品描述、尺寸、顏色、材質、重點整理。');
