@@ -2358,7 +2358,7 @@ const galleryWasSelected =
   }
 
   if (coverFile && coverFile.size > 50 * 1024 * 1024) {
-    setStatus('saveMsg', '第一個影片不可超過 50MB', true);
+    setStatus('saveMsg', '第一個媒體不可超過 50MB', true);
     return [];
   }
 
@@ -2574,63 +2574,137 @@ function validateDraftPayload(payload){
   return '';
 }
 
-   async function ensureImagesUploadedIfNeeded(){
+async function ensureImagesUploadedIfNeeded(){
   const hasFilesSelected =
     ($('coverFile').files.length > 0) ||
     ($('galleryFiles').files.length > 0) ||
-    (Array.isArray(state.pendingGalleryFiles) && state.pendingGalleryFiles.length > 0);
+    (
+      Array.isArray(state.pendingGalleryFiles) &&
+      state.pendingGalleryFiles.length > 0
+    );
 
-  if (hasFilesSelected) {
-    await uploadImages();
+  // 沒有新選檔案，代表沿用目前已上傳媒體
+  if (!hasFilesSelected) {
+    return true;
+  }
+
+  const uploaded = await uploadImages();
+
+  // uploadImages 驗證失敗時會回傳空陣列
+  return (
+    Array.isArray(uploaded) &&
+    uploaded.length > 0
+  );
+}
+
+async function saveDraft(){
+  try {
+    const mediaReady =
+      await ensureImagesUploadedIfNeeded();
+
+    /*
+     * 有選新媒體，但新媒體沒有成功上傳：
+     * 必須停止儲存，更不能繼續正式上架。
+     */
+    if (!mediaReady) {
+      return false;
+    }
+
+    const payload = buildDraftPayload();
+    const errMsg = validateDraftPayload(payload);
+
+    if (errMsg) {
+      setStatus('saveMsg', errMsg, true);
+      return false;
+    }
+
+    setStatus('saveMsg', '草稿儲存中...');
+
+    const data = await jfetch(ROUTES.saveDraft, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+
+    state.draftRecordId =
+      data.record_id ||
+      state.draftRecordId ||
+      '';
+
+    $('btnPublish').disabled =
+      !state.draftRecordId;
+
+    setStatus(
+      'saveMsg',
+      '草稿已儲存，record_id：' +
+      (state.draftRecordId || '-')
+    );
+
+    return true;
+
+  } catch (err) {
+    setStatus(
+      'saveMsg',
+      '草稿儲存失敗：' + err.message,
+      true
+    );
+
+    return false;
   }
 }
 
-    async function saveDraft(){
-      try {
-        await ensureImagesUploadedIfNeeded();
-
-        const payload = buildDraftPayload();
-        const errMsg = validateDraftPayload(payload);
-        if (errMsg) {
-          setStatus('saveMsg', errMsg, true);
-          return;
-        }
-
-        setStatus('saveMsg', '草稿儲存中...');
-        const data = await jfetch(ROUTES.saveDraft, {
-          method: 'POST',
-          body: JSON.stringify(payload)
-        });
-
-        state.draftRecordId = data.record_id || state.draftRecordId || '';
-        $('btnPublish').disabled = !state.draftRecordId;
-        setStatus('saveMsg', '草稿已儲存，record_id：' + (state.draftRecordId || '-'));
-      } catch (err) {
-        setStatus('saveMsg', '草稿儲存失敗：' + err.message, true);
-      }
-    }
-
 async function publishNow(){
   try {
-    // 每次正式上架前，都先把最新表單內容與圖片寫進草稿
-    await saveDraft();
-    if (!state.draftRecordId) return;
+    /*
+     * 正式上架前，必須確認最新資料已成功儲存。
+     * 不能只判斷 draftRecordId，因為編輯舊商品時
+     * draftRecordId 本來就已經存在。
+     */
+    const draftSaved = await saveDraft();
+
+    if (!draftSaved) {
+      return;
+    }
+
+    if (!state.draftRecordId) {
+      setStatus(
+        'saveMsg',
+        '找不到草稿 record_id，已停止正式上架。',
+        true
+      );
+
+      return;
+    }
 
     setStatus('saveMsg', '正式上架中...');
+
     const data = await jfetch(ROUTES.publish, {
       method: 'POST',
       body: JSON.stringify({
-  op_key: state.opKey,
-  record_id: state.draftRecordId
-})
+        op_key: state.opKey,
+        record_id: state.draftRecordId
+      })
     });
 
     setStatus(
       'saveMsg',
-      '已正式上架：' + (data.sku || $('sku').value.trim()) + '\n上架時間：' + (data.published_at || '-')
+      '已正式上架：' +
+      (
+        data.sku ||
+        $('sku').value.trim()
+      ) +
+      '\n上架時間：' +
+      (
+        data.published_at ||
+        '-'
+      )
     );
+
   } catch (err) {
-    setStatus('saveMsg', '正式上架失敗：' + err.message, true);
+    setStatus(
+      'saveMsg',
+      '正式上架失敗：' + err.message,
+      true
+    );
   }
 }
 
@@ -2665,7 +2739,7 @@ async function publishNow(){
       try {
         await uploadImages();
       } catch (err) {
-        setStatus('saveMsg', '圖片上傳失敗：' + err.message, true);
+        setStatus('saveMsg', '媒體上傳失敗：' + err.message, true);
       }
     });
     $('btnSaveDraft').addEventListener('click', saveDraft);
