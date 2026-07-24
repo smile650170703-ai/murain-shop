@@ -5336,24 +5336,69 @@ function bindQty(){
   });
 }
 
-    function bindGallery(){
-      $('galleryPrev').addEventListener('click', () => stepImage(-1));
-      $('galleryNext').addEventListener('click', () => stepImage(1));
+function bindGallery(){
+  $('galleryPrev').addEventListener('click', () => stepImage(-1));
+  $('galleryNext').addEventListener('click', () => stepImage(1));
 
-      let startX = 0;
-      let deltaX = 0;
-      $('galleryMain').addEventListener('touchstart', (e) => {
-        startX = e.touches[0].clientX;
-        deltaX = 0;
-      }, {passive:true});
-      $('galleryMain').addEventListener('touchmove', (e) => {
-        deltaX = e.touches[0].clientX - startX;
-      }, {passive:true});
-      $('galleryMain').addEventListener('touchend', () => {
-        if(Math.abs(deltaX) < 40) return;
-        stepImage(deltaX > 0 ? -1 : 1);
-      });
+  const main = $('galleryMain');
+  if (!main) return;
+
+  let startX = 0;
+  let deltaX = 0;
+  let tracking = false;
+
+  main.addEventListener('touchstart', (e) => {
+    const target =
+      e.target instanceof Element
+        ? e.target
+        : null;
+
+    // 操作箭頭或影片控制列時，不啟動滑動切換
+    if (target?.closest('button, video')) {
+      tracking = false;
+      deltaX = 0;
+      return;
     }
+
+    const touch = e.touches?.[0];
+    if (!touch) {
+      tracking = false;
+      return;
+    }
+
+    tracking = true;
+    startX = touch.clientX;
+    deltaX = 0;
+  }, { passive:true });
+
+  main.addEventListener('touchmove', (e) => {
+    if (!tracking) return;
+
+    const touch = e.touches?.[0];
+    if (!touch) return;
+
+    deltaX = touch.clientX - startX;
+  }, { passive:true });
+
+  main.addEventListener('touchend', () => {
+    if (!tracking) return;
+
+    tracking = false;
+
+    if (Math.abs(deltaX) < 40) {
+      deltaX = 0;
+      return;
+    }
+
+    stepImage(deltaX > 0 ? -1 : 1);
+    deltaX = 0;
+  }, { passive:true });
+
+  main.addEventListener('touchcancel', () => {
+    tracking = false;
+    deltaX = 0;
+  }, { passive:true });
+}
 
     function bindShare(){
       $('shareLineBtn').addEventListener('click', () => {
