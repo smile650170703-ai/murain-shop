@@ -4507,84 +4507,6 @@ function previewStepImage(step){
   updatePreviewMedia();
 }
 
-function updatePreviewImage(){
-  const img = previewImages[previewImageIdx] || '';
-  const title = previewProduct ? previewTitle(previewProduct) : '商品圖片';
-
-  const imgEl = $('previewImg');
-  const wrap = document.querySelector('.shop-preview-image-wrap');
-
-  if(imgEl){
-    if(!img){
-      imgEl.removeAttribute('src');
-      imgEl.alt = '';
-      imgEl.style.opacity = '0';
-      if(wrap) wrap.classList.add('no-preview-image');
-    }else{
-      if(wrap) wrap.classList.remove('no-preview-image');
-      imgEl.style.opacity = '0.25';
-
-      const loader = new Image();
-      loader.decoding = 'async';
-
-      loader.onload = () => {
-        if((previewImages[previewImageIdx] || '') !== img) return;
-        imgEl.src = img;
-        imgEl.alt = title || '商品圖片';
-
-        requestAnimationFrame(() => {
-          imgEl.style.opacity = '1';
-        });
-      };
-
-      loader.onerror = () => {
-        if((previewImages[previewImageIdx] || '') !== img) return;
-        imgEl.removeAttribute('src');
-        imgEl.alt = '';
-        imgEl.style.opacity = '0';
-        if(wrap) wrap.classList.add('no-preview-image');
-      };
-
-      loader.src = img;
-    }
-  }
-
-  const dots = $('previewDots');
-  if(dots){
-    dots.innerHTML = previewImages.map((_, idx) => `
-      <button class="shop-preview-dot ${idx === previewImageIdx ? 'active' : ''}" type="button" data-idx="${idx}" aria-label="第 ${idx + 1} 張圖片"></button>
-    `).join('');
-
-    dots.querySelectorAll('.shop-preview-dot').forEach(btn => {
-      btn.addEventListener('click', () => {
-        previewImageIdx = Number(btn.dataset.idx || 0);
-        updatePreviewImage();
-      });
-    });
-
-    dots.style.display = previewImages.length > 1 ? 'flex' : 'none';
-  }
-
-  [-1, 1].forEach(step => {
-    if(!previewImages.length) return;
-
-    const idx = (previewImageIdx + step + previewImages.length) % previewImages.length;
-    const u = previewImages[idx];
-
-    if(u){
-      const pre = new Image();
-      pre.decoding = 'async';
-      pre.src = u;
-    }
-  });
-}
-function previewStepImage(step){
-  if(!previewImages || previewImages.length <= 1) return;
-
-  previewImageIdx = (previewImageIdx + step + previewImages.length) % previewImages.length;
-  updatePreviewImage();
-}
-
 async function loadPreviewImages(product){
   const sku = previewSku(product);
   if(!sku) return;
@@ -4711,7 +4633,7 @@ function bindPreviewImageSwipe(){
 
   // 桌機 / Android / 新版瀏覽器
   main.addEventListener('pointerdown', (e) => {
-    if(e.target.closest('button')) return;
+    if (e.target.closest('button, video')) return;
     beginSwipe(e.clientX, e.clientY);
 
     try{
@@ -4729,7 +4651,7 @@ function bindPreviewImageSwipe(){
 
   // ✅ iPhone / Safari / Meta 內建瀏覽器保險
   main.addEventListener('touchstart', (e) => {
-    if(e.target.closest('button')) return;
+    if (e.target.closest('button, video')) return;
     const t = e.touches && e.touches[0];
     if(!t) return;
     beginSwipe(t.clientX, t.clientY);
@@ -4801,10 +4723,24 @@ loadPreviewImages(p);
 }
 
 function closeProductPreview(){
+  stopPreviewVideo();
+
+  const video = $('previewVideo');
+
+  if (video) {
+    video.removeAttribute('src');
+    video.removeAttribute('poster');
+
+    try {
+      video.load();
+    } catch (_) {}
+  }
+
   const page = $('shopPreviewPage');
-  if(page){
+
+  if (page) {
     page.classList.remove('show');
-    page.setAttribute('aria-hidden','true');
+    page.setAttribute('aria-hidden', 'true');
   }
 
   document.body.style.overflow = '';
