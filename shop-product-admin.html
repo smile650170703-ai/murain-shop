@@ -1108,7 +1108,13 @@ const state = {
   // video = MP4 + 自動產生的 poster 圖片
   coverMedia: null,
 
-  pendingGalleryFiles: [],
+ pendingGalleryFiles: [],
+
+/*
+ * false：這次沒有明確替換多圖，後端保留原多圖。
+ * true：這次已選擇新的多圖，以新多圖取代舊多圖。
+ */
+galleryStateReady: false,
   draftRecordId: '',
   selectedProductRecordId: '',
   selectedProductData: null,
@@ -1235,6 +1241,7 @@ $('material').value = item.material || '';
 $('coverFile').value = '';
 $('galleryFiles').value = '';
 state.pendingGalleryFiles = [];
+state.galleryStateReady = false;
 renderPendingGalleryOrder();
 
 state.uploadedImages = [];
@@ -1505,9 +1512,11 @@ function isMp4VideoFile(file){
   );
 }
 
-    function renderCategoryOptions(){
-      const catSel = $('catCode');
-      const subSel = $('subCode');
+function renderCategoryOptions(){
+  const catSel = $('catCode');
+  const subSel = $('subCode');
+
+  if (!catSel || !subSel) return;
 
       catSel.innerHTML = '';
       subSel.innerHTML = '';
@@ -1522,9 +1531,13 @@ function isMp4VideoFile(file){
       renderSubcategoryOptions();
     }
 
-    function renderSubcategoryOptions(){
-      const catCode = $('catCode').value;
-      const subSel = $('subCode');
+function renderSubcategoryOptions(){
+  const catEl = $('catCode');
+  const subSel = $('subCode');
+
+  if (!catEl || !subSel) return;
+
+  const catCode = catEl.value;
       subSel.innerHTML = '';
 
       const cat = state.categories.find(x => String(x.code) === String(catCode));
@@ -2316,6 +2329,13 @@ async function uploadImages(){
 
   const oldCover = state.uploadedImages[0] || null;
 
+  const oldGallery = state.galleryStateReady
+  ? state.uploadedImages.slice(1)
+  : [];
+
+const galleryWasSelected =
+  galleryFiles.length > 0;
+
   if (!coverFile && !galleryFiles.length) {
     setStatus('saveMsg', '請先選擇圖片或影片', true);
     return [];
@@ -2381,10 +2401,14 @@ async function uploadImages(){
       video_key: uploadedVideo.video_key || ''
     };
 
-    state.uploadedImages = [
-      poster,
-      ...uploadedGallery
-    ];
+const finalGallery = galleryWasSelected
+  ? uploadedGallery
+  : oldGallery;
+
+state.uploadedImages = [
+  poster,
+  ...finalGallery
+];
 
   } else if (coverFile) {
     const uploaded = await uploadImageFiles([
@@ -2409,7 +2433,16 @@ async function uploadImages(){
       video_key: ''
     };
 
-    state.uploadedImages = uploaded;
+  const uploadedGallery = uploaded.slice(1);
+
+const finalGallery = galleryWasSelected
+  ? uploadedGallery
+  : oldGallery;
+
+state.uploadedImages = [
+  cover,
+  ...finalGallery
+];
 
   } else {
     const uploadedGallery = await uploadImageFiles(galleryFiles);
@@ -2430,7 +2463,9 @@ async function uploadImages(){
       };
     }
   }
-
+if (galleryWasSelected) {
+  state.galleryStateReady = true;
+}
   $('coverFile').value = '';
   $('galleryFiles').value = '';
 
@@ -2503,7 +2538,10 @@ function buildDraftPayload(){
         ? cover.video_key || ''
         : '',
 
-    gallery_image_ids: gallery
+gallery_image_ids:
+  state.galleryStateReady
+    ? gallery
+    : undefined
   };
 }
 
