@@ -2309,6 +2309,23 @@ nav.page-breadcrumb .current,
   white-space:nowrap !important;
   opacity:.88 !important;
 }
+
+    /* ===== 商城快速預覽第一張支援影片 ===== */
+.shop-preview-image-wrap #previewVideo{
+  width:100% !important;
+  height:100% !important;
+  max-width:100% !important;
+  max-height:100% !important;
+  margin:0 !important;
+  padding:0 !important;
+  object-fit:contain !important;
+  object-position:center center !important;
+  background:#f2f2f2 !important;
+}
+
+.shop-preview-image-wrap.is-video{
+  background:#f2f2f2 !important;
+}
 </style>
 </head>
 <body>
@@ -2534,7 +2551,16 @@ nav.page-breadcrumb .current,
     <div class="shop-preview-main">
       <div class="shop-preview-image-wrap">
         <button class="shop-preview-close" id="previewCloseBtn" type="button" aria-label="關閉">×</button>
-        <img id="previewImg" src="" alt="商品圖片">
+   <img id="previewImg" src="" alt="商品圖片">
+
+<video
+  id="previewVideo"
+  style="display:none;"
+  muted
+  playsinline
+  controls
+  preload="metadata"
+></video>
       </div>
 
       <div class="shop-preview-dots" id="previewDots"></div>
@@ -3888,7 +3914,7 @@ if (nav){
 
   /* ===== 商城商品快速預覽頁 ===== */
 let previewProduct = null;
-let previewImages = [];
+let previewMedia = [];
 let previewImageIdx = 0;
 
 function previewSku(p){
@@ -4237,16 +4263,248 @@ function collectPreviewImages(product){
   return out;
 }
 
-function setPreviewImages(product){
-  previewImages = collectPreviewImages(product);
+  function collectPreviewMedia(product){
+  const images = collectPreviewImages(product);
 
-  if(!previewImages.length){
-    const cover = previewImage(product);
-    previewImages = cover ? [cover] : [];
+  const mediaType =
+    String(
+      product?.cover_media_type ||
+      product?.coverMediaType ||
+      product?.fields?.cover_media_type ||
+      ''
+    ).trim().toLowerCase() === 'video' &&
+    String(
+      product?.cover_video_url ||
+      product?.coverVideoUrl ||
+      product?.fields?.cover_video_url ||
+      ''
+    ).trim()
+      ? 'video'
+      : 'image';
+
+  const videoUrl = String(
+    product?.cover_video_url ||
+    product?.coverVideoUrl ||
+    product?.fields?.cover_video_url ||
+    ''
+  ).trim();
+
+  const poster = previewImage(product);
+
+  const keyOf = url =>
+    String(url || '')
+      .trim()
+      .split('?')[0]
+      .replace(/\/+$/, '');
+
+  const posterKey = keyOf(poster);
+
+  const gallery =
+    mediaType === 'video'
+      ? images.filter(url => keyOf(url) !== posterKey)
+      : images;
+
+  const media = [];
+
+  if (mediaType === 'video' && videoUrl) {
+    media.push({
+      type: 'video',
+      src: videoUrl,
+      poster
+    });
   }
 
+  gallery.forEach(url => {
+    if (!url) return;
+
+    media.push({
+      type: 'image',
+      src: url,
+      poster: ''
+    });
+  });
+
+  if (!media.length && poster) {
+    media.push({
+      type: 'image',
+      src: poster,
+      poster: ''
+    });
+  }
+
+  return media;
+}
+
+function setPreviewMedia(product){
+  previewMedia = collectPreviewMedia(product);
+
   previewImageIdx = 0;
-  updatePreviewImage();
+  updatePreviewMedia();
+}
+
+function stopPreviewVideo(){
+  const video = $('previewVideo');
+  if (!video) return;
+
+  try {
+    video.pause();
+  } catch (_) {}
+
+  video.style.display = 'none';
+}
+
+function updatePreviewMedia(){
+  const item = previewMedia[previewImageIdx] || null;
+
+  const imgEl = $('previewImg');
+  const videoEl = $('previewVideo');
+  const wrap = document.querySelector('.shop-preview-image-wrap');
+
+  if (!item) {
+    imgEl.removeAttribute('src');
+    imgEl.style.display = 'none';
+
+    stopPreviewVideo();
+
+    if (wrap) {
+      wrap.classList.add('no-preview-image');
+      wrap.classList.remove('is-video');
+    }
+
+    return;
+  }
+
+  if (item.type === 'video') {
+    imgEl.style.display = 'none';
+    imgEl.removeAttribute('src');
+
+    if (wrap) {
+      wrap.classList.remove('no-preview-image');
+      wrap.classList.add('is-video');
+    }
+
+    videoEl.poster = item.poster || '';
+
+    if (videoEl.src !== item.src) {
+      videoEl.src = item.src;
+      videoEl.load();
+    }
+
+    videoEl.style.display = 'block';
+
+  } else {
+    stopPreviewVideo();
+
+    videoEl.removeAttribute('src');
+    videoEl.removeAttribute('poster');
+
+    if (wrap) {
+      wrap.classList.remove('no-preview-image');
+      wrap.classList.remove('is-video');
+    }
+
+    imgEl.style.display = 'block';
+    imgEl.style.opacity = '0.25';
+
+    const wantedUrl = item.src;
+
+    const loader = new Image();
+    loader.decoding = 'async';
+
+    loader.onload = () => {
+      const current = previewMedia[previewImageIdx];
+
+      if (
+        !current ||
+        current.type !== 'image' ||
+        current.src !== wantedUrl
+      ) {
+        return;
+      }
+
+      imgEl.src = wantedUrl;
+      imgEl.alt = previewProduct
+        ? previewTitle(previewProduct)
+        : '商品圖片';
+
+      requestAnimationFrame(() => {
+        imgEl.style.opacity = '1';
+      });
+    };
+
+    loader.onerror = () => {
+      imgEl.removeAttribute('src');
+      imgEl.style.display = 'none';
+
+      if (wrap) {
+        wrap.classList.add('no-preview-image');
+      }
+    };
+
+    loader.src = wantedUrl;
+  }
+
+  const dots = $('previewDots');
+
+  if (dots) {
+    dots.innerHTML = previewMedia.map((_, idx) => `
+      <button
+        class="shop-preview-dot ${idx === previewImageIdx ? 'active' : ''}"
+        type="button"
+        data-idx="${idx}"
+        aria-label="第 ${idx + 1} 個媒體"
+      ></button>
+    `).join('');
+
+    dots.querySelectorAll('.shop-preview-dot').forEach(btn => {
+      btn.addEventListener('click', () => {
+        previewImageIdx = Number(btn.dataset.idx || 0);
+        updatePreviewMedia();
+      });
+    });
+
+    dots.style.display =
+      previewMedia.length > 1
+        ? 'flex'
+        : 'none';
+  }
+
+  [-1, 1].forEach(step => {
+    if (!previewMedia.length) return;
+
+    const idx =
+      (
+        previewImageIdx +
+        step +
+        previewMedia.length
+      ) % previewMedia.length;
+
+    const next = previewMedia[idx];
+
+    const preloadUrl =
+      next?.type === 'video'
+        ? next.poster
+        : next?.src;
+
+    if (preloadUrl) {
+      const pre = new Image();
+      pre.decoding = 'async';
+      pre.src = preloadUrl;
+    }
+  });
+}
+
+function previewStepImage(step){
+  if (!previewMedia || previewMedia.length <= 1) return;
+
+  previewImageIdx =
+    (
+      previewImageIdx +
+      step +
+      previewMedia.length
+    ) % previewMedia.length;
+
+  updatePreviewMedia();
 }
 
 function updatePreviewImage(){
@@ -4388,12 +4646,28 @@ async function loadPreviewImages(product){
       updatePreviewSoldDisplay(merged);
     }
 
-    const imgs = collectPreviewImages(merged);
+    const media = collectPreviewMedia(merged);
 
-    if(imgs.length > previewImages.length){
-      previewImages = imgs;
+    const oldSignature = JSON.stringify(
+      previewMedia.map(x => [
+        x.type,
+        x.src,
+        x.poster
+      ])
+    );
+
+    const newSignature = JSON.stringify(
+      media.map(x => [
+        x.type,
+        x.src,
+        x.poster
+      ])
+    );
+
+    if (newSignature !== oldSignature) {
+      previewMedia = media;
       previewImageIdx = 0;
-      updatePreviewImage();
+      updatePreviewMedia();
     }
   }catch(e){}
 }
@@ -4488,8 +4762,8 @@ function openProductPreview(p){
   const price = previewPriceValue(p);
   const listPrice = previewListPriceValue(p);
 
-  setPreviewImages(p);
-  loadPreviewImages(p);
+setPreviewMedia(p);
+loadPreviewImages(p);
 
   if($('previewSku')) $('previewSku').textContent = previewBrand(p);
   if($('previewTitle')) $('previewTitle').textContent = title || 'XUYUAN SELECT';
