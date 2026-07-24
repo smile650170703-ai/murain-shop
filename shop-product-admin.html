@@ -247,12 +247,17 @@
       background:#fff;
       box-shadow:0 6px 14px rgba(114,90,86,.04);
     }
-    .thumb-card img{
+    .thumb-card img,
+    .thumb-card video{
       display:block;
       width:100%;
       aspect-ratio:1/1;
       object-fit:cover;
       background:#f7f4f2;
+    }
+
+    .thumb-card video{
+      height:auto;
     }
     .thumb-cap{
       padding:8px 10px;
@@ -758,8 +763,15 @@
 </div>
 
 <div class="field w6">
-  <label for="coverFile">封面圖</label>
-  <input id="coverFile" type="file" accept="image/*">
+  <label for="coverFile">第一個媒體（圖片或 MP4 影片）</label>
+  <input
+    id="coverFile"
+    type="file"
+    accept="image/*,video/mp4,.mp4"
+  >
+  <div class="hint">
+    可選擇一張圖片或一支 MP4 影片。影片上限 50MB，系統會自動擷取影片畫面作為商城封面圖。
+  </div>
 </div>
 
 <div class="field w6">
@@ -771,7 +783,7 @@
           </div>
 
           <div class="actions" style="margin-top:16px;">
-            <button class="btn btn-secondary" id="btnUploadImages" type="button">先上傳圖片</button>
+            <button class="btn btn-secondary" id="btnUploadImages" type="button">先上傳媒體</button>
             <button class="btn btn-primary" id="btnSaveDraft" type="button">儲存草稿</button>
             <button class="btn btn-dark" id="btnPublish" type="button" disabled>正式上架</button>
           </div>
@@ -782,7 +794,7 @@
         <div class="subcard sticky-side preview-panel">
           <div class="topbar">
             <div class="pill">PREVIEW</div>
-            <div class="hint">封面圖會以第一張顯示</div>
+            <div class="hint">第一張可為圖片或影片，後面維持商品多圖</div>
           </div>
           <div class="thumbs" id="previewWrap"></div>
                 </div>
@@ -1053,7 +1065,11 @@
   </div>
 
   <script>
-    const API_BASE = 'https://api.murain.tw';
+const API_BASE = String(window.API_BASE || '').replace(/\/$/,'');
+
+if (!API_BASE) {
+  throw new Error('API_BASE missing');
+}
 const FIXED_SITE_POPUP_SHOW_PAGES = [
   '/',
   '/index.html',
@@ -1071,6 +1087,7 @@ const ROUTES = {
   productSearch: API_BASE + '/op/shop/product-search',
   categories: API_BASE + '/op/shop/categories',
   uploadImages: API_BASE + '/op/shop/upload-images',
+    uploadVideo: API_BASE + '/op/shop/upload-video',
   saveDraft: API_BASE + '/op/shop/save-draft',
   publish: API_BASE + '/op/shop/publish',
   publishedProducts: API_BASE + '/op/shop/published-products',
@@ -1085,6 +1102,12 @@ const state = {
   opKey: '',
   categories: [],
   uploadedImages: [],
+
+  // 第一個媒體：
+  // image = 一般封面圖片
+  // video = MP4 + 自動產生的 poster 圖片
+  coverMedia: null,
+
   pendingGalleryFiles: [],
   draftRecordId: '',
   selectedProductRecordId: '',
@@ -1215,14 +1238,44 @@ state.pendingGalleryFiles = [];
 renderPendingGalleryOrder();
 
 state.uploadedImages = [];
-  if (item.image_id || item.thumb_url || item.image_url) {
-    state.uploadedImages = [{
-      image_id: item.image_id || '',
-      thumb_url: item.thumb_url || item.image_url || '',
-      image_url: item.image_url || item.thumb_url || ''
-    }];
-  }
-  renderImagePreviews();
+state.coverMedia = null;
+
+const existingPoster =
+  item.image_id ||
+  item.thumb_url ||
+  item.image_url
+    ? {
+        image_id: item.image_id || '',
+        thumb_url: item.thumb_url || item.image_url || '',
+        image_url: item.image_url || item.thumb_url || ''
+      }
+    : null;
+
+if (existingPoster) {
+  state.uploadedImages = [existingPoster];
+
+  const isVideo =
+    String(item.cover_media_type || '').toLowerCase() === 'video' &&
+    String(item.cover_video_url || '').trim();
+
+  state.coverMedia = {
+    type: isVideo ? 'video' : 'image',
+
+    image_id: existingPoster.image_id,
+    image_url: existingPoster.image_url,
+    thumb_url: existingPoster.thumb_url,
+
+    video_url: isVideo
+      ? String(item.cover_video_url || '').trim()
+      : '',
+
+    video_key: isVideo
+      ? String(item.cover_video_key || '').trim()
+      : ''
+  };
+}
+
+renderImagePreviews();
 
   $('btnPublish').disabled = !state.draftRecordId;
   setStatus('saveMsg', '已帶入現有商品。SKU、商品來源、商品名稱、售價與庫存皆鎖定；只能補官網介紹、原價、規格與圖片。');
@@ -1269,6 +1322,188 @@ if (!res.ok || data?.ok === false) {
         base64: await toBase64(file)
       };
     }
+
+    async function uploadImageFiles(files){
+  const list = Array.isArray(files) ? files.filter(Boolean) : [];
+  if (!list.length) return [];
+
+  const payloadFiles = [];
+
+  for (const file of list) {
+    payloadFiles.push(await fileToPayload(file));
+  }
+
+  const data = await jfetch(ROUTES.uploadImages, {
+    method: 'POST',
+    body: JSON.stringify({
+      op_key: state.opKey,
+      files: payloadFiles
+    })
+  });
+
+  return Array.isArray(data.images)
+    ? data.images
+    : [];
+}
+
+async function uploadVideoFile(file){
+  if (!file) throw new Error('missing_video_file');
+
+  const fileName = encodeURIComponent(
+    file.name || 'product-video.mp4'
+  );
+
+  const res = await fetch(
+    ROUTES.uploadVideo + '?filename=' + fileName,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + state.opKey,
+        'Content-Type': 'video/mp4'
+      },
+      body: file
+    }
+  );
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok || data?.ok === false) {
+    throw new Error(
+      data?.message ||
+      data?.detail ||
+      data?.error ||
+      ('HTTP_' + res.status)
+    );
+  }
+
+  if (!data.video?.video_url || !data.video?.video_key) {
+    throw new Error('upload_video_missing_result');
+  }
+
+  return data.video;
+}
+
+async function createVideoPosterFile(videoFile){
+  if (!videoFile) throw new Error('missing_video_file');
+
+  const objectUrl = URL.createObjectURL(videoFile);
+
+  try {
+    const video = document.createElement('video');
+
+    video.preload = 'auto';
+    video.muted = true;
+    video.playsInline = true;
+
+    await new Promise((resolve, reject) => {
+      video.addEventListener('loadeddata', resolve, { once:true });
+      video.addEventListener('error', () => {
+        reject(new Error('影片格式無法讀取，請確認為 MP4'));
+      }, { once:true });
+
+      video.src = objectUrl;
+      video.load();
+    });
+
+    if (Number(video.duration || 0) > 0.3) {
+      const targetTime = Math.min(
+        0.25,
+        Number(video.duration || 0) * 0.05
+      );
+
+      await new Promise(resolve => {
+        let finished = false;
+
+        const done = () => {
+          if (finished) return;
+          finished = true;
+          resolve();
+        };
+
+        video.addEventListener('seeked', done, { once:true });
+
+        try {
+          video.currentTime = targetTime;
+        } catch (_) {
+          done();
+        }
+
+        setTimeout(done, 1800);
+      });
+    }
+
+    const videoWidth = Number(video.videoWidth || 0);
+    const videoHeight = Number(video.videoHeight || 0);
+
+    if (!videoWidth || !videoHeight) {
+      throw new Error('無法取得影片畫面尺寸');
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 1000;
+    canvas.height = 1000;
+
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) {
+      throw new Error('browser_canvas_not_supported');
+    }
+
+    ctx.fillStyle = '#f7f4f2';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const scale = Math.min(
+      canvas.width / videoWidth,
+      canvas.height / videoHeight
+    );
+
+    const drawWidth = Math.round(videoWidth * scale);
+    const drawHeight = Math.round(videoHeight * scale);
+    const drawX = Math.round((canvas.width - drawWidth) / 2);
+    const drawY = Math.round((canvas.height - drawHeight) / 2);
+
+    ctx.drawImage(
+      video,
+      drawX,
+      drawY,
+      drawWidth,
+      drawHeight
+    );
+
+    const posterBlob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        blob => {
+          if (blob) resolve(blob);
+          else reject(new Error('影片封面產生失敗'));
+        },
+        'image/jpeg',
+        0.9
+      );
+    });
+
+    const baseName = String(videoFile.name || 'product-video')
+      .replace(/\.[^.]+$/, '')
+      .replace(/[^\w.-]+/g, '_');
+
+    return new File(
+      [posterBlob],
+      `${baseName}-poster.jpg`,
+      { type:'image/jpeg' }
+    );
+
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function isMp4VideoFile(file){
+  if (!file) return false;
+
+  return (
+    String(file.type || '').toLowerCase() === 'video/mp4' ||
+    /\.mp4$/i.test(String(file.name || ''))
+  );
+}
 
     function renderCategoryOptions(){
       const catSel = $('catCode');
@@ -1342,22 +1577,48 @@ function renderPendingGalleryOrder(){
     wrap.appendChild(row);
   });
 }
-    function renderImagePreviews(){
-      const wrap = $('previewWrap');
-      wrap.innerHTML = '';
+function renderImagePreviews(){
+  const wrap = $('previewWrap');
+  wrap.innerHTML = '';
 
-      if (!state.uploadedImages.length) return;
+  if (!state.uploadedImages.length) return;
 
-      state.uploadedImages.forEach((img, idx) => {
-        const card = document.createElement('div');
-        card.className = 'thumb-card';
-        card.innerHTML = `
-          <img src="${img.thumb_url || img.image_url || ''}" alt="圖片 ${idx + 1}">
-          <div class="thumb-cap">${idx === 0 ? '封面圖' : '多圖 ' + idx}</div>
-        `;
-        wrap.appendChild(card);
-      });
+  state.uploadedImages.forEach((img, idx) => {
+    const card = document.createElement('div');
+    card.className = 'thumb-card';
+
+    const isCoverVideo =
+      idx === 0 &&
+      state.coverMedia?.type === 'video' &&
+      state.coverMedia?.video_url;
+
+    if (isCoverVideo) {
+      card.innerHTML = `
+        <video
+          src="${escHtml(state.coverMedia.video_url)}"
+          poster="${escHtml(state.coverMedia.thumb_url || state.coverMedia.image_url || '')}"
+          muted
+          playsinline
+          controls
+          preload="metadata"
+        ></video>
+        <div class="thumb-cap">封面影片</div>
+      `;
+    } else {
+      card.innerHTML = `
+        <img
+          src="${escHtml(img.thumb_url || img.image_url || '')}"
+          alt="圖片 ${idx + 1}"
+        >
+        <div class="thumb-cap">
+          ${idx === 0 ? '封面圖' : '多圖 ' + idx}
+        </div>
+      `;
     }
+
+    wrap.appendChild(card);
+  });
+}
 function switchShopAdminTab(tab){
   const isSort = tab === 'sort';
   const isPopup = tab === 'popup';
@@ -2048,6 +2309,7 @@ setStatus('loginMsg', '');
 
 async function uploadImages(){
   const coverFile = $('coverFile').files[0] || null;
+
   const galleryFiles = state.pendingGalleryFiles.length
     ? state.pendingGalleryFiles
     : Array.from($('galleryFiles').files || []);
@@ -2055,61 +2317,168 @@ async function uploadImages(){
   const oldCover = state.uploadedImages[0] || null;
 
   if (!coverFile && !galleryFiles.length) {
-    setStatus('saveMsg', '請先選擇圖片', true);
+    setStatus('saveMsg', '請先選擇圖片或影片', true);
     return [];
   }
 
   if (!coverFile && !oldCover) {
-    setStatus('saveMsg', '請先選擇封面圖。多圖不能直接變成主照片。', true);
+    setStatus(
+      'saveMsg',
+      '請先選擇第一個媒體。多圖不能直接成為封面。',
+      true
+    );
     return [];
   }
 
-  setStatus('saveMsg', '圖片上傳中...');
+  if (coverFile && coverFile.size > 50 * 1024 * 1024) {
+    setStatus('saveMsg', '第一個影片不可超過 50MB', true);
+    return [];
+  }
 
-  const files = [];
-  if (coverFile) files.push(await fileToPayload(coverFile));
-  for (const f of galleryFiles) files.push(await fileToPayload(f));
+  const isVideo = coverFile && isMp4VideoFile(coverFile);
 
-  const data = await jfetch(ROUTES.uploadImages, {
-    method: 'POST',
-    body: JSON.stringify({
-      op_key: state.opKey,
-      files
-    })
-  });
+  if (
+    coverFile &&
+    String(coverFile.type || '').startsWith('video/') &&
+    !isVideo
+  ) {
+    setStatus('saveMsg', '商品影片目前只接受 MP4', true);
+    return [];
+  }
 
-  const uploaded = Array.isArray(data.images) ? data.images : [];
+  setStatus(
+    'saveMsg',
+    isVideo
+      ? '影片封面產生與上傳中...'
+      : '圖片上傳中...'
+  );
 
-  if (coverFile) {
+  if (isVideo) {
+    const posterFile = await createVideoPosterFile(coverFile);
+
+    const imageUploads = await uploadImageFiles([
+      posterFile,
+      ...galleryFiles
+    ]);
+
+    const poster = imageUploads[0] || null;
+    const uploadedGallery = imageUploads.slice(1);
+
+    if (!poster?.image_id) {
+      throw new Error('video_poster_upload_failed');
+    }
+
+    const uploadedVideo = await uploadVideoFile(coverFile);
+
+    state.coverMedia = {
+      type: 'video',
+
+      image_id: poster.image_id || '',
+      image_url: poster.image_url || '',
+      thumb_url: poster.thumb_url || poster.image_url || '',
+
+      video_url: uploadedVideo.video_url || '',
+      video_key: uploadedVideo.video_key || ''
+    };
+
+    state.uploadedImages = [
+      poster,
+      ...uploadedGallery
+    ];
+
+  } else if (coverFile) {
+    const uploaded = await uploadImageFiles([
+      coverFile,
+      ...galleryFiles
+    ]);
+
+    const cover = uploaded[0] || null;
+
+    if (!cover?.image_id) {
+      throw new Error('cover_image_upload_failed');
+    }
+
+    state.coverMedia = {
+      type: 'image',
+
+      image_id: cover.image_id || '',
+      image_url: cover.image_url || '',
+      thumb_url: cover.thumb_url || cover.image_url || '',
+
+      video_url: '',
+      video_key: ''
+    };
+
     state.uploadedImages = uploaded;
+
   } else {
+    const uploadedGallery = await uploadImageFiles(galleryFiles);
+
     state.uploadedImages = [
       oldCover,
-      ...uploaded
+      ...uploadedGallery
     ].filter(Boolean);
+
+    if (!state.coverMedia && oldCover) {
+      state.coverMedia = {
+        type: 'image',
+        image_id: oldCover.image_id || '',
+        image_url: oldCover.image_url || '',
+        thumb_url: oldCover.thumb_url || oldCover.image_url || '',
+        video_url: '',
+        video_key: ''
+      };
+    }
   }
 
   $('coverFile').value = '';
   $('galleryFiles').value = '';
+
   state.pendingGalleryFiles = [];
   renderPendingGalleryOrder();
-
   renderImagePreviews();
-  setStatus('saveMsg', '圖片上傳完成，共 ' + state.uploadedImages.length + ' 張');
+
+  setStatus(
+    'saveMsg',
+    state.coverMedia?.type === 'video'
+      ? `影片上傳完成，多圖 ${Math.max(0, state.uploadedImages.length - 1)} 張`
+      : `圖片上傳完成，共 ${state.uploadedImages.length} 張`
+  );
+
   return state.uploadedImages;
 }
 
 function buildDraftPayload(){
-  const cover = state.uploadedImages[0] || null;
-  const gallery = state.uploadedImages.slice(1).map(x => x.image_id).filter(Boolean);
+  const poster = state.uploadedImages[0] || null;
+
+  const cover =
+    state.coverMedia ||
+    (
+      poster
+        ? {
+            type: 'image',
+            image_id: poster.image_id || '',
+            image_url: poster.image_url || '',
+            thumb_url: poster.thumb_url || poster.image_url || '',
+            video_url: '',
+            video_key: ''
+          }
+        : null
+    );
+
+  const gallery = state.uploadedImages
+    .slice(1)
+    .map(x => x.image_id)
+    .filter(Boolean);
 
   return {
     op_key: state.opKey,
 
-    // ✅ 只允許更新「已帶入的那筆 Products record」
-    record_id: state.selectedProductRecordId || state.draftRecordId || '',
+    record_id:
+      state.selectedProductRecordId ||
+      state.draftRecordId ||
+      '',
 
-    // ✅ 上架可編輯欄位
     ai_desc: $('aiDesc').value.trim(),
     description: $('desc').value.trim(),
     list_price: Number($('listPrice').value || 0) || 0,
@@ -2118,14 +2487,45 @@ function buildDraftPayload(){
     size: $('size').value.trim(),
     material: $('material').value.trim(),
 
+    cover_media_type: cover?.type || 'image',
+
+    // 圖片商品是正式封面；
+    // 影片商品是自動擷取出的 poster
     cover_image_id: cover?.image_id || '',
+
+    cover_video_url:
+      cover?.type === 'video'
+        ? cover.video_url || ''
+        : '',
+
+    cover_video_key:
+      cover?.type === 'video'
+        ? cover.video_key || ''
+        : '',
+
     gallery_image_ids: gallery
   };
 }
 
 function validateDraftPayload(payload){
-  if (!payload.record_id) return '請先搜尋並帶入一個已入庫商品';
-  if (!payload.cover_image_id) return '請先上傳封面圖，或帶入已有封面圖的商品';
+  if (!payload.record_id) {
+    return '請先搜尋並帶入一個已入庫商品';
+  }
+
+  if (!payload.cover_image_id) {
+    return '請先上傳第一個圖片或影片';
+  }
+
+  if (
+    payload.cover_media_type === 'video' &&
+    (
+      !payload.cover_video_url ||
+      !payload.cover_video_key
+    )
+  ) {
+    return '影片資料不完整，請重新上傳影片';
+  }
+
   return '';
 }
 
