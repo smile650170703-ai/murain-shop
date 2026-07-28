@@ -460,6 +460,132 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   }
 }
 
+
+
+/* ===== 一時貿易：所有月份／依人分組／申報狀態 ===== */
+.trade-page-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  flex-wrap:wrap;
+}
+
+.trade-total-summary{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  font-size:12px;
+}
+
+.trade-total-summary span{
+  padding:5px 9px;
+  border-radius:999px;
+  border:1px solid rgba(148,163,184,.4);
+  background:rgba(2,6,23,.55);
+}
+
+.trade-status-list{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  margin-top:14px;
+}
+
+.trade-status-section{
+  border:1px solid rgba(148,163,184,.28);
+  border-radius:16px;
+  overflow:hidden;
+  background:rgba(15,23,42,.72);
+}
+
+.trade-status-section > summary{
+  cursor:pointer;
+  list-style:none;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  padding:12px 14px;
+  font-size:14px;
+  font-weight:800;
+}
+
+.trade-status-section > summary::-webkit-details-marker{display:none}
+.trade-status-section.is-pending > summary{color:#fde68a;background:rgba(234,179,8,.08)}
+.trade-status-section.is-declared > summary{color:#bbf7d0;background:rgba(34,197,94,.08)}
+.trade-status-count{font-size:12px;font-weight:600;color:#cbd5e1}
+.trade-status-body{padding:12px}
+
+.trade-person-card{
+  border:1px solid rgba(148,163,184,.25);
+  border-radius:14px;
+  overflow:hidden;
+  margin-bottom:10px;
+  background:rgba(2,6,23,.55);
+}
+
+.trade-person-card:last-child{margin-bottom:0}
+
+.trade-person-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:12px;
+  padding:10px 12px;
+  border-bottom:1px solid rgba(148,163,184,.2);
+}
+
+.trade-person-name{font-size:15px;font-weight:900;color:#f8fafc}
+.trade-person-summary{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;font-size:11px}
+.trade-person-summary span{padding:3px 7px;border-radius:999px;background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.35)}
+.trade-table-wrap{overflow:auto}
+
+.trade-detail-table{
+  width:100%;
+  min-width:980px;
+  border-collapse:collapse;
+  font-size:12px;
+}
+
+.trade-detail-table th,
+.trade-detail-table td{
+  padding:8px 9px;
+  border-bottom:1px solid rgba(148,163,184,.16);
+  text-align:left;
+  vertical-align:top;
+}
+
+.trade-detail-table th{
+  color:#cbd5e1;
+  background:rgba(15,23,42,.95);
+  white-space:nowrap;
+}
+
+.trade-detail-table tbody tr:last-child td{border-bottom:none}
+.trade-money{text-align:right !important;white-space:nowrap;font-weight:700}
+.trade-check-cell{white-space:nowrap}
+
+.trade-declared-check{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  margin:0;
+  cursor:pointer;
+  color:#e2e8f0;
+}
+
+.trade-declared-check input{
+  width:17px;
+  height:17px;
+  margin:0;
+  cursor:pointer;
+}
+
+@media (max-width:720px){
+  .trade-person-head{flex-direction:column}
+  .trade-person-summary{justify-content:flex-start}
+}
 </style>
 </head>
 <body>
@@ -751,136 +877,121 @@ let currentConsignRecord = null;
  let currentCartRows = [];
 let currentCartRecord = null;
 
- function getBiMonthLabel(dateLike){
-  const s = String(dateLike || '').trim();
-  if (!s) return '';
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return '';
-  const m = d.getMonth() + 1;
+ function getTradeDoneMonth(item){
+  const raw = String(
+    item?.doneAt ||
+    item?.bankDoneAt ||
+    item?.creditDoneAt ||
+    item?.creditGrantedAt ||
+    ''
+  ).trim();
 
-  if (m <= 2) return '1-2月';
-  if (m <= 4) return '3-4月';
-  if (m <= 6) return '5-6月';
-  if (m <= 8) return '7-8月';
-  if (m <= 10) return '9-10月';
-  return '11-12月';
+  return /^\d{4}-\d{2}/.test(raw) ? raw.slice(0, 7) : '未填月份';
 }
 
-function getTradePeriodOptions(){
-  const now = new Date();
-  const currentYear = now.getFullYear();
+function fmtTradeDateTime(v){
+  const s = String(v || '').trim();
+  if (!s) return '—';
 
-  const years = [currentYear, currentYear - 1];
-  const pairs = [
-    ['01', '02', '1-2月'],
-    ['03', '04', '3-4月'],
-    ['05', '06', '5-6月'],
-    ['07', '08', '7-8月'],
-    ['09', '10', '9-10月'],
-    ['11', '12', '11-12月']
-  ];
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
 
-  const options = [];
+  return d.toLocaleString('zh-TW', {
+    year:'numeric',
+    month:'2-digit',
+    day:'2-digit',
+    hour:'2-digit',
+    minute:'2-digit',
+    hour12:false
+  });
+}
 
-  years.forEach(y => {
-    pairs.forEach(([startM, endM, label]) => {
-      options.push({
-        value: `${y}-${startM}_${y}-${endM}`,
-        label: `${y} ${label}`
+function getConsignAccountingActualAmount(item){
+  return String(item?.method || '').trim() === 'bank_transfer'
+    ? Number(item?.bankAmount || 0)
+    : Number(item?.creditAmount || 0);
+}
+
+function getConsignAccountingPersonGroups(sourceRows){
+  const map = new Map();
+
+  (sourceRows || []).forEach(item => {
+    const acc = item.accounting || {};
+    const name = String(acc.name || item.consignorName || '未填姓名').trim() || '未填姓名';
+    const nationalId = String(acc.nationalId || '').trim();
+    const key = nationalId ? `id:${nationalId}` : `name:${name}`;
+    const actualAmount = getConsignAccountingActualAmount(item);
+
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        name,
+        nationalId,
+        idFrontUrl: String(acc.idFrontUrl || '').trim(),
+        idBackUrl: String(acc.idBackUrl || '').trim(),
+        items: [],
+        totalSaleAmount: 0,
+        totalActualAmount: 0
       });
-    });
+    }
+
+    const group = map.get(key);
+    group.items.push({ ...item, actualAmount });
+    group.totalSaleAmount += Number(item.saleAmount || 0) || 0;
+    group.totalActualAmount += Number(actualAmount || 0) || 0;
+
+    if (!group.idFrontUrl && acc.idFrontUrl) group.idFrontUrl = String(acc.idFrontUrl).trim();
+    if (!group.idBackUrl && acc.idBackUrl) group.idBackUrl = String(acc.idBackUrl).trim();
   });
 
-  return options;
+  return Array.from(map.values())
+    .map(group => {
+      group.items.sort((a, b) => {
+        return String(b.doneAt || '').localeCompare(String(a.doneAt || '')) ||
+          String(b.orderId || '').localeCompare(String(a.orderId || ''));
+      });
+      return group;
+    })
+    .sort((a, b) => {
+      return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hant') ||
+        String(a.nationalId || '').localeCompare(String(b.nationalId || ''), 'zh-Hant');
+    });
 }
 
-function getTradePeriodLabel(periodKey){
-  const found = getTradePeriodOptions().find(x => x.value === periodKey);
-  return found ? found.label.replace(/^(\d{4})\s+/, '') : periodKey;
+function filterConsignAccountingRows(rows){
+  const q = String(LINE_SEARCH_TERM || '').trim().toLowerCase();
+  if (!q) return rows || [];
+
+  return (rows || []).filter(item => {
+    const acc = item.accounting || {};
+    return [
+      acc.name,
+      acc.nationalId,
+      item.consignorName,
+      item.consignorLineName,
+      item.lineName,
+      item.orderId,
+      item.sku,
+      item.name
+    ].some(v => String(v || '').toLowerCase().includes(q));
+  });
 }
 
-function renderConsignAccountingPeriodPicker(){
+function setupConsignAccountingLayout(){
   currentPanelMode = 'consign_accounting';
   currentConsignRecord = null;
   currentConsignAccountingBucket = '';
-  currentConsignAccountingRows = [];
+  currentConsignAccountingPeriod = '';
 
   const layoutEl = $('#adminMainLayout');
   const toolbarEl = $('#tradeToolbarWrap');
   const listEl = $('#orderList');
-  const detailEl = $('#orderDetail');
-  const msgEl = $('#msg');
 
-  const options = getTradePeriodOptions();
-  const defaultPeriod = currentConsignAccountingPeriod || options[0]?.value || '';
-
-  // 未載入前，不顯示下面兩個空框
-  if (layoutEl) {
-    layoutEl.classList.add('trade-clean-layout');
-    layoutEl.style.display = 'none';
-  }
-
-  if (listEl) {
-    listEl.innerHTML = '';
-    listEl.style.display = 'none';
-  }
-
-  if (detailEl) {
-    detailEl.innerHTML = '';
-  }
-
-  if (msgEl) {
-    msgEl.textContent = '';
-  }
-
-  if (toolbarEl) {
-    toolbarEl.innerHTML = `
-      <div class="trade-control-row">
-        <div class="trade-period-field">
-          <label>申報月份</label>
-          <select id="trade_period_select">
-            ${options.map(opt => `
-              <option value="${escapeHtml(opt.value)}" ${opt.value === defaultPeriod ? 'selected' : ''}>
-                ${escapeHtml(opt.label)}
-              </option>
-            `).join('')}
-          </select>
-        </div>
-
-        <button class="btn-primary" id="btnLoadTradePeriod" type="button">
-          載入一時貿易資料
-        </button>
-      </div>
-    `;
-  }
-
-  updateCurrentSubTabCount(0);
-  setTopFilterActive('consign_accounting');
-
-  $('#btnLoadTradePeriod')?.addEventListener('click', async () => {
-    const period = String($('#trade_period_select')?.value || '').trim();
-    await loadConsignAccountingPeriod(period);
-  });
-}
-
-async function loadConsignAccountingPeriod(period){
-  currentPanelMode = 'consign_accounting';
-  currentConsignRecord = null;
-  currentConsignAccountingBucket = '';
-  currentConsignAccountingPeriod = String(period || '').trim();
-
-  const layoutEl = $('#adminMainLayout');
-  const listEl = $('#orderList');
-  const detailEl = $('#orderDetail');
-  const msgEl = $('#msg');
-
-  if (!currentConsignAccountingPeriod) {
-    alert('請先選擇申報月份');
-    return;
-  }
+  if (toolbarEl) toolbarEl.innerHTML = '';
 
   if (layoutEl) {
     layoutEl.classList.add('trade-clean-layout');
+    layoutEl.classList.add('trade-single-layout');
     layoutEl.style.display = 'block';
   }
 
@@ -888,14 +999,21 @@ async function loadConsignAccountingPeriod(period){
     listEl.innerHTML = '';
     listEl.style.display = 'none';
   }
+}
 
-  detailEl.innerHTML = '<div class="muted">一時貿易資料載入中…</div>';
+async function loadConsignAccountingList(){
+  setupConsignAccountingLayout();
 
-  if (msgEl) {
-    msgEl.textContent = '';
+  const detailEl = $('#orderDetail');
+  const msgEl = $('#msg');
+
+  if (detailEl) {
+    detailEl.innerHTML = '<div class="muted">全部月份的一時貿易資料載入中…</div>';
   }
 
-  try{
+  if (msgEl) msgEl.textContent = '';
+
+  try {
     await ensureOpKey();
 
     const r = await fetch(`${API}/op/consign/settlement/list`, {
@@ -904,14 +1022,13 @@ async function loadConsignAccountingPeriod(period){
       body: JSON.stringify({
         op_key: OP_KEY,
         status: 'all',
-        list_mode: 'settled',
-        trade_period: currentConsignAccountingPeriod
+        list_mode: 'settled'
       })
     });
 
     const j = await r.json().catch(() => ({}));
 
-    if(!r.ok || !j.ok){
+    if (!r.ok || !j.ok) {
       throw new Error(j.message || j.error || 'consign_accounting_list_failed');
     }
 
@@ -928,654 +1045,384 @@ async function loadConsignAccountingPeriod(period){
     renderConsignAccountingPeriodResult();
     updateCurrentSubTabCount(currentConsignAccountingRows.length);
     setTopFilterActive('consign_accounting');
-
-       if (msgEl) {
-      msgEl.textContent = '';
-    }
-  }catch(e){
+  } catch (e) {
     console.error(e);
-
-    if (listEl) {
-      listEl.innerHTML = '';
-      listEl.style.display = 'none';
-    }
-
-    detailEl.innerHTML = '<div class="error">一時貿易資料載入失敗：' + (e.message || e) + '</div>';
     currentConsignAccountingRows = [];
     updateCurrentSubTabCount(0);
+
+    if (detailEl) {
+      detailEl.innerHTML = '<div class="error">一時貿易資料載入失敗：' + escapeHtml(e.message || e) + '</div>';
+    }
   }
 }
 
-async function loadConsignAccountingList(){
-  renderConsignAccountingPeriodPicker();
+// 保留舊函式名稱，避免其他頁面仍有呼叫時中斷。
+function renderConsignAccountingPeriodPicker(){
+  return loadConsignAccountingList();
+}
+
+async function loadConsignAccountingPeriod(){
+  return loadConsignAccountingList();
 }
 
 function renderConsignAccountingPeriodResult(){
-  const layoutEl = $('#adminMainLayout');
-  const listEl = $('#orderList');
+  const rows = filterConsignAccountingRows(currentConsignAccountingRows || []);
+  renderConsignAccountingDetail('全部月份', rows);
+}
 
-  const label = getTradePeriodLabel(currentConsignAccountingPeriod || '');
-  const rows = currentConsignAccountingRows || [];
+async function updateTradeDeclared(orderItemIds, declared){
+  const ids = [...new Set(
+    (orderItemIds || [])
+      .map(x => String(x || '').trim())
+      .filter(Boolean)
+  )];
 
-  if (layoutEl) {
-    layoutEl.classList.add('trade-clean-layout');
-    layoutEl.style.display = 'block';
+  if (!ids.length) return;
+
+  await ensureOpKey();
+
+  const r = await fetch(`${API}/op/consign/trade/declare`, {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json' },
+    body: JSON.stringify({
+      op_key: OP_KEY,
+      orderItemIds: ids,
+      declared: !!declared
+    })
+  });
+
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.ok) {
+    throw new Error(j.detail || j.error || ('HTTP ' + r.status));
   }
 
-  if (listEl) {
-    listEl.innerHTML = '';
-    listEl.style.display = 'none';
+  return j;
+}
+
+function buildConsignAccountingTxt(sourceRows, titleText){
+  const fmtMoney = n => `NT$ ${Number(n || 0).toLocaleString('zh-TW')}`;
+  const groups = getConsignAccountingPersonGroups(sourceRows);
+
+  return groups.map((group, groupIdx) => {
+    const detailLines = group.items.map((item, idx) => {
+      const invoiceNo = String(item.invoiceNo || '').trim();
+      const invoiceDate = String(item.invoiceDate || '').trim();
+      const invoiceItemName = String(item.invoiceItemName || '').trim();
+
+      const lines = [
+        `  ${idx + 1}. 月份：${getTradeDoneMonth(item)}`,
+        `     完成日期：${fmtTradeDateTime(item.doneAt)}`,
+        `     訂單編號：${item.orderId || ''}`,
+        `     商品名稱：${item.name || ''}`,
+        `     售出金額：${fmtMoney(item.saleAmount || 0)}`,
+        `     結算方式：${displayConsignMethod(item.method)}`,
+        `     實際給付金額：${fmtMoney(item.actualAmount || 0)}`
+      ];
+
+      if (invoiceNo) lines.push(`     發票號碼：${invoiceNo}`);
+      if (invoiceDate) lines.push(`     發票日期：${invoiceDate}`);
+      if (invoiceItemName) lines.push(`     發票品名：${invoiceItemName}`);
+
+      return lines.join('\n');
+    }).join('\n\n');
+
+    return [
+      `一時貿易資料｜${titleText}`,
+      `第 ${groupIdx + 1} 人`,
+      `姓名：${group.name || ''}`,
+      `身分證字號：${group.nationalId || ''}`,
+      `明細筆數：${group.items.length} 筆`,
+      `售出金額合計：${fmtMoney(group.totalSaleAmount)}`,
+      `實際給付合計：${fmtMoney(group.totalActualAmount)}`,
+      '',
+      '明細：',
+      detailLines
+    ].join('\n');
+  }).join('\n\n====================\n\n');
+}
+
+function downloadTextFile(filename, text){
+  const blob = new Blob(['\ufeff' + text], {
+    type: 'text/plain;charset=utf-8'
+  });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function printConsignAccountingFile(sourceRows, titleText){
+  const groups = getConsignAccountingPersonGroups(sourceRows);
+
+  if (!groups.length) {
+    alert('目前沒有可列印的一時貿易資料。');
+    return;
   }
 
-  currentConsignAccountingBucket = label;
-  renderConsignAccountingDetail(label, rows);
+  const pages = groups.map((group, groupIdx) => {
+    const detailRows = group.items.map((item, idx) => `
+      <tr>
+        <td>${idx + 1}</td>
+        <td>${escapeHtml(getTradeDoneMonth(item))}</td>
+        <td>${escapeHtml(fmtTradeDateTime(item.doneAt))}</td>
+        <td>${escapeHtml(item.orderId || '')}</td>
+        <td>${escapeHtml(item.name || '')}</td>
+        <td>${escapeHtml(displayConsignMethod(item.method))}</td>
+        <td class="money">${escapeHtml(money(item.saleAmount || 0))}</td>
+        <td class="money">${escapeHtml(money(item.actualAmount || 0))}</td>
+      </tr>
+    `).join('');
+
+    return `
+      <section class="person-page">
+        <h1>一時貿易資料｜${escapeHtml(titleText)}</h1>
+        <div class="person-meta">
+          <div><b>姓名：</b>${escapeHtml(group.name || '')}</div>
+          <div><b>身分證字號：</b>${escapeHtml(group.nationalId || '')}</div>
+          <div><b>明細筆數：</b>${group.items.length} 筆</div>
+          <div><b>售出金額合計：</b>${escapeHtml(money(group.totalSaleAmount))}</div>
+          <div><b>實際給付合計：</b>${escapeHtml(money(group.totalActualAmount))}</div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>月份</th><th>完成日期</th><th>訂單編號</th>
+              <th>商品名稱</th><th>結算方式</th><th>售出金額</th><th>實際給付</th>
+            </tr>
+          </thead>
+          <tbody>${detailRows}</tbody>
+        </table>
+
+        <div class="id-grid">
+          <div class="id-box">
+            <h2>身分證正面</h2>
+            ${group.idFrontUrl ? `<img src="${escapeHtml(group.idFrontUrl)}">` : '<div class="id-empty">未提供</div>'}
+          </div>
+          <div class="id-box">
+            <h2>身分證反面</h2>
+            ${group.idBackUrl ? `<img src="${escapeHtml(group.idBackUrl)}">` : '<div class="id-empty">未提供</div>'}
+          </div>
+        </div>
+      </section>
+    `;
+  }).join('');
+
+  const win = window.open('', '_blank');
+  if (!win) {
+    alert('瀏覽器阻擋列印視窗，請允許彈出視窗後再試一次。');
+    return;
+  }
+
+  win.document.write(`
+    <!doctype html>
+    <html lang="zh-Hant">
+    <head>
+      <meta charset="utf-8">
+      <title>${escapeHtml(titleText)}｜一時貿易申報資料</title>
+      <style>
+        @page { size:A4 portrait; margin:10mm; }
+        *{box-sizing:border-box}
+        body{margin:0;font-family:Arial,"Noto Sans TC",sans-serif;color:#111}
+        .person-page{page-break-after:always;min-height:270mm}
+        .person-page:last-child{page-break-after:auto}
+        h1{font-size:20px;margin:0 0 8px}
+        .person-meta{display:grid;grid-template-columns:1fr 1fr;gap:5px 16px;font-size:12px;margin-bottom:10px}
+        table{width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed}
+        th,td{border:1px solid #333;padding:4px;vertical-align:top;word-break:break-word}
+        th{background:#eee}
+        .money{text-align:right;white-space:nowrap}
+        .id-grid{display:grid;grid-template-columns:1fr 1fr;gap:8mm;margin-top:10mm}
+        .id-box{border:1px solid #333;padding:4mm;min-height:70mm}
+        .id-box h2{font-size:13px;margin:0 0 4mm}
+        .id-box img{width:100%;height:56mm;object-fit:contain}
+        .id-empty{height:56mm;display:flex;align-items:center;justify-content:center;border:1px dashed #999;color:#777}
+      </style>
+    </head>
+    <body>${pages}
+      <script>
+        window.onload=function(){
+          window.focus();
+          setTimeout(function(){window.print();},500);
+        };
+      <\/script>
+    </body>
+    </html>
+  `);
+  win.document.close();
+}
+
+function renderConsignAccountingSection(title, rows, declared){
+  const groups = getConsignAccountingPersonGroups(rows);
+  const sectionClass = declared ? 'is-declared' : 'is-pending';
+
+  const groupHtml = groups.map(group => {
+    const detailRows = group.items.map(item => {
+      const actualAmount = getConsignAccountingActualAmount(item);
+      const checked = item.tradeDeclared ? 'checked' : '';
+      const statusText = item.tradeDeclared
+        ? `已申報${item.tradeDeclaredAt ? `｜${fmtTradeDateTime(item.tradeDeclaredAt)}` : ''}`
+        : '未申報';
+
+      return `
+        <tr>
+          <td class="trade-check-cell">
+            <label class="trade-declared-check">
+              <input
+                type="checkbox"
+                class="trade-declared-toggle"
+                data-id="${escapeHtml(item.orderItemId || '')}"
+                ${checked}
+              >
+              <span>已申報</span>
+            </label>
+          </td>
+          <td>${escapeHtml(getTradeDoneMonth(item))}</td>
+          <td>${escapeHtml(fmtTradeDateTime(item.doneAt))}</td>
+          <td>${escapeHtml(item.orderId || '')}</td>
+          <td>${escapeHtml(item.name || '')}</td>
+          <td>${escapeHtml(displayConsignMethod(item.method))}</td>
+          <td class="trade-money">${money(item.saleAmount || 0)}</td>
+          <td class="trade-money">${money(actualAmount)}</td>
+          <td>${escapeHtml(statusText)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    return `
+      <article class="trade-person-card">
+        <div class="trade-person-head">
+          <div>
+            <div class="trade-person-name">${escapeHtml(group.name || '未填姓名')}</div>
+            <div class="tag-small">身分證字號：${escapeHtml(group.nationalId || '未填')}</div>
+          </div>
+          <div class="trade-person-summary">
+            <span>${group.items.length} 筆</span>
+            <span>售出 ${money(group.totalSaleAmount)}</span>
+            <span>實付 ${money(group.totalActualAmount)}</span>
+          </div>
+        </div>
+
+        <div class="trade-table-wrap">
+          <table class="trade-detail-table">
+            <thead>
+              <tr>
+                <th>申報</th>
+                <th>月份</th>
+                <th>完成日期</th>
+                <th>訂單編號</th>
+                <th>商品名稱</th>
+                <th>結算方式</th>
+                <th>售出金額</th>
+                <th>實際給付</th>
+                <th>申報狀態</th>
+              </tr>
+            </thead>
+            <tbody>${detailRows}</tbody>
+          </table>
+        </div>
+      </article>
+    `;
+  }).join('');
+
+  return `
+    <details class="trade-status-section ${sectionClass}" ${declared ? '' : 'open'}>
+      <summary>
+        <span>${escapeHtml(title)}</span>
+        <span class="trade-status-count">${rows.length} 筆／${groups.length} 人</span>
+      </summary>
+      <div class="trade-status-body">
+        ${rows.length ? groupHtml : '<div class="muted">目前沒有資料。</div>'}
+      </div>
+    </details>
+  `;
 }
 
 function renderConsignAccountingDetail(bucket, rows){
   const detailEl = $('#orderDetail');
+  if (!detailEl) return;
 
-  if (!rows.length){
-    detailEl.innerHTML = `
-      <div class="section-title">${bucket} 一時貿易資料</div>
-      <div class="tag-small">${bucket} 沒有可列印資料。</div>
-    `;
-    return;
-  }
+  const undeclaredRows = (rows || []).filter(item => !item.tradeDeclared);
+  const declaredRows = (rows || []).filter(item => item.tradeDeclared);
+  const undeclaredPeople = getConsignAccountingPersonGroups(undeclaredRows).length;
+  const declaredPeople = getConsignAccountingPersonGroups(declaredRows).length;
 
-  const previewHtml = rows.map((item, idx) => {
-    const acc = item.accounting || {};
-    const methodText = displayConsignMethod(item.method);
-    const actualAmount = String(item.method || '').trim() === 'bank_transfer'
-      ? Number(item.bankAmount || 0)
-      : Number(item.creditAmount || 0);
-
-    const idFront = String(acc.idFrontUrl || '').trim();
-    const idBack  = String(acc.idBackUrl || '').trim();
-    const invoiceNo = String(item.invoiceNo || '').trim();
-    const invoiceDate = String(item.invoiceDate || '').trim();
-    const invoiceItemName = String(item.invoiceItemName || '').trim();
-    const hasInvoice = !!(invoiceNo || invoiceDate);
-
-    return `
-      <div class="trade-preview-card">
-        <div class="trade-preview-title">第 ${idx + 1} 筆｜${escapeHtml(bucket)} 一時貿易資料</div>
-
-        <div class="trade-preview-grid">
-          <div><b>姓名：</b>${escapeHtml(acc.name || '')}</div>
-          <div><b>身分證字號：</b>${escapeHtml(acc.nationalId || '')}</div>
-          <div><b>訂單編號：</b>${escapeHtml(item.orderId || '')}</div>
-          ${invoiceNo ? `<div><b>發票號碼：</b>${escapeHtml(invoiceNo)}</div>` : ''}
-          ${invoiceDate ? `<div><b>發票日期：</b>${escapeHtml(invoiceDate)}</div>` : ''}
-          ${hasInvoice && invoiceItemName ? `<div><b>發票品名：</b>${escapeHtml(invoiceItemName)}</div>` : ''}
-          <div><b>商品名稱：</b>${escapeHtml(item.name || '')}</div>
-          <div><b>售出金額：</b>${money(item.saleAmount || 0)}</div>
-          <div><b>結算方式：</b>${escapeHtml(methodText)}</div>
-          <div><b>實際給付金額：</b>${money(actualAmount || 0)}</div>
-          <div><b>身分證：</b>${idFront || idBack ? '已提供，列印時載入圖片' : '未提供'}</div>
+  detailEl.innerHTML = `
+    <div class="trade-page-head">
+      <div>
+        <div class="section-title">一時貿易｜所有月份</div>
+        <div class="tag-small">
+          同一人的不同月份明細會集中顯示；勾選「已申報」後會自動移到已申報區塊。
         </div>
       </div>
-    `;
-  }).join('');
 
-    detailEl.innerHTML = `
-    <div class="section-title">${bucket} 一時貿易資料</div>
-    <div class="tag-small">共 ${rows.length} 筆；列印時會一筆一頁，並附身分證正反面。</div>
-
-    <div class="top-order-actions mt-3">
-      <button class="btn-secondary" id="btnDownloadConsignAccountingTxt" type="button">📝 依姓名整理 TXT</button>
-      <button class="btn-primary" id="btnPrintConsignAccountingIds" type="button">🖨️ 列印身分證正反面</button>
+      <div class="trade-total-summary">
+        <span>未申報：${undeclaredRows.length} 筆／${undeclaredPeople} 人</span>
+        <span>已申報：${declaredRows.length} 筆／${declaredPeople} 人</span>
+      </div>
     </div>
 
-    <div class="trade-preview-list">${previewHtml}</div>
+    <div class="top-order-actions mt-3">
+      <button class="btn-secondary" id="btnDownloadUndeclaredTradeTxt" type="button" ${undeclaredRows.length ? '' : 'disabled'}>
+        📝 下載未申報 TXT
+      </button>
+      <button class="btn-primary" id="btnPrintUndeclaredTradeFile" type="button" ${undeclaredRows.length ? '' : 'disabled'}>
+        🖨️ 未申報資料列印／另存 PDF
+      </button>
+    </div>
+
+    <div class="trade-status-list">
+      ${renderConsignAccountingSection('未申報', undeclaredRows, false)}
+      ${renderConsignAccountingSection('已申報', declaredRows, true)}
+    </div>
   `;
- 
-  function getConsignAccountingPersonGroups(sourceRows){
-    const map = new Map();
 
-    (sourceRows || []).forEach(item => {
-      const acc = item.accounting || {};
-      const name = String(acc.name || item.consignorName || '未填姓名').trim() || '未填姓名';
-      const nationalId = String(acc.nationalId || '').trim();
-
-      // 有身分證字號就優先用身分證字號分組；沒有才用姓名分組
-      const key = nationalId ? `id:${nationalId}` : `name:${name}`;
-
-      const methodText = displayConsignMethod(item.method);
-      const actualAmount = String(item.method || '').trim() === 'bank_transfer'
-        ? Number(item.bankAmount || 0)
-        : Number(item.creditAmount || 0);
-
-      if (!map.has(key)) {
-        map.set(key, {
-          name,
-          nationalId,
-          items: [],
-          totalSaleAmount: 0,
-          totalActualAmount: 0,
-          totalBankAmount: 0,
-          totalCreditAmount: 0
-        });
-      }
-
-      const group = map.get(key);
-
-      group.items.push({
-        ...item,
-        methodText,
-        actualAmount
-      });
-
-      group.totalSaleAmount += Number(item.saleAmount || 0) || 0;
-      group.totalActualAmount += Number(actualAmount || 0) || 0;
-      group.totalBankAmount += Number(item.bankAmount || 0) || 0;
-      group.totalCreditAmount += Number(item.creditAmount || 0) || 0;
-    });
-
-    return Array.from(map.values()).sort((a, b) => {
-      return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hant') ||
-        String(a.nationalId || '').localeCompare(String(b.nationalId || ''), 'zh-Hant');
-    });
-  }
-
-  function buildConsignAccountingTxt(){
-    const fmtMoney = n => `NT$ ${Number(n || 0).toLocaleString('zh-TW')}`;
-    const groups = getConsignAccountingPersonGroups(rows);
-
-    return groups.map((group, groupIdx) => {
-      const detailLines = group.items.map((item, idx) => {
-        const invoiceNo = String(item.invoiceNo || '').trim();
-        const invoiceDate = String(item.invoiceDate || '').trim();
-        const invoiceItemName = String(item.invoiceItemName || '').trim();
-        const hasInvoice = !!(invoiceNo || invoiceDate);
-
-        const lines = [
-          `  ${idx + 1}. 訂單編號：${item.orderId || ''}`
-        ];
-
-        if (invoiceNo) {
-          lines.push(`     發票號碼：${invoiceNo}`);
-        }
-
-        if (invoiceDate) {
-          lines.push(`     發票日期：${invoiceDate}`);
-        }
-
-               if (hasInvoice && invoiceItemName) {
-          lines.push(`     發票品名：${invoiceItemName}`);
-        }
-
-        lines.push(
-          `     商品名稱：${item.name || ''}`,
-          `     售出金額：${fmtMoney(item.saleAmount || 0)}`,
-          `     實際給付${item.methodText || ''}金額：${fmtMoney(item.actualAmount || 0)}`
-        );
-
-        return lines.join('\n');
-      }).join('\n\n');
-
-      return [
-        `一時貿易資料｜${bucket}`,
-        `第 ${groupIdx + 1} 人`,
-        `姓名：${group.name || ''}`,
-        `身分證字號：${group.nationalId || ''}`,
-        `同月份筆數：${group.items.length} 筆`,
-        `售出金額合計：${fmtMoney(group.totalSaleAmount)}`,
-        `實際給付合計：${fmtMoney(group.totalActualAmount)}`,
-        ``,
-        `明細：`,
-        detailLines
-      ].join('\n');
-    }).join('\n\n====================\n\n');
-  }
-  function downloadTextFile(filename, text){
-    const blob = new Blob(['\ufeff' + text], {
-      type: 'text/plain;charset=utf-8'
-    });
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-
-    a.href = url;
-    a.download = filename;
-
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  $('#btnDownloadConsignAccountingTxt')?.addEventListener('click', () => {
-    const safeBucket = String(bucket || '一時貿易')
-      .replace(/[\\/:*?"<>|]/g, '_');
-
-    const personCount = getConsignAccountingPersonGroups(rows).length;
-    const txt = buildConsignAccountingTxt();
-
+  $('#btnDownloadUndeclaredTradeTxt')?.addEventListener('click', () => {
+    if (!undeclaredRows.length) return;
+    const txt = buildConsignAccountingTxt(undeclaredRows, '未申報');
     downloadTextFile(
-      `${safeBucket}_一時貿易資料_${personCount}人_${rows.length}筆.txt`,
+      `一時貿易_未申報_${undeclaredPeople}人_${undeclaredRows.length}筆.txt`,
       txt
     );
   });
 
-  $('#btnPrintConsignAccountingIds')?.addEventListener('click', () => {
-    const printPages = rows.map((item, idx) => {
-      const acc = item.accounting || {};
+  $('#btnPrintUndeclaredTradeFile')?.addEventListener('click', () => {
+    printConsignAccountingFile(undeclaredRows, '未申報');
+  });
 
-      const idFront = String(acc.idFrontUrl || '').trim();
-      const idBack  = String(acc.idBackUrl || '').trim();
+  $$('.trade-declared-toggle', detailEl).forEach(cb => {
+    cb.addEventListener('change', async () => {
+      const id = String(cb.dataset.id || '').trim();
+      const declared = !!cb.checked;
+      if (!id) return;
 
-      return `
-        <div class="trade-page">
-          <div class="trade-head">
-            <div class="trade-title">一時貿易身分證資料</div>
-            <div class="trade-sub">
-              第 ${idx + 1} 筆 / ${escapeHtml(bucket)}
-              ｜訂單編號：${escapeHtml(item.orderId || '')}
-              ｜姓名：${escapeHtml(acc.name || '')}
-            </div>
-          </div>
+      cb.disabled = true;
 
-          <div class="id-wrap">
-            <div class="id-box">
-              <div class="id-title">身分證正面</div>
-              ${
-                idFront
-                  ? `<img src="${idFront}" />`
-                  : `<div class="id-empty">未提供身分證正面</div>`
-              }
-            </div>
+      try {
+        await updateTradeDeclared([id], declared);
+        await loadConsignAccountingList();
+      } catch (e) {
+        console.error(e);
+        cb.checked = !declared;
+        cb.disabled = false;
+        alert('申報狀態儲存失敗：' + (e.message || e));
+      }
+    });
+  });
 
-            <div class="id-box">
-              <div class="id-title">身分證反面</div>
-              ${
-                idBack
-                  ? `<img src="${idBack}" />`
-                  : `<div class="id-empty">未提供身分證反面</div>`
-              }
-            </div>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    const win = window.open('', '_blank');
-
-    if (!win) {
-      alert('瀏覽器阻擋列印視窗，請允許彈出視窗後再試一次。');
-      return;
-    }
-
-    win.document.write(`
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>${escapeHtml(bucket)} 一時貿易身分證列印</title>
-
-        <style>
-          @page {
-            size: A4 portrait;
-            margin: 10mm;
-          }
-
-          * {
-            box-sizing: border-box;
-          }
-
-          body {
-            margin: 0;
-            font-family: Arial, "Noto Sans TC", sans-serif;
-            color: #111;
-            background: #fff;
-          }
-
-          .trade-page {
-            page-break-after: always;
-            break-after: page;
-            min-height: 270mm;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            gap: 8mm;
-          }
-
-          .trade-page:last-child {
-            page-break-after: auto;
-            break-after: auto;
-          }
-
-          .trade-head {
-            border-bottom: 1px solid #111;
-            padding-bottom: 4mm;
-          }
-
-          .trade-title {
-            font-size: 18px;
-            font-weight: 800;
-            margin-bottom: 3mm;
-          }
-
-          .trade-sub {
-            font-size: 12px;
-            line-height: 1.6;
-          }
-
-          .id-wrap {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 8mm;
-            flex: 1;
-          }
-
-          .id-box {
-            border: 1px solid #111;
-            padding: 4mm;
-            min-height: 115mm;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-          }
-
-          .id-title {
-            width: 100%;
-            font-size: 14px;
-            font-weight: 800;
-            margin-bottom: 4mm;
-            text-align: left;
-          }
-
-          .id-box img {
-            width: 100%;
-            max-height: 98mm;
-            object-fit: contain;
-          }
-
-          .id-empty {
-            width: 100%;
-            min-height: 88mm;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 1px dashed #999;
-            color: #777;
-            font-size: 14px;
-          }
-
-          @media print {
-            .trade-page {
-              page-break-after: always;
-              break-after: page;
-            }
-
-            .trade-page:last-child {
-              page-break-after: auto;
-              break-after: auto;
-            }
-          }
-          /* ===== 已收定金 / 現金分期右側明細小字版 ===== */
-.admin-fold{
-  margin-top:10px;
-  border:1px solid rgba(148,163,184,.24);
-  border-radius:14px;
-  background:rgba(255,255,255,.025);
-  overflow:hidden;
-}
-
-.admin-fold > summary{
-  list-style:none;
-  cursor:pointer;
-  min-height:34px !important;
-  padding:7px 10px !important;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:8px;
-  color:#ffffff !important;
-  font-size:12px !important;
-  font-weight:500 !important;
-  border-bottom:1px solid rgba(148,163,184,.16);
-}
-
-.admin-fold > summary::-webkit-details-marker{
-  display:none;
-}
-
-.admin-fold > summary::after{
-  content:"+";
-  width:20px;
-  height:20px;
-  border-radius:999px;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  border:1px solid rgba(148,163,184,.55);
-  color:#ffffff !important;
-  font-size:15px;
-  font-weight:900;
-  line-height:1;
-}
-
-.admin-fold[open] > summary::after{
-  content:"−";
-}
-
-.admin-fold-body{
-  padding:8px 10px 12px;
-}
-
-#orderDetail label{
-  font-size:11px !important;
-  font-weight:500 !important;
-  margin:4px 0 2px !important;
-}
-
-#orderDetail .ro-field{
-  font-size:12px !important;
-  line-height:1.35 !important;
-  font-weight:400 !important;
-}
-
-#orderDetail .retry-mini label,
-#orderDetail .cashinst-mini label{
-  font-size:10.5px !important;
-  font-weight:500 !important;
-  margin:3px 0 2px !important;
-}
-
-#orderDetail .retry-mini .ro-field,
-#orderDetail .cashinst-mini .ro-field,
-#orderDetail #d_cash_inst_progress_ro,
-#orderDetail #d_cash_inst_completed_ro{
-  height:32px !important;
-  min-height:32px !important;
-  padding:0 9px !important;
-  font-size:12px !important;
-  line-height:1.3 !important;
-  font-weight:400 !important;
-}
-
-#orderDetail #d_deposit_amount_ro,
-#orderDetail #d_deposit_last5_ro,
-#orderDetail #d_deposit_expire_at_ro,
-#orderDetail #d_hold_until_ro{
-  height:34px !important;
-  min-height:34px !important;
-  padding:0 10px !important;
-  font-size:12px !important;
-  line-height:1.35 !important;
-  font-weight:400 !important;
-}
-
-#orderDetail div:has(> #d_deposit_amount_ro) > label,
-#orderDetail div:has(> #d_deposit_last5_ro) > label,
-#orderDetail div:has(> #d_deposit_expire_at_ro) > label,
-#orderDetail div:has(> #d_hold_until_ro) > label{
-  font-size:11px !important;
-  margin:4px 0 2px !important;
-  color:#cbd5f5;
-}
-
-#orderDetail .ship-at-label{
-  font-size:11px !important;
-  margin:4px 0 2px !important;
-}
-
-#orderDetail .ship-at-mini{
-  height:30px !important;
-  min-height:30px !important;
-  padding:0 10px !important;
-  font-size:12px !important;
-  line-height:30px !important;
-  font-weight:400 !important;
-  white-space:nowrap !important;
-  overflow:hidden !important;
-  text-overflow:ellipsis !important;
-}
-
-#orderDetail .note-cn-label,
-#orderDetail .note-raw-label{
-  font-size:10.5px !important;
-  line-height:1.3 !important;
-  font-weight:500 !important;
-  margin:4px 0 2px !important;
-}
-
-#orderDetail .ro-field.internal-note-cn{
-  color:#f87171 !important;
-  -webkit-text-fill-color:#f87171 !important;
-  font-size:11px !important;
-  line-height:1.35 !important;
-  font-weight:400 !important;
-  min-height:36px !important;
-  height:auto !important;
-  padding:6px 10px !important;
-  white-space:normal !important;
-  text-align:left;
-}
-
-#orderDetail .internal-note-raw{
-  min-height:58px !important;
-  padding:7px 9px !important;
-  font-size:11px !important;
-  line-height:1.35 !important;
-  font-weight:400 !important;
-}
-
-#orderDetail .note-help-text{
-  font-size:10.5px !important;
-  line-height:1.45 !important;
-  font-weight:400 !important;
-  margin-top:6px !important;
-}
-
-#benefitBadge{
-  display:none !important;
-}
-       /* ===== 一時貿易：上方操作區 + 單一清單區 ===== */
-.trade-toolbar-card{
-  background:rgba(15,23,42,.95);
-  border:1px solid rgba(148,163,184,.3);
-  border-radius:16px;
-  padding:12px;
-  margin-bottom:12px;
-}
-
-.trade-toolbar-row{
-  display:grid;
-  grid-template-columns:minmax(180px,260px) 180px;
-  gap:10px;
-  align-items:end;
-}
-
-.trade-toolbar-card label{
-  font-size:12px;
-  margin:0 0 4px;
-}
-
-.trade-toolbar-card select{
-  height:36px;
-  font-size:13px;
-}
-
-.trade-toolbar-card button{
-  height:36px;
-  margin-top:0;
-  padding:8px 12px;
-  font-size:13px;
-}
-
-.trade-single-layout{
-  grid-template-columns:1fr !important;
-}
-
-.trade-single-layout #orderList{
-  display:none !important;
-}
-
-.trade-single-layout #orderDetail{
-  width:100%;
-}
-
-.trade-preview-list{
-  margin-top:10px;
-  max-height:70vh;
-  overflow:auto;
-  font-size:13px;
-  line-height:1.5;
-}
-
-.trade-preview-card{
-  border:1px solid rgba(148,163,184,.25);
-  border-radius:12px;
-  padding:9px 10px;
-  margin-bottom:8px;
-  background:rgba(2,6,23,.55);
-}
-
-.trade-preview-title{
-  font-weight:800;
-  font-size:13px;
-  margin-bottom:6px;
-}
-
-.trade-preview-grid{
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:5px 10px;
-}
-
-.trade-preview-grid b{
-  font-weight:800;
-}
-
-@media (max-width:720px){
-  .trade-toolbar-row{
-    grid-template-columns:1fr;
+  const msgEl = $('#msg');
+  if (msgEl) {
+    msgEl.textContent = rows.length
+      ? `全部月份共 ${rows.length} 筆；未申報 ${undeclaredRows.length} 筆，已申報 ${declaredRows.length} 筆。`
+      : '目前沒有一時貿易資料。';
   }
 }
 
-</style>
-      </head>
-
-      <body>
-        ${printPages}
-
-        <script>
-          window.onload = function(){
-            window.focus();
-            setTimeout(function(){
-              window.print();
-            }, 500);
-          };
-        <\/script>
-      </body>
-      </html>
-    `);
-
-    win.document.close();
-  });
-}
 function fmtDateInput(d){
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
