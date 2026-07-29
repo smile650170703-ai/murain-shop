@@ -4070,38 +4070,33 @@ function getProductBindUrl(){
         ''
       ).trim();
 
-      const mediaUrlKey = url =>
-        String(url || '')
-          .trim()
-          .split('?')[0]
-          .replace(/\/+$/, '');
-
-      const posterKey = mediaUrlKey(mainImage);
-
-      const galleryImages =
-        coverMediaType === 'video'
-          ? dedupImages.filter(
-              url => mediaUrlKey(url) !== posterKey
-            )
-          : dedupImages;
-
       const media = [];
 
+      /*
+       * 第一個媒體設定為影片時：
+       * 第 1 格只放影片，首頁封面圖另外成為圖片格。
+       */
       if (coverMediaType === 'video' && coverVideoUrl) {
         media.push({
           type: 'video',
           src: coverVideoUrl,
-          poster: mainImage
+          poster: '',
+          thumb: mainImage
         });
       }
 
-      galleryImages.forEach(url => {
+      /*
+       * 首頁封面圖與其他商品圖都各自獨立顯示。
+       * dedupImages 已經會自動去除真正重複的圖片。
+       */
+      dedupImages.forEach(url => {
         if (!url) return;
 
         media.push({
           type: 'image',
           src: url,
-          poster: ''
+          poster: '',
+          thumb: url
         });
       });
 
@@ -4109,7 +4104,8 @@ function getProductBindUrl(){
         media.push({
           type: 'image',
           src: mainImage,
-          poster: ''
+          poster: '',
+          thumb: mainImage
         });
       }
       
@@ -4502,7 +4498,7 @@ function renderGallery(product){
   $('thumbRow').innerHTML = currentMedia.map((item, idx) => {
     const thumbSrc =
       item.type === 'video'
-        ? item.poster
+        ? (item.thumb || product.image || '')
         : item.src;
 
     return `
@@ -4562,7 +4558,8 @@ function updateMainMedia(){
     img.style.display = 'none';
     img.removeAttribute('src');
 
-    video.poster = item.poster || '';
+    // 主畫面影片只顯示影片，不套用首頁封面圖
+    video.removeAttribute('poster');
 
     if (video.src !== item.src) {
       video.src = item.src;
