@@ -2326,6 +2326,17 @@ nav.page-breadcrumb .current,
 .shop-preview-image-wrap.is-video{
   background:#f2f2f2 !important;
 }
+
+/* 影片播放時必須強制隱藏原本的圖片元素，
+   避免左上角出現破圖圖示或白色區塊 */
+.shop-preview-image-wrap.is-video #previewImg{
+  display:none !important;
+}
+
+/* 影片模式強制顯示影片 */
+.shop-preview-image-wrap.is-video #previewVideo{
+  display:block !important;
+}
 </style>
 </head>
 <body>
@@ -4289,12 +4300,38 @@ function collectPreviewMedia(product){
     ''
   ).trim();
 
+  /*
+   * 這張是影片自動擷取的商城封面。
+   * 商城列表可以使用，但影片輪播不能再顯示一次。
+   */
   const homepageImage = previewImage(product);
+
+  const mediaImageKey = (url) => {
+    const s = String(url || '').trim();
+    if (!s) return '';
+
+    let m = s.match(/imagedelivery\.net\/[^/]+\/([^/?#]+)\//i);
+    if (m) return 'cf:' + decodeURIComponent(m[1]);
+
+    m = s.match(/\/cdn-cgi\/imagedelivery\/[^/]+\/([^/?#]+)\//i);
+    if (m) return 'cf:' + decodeURIComponent(m[1]);
+
+    return s.split('?')[0].replace(/\/+$/, '');
+  };
+
+  const coverKey = mediaImageKey(homepageImage);
+
+  const displayImages =
+    mediaType === 'video'
+      ? images.filter(url => {
+          return mediaImageKey(url) !== coverKey;
+        })
+      : images;
+
   const media = [];
 
   /*
-   * 第一個媒體設定為影片時：
-   * 第 1 格只放影片，不再把首頁圖當成影片 poster。
+   * 影片商品第 1 格只顯示影片。
    */
   if (mediaType === 'video' && videoUrl) {
     media.push({
@@ -4306,10 +4343,10 @@ function collectPreviewMedia(product){
   }
 
   /*
-   * 首頁封面圖與商品多圖各自成為獨立圖片格。
-   * 因此影片後面會接首頁封面圖，再接其他商品圖。
+   * 影片商品後面只接真正商品多圖。
+   * 圖片商品則保留首圖＋商品多圖。
    */
-  images.forEach(url => {
+  displayImages.forEach(url => {
     if (!url) return;
 
     media.push({
@@ -4321,8 +4358,8 @@ function collectPreviewMedia(product){
   });
 
   /*
-   * 舊商品如果沒有 images 陣列，
-   * 至少保留首頁封面圖。
+   * 舊的純圖片商品沒有正式多圖時，
+   * 至少保留一張商城圖片。
    */
   if (!media.length && homepageImage) {
     media.push({
