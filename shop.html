@@ -4263,7 +4263,7 @@ function collectPreviewImages(product){
   return out;
 }
 
-  function collectPreviewMedia(product){
+function collectPreviewMedia(product){
   const images = collectPreviewImages(product);
 
   const mediaType =
@@ -4289,46 +4289,47 @@ function collectPreviewImages(product){
     ''
   ).trim();
 
-  const poster = previewImage(product);
-
-  const keyOf = url =>
-    String(url || '')
-      .trim()
-      .split('?')[0]
-      .replace(/\/+$/, '');
-
-  const posterKey = keyOf(poster);
-
-  const gallery =
-    mediaType === 'video'
-      ? images.filter(url => keyOf(url) !== posterKey)
-      : images;
-
+  const homepageImage = previewImage(product);
   const media = [];
 
+  /*
+   * 第一個媒體設定為影片時：
+   * 第 1 格只放影片，不再把首頁圖當成影片 poster。
+   */
   if (mediaType === 'video' && videoUrl) {
     media.push({
       type: 'video',
       src: videoUrl,
-      poster
+      poster: '',
+      thumb: homepageImage
     });
   }
 
-  gallery.forEach(url => {
+  /*
+   * 首頁封面圖與商品多圖各自成為獨立圖片格。
+   * 因此影片後面會接首頁封面圖，再接其他商品圖。
+   */
+  images.forEach(url => {
     if (!url) return;
 
     media.push({
       type: 'image',
       src: url,
-      poster: ''
+      poster: '',
+      thumb: url
     });
   });
 
-  if (!media.length && poster) {
+  /*
+   * 舊商品如果沒有 images 陣列，
+   * 至少保留首頁封面圖。
+   */
+  if (!media.length && homepageImage) {
     media.push({
       type: 'image',
-      src: poster,
-      poster: ''
+      src: homepageImage,
+      poster: '',
+      thumb: homepageImage
     });
   }
 
@@ -4383,7 +4384,8 @@ function updatePreviewMedia(){
       wrap.classList.add('is-video');
     }
 
-    videoEl.poster = item.poster || '';
+    // 影片格只顯示影片，不套用商城首頁封面圖
+    videoEl.removeAttribute('poster');
 
     if (videoEl.src !== item.src) {
       videoEl.src = item.src;
