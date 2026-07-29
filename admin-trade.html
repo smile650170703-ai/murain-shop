@@ -574,6 +574,35 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 .trade-person-card:not([open]) .trade-person-toggle::before{content:"+"}
 
 .trade-person-name{font-size:15px;font-weight:900;color:#f8fafc}
+ .trade-person-main{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  min-width:0;
+}
+
+.trade-person-export-check{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  margin:0;
+  padding:5px 8px;
+  border:1px solid rgba(96,165,250,.45);
+  border-radius:9px;
+  background:rgba(37,99,235,.12);
+  color:#bfdbfe;
+  font-size:12px;
+  font-weight:800;
+  white-space:nowrap;
+  cursor:pointer;
+}
+
+.trade-person-export-check input{
+  width:18px;
+  height:18px;
+  margin:0;
+  cursor:pointer;
+}
 .trade-person-summary{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;font-size:11px}
 .trade-person-summary span{padding:3px 7px;border-radius:999px;background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.35)}
 .trade-person-body{background:rgba(2,6,23,.32)}
@@ -1306,7 +1335,25 @@ function printConsignAccountingFile(sourceRows, titleText){
   `);
   win.document.close();
 }
+function getSelectedUndeclaredTradeRows(detailEl, sourceRows){
+  if (!detailEl) return [];
 
+  const selectedKeys = new Set(
+    Array.from(
+      detailEl.querySelectorAll(
+        '.trade-person-export-toggle:checked'
+      )
+    )
+      .map(cb => String(cb.dataset.personKey || '').trim())
+      .filter(Boolean)
+  );
+
+  if (!selectedKeys.size) return [];
+
+  return getConsignAccountingPersonGroups(sourceRows || [])
+    .filter(group => selectedKeys.has(String(group.key || '')))
+    .flatMap(group => group.items || []);
+}
 function renderConsignAccountingSection(title, rows, declared){
   const groups = getConsignAccountingPersonGroups(rows);
   const sectionClass = declared ? 'is-declared' : 'is-pending';
@@ -1350,16 +1397,31 @@ function renderConsignAccountingSection(title, rows, declared){
       `;
     }).join('');
 
+    const personSelectHtml = declared
+      ? ''
+      : `
+        <label class="trade-person-export-check">
+          <input
+            type="checkbox"
+            class="trade-person-export-toggle"
+            data-person-key="${escapeHtml(group.key || '')}"
+          >
+          <span>選取此寄賣人</span>
+        </label>
+      `;
+
     return `
-      <details class="trade-person-card">
-        <summary class="trade-person-head">
-          <div class="trade-person-head-left">
-            <span class="trade-person-toggle" aria-hidden="true"></span>
+      <article class="trade-person-card">
+        <div class="trade-person-head">
+          <div class="trade-person-main">
+            ${personSelectHtml}
+
             <div>
               <div class="trade-person-name">${escapeHtml(group.name || '未填姓名')}</div>
               <div class="tag-small">身分證字號：${escapeHtml(group.nationalId || '未填')}</div>
             </div>
           </div>
+
           <div class="trade-person-summary">
             <span>${group.items.length} 筆</span>
             <span>售出 ${money(group.totalSaleAmount)}</span>
@@ -1432,11 +1494,23 @@ function renderConsignAccountingDetail(bucket, rows){
       <button class="btn-primary" id="btnSaveTradeDeclaredBatch" type="button" disabled>
         💾 儲存申報狀態（0 筆變更）
       </button>
-      <button class="btn-secondary" id="btnDownloadUndeclaredTradeTxt" type="button" ${undeclaredRows.length ? '' : 'disabled'}>
-        📝 下載未申報 TXT
-      </button>
-      <button class="btn-secondary" id="btnPrintUndeclaredTradeFile" type="button" ${undeclaredRows.length ? '' : 'disabled'}>
-        🖨️ 未申報資料列印／另存 PDF
+<button
+  class="btn-secondary"
+  id="btnDownloadUndeclaredTradeTxt"
+  type="button"
+  disabled
+>
+  📝 下載已勾選未申報 TXT
+</button>
+
+<button
+  class="btn-primary"
+  id="btnPrintUndeclaredTradeFile"
+  type="button"
+  disabled
+>
+  🖨️ 已勾選資料列印／另存 PDF
+</button>資料列印／另存 PDF
       </button>
     </div>
     <div class="trade-batch-hint">
