@@ -2959,7 +2959,7 @@ function buildOwnLabelRows(rows) {
 
 function formatLabelCurrency(value) {
   const n = Math.round(normalizeNumber(value, 0));
-  return `$ ${n.toLocaleString('en-US')}`;
+  return `$${n.toLocaleString('en-US')}`;
 }
     
 function buildConsignLabelRows(rows) {
@@ -3259,7 +3259,7 @@ function moneyText(value) {
   const n = Number(raw);
 
   return Number.isFinite(n)
-    ? n.toLocaleString('zh-TW')
+    ? `$${n.toLocaleString('zh-TW')}`
     : '';
 }
 
@@ -4181,24 +4181,6 @@ container.style.pointerEvents = 'none';
       })
     );
 
-    const JsPdf = window.jspdf?.jsPDF;
-
-    if (!JsPdf) {
-      throw new Error('jsPDF 尚未載入，請重新整理頁面後再試');
-    }
-
-    const pdf = new JsPdf({
-      unit: 'mm',
-      format: 'a4',
-      orientation: 'landscape'
-    });
-
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const pdfMargin = 8;
-    const maxWidth = pageWidth - pdfMargin * 2;
-    const maxHeight = pageHeight - pdfMargin * 2;
-
     const canvasOptions = {
       margin: 0,
       image: {
@@ -4220,6 +4202,31 @@ container.style.pointerEvents = 'none';
         orientation: 'landscape'
       }
     };
+
+    /*
+     * html2pdf.bundle 雖然內含 jsPDF，但不保證會另外提供 window.jspdf。
+     * 這裡用 html2pdf 自己建立一份空白 PDF，再把每頁 canvas 手動放進去，
+     * 不需要額外載入 jsPDF，也不會因 CDN 全域變數不同而失敗。
+     */
+    const pdfSeed = document.createElement('div');
+    pdfSeed.style.width = '1px';
+    pdfSeed.style.height = '1px';
+    pdfSeed.style.background = '#ffffff';
+    container.appendChild(pdfSeed);
+
+    const pdfSeedWorker = html2pdf()
+      .set(canvasOptions)
+      .from(pdfSeed)
+      .toPdf();
+
+    const pdf = await pdfSeedWorker.get('pdf');
+    pdfSeed.remove();
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const pdfMargin = 8;
+    const maxWidth = pageWidth - pdfMargin * 2;
+    const maxHeight = pageHeight - pdfMargin * 2;
 
     /*
      * 每一個邏輯頁面都只轉成一張 canvas，再手動放進同一份 PDF。
