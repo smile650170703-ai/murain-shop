@@ -4070,11 +4070,38 @@ function getProductBindUrl(){
         ''
       ).trim();
 
+          /*
+       * 系統會為影片自動產生一張封面截圖。
+       * 這張圖只提供商城列表與影片縮圖使用，
+       * 影片商品的正式輪播不能再把它當成另一張商品圖。
+       */
+      const mediaImageKey = (url) => {
+        const s = String(url || '').trim();
+        if (!s) return '';
+
+        let m = s.match(/imagedelivery\.net\/[^/]+\/([^/?#]+)\//i);
+        if (m) return 'cf:' + decodeURIComponent(m[1]);
+
+        m = s.match(/\/cdn-cgi\/imagedelivery\/[^/]+\/([^/?#]+)\//i);
+        if (m) return 'cf:' + decodeURIComponent(m[1]);
+
+        return s.split('?')[0].replace(/\/+$/, '');
+      };
+
+      const posterKey = mediaImageKey(mainImage);
+
+      const displayImages =
+        coverMediaType === 'video'
+          ? dedupImages.filter(url => {
+              return mediaImageKey(url) !== posterKey;
+            })
+          : dedupImages;
+
       const media = [];
 
       /*
-       * 第一個媒體設定為影片時：
-       * 第 1 格只放影片，首頁封面圖另外成為圖片格。
+       * 影片商品：
+       * 第 1 格只有影片。
        */
       if (coverMediaType === 'video' && coverVideoUrl) {
         media.push({
@@ -4086,10 +4113,10 @@ function getProductBindUrl(){
       }
 
       /*
-       * 首頁封面圖與其他商品圖都各自獨立顯示。
-       * dedupImages 已經會自動去除真正重複的圖片。
+       * 影片商品：後面只接真正的商品多圖。
+       * 圖片商品：第 1 張首圖＋後面的商品多圖。
        */
-      dedupImages.forEach(url => {
+      displayImages.forEach(url => {
         if (!url) return;
 
         media.push({
@@ -4100,6 +4127,10 @@ function getProductBindUrl(){
         });
       });
 
+      /*
+       * 舊的純圖片商品沒有 images 時，
+       * 至少保留首圖。
+       */
       if (!media.length && mainImage) {
         media.push({
           type: 'image',
