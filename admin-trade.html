@@ -527,6 +527,13 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
 
 .trade-person-card:last-child{margin-bottom:0}
 
+.trade-person-card > summary{
+  list-style:none;
+  cursor:pointer;
+}
+
+.trade-person-card > summary::-webkit-details-marker{display:none}
+
 .trade-person-head{
   display:flex;
   align-items:flex-start;
@@ -536,9 +543,40 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   border-bottom:1px solid rgba(148,163,184,.2);
 }
 
+.trade-person-card:not([open]) .trade-person-head{
+  border-bottom:none;
+}
+
+.trade-person-head-left{
+  display:flex;
+  align-items:flex-start;
+  gap:9px;
+  min-width:0;
+}
+
+.trade-person-toggle{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 24px;
+  width:24px;
+  height:24px;
+  border-radius:7px;
+  border:1px solid rgba(148,163,184,.55);
+  background:rgba(15,23,42,.95);
+  color:#e2e8f0;
+  font-size:17px;
+  line-height:1;
+  font-weight:900;
+}
+
+.trade-person-toggle::before{content:"−"}
+.trade-person-card:not([open]) .trade-person-toggle::before{content:"+"}
+
 .trade-person-name{font-size:15px;font-weight:900;color:#f8fafc}
 .trade-person-summary{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;font-size:11px}
 .trade-person-summary span{padding:3px 7px;border-radius:999px;background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.35)}
+.trade-person-body{background:rgba(2,6,23,.32)}
 .trade-table-wrap{overflow:auto}
 
 .trade-detail-table{
@@ -580,6 +618,18 @@ input[readonly], input:disabled, textarea[readonly], textarea:disabled, select:d
   height:17px;
   margin:0;
   cursor:pointer;
+}
+
+.trade-declared-toggle.is-dirty + span,
+.trade-status-pending-save{
+  color:#fde68a;
+  font-weight:900;
+}
+
+.trade-batch-hint{
+  margin-top:7px;
+  color:#94a3b8;
+  font-size:12px;
 }
 
 @media (max-width:720px){
@@ -1265,6 +1315,7 @@ function renderConsignAccountingSection(title, rows, declared){
     const detailRows = group.items.map(item => {
       const actualAmount = getConsignAccountingActualAmount(item);
       const checked = item.tradeDeclared ? 'checked' : '';
+      const originalDeclared = item.tradeDeclared ? '1' : '0';
       const statusText = item.tradeDeclared
         ? `已申報${item.tradeDeclaredAt ? `｜${fmtTradeDateTime(item.tradeDeclaredAt)}` : ''}`
         : '未申報';
@@ -1277,6 +1328,7 @@ function renderConsignAccountingSection(title, rows, declared){
                 type="checkbox"
                 class="trade-declared-toggle"
                 data-id="${escapeHtml(item.orderItemId || '')}"
+                data-original-declared="${originalDeclared}"
                 ${checked}
               >
               <span>已申報</span>
@@ -1289,44 +1341,53 @@ function renderConsignAccountingSection(title, rows, declared){
           <td>${escapeHtml(displayConsignMethod(item.method))}</td>
           <td class="trade-money">${money(item.saleAmount || 0)}</td>
           <td class="trade-money">${money(actualAmount)}</td>
-          <td>${escapeHtml(statusText)}</td>
+          <td
+            class="trade-declared-status"
+            data-id="${escapeHtml(item.orderItemId || '')}"
+            data-original-status="${escapeHtml(statusText)}"
+          >${escapeHtml(statusText)}</td>
         </tr>
       `;
     }).join('');
 
     return `
-      <article class="trade-person-card">
-        <div class="trade-person-head">
-          <div>
-            <div class="trade-person-name">${escapeHtml(group.name || '未填姓名')}</div>
-            <div class="tag-small">身分證字號：${escapeHtml(group.nationalId || '未填')}</div>
+      <details class="trade-person-card">
+        <summary class="trade-person-head">
+          <div class="trade-person-head-left">
+            <span class="trade-person-toggle" aria-hidden="true"></span>
+            <div>
+              <div class="trade-person-name">${escapeHtml(group.name || '未填姓名')}</div>
+              <div class="tag-small">身分證字號：${escapeHtml(group.nationalId || '未填')}</div>
+            </div>
           </div>
           <div class="trade-person-summary">
             <span>${group.items.length} 筆</span>
             <span>售出 ${money(group.totalSaleAmount)}</span>
             <span>實付 ${money(group.totalActualAmount)}</span>
           </div>
-        </div>
+        </summary>
 
-        <div class="trade-table-wrap">
-          <table class="trade-detail-table">
-            <thead>
-              <tr>
-                <th>申報</th>
-                <th>月份</th>
-                <th>完成日期</th>
-                <th>訂單編號</th>
-                <th>商品名稱</th>
-                <th>結算方式</th>
-                <th>售出金額</th>
-                <th>實際給付</th>
-                <th>申報狀態</th>
-              </tr>
-            </thead>
-            <tbody>${detailRows}</tbody>
-          </table>
+        <div class="trade-person-body">
+          <div class="trade-table-wrap">
+            <table class="trade-detail-table">
+              <thead>
+                <tr>
+                  <th>申報</th>
+                  <th>月份</th>
+                  <th>完成日期</th>
+                  <th>訂單編號</th>
+                  <th>商品名稱</th>
+                  <th>結算方式</th>
+                  <th>售出金額</th>
+                  <th>實際給付</th>
+                  <th>申報狀態</th>
+                </tr>
+              </thead>
+              <tbody>${detailRows}</tbody>
+            </table>
+          </div>
         </div>
-      </article>
+      </details>
     `;
   }).join('');
 
@@ -1357,7 +1418,7 @@ function renderConsignAccountingDetail(bucket, rows){
       <div>
         <div class="section-title">一時貿易｜所有月份</div>
         <div class="tag-small">
-          同一人的不同月份明細會集中顯示；勾選「已申報」後會自動移到已申報區塊。
+          同一人的不同月份明細會集中顯示；先勾選多筆，再按「儲存申報狀態」一次寫入。
         </div>
       </div>
 
@@ -1368,12 +1429,18 @@ function renderConsignAccountingDetail(bucket, rows){
     </div>
 
     <div class="top-order-actions mt-3">
+      <button class="btn-primary" id="btnSaveTradeDeclaredBatch" type="button" disabled>
+        💾 儲存申報狀態（0 筆變更）
+      </button>
       <button class="btn-secondary" id="btnDownloadUndeclaredTradeTxt" type="button" ${undeclaredRows.length ? '' : 'disabled'}>
         📝 下載未申報 TXT
       </button>
-      <button class="btn-primary" id="btnPrintUndeclaredTradeFile" type="button" ${undeclaredRows.length ? '' : 'disabled'}>
+      <button class="btn-secondary" id="btnPrintUndeclaredTradeFile" type="button" ${undeclaredRows.length ? '' : 'disabled'}>
         🖨️ 未申報資料列印／另存 PDF
       </button>
+    </div>
+    <div class="trade-batch-hint">
+      勾選或取消勾選只會先暫存在畫面；按下「儲存申報狀態」後才會真正寫入 Airtable。
     </div>
 
     <div class="trade-status-list">
@@ -1395,25 +1462,91 @@ function renderConsignAccountingDetail(bucket, rows){
     printConsignAccountingFile(undeclaredRows, '未申報');
   });
 
-  $$('.trade-declared-toggle', detailEl).forEach(cb => {
-    cb.addEventListener('change', async () => {
+  const tradeDeclaredToggles = $$('.trade-declared-toggle', detailEl);
+  const saveTradeDeclaredBtn = $('#btnSaveTradeDeclaredBatch');
+
+  const refreshTradeDeclaredBatchState = () => {
+    let changedCount = 0;
+
+    tradeDeclaredToggles.forEach(cb => {
       const id = String(cb.dataset.id || '').trim();
-      const declared = !!cb.checked;
-      if (!id) return;
+      const originalDeclared = String(cb.dataset.originalDeclared || '') === '1';
+      const isDirty = !!id && cb.checked !== originalDeclared;
 
-      cb.disabled = true;
+      cb.classList.toggle('is-dirty', isDirty);
+      if (isDirty) changedCount++;
 
-      try {
-        await updateTradeDeclared([id], declared);
-        await loadConsignAccountingList();
-      } catch (e) {
-        console.error(e);
-        cb.checked = !declared;
-        cb.disabled = false;
-        alert('申報狀態儲存失敗：' + (e.message || e));
+      const statusEl = $$('.trade-declared-status', detailEl).find(el => {
+        return String(el.dataset.id || '').trim() === id;
+      });
+
+      if (statusEl) {
+        statusEl.classList.toggle('trade-status-pending-save', isDirty);
+        statusEl.textContent = isDirty
+          ? (cb.checked ? '待儲存｜改為已申報' : '待儲存｜改為未申報')
+          : (statusEl.dataset.originalStatus || '');
       }
     });
+
+    if (saveTradeDeclaredBtn) {
+      saveTradeDeclaredBtn.disabled = changedCount === 0;
+      saveTradeDeclaredBtn.textContent = `💾 儲存申報狀態（${changedCount} 筆變更）`;
+    }
+  };
+
+  tradeDeclaredToggles.forEach(cb => {
+    cb.addEventListener('change', refreshTradeDeclaredBatchState);
   });
+
+  saveTradeDeclaredBtn?.addEventListener('click', async () => {
+    const changed = tradeDeclaredToggles.filter(cb => {
+      const originalDeclared = String(cb.dataset.originalDeclared || '') === '1';
+      return String(cb.dataset.id || '').trim() && cb.checked !== originalDeclared;
+    });
+
+    if (!changed.length) return;
+
+    const toDeclared = changed
+      .filter(cb => cb.checked)
+      .map(cb => String(cb.dataset.id || '').trim());
+
+    const toUndeclared = changed
+      .filter(cb => !cb.checked)
+      .map(cb => String(cb.dataset.id || '').trim());
+
+    const confirmText = [
+      `本次共變更 ${changed.length} 筆申報狀態。`,
+      toDeclared.length ? `改為已申報：${toDeclared.length} 筆` : '',
+      toUndeclared.length ? `改為未申報：${toUndeclared.length} 筆` : '',
+      '',
+      '確定要儲存嗎？'
+    ].filter(Boolean).join('\n');
+
+    if (!confirm(confirmText)) return;
+
+    setButtonBusy(saveTradeDeclaredBtn, true, '儲存中…');
+    tradeDeclaredToggles.forEach(cb => { cb.disabled = true; });
+
+    try {
+      if (toDeclared.length) {
+        await updateTradeDeclared(toDeclared, true);
+      }
+
+      if (toUndeclared.length) {
+        await updateTradeDeclared(toUndeclared, false);
+      }
+
+      alert(`申報狀態已儲存，共更新 ${changed.length} 筆。`);
+      await loadConsignAccountingList();
+    } catch (e) {
+      console.error(e);
+      tradeDeclaredToggles.forEach(cb => { cb.disabled = false; });
+      setButtonBusy(saveTradeDeclaredBtn, false);
+      alert('申報狀態儲存失敗：' + (e.message || e));
+    }
+  });
+
+  refreshTradeDeclaredBatchState();
 
   const msgEl = $('#msg');
   if (msgEl) {
