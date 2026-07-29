@@ -4117,26 +4117,63 @@ container.style.pointerEvents = 'none';
 
   document.body.appendChild(container);
 
- try {
-    const pageElements = Array.from(
-      container.querySelectorAll('.current-consign-pdf .pdf-page')
+  try {
+    const pdfRoot = container.querySelector('.current-consign-pdf');
+    const pdfStyle = pdfRoot?.querySelector('style') || null;
+    const pageSections = Array.from(
+      pdfRoot?.querySelectorAll('.pdf-page') || []
     );
 
-    if (!pageElements.length) {
+    if (!pageSections.length) {
       throw new Error('找不到 PDF 頁面內容');
     }
 
-    // 先等每一頁圖片載入完成，避免 canvas 只截到空白或半張圖片。
-    const imageElements = Array.from(
-      container.querySelectorAll('.current-consign-pdf img')
-    );
+    /*
+     * 重要：不能直接把單獨的 .pdf-page 丟給 html2pdf。
+     * PDF 樣式全部寫成 .current-consign-pdf .xxx，
+     * 單獨擷取子頁時會失去父層，導致表格、圖片尺寸與標題樣式全部失效。
+     * 所以每一頁都建立完整的 current-consign-pdf 包裝再擷取。
+     */
+    const capturePages = pageSections.map(section => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'current-consign-pdf';
+      wrapper.style.width = '1020px';
+      wrapper.style.maxWidth = '1020px';
+      wrapper.style.margin = '0';
+      wrapper.style.padding = '0';
+      wrapper.style.background = '#ffffff';
+
+      if (pdfStyle) {
+        wrapper.appendChild(pdfStyle.cloneNode(true));
+      }
+
+      wrapper.appendChild(section.cloneNode(true));
+      container.appendChild(wrapper);
+
+      return wrapper;
+    });
+
+    // 移除原始多頁區，避免隱藏容器同時存在兩份內容影響量測。
+    pdfRoot?.remove();
+
+    // 等待「實際要擷取的每一頁」圖片載入完成。
+    const imageElements = capturePages.flatMap(page => {
+      return Array.from(page.querySelectorAll('img'));
+    });
 
     await Promise.all(
       imageElements.map(img => {
         if (img.complete) return Promise.resolve();
 
         return new Promise(resolve => {
-          const done = () => resolve();
+          let finished = false;
+
+          const done = () => {
+            if (finished) return;
+            finished = true;
+            resolve();
+          };
+
           img.addEventListener('load', done, { once: true });
           img.addEventListener('error', done, { once: true });
           setTimeout(done, 8000);
@@ -4144,8 +4181,26 @@ container.style.pointerEvents = 'none';
       })
     );
 
-    const commonOptions = {
-      margin: 8,
+    const JsPdf = window.jspdf?.jsPDF;
+
+    if (!JsPdf) {
+      throw new Error('jsPDF 尚未載入，請重新整理頁面後再試');
+    }
+
+    const pdf = new JsPdf({
+      unit: 'mm',
+      format: 'a4',
+      orientation: 'landscape'
+    });
+
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const pdfMargin = 8;
+    const maxWidth = pageWidth - pdfMargin * 2;
+    const maxHeight = pageHeight - pdfMargin * 2;
+
+    const canvasOptions = {
+      margin: 0,
       image: {
         type: 'jpeg',
         quality: 0.98
@@ -4166,25 +4221,15 @@ container.style.pointerEvents = 'none';
       }
     };
 
-    // 第一頁單獨建立 PDF，因此不會再受第二頁高度或手動分頁空白影響。
-    const firstWorker = html2pdf()
-      .set(commonOptions)
-      .from(pageElements[0])
-      .toPdf();
-
-    const pdf = await firstWorker.get('pdf');
-
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const pdfMargin = 8;
-    const maxWidth = pageWidth - pdfMargin * 2;
-    const maxHeight = pageHeight - pdfMargin * 2;
-
-    // 第二頁開始，每一頁各自完整轉成 canvas，再加入同一份 PDF。
-    for (let i = 1; i < pageElements.length; i++) {
+    /*
+     * 每一個邏輯頁面都只轉成一張 canvas，再手動放進同一份 PDF。
+     * 不再使用第一頁 .toPdf()，避免 html2pdf 自動把第一頁切成兩張，
+     * 產生中間只有一小條內容的空白頁。
+     */
+    for (let i = 0; i < capturePages.length; i++) {
       const pageWorker = html2pdf()
-        .set(commonOptions)
-        .from(pageElements[i])
+        .set(canvasOptions)
+        .from(capturePages[i])
         .toCanvas();
 
       const canvas = await pageWorker.get('canvas');
@@ -4198,11 +4243,16 @@ container.style.pointerEvents = 'none';
         drawWidth = canvas.width * drawHeight / canvas.height;
       }
 
-      pdf.addPage('a4', 'landscape');
+      if (i > 0) {
+        pdf.addPage('a4', 'landscape');
+      }
+
+      const drawX = pdfMargin + (maxWidth - drawWidth) / 2;
+
       pdf.addImage(
         imageData,
         'JPEG',
-        pdfMargin,
+        drawX,
         pdfMargin,
         drawWidth,
         drawHeight,
