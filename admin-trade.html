@@ -1411,21 +1411,27 @@ function renderConsignAccountingSection(title, rows, declared){
       `;
 
     return `
-      <article class="trade-person-card">
-        <div class="trade-person-head">
-          <div class="trade-person-main">
-            ${personSelectHtml}
+      <details class="trade-person-card" open>
+        <summary>
+          <div class="trade-person-head">
+            <div class="trade-person-head-left">
+              <span class="trade-person-toggle" aria-hidden="true"></span>
 
-            <div>
-              <div class="trade-person-name">${escapeHtml(group.name || '未填姓名')}</div>
-              <div class="tag-small">身分證字號：${escapeHtml(group.nationalId || '未填')}</div>
+              <div class="trade-person-main">
+                ${personSelectHtml}
+
+                <div>
+                  <div class="trade-person-name">${escapeHtml(group.name || '未填姓名')}</div>
+                  <div class="tag-small">身分證字號：${escapeHtml(group.nationalId || '未填')}</div>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div class="trade-person-summary">
-            <span>${group.items.length} 筆</span>
-            <span>售出 ${money(group.totalSaleAmount)}</span>
-            <span>實付 ${money(group.totalActualAmount)}</span>
+            <div class="trade-person-summary">
+              <span>${group.items.length} 筆</span>
+              <span>售出 ${money(group.totalSaleAmount)}</span>
+              <span>實付 ${money(group.totalActualAmount)}</span>
+            </div>
           </div>
         </summary>
 
@@ -1480,7 +1486,7 @@ function renderConsignAccountingDetail(bucket, rows){
       <div>
         <div class="section-title">一時貿易｜所有月份</div>
         <div class="tag-small">
-          同一人的不同月份明細會集中顯示；先勾選多筆，再按「儲存申報狀態」一次寫入。
+          同一人的不同月份明細會集中顯示；「選取此寄賣人」只控制 TXT／PDF，明細內「已申報」勾選需再按儲存。
         </div>
       </div>
 
@@ -1494,23 +1500,22 @@ function renderConsignAccountingDetail(bucket, rows){
       <button class="btn-primary" id="btnSaveTradeDeclaredBatch" type="button" disabled>
         💾 儲存申報狀態（0 筆變更）
       </button>
-<button
-  class="btn-secondary"
-  id="btnDownloadUndeclaredTradeTxt"
-  type="button"
-  disabled
->
-  📝 下載已勾選未申報 TXT
-</button>
+      <button
+        class="btn-secondary"
+        id="btnDownloadUndeclaredTradeTxt"
+        type="button"
+        disabled
+      >
+        📝 下載已勾選未申報 TXT
+      </button>
 
-<button
-  class="btn-primary"
-  id="btnPrintUndeclaredTradeFile"
-  type="button"
-  disabled
->
-  🖨️ 已勾選資料列印／另存 PDF
-</button>資料列印／另存 PDF
+      <button
+        class="btn-primary"
+        id="btnPrintUndeclaredTradeFile"
+        type="button"
+        disabled
+      >
+        🖨️ 已勾選資料列印／另存 PDF
       </button>
     </div>
     <div class="trade-batch-hint">
@@ -1523,18 +1528,89 @@ function renderConsignAccountingDetail(bucket, rows){
     </div>
   `;
 
-  $('#btnDownloadUndeclaredTradeTxt')?.addEventListener('click', () => {
-    if (!undeclaredRows.length) return;
-    const txt = buildConsignAccountingTxt(undeclaredRows, '未申報');
+  const btnDownloadTradeTxt = $('#btnDownloadUndeclaredTradeTxt');
+  const btnPrintTradeFile = $('#btnPrintUndeclaredTradeFile');
+
+  const getSelectedTradeRows = () => {
+    return getSelectedUndeclaredTradeRows(
+      detailEl,
+      undeclaredRows
+    );
+  };
+
+  const refreshTradeExportButtons = () => {
+    const selectedRows = getSelectedTradeRows();
+
+    const selectedPeople =
+      getConsignAccountingPersonGroups(selectedRows).length;
+
+    const hasSelected = selectedRows.length > 0;
+
+    if (btnDownloadTradeTxt) {
+      btnDownloadTradeTxt.disabled = !hasSelected;
+
+      btnDownloadTradeTxt.textContent = hasSelected
+        ? `📝 下載已勾選 TXT（${selectedPeople} 人／${selectedRows.length} 筆）`
+        : '📝 下載已勾選未申報 TXT';
+    }
+
+    if (btnPrintTradeFile) {
+      btnPrintTradeFile.disabled = !hasSelected;
+
+      btnPrintTradeFile.textContent = hasSelected
+        ? `🖨️ 列印已勾選資料（${selectedPeople} 人／${selectedRows.length} 筆）`
+        : '🖨️ 已勾選資料列印／另存 PDF';
+    }
+  };
+
+  // 點選寄賣人 checkbox 時，不要同時觸發寄賣人明細展開／收合。
+  $$('.trade-person-export-check', detailEl).forEach(label => {
+    label.addEventListener('click', event => {
+      event.stopPropagation();
+    });
+  });
+
+  $$('.trade-person-export-toggle', detailEl).forEach(cb => {
+    cb.addEventListener('change', refreshTradeExportButtons);
+  });
+
+  btnDownloadTradeTxt?.addEventListener('click', () => {
+    const selectedRows = getSelectedTradeRows();
+
+    if (!selectedRows.length) {
+      alert('請先勾選要提供給會計師的寄賣人。');
+      return;
+    }
+
+    const selectedPeople =
+      getConsignAccountingPersonGroups(selectedRows).length;
+
+    const txt = buildConsignAccountingTxt(
+      selectedRows,
+      '未申報｜已勾選寄賣人'
+    );
+
     downloadTextFile(
-      `一時貿易_未申報_${undeclaredPeople}人_${undeclaredRows.length}筆.txt`,
+      `一時貿易_已勾選未申報_${selectedPeople}人_${selectedRows.length}筆.txt`,
       txt
     );
   });
 
-  $('#btnPrintUndeclaredTradeFile')?.addEventListener('click', () => {
-    printConsignAccountingFile(undeclaredRows, '未申報');
+  btnPrintTradeFile?.addEventListener('click', () => {
+    const selectedRows = getSelectedTradeRows();
+
+    if (!selectedRows.length) {
+      alert('請先勾選要列印的寄賣人。');
+      return;
+    }
+
+    printConsignAccountingFile(
+      selectedRows,
+      '未申報｜已勾選寄賣人'
+    );
   });
+
+  refreshTradeExportButtons();
 
   const tradeDeclaredToggles = $$('.trade-declared-toggle', detailEl);
   const saveTradeDeclaredBtn = $('#btnSaveTradeDeclaredBatch');
