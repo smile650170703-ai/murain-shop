@@ -244,12 +244,26 @@
       收件資訊
       <span class="badge">* 取貨門市與收件人資料皆沿用原訂單。</span>
     </div>
-    <div id="shipInfoBox">
-      <div id="shipName"></div>
-      <div id="shipPhone"></div>
-      <div id="shipAddr"></div>
-      <div id="shipStore"></div>
-    </div>
+<div id="shipInfoBox">
+  <div id="shipName"></div>
+  <div id="shipPhone"></div>
+  <div id="shipAddr"></div>
+  <div id="shipStore"></div>
+</div>
+
+<div style="margin-top:16px;">
+  <label>付款聯絡 Email</label>
+  <input
+    id="payEmail"
+    type="email"
+    inputmode="email"
+    autocomplete="email"
+    placeholder="線上付款請填寫正確 Email"
+  />
+  <div class="hint">
+    選擇信用卡、LINE Pay 或 AFTEE 時，必須填寫完整正確的 Email。
+  </div>
+</div>
   </div>
 
   <!-- 3. 尾款金額 -->
@@ -560,7 +574,17 @@ function setLine(id, text){
 }
 
 const ship = shipInfoObj.ship || {};
-const receiver = shipInfoObj.receiver || ship.receiver || {}; // ✅ 很多單會把郵寄收件人放這
+const receiver = shipInfoObj.receiver || ship.receiver || {};
+
+// ✅ 帶入原訂單 Email，客人可在尾款頁修正
+const payEmailEl = document.getElementById("payEmail");
+if (payEmailEl) {
+  payEmailEl.value = String(
+    ship.email ||
+    shipInfoObj.email ||
+    ""
+  ).trim();
+}
 const shipTypeRaw = ship.type || shipInfoObj.ship_type || shipInfoObj.shipType || "";
 const shipType = String(shipTypeRaw).toLowerCase();
 
@@ -644,16 +668,68 @@ async function submitTail(opts = {}){
     return alert("購物金餘額不足");
   }
 
-  // ✅ 從 shipping_info 抓 line_user_id（取消重建、後端 hold 用）
-  let line_user_id = "";
-  try{
-    const si = tailInfo.shipping_info || {};
-    const shipInfo = (typeof si === "string") ? JSON.parse(si) : si;
-    const line = shipInfo.line || shipInfo.line_profile || {};
-    line_user_id = String(
-      line.user_id || line.userId || line.LINE_USER_ID || shipInfo.line_user_id || ""
-    ).trim();
-  }catch(e){ line_user_id = ""; }
+// ✅ 統一整理本次送出的 shipping_info
+let shipInfoForSubmit = {};
+let line_user_id = "";
+
+try {
+  const si = tailInfo.shipping_info || {};
+
+  shipInfoForSubmit =
+    typeof si === "string"
+      ? JSON.parse(si || "{}")
+      : { ...(si || {}) };
+
+  shipInfoForSubmit.ship = {
+    ...(shipInfoForSubmit.ship || {})
+  };
+
+  const line =
+    shipInfoForSubmit.line ||
+    shipInfoForSubmit.line_profile ||
+    {};
+
+  line_user_id = String(
+    line.user_id ||
+    line.userId ||
+    line.LINE_USER_ID ||
+    shipInfoForSubmit.line_user_id ||
+    ""
+  ).trim();
+
+} catch (e) {
+  shipInfoForSubmit = { ship: {} };
+  line_user_id = "";
+}
+
+// ✅ 線上付款必須使用完整正確 Email
+const payEmail = String(
+  document.getElementById("payEmail")?.value || ""
+).trim();
+
+const emailValid =
+  /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(payEmail);
+
+if (activePay === "PAID") {
+  if (!emailValid) {
+    setError("請填寫完整正確的 Email，才能使用信用卡、LINE Pay 或 AFTEE。");
+
+    const emailEl = document.getElementById("payEmail");
+    if (emailEl) {
+      emailEl.focus();
+      emailEl.scrollIntoView({
+        behavior: "smooth",
+        block: "center"
+      });
+    }
+
+    return;
+  }
+
+  shipInfoForSubmit.ship.email = payEmail;
+}
+
+setError("");
 
   const payable = Math.max(0, tailAmount - credit_used);
 
@@ -703,7 +779,7 @@ async function submitTail(opts = {}){
       tail_amount: tailAmount,
       pay_amount: payable, // 後端不用也沒關係
       payment_method,
-      shipping_info: tailInfo.shipping_info || {},
+      shipping_info: shipInfoForSubmit,
       credit_used,
       line_user_id
     };
