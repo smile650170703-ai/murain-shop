@@ -1319,12 +1319,51 @@ let selectedArrivalIds = new Set();
     return Number.isFinite(n) ? Math.round(n) : 0;
   }
 
-  function preorderTotalAmount(it){
-    return Math.round(
-      Number(it?.arrived_price || 0) ||
-      amountFromSpecText(it?.product_spec || "") ||
-      0
+  function preorderStockQtySuggestion(it){
+    const spec = String(it?.product_spec || "");
+    const m = spec.match(/(\d+)\s*(?:瓶|罐|件|入)/);
+    const perGroup = m ? Math.max(1, Number(m[1]) || 1) : 1;
+    const groups = Math.max(1, Math.floor(Number(it?.qty || 0) || 1));
+
+    return Math.max(1, perGroup * groups);
+  }
+
+  function preorderStockQtyValue(it){
+    const savedQty = Math.max(
+      0,
+      Math.floor(Number(it?.arrived_qty || 0) || 0)
     );
+
+    const groups = Math.max(1, Math.floor(Number(it?.qty || 0) || 1));
+    const suggestedQty = preorderStockQtySuggestion(it);
+
+    // 舊版曾把「購買組數」寫入到貨數量。
+    // 例如 6 瓶組 × 1 組會存成 1；這裡自動修正回 6。
+    if (!savedQty || (suggestedQty > groups && savedQty === groups)) {
+      return suggestedQty;
+    }
+
+    return savedQty;
+  }
+
+  function preorderTotalAmount(it){
+    const savedAmount = Math.round(Number(it?.arrived_price || 0) || 0);
+    const unitGroupAmount = amountFromSpecText(it?.product_spec || "");
+    const groups = Math.max(1, Math.floor(Number(it?.qty || 0) || 1));
+
+    // 舊版欄位存的是每組金額；購買多組時，自動換算成整張預購總額。
+    if (
+      savedAmount > 0 &&
+      groups > 1 &&
+      unitGroupAmount > 0 &&
+      savedAmount === unitGroupAmount
+    ) {
+      return Math.round(savedAmount * groups);
+    }
+
+    if (savedAmount > 0) return savedAmount;
+
+    return Math.round(unitGroupAmount * groups);
   }
 
     function preorderQtyText(it){
@@ -1621,8 +1660,8 @@ let selectedArrivalIds = new Set();
           arrived_sku: p.sku || sku,
           arrived_product_name: p.name || it.product_name || "",
           arrived_product_record_id: p.record_id || "",
-          arrived_qty: it.arrived_qty || it.qty || 1,
-          arrived_price: it.arrived_price || preorderTotalAmount(it),
+          arrived_qty: preorderStockQtyValue(it),
+          arrived_price: preorderTotalAmount(it),
           arrived_can_checkout: true,
 
           checkout_url: it.checkout_url || "",
@@ -1828,30 +1867,87 @@ const res = await api("/op/preorders/list", {
 
       <input id="fArrivedName" type="hidden" value="${esc(val(it.arrived_product_name || it.product_name))}">
       <input id="fArrivedRecordId" type="hidden" value="${esc(val(it.arrived_product_record_id))}">
-      <input id="fArrivedQty" type="hidden" value="${esc(val(it.arrived_qty || it.qty || 1))}">
-      <input id="fArrivedPrice" type="hidden" value="${esc(val(preorderTotalAmount(it)))}">
       <input id="fCheckoutUrl" type="hidden" value="${esc(val(it.checkout_url))}">
       <input id="fCartToken" type="hidden" value="${esc(val(it.checkout_cart_token))}">
       <input id="fInternalNote" type="hidden" value="${esc(val(it.internal_note))}">
-
-      <input id="fSku" type="hidden" value="${esc(val(it.arrived_sku || it.product_code))}">
+      <input id="fDepositAmount" type="hidden" value="${esc(val(it.deposit_amount || 0))}">
 
       ${
         preorderModeOf(it) !== "deposit_pending"
           ? `
             <div class="arrival-workbox">
+              <div class="row">
+                <div class="col-4">
+                  <label for="fSku">到貨商品 SKU（固定不變）</label>
+                  <input
+                    id="fSku"
+                    type="text"
+                    value="${esc(val(it.arrived_sku || it.product_code))}"
+                    readonly
+                  >
+                </div>
+
+                <div class="col-4">
+                  <label for="fArrivedQty">實際扣庫存數量</label>
+                  <input
+                    id="fArrivedQty"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value="${esc(val(preorderStockQtyValue(it)))}"
+                  >
+                </div>
+
+                <div class="col-4">
+                  <label for="fArrivedPrice">商品總額（未扣定金）</label>
+                  <input
+                    id="fArrivedPrice"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value="${esc(val(preorderTotalAmount(it)))}"
+                  >
+                </div>
+              </div>
+
+              <div class="small-note">
+                數量請填實際要扣除的庫存數量，例如 3／6／10；價格請填這張預購單的商品總額，不是每瓶單價。
+              </div>
+
+              <div class="arrival-summary" id="arrivalPaySummary"></div>
+
               <div class="arrival-summary" id="arrivedSkuSummary">
                 正在檢查是否已到貨…
               </div>
             </div>
           `
-          : ""
+          : `
+              <input
+                id="fSku"
+                type="hidden"
+                value="${esc(val(it.arrived_sku || it.product_code))}"
+              >
+              <input
+                id="fArrivedQty"
+                type="hidden"
+                value="${esc(val(preorderStockQtyValue(it)))}"
+              >
+              <input
+                id="fArrivedPrice"
+                type="hidden"
+                value="${esc(val(preorderTotalAmount(it)))}"
+              >
+            `
       }
 
       <div class="status-line" id="detailMsg"></div>
     `;
 
     if (preorderModeOf(it) !== "deposit_pending") {
+      $("fArrivedQty")?.addEventListener("input", updateArrivalPaySummary);
+      $("fArrivedPrice")?.addEventListener("input", updateArrivalPaySummary);
+
+      updateArrivalPaySummary();
       lookupSkuInfo();
     } else {
       detailMsg("", "");
@@ -1869,6 +1965,37 @@ const res = await api("/op/preorders/list", {
     el.className = "status-line" + (cls ? " " + cls : "");
   }
 
+  function updateArrivalPaySummary(){
+    const summary = $("arrivalPaySummary");
+    if (!summary) return;
+
+    const qty = Math.max(
+      0,
+      Math.floor(Number($("fArrivedQty")?.value || 0) || 0)
+    );
+
+    const totalAmount = Math.max(
+      0,
+      Math.round(Number($("fArrivedPrice")?.value || 0) || 0)
+    );
+
+    const depositAmount = Math.max(
+      0,
+      Math.round(Number($("fDepositAmount")?.value || 0) || 0)
+    );
+
+    const payableAmount = Math.max(0, totalAmount - depositAmount);
+
+    summary.innerHTML = [
+      `實際扣庫存：<b>${esc(qty)}</b> 件`,
+      `商品總額：<b>${esc(money(totalAmount))}</b>`,
+      depositAmount > 0
+        ? `已收定金：<b>${esc(money(depositAmount))}</b>`
+        : "",
+      `本次應付：<b>${esc(money(payableAmount))}</b>`
+    ].filter(Boolean).join("｜");
+  }
+  
     function selectedById(id){
     return items.find(x => String(x.id || "") === String(id || "")) || selected;
   }
@@ -1965,58 +2092,126 @@ const res = await api("/op/preorders/list", {
   async function sendArrivalCheckout(recordId){
     if (!recordId) return;
 
-       const sku = String($("fSku")?.value || "").trim();
+    const sku = String($("fSku")?.value || "").trim();
+    const qty = Math.floor(Number($("fArrivedQty")?.value || 0) || 0);
+    const totalAmount = Math.round(
+      Number($("fArrivedPrice")?.value || 0) || 0
+    );
 
     if (!sku) {
       detailMsg("尚無預購商品編號，無法發送到貨結帳卡", "err");
       return;
     }
 
+    if (!Number.isInteger(qty) || qty <= 0) {
+      detailMsg(
+        "請輸入正確的實際扣庫存數量，必須是 1 以上整數",
+        "err"
+      );
+      $("fArrivedQty")?.focus();
+      return;
+    }
+
+    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+      detailMsg("請輸入正確的商品總額，金額必須大於 0", "err");
+      $("fArrivedPrice")?.focus();
+      return;
+    }
+
     const arrivedOk = await lookupSkuInfo();
 
     if (!arrivedOk) {
-      detailMsg("尚未到貨，請先用同編號 SKU 正式入庫後再發送", "err");
+      detailMsg(
+        "尚未到貨，請先用同編號 SKU 正式入庫後再發送",
+        "err"
+      );
       return;
     }
 
     const it = selectedById(recordId);
-    const depositAmount = Number(it?.deposit_amount || 0) || 0;
+
+    const depositAmount = Math.max(
+      0,
+      Math.round(Number(it?.deposit_amount || 0) || 0)
+    );
+
     const payStatus = String(it?.payment_status || "");
+    const payableAmount = Math.max(0, totalAmount - depositAmount);
 
     if (depositAmount > 0 && payStatus !== "已確認定金") {
-      detailMsg("此預購有定金，請先按「確認定金」後再發到貨 LINE", "err");
+      detailMsg(
+        "此預購有定金，請先按「確認定金」後再發到貨 LINE",
+        "err"
+      );
       return;
     }
 
-    if (!confirm("確定要建立到貨結帳購物車，並發送 LINE 到貨結帳卡片給客人嗎？")) {
+    if (payableAmount <= 0) {
+      detailMsg(
+        "扣除定金後本次應付金額為 0，不能建立付款購物車",
+        "err"
+      );
+      return;
+    }
+
+    const confirmText = [
+      "確定要建立到貨結帳購物車，並發送 LINE 到貨結帳卡片給客人嗎？",
+      "",
+      `SKU：${sku}`,
+      `實際扣庫存：${qty} 件`,
+      `商品總額：${money(totalAmount)}`,
+      depositAmount > 0
+        ? `已收定金：${money(depositAmount)}`
+        : "",
+      `本次應付：${money(payableAmount)}`
+    ].filter(Boolean).join("\n");
+
+    if (!confirm(confirmText)) {
       return;
     }
 
     try {
-      if ($("fPreStatus")) $("fPreStatus").value = "已到貨待通知";
-      if ($("fArrivalStatus")) $("fArrivalStatus").value = "已到貨待通知";
-      if ($("fCanCheckout")) $("fCanCheckout").value = "1";
+      if ($("fPreStatus")) {
+        $("fPreStatus").value = "已到貨待通知";
+      }
+
+      if ($("fArrivalStatus")) {
+        $("fArrivalStatus").value = "已到貨待通知";
+      }
+
+      if ($("fCanCheckout")) {
+        $("fCanCheckout").value = "1";
+      }
 
       detailMsg("建立購物車並發送 LINE 中…");
 
-      const res = await api("/op/preorders/send-arrival-checkout", {
+      await api("/op/preorders/send-arrival-checkout", {
         op_key: OP,
         record_id: recordId,
 
-        arrived_sku: $("fSku")?.value || "",
+        arrived_sku: sku,
         arrived_product_name: $("fArrivedName")?.value || "",
-        arrived_product_record_id: $("fArrivedRecordId")?.value || "",
-        arrived_qty: $("fArrivedQty")?.value || "",
-        arrived_price: $("fArrivedPrice")?.value || ""
+        arrived_product_record_id:
+          $("fArrivedRecordId")?.value || "",
+
+        arrived_qty: String(qty),
+        arrived_price: String(totalAmount)
       });
 
-      detailMsg("已通知到貨，並已發送預購到貨結帳卡。", "ok");
+      detailMsg(
+        "已通知到貨，並已發送預購到貨結帳卡。",
+        "ok"
+      );
+
       await loadList();
+
     } catch(e) {
-      detailMsg("發送失敗：" + (e.message || e), "err");
+      detailMsg(
+        "發送失敗：" + (e.message || e),
+        "err"
+      );
     }
   }
-
   async function autoSendArrivedModeItems(){
     if (currentMode !== "arrived") return;
 
@@ -2203,13 +2398,11 @@ const res = await api("/op/preorders/list", {
       detailCard.innerHTML = '<div class="empty">請先從左側選擇一筆預購登記</div>';
       renderList();
 
-      if (currentMode === "arrived") {
-        autoSendArrivedModeItems();
-      }
+      // 已到貨分類改為逐筆手動輸入數量與總額後發送。
     });
   }
 
-  // 已到貨待發結帳卡：改為點分類時自動依序發送，不再使用全選 / 批次按鈕。
+  // 已到貨待發結帳卡：逐筆輸入實際數量與商品總額後手動發送。
   
     preorderList.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-po-action]");
