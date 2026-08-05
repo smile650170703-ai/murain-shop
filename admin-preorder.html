@@ -1594,11 +1594,11 @@ let selectedArrivalIds = new Set();
       return "";
     }
 
-    if (mode === "ready") {
-      btns.push(`<button class="danger" type="button" data-po-action="cancel" data-id="${id}">取消預購</button>`);
-      return btns.join("");
-    }
-
+if (mode === "ready") {
+  btns.push(`<button class="warn" type="button" data-po-action="sendArrival" data-id="${id}">通知到貨＋發結帳卡</button>`);
+  btns.push(`<button class="danger" type="button" data-po-action="cancel" data-id="${id}">取消預購</button>`);
+  return btns.join("");
+}
     return btns.join("");
   }
 
@@ -1619,82 +1619,6 @@ let selectedArrivalIds = new Set();
     }
 
     return j;
-  }
-
-    async function autoRefreshArrivalState(){
-    const candidates = items.filter(it => {
-      const mode = preorderModeOf(it);
-      if (mode !== "ready") return false;
-
-      const code = String(it.product_code || "").trim();
-      if (!code) return false;
-
-      if (needDeposit(it) && String(it.payment_status || "") !== "已確認定金") {
-        return false;
-      }
-
-      return true;
-    });
-
-    if (!candidates.length) return;
-
-    let changed = 0;
-
-    for (const it of candidates) {
-      const sku = String(it.product_code || "").trim();
-
-      try {
-        const res = await api("/op/preorders/sku-info", {
-          op_key: OP,
-          sku
-        });
-
-        const p = res.product || {};
-
-        const patch = {
-          preorder_status: "已到貨待通知",
-          payment_status: it.payment_status || "不需定金",
-          arrival_notify_status: "已到貨待通知",
-          internal_note: it.internal_note || "",
-
-          arrived_sku: p.sku || sku,
-          arrived_product_name: p.name || it.product_name || "",
-          arrived_product_record_id: p.record_id || "",
-          arrived_qty: preorderStockQtyValue(it),
-          arrived_price: preorderTotalAmount(it),
-          arrived_can_checkout: true,
-
-          checkout_url: it.checkout_url || "",
-          checkout_cart_token: it.checkout_cart_token || ""
-        };
-
-        await api("/op/preorders/update", {
-          op_key: OP,
-          record_id: it.id,
-          ...patch
-        });
-
-        Object.assign(it, {
-          preorder_status: patch.preorder_status,
-          arrival_notify_status: patch.arrival_notify_status,
-          arrived_sku: patch.arrived_sku,
-          arrived_product_name: patch.arrived_product_name,
-          arrived_product_record_id: patch.arrived_product_record_id,
-          arrived_qty: patch.arrived_qty,
-          arrived_price: patch.arrived_price,
-          arrived_can_checkout: true
-        });
-
-        changed++;
-      } catch(e) {
-        // 尚未入庫就略過，不顯示錯誤，避免一進頁面整頁紅字
-      }
-    }
-
-    if (changed && listMsg) {
-      listMsg.textContent = `已自動更新 ${changed} 筆到貨資料`;
-      listMsg.className = "status-line ok";
-    }
   }
 
 function showApp(){
@@ -1732,10 +1656,9 @@ const res = await api("/op/preorders/list", {
   q: keywordInput.value
 });
 
-      items = Array.isArray(res.items) ? res.items : [];
-      await autoRefreshArrivalState();
-      refreshModeCounts();
-      renderList();
+items = Array.isArray(res.items) ? res.items : [];
+refreshModeCounts();
+renderList();
 
       listMsg.textContent = items.length ? "已載入預購清單" : "目前沒有符合條件的預購資料";
       listMsg.className = "status-line ok";
@@ -2055,9 +1978,49 @@ const res = await api("/op/preorders/list", {
         sku
       });
 
-      const p = res.product || {};
+const p = res.product || {};
 
-      if ($("fArrivedName") && p.name) $("fArrivedName").value = p.name;
+const requestedQty = Math.max(
+  1,
+  Math.floor(Number($("fArrivedQty")?.value || 0) || 1)
+);
+
+const stockQty = Math.max(
+  0,
+  Math.floor(Number(p.stock_qty || 0) || 0)
+);
+
+if (stockQty < requestedQty) {
+  if ($("fPreStatus")) {
+    $("fPreStatus").value = "等待到貨";
+  }
+
+  if ($("fArrivalStatus")) {
+    $("fArrivalStatus").value = "未到貨";
+  }
+
+  if ($("fCanCheckout")) {
+    $("fCanCheckout").value = "0";
+  }
+
+  if (summary) {
+    summary.innerHTML =
+      `尚未可通知：SKU <b>${esc(p.sku || sku)}</b>` +
+      `｜目前庫存：<b>${esc(stockQty)}</b>` +
+      `｜本次需扣：<b>${esc(requestedQty)}</b>`;
+  }
+
+  detailMsg(
+    `此 SKU 庫存不足，目前 ${stockQty} 件，本次需扣 ${requestedQty} 件`,
+    "err"
+  );
+
+  return false;
+}
+
+if ($("fArrivedName") && p.name) {
+  $("fArrivedName").value = p.name;
+}
       if ($("fArrivedRecordId") && p.record_id) $("fArrivedRecordId").value = p.record_id;
 
       if ($("fPreStatus")) $("fPreStatus").value = "已到貨待通知";
