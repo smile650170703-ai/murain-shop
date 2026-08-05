@@ -2212,68 +2212,7 @@ const res = await api("/op/preorders/list", {
       );
     }
   }
-  async function autoSendArrivedModeItems(){
-    if (currentMode !== "arrived") return;
 
-    const targets = visibleItems().filter(it => {
-      if (!it || !it.id) return false;
-
-      const hasToken = String(
-        it.checkout_cart_token ||
-        it.cart_token ||
-        it["結帳購物車Token"] ||
-        ""
-      ).trim();
-
-      if (hasToken) return false;
-
-      return preorderModeOf(it) === "arrived";
-    });
-
-    if (!targets.length) return;
-
-    if (!confirm(`目前有 ${targets.length} 筆已到貨預購單，是否依序發送到貨結帳卡？\n\n已發送過的訂單不會重複發送。`)) {
-      return;
-    }
-
-    let okCount = 0;
-    let failCount = 0;
-
-    for (const it of targets) {
-      try {
-        const sku = String(it.arrived_sku || it.product_code || "").trim();
-
-        if (!sku) {
-          failCount++;
-          continue;
-        }
-
-        await api("/op/preorders/send-arrival-checkout", {
-          op_key: OP,
-          record_id: it.id,
-
-          arrived_sku: sku,
-          arrived_product_name: it.arrived_product_name || it.product_name || "",
-          arrived_product_record_id: it.arrived_product_record_id || "",
-          arrived_qty: it.arrived_qty || it.qty || 1,
-          arrived_price: it.arrived_price || preorderTotalAmount(it)
-        });
-
-        okCount++;
-      } catch(e) {
-        failCount++;
-        console.log("autoSendArrivedModeItems failed", it?.preorder_id || it?.id, e?.message || e);
-      }
-    }
-
-    selectedArrivalIds.clear();
-    selected = null;
-    detailCard.innerHTML = '<div class="empty">請先從左側選擇一筆預購登記</div>';
-
-    await loadList();
-
-    alert(`到貨結帳卡發送完成\n成功：${okCount} 筆\n失敗：${failCount} 筆`);
-  }
   async function confirmDepositAndNotify(recordId){
     if (!recordId) return;
 
@@ -2415,7 +2354,24 @@ const res = await api("/op/preorders/list", {
     const id = btn.dataset.id || "";
     const it = selectedById(id);
 
-    runPoAction(action, it);
+   if (btn.disabled) return;
+
+btn.disabled = true;
+
+Promise.resolve(runPoAction(action, it))
+  .catch((err) => {
+    console.log(
+      "runPoAction failed",
+      action,
+      id,
+      err?.message || err
+    );
+  })
+  .finally(() => {
+    if (document.body.contains(btn)) {
+      btn.disabled = false;
+    }
+  });
   });
 
   detailCard.addEventListener("click", (e) => {
@@ -2429,7 +2385,24 @@ const res = await api("/op/preorders/list", {
     const id = btn.dataset.id || "";
     const it = selectedById(id);
 
-    runPoAction(action, it);
+   if (btn.disabled) return;
+
+btn.disabled = true;
+
+Promise.resolve(runPoAction(action, it))
+  .catch((err) => {
+    console.log(
+      "runPoAction failed",
+      action,
+      id,
+      err?.message || err
+    );
+  })
+  .finally(() => {
+    if (document.body.contains(btn)) {
+      btn.disabled = false;
+    }
+  });
   });
 
   btnLogin.addEventListener("click", () => {
