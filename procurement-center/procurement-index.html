@@ -1397,7 +1397,28 @@ zeroWeightPackages: "https://api.murain.tw/op/procurement/package/list-zero-weig
   function collectPurchaseItems(){return purchaseRowList().map(tr=>({name:tr.querySelector(".name")?.value.trim()||"",qty:tr.querySelector(".qty")?.value.trim()||"",usdUnitPrice:tr.querySelector(".usdUnitPrice")?.value.trim()||"",photoUrl:tr.querySelector(".photoUrl")?.value.trim()||"",color:tr.querySelector(".color")?.value.trim()||"",size:tr.querySelector(".size")?.value.trim()||"",packageCode:tr.querySelector(".packageCode")?.value.trim()||""}));}
   function refreshPurchaseSummary(){const rows=collectPurchaseItems().filter(r=>r.name||r.qty||r.usdUnitPrice||r.photoUrl||r.color||r.size||r.packageCode); $("itemCount").textContent=rows.length; $("qtyTotal").textContent=rows.reduce((s,r)=>s+(Number(r.qty||0)||0),0);}
   function calcTwd(){const usd=Number($("usdTotal").value||0), rate=Number($("usdRate").value||0); if(usd>0&&rate>0) $("twdAfterTax").value=Math.round(usd*rate);}
-  async function submitPurchase(){const payload={purchase:{vendor:$("vendor").value.trim(),orderNo:$("orderNo").value.trim(),usdTotal:$("usdTotal").value.trim(),twdAfterTax:$("twdAfterTax").value.trim(),usdRate:$("usdRate").value.trim(),buyDate:$("buyDate").value.trim(),packageCode:$("packageCode")?.value.trim()||""},items:collectPurchaseItems()}; if(!payload.purchase.vendor){setStatus($("purchaseMsg"),"❌ 請先選擇進貨商。","err");return;} if(!payload.purchase.orderNo){setStatus($("purchaseMsg"),"❌ 請先輸入訂單編號。","err");return;} let valid=payload.items.filter(r=>r.name||r.qty||r.usdUnitPrice||r.photoUrl||r.color||r.size||r.packageCode).map(r=>({...r,packageCode:r.packageCode||payload.purchase.packageCode||""})); if(!valid.length){setStatus($("purchaseMsg"),"❌ 商品明細目前都是空白列。","err");return;} const orderUsd=moneyNum(payload.purchase.usdTotal); const itemsUsd=valid.reduce((s,r)=>s+(moneyNum(r.qty)*moneyNum(r.usdUnitPrice)),0); if(!orderUsd){setStatus($("purchaseMsg"),"❌ 請先輸入美金總額 or 稅前。","err");return;} if(Math.abs(orderUsd-itemsUsd)>0.01){setStatus($("purchaseMsg"),`❌ 金額不一致，不能送出。\n訂單美金總額：${orderUsd.toFixed(2)}\n商品美金總額：${itemsUsd.toFixed(2)}`,'err');return;} const btn=$("btnSubmitPurchase"); btn.disabled=true; setStatus($("purchaseMsg"),"圖片上傳中...","info"); try{const rowEls=purchaseRowList(); for(let i=0;i<valid.length;i++){const row=valid[i], tr=rowEls[i]; const fileInput=tr?.querySelector(".photoFile"), photoUrlInput=tr?.querySelector(".photoUrl"), fileName=tr?.querySelector(".photo-name"); const file=tr?._pastedPhotoFile||fileInput?.files?.[0]; if(file){const uploaded=await uploadImageToCloudflare(file); row.photoUrl=uploaded.imageUrl||""; if(photoUrlInput)photoUrlInput.value=row.photoUrl; if(fileName)fileName.textContent=row.photoUrl?"已上傳圖片":file.name;}} payload.items=valid; setStatus($("purchaseMsg"),"送出中...","info"); const data=await apiPost(API.createPurchase,payload); state.purchaseSaved=true; updateSteps(); setStatus($("purchaseMsg"),`✅ 建立成功\n採購單 ID：${data.purchase_id||""}\n包裹數：${data.package_created_count||0}\n成功商品筆數：${data.item_created_count||0}\n缺包裹編號商品：${data.missing_package_count||0}`,'ok');
+  async function submitPurchase(){const payload={purchase:{vendor:$("vendor").value.trim(),orderNo:$("orderNo").value.trim(),usdTotal:$("usdTotal").value.trim(),twdAfterTax:$("twdAfterTax").value.trim(),usdRate:$("usdRate").value.trim(),buyDate:$("buyDate").value.trim(),packageCode:$("packageCode")?.value.trim()||""},items:collectPurchaseItems()}; if(!payload.purchase.vendor){setStatus($("purchaseMsg"),"❌ 請先選擇進貨商。","err");return;} if(!payload.purchase.orderNo){setStatus($("purchaseMsg"),"❌ 請先輸入訂單編號。","err");return;} let valid=payload.items.filter(r=>r.name||r.qty||r.usdUnitPrice||r.photoUrl||r.color||r.size||r.packageCode).map(r=>({...r,packageCode:r.packageCode||payload.purchase.packageCode||""})); if(!valid.length){setStatus($("purchaseMsg"),"❌ 商品明細目前都是空白列。","err");return;} const orderUsd=moneyNum(payload.purchase.usdTotal); const itemsUsd=valid.reduce((s,r)=>s+(moneyNum(r.qty)*moneyNum(r.usdUnitPrice)),0); if(!orderUsd){setStatus($("purchaseMsg"),"❌ 請先輸入美金總額 or 稅前。","err");return;} if(Math.abs(orderUsd-itemsUsd)>0.01){setStatus($("purchaseMsg"),`❌ 金額不一致，不能送出。\n訂單美金總額：${orderUsd.toFixed(2)}\n商品美金總額：${itemsUsd.toFixed(2)}`,'err');return;} const btn=$("btnSubmitPurchase"); btn.disabled=true; setStatus($("purchaseMsg"),"圖片上傳中...","info"); try{const rowEls=purchaseRowList(); for(let i=0;i<valid.length;i++){const row=valid[i], tr=rowEls[i]; const fileInput=tr?.querySelector(".photoFile"), photoUrlInput=tr?.querySelector(".photoUrl"), fileName=tr?.querySelector(".photo-name"); const file=tr?._pastedPhotoFile||fileInput?.files?.[0]; if(file){const uploaded=await uploadImageToCloudflare(file); row.photoUrl=uploaded.imageUrl||""; if(photoUrlInput)photoUrlInput.value=row.photoUrl; if(fileName)fileName.textContent=row.photoUrl?"已上傳圖片":file.name;}} payload.items=valid; setStatus($("purchaseMsg"),"送出中...","info"); const data=await apiPost(API.createPurchase,payload);
+
+const createdCount=Number(data.item_created_count||0);
+const failedCount=Number(data.item_failed_count||0);
+
+if(failedCount>0 || createdCount!==valid.length){
+  const details=(Array.isArray(data.failed_items)?data.failed_items:[])
+    .slice(0,5)
+    .map(x=>`${x.name||"商品"}：${x.error||"建立失敗"}`)
+    .join("\n");
+
+  throw new Error(
+    `商品沒有全部建立成功，資料不會清空。\n`+
+    `預計商品：${valid.length} 筆\n`+
+    `成功商品：${createdCount} 筆\n`+
+    `失敗商品：${failedCount} 筆`+
+    `${details?`\n${details}`:""}`
+  );
+}
+
+state.purchaseSaved=true;
+updateSteps(); setStatus($("purchaseMsg"),`✅ 建立成功\n採購單 ID：${data.purchase_id||""}\n包裹數：${data.package_created_count||0}\n成功商品筆數：${data.item_created_count||0}\n缺包裹編號商品：${data.missing_package_count||0}`,'ok');
 toast('✅ 採購單已儲存，採購區已清空','ok');
 
 await loadInbound();
