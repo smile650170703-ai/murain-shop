@@ -1346,24 +1346,74 @@ let selectedArrivalIds = new Set();
     return savedQty;
   }
 
-  function preorderTotalAmount(it){
-    const savedAmount = Math.round(Number(it?.arrived_price || 0) || 0);
+  function preorderOriginalTotalAmount(it){
     const unitGroupAmount = amountFromSpecText(it?.product_spec || "");
-    const groups = Math.max(1, Math.floor(Number(it?.qty || 0) || 1));
+    const groups = Math.max(
+      1,
+      Math.floor(Number(it?.qty || 0) || 1)
+    );
 
-    // 舊版欄位存的是每組金額；購買多組時，自動換算成整張預購總額。
-    if (
-      savedAmount > 0 &&
-      groups > 1 &&
-      unitGroupAmount > 0 &&
-      savedAmount === unitGroupAmount
-    ) {
-      return Math.round(savedAmount * groups);
+    return Math.max(
+      0,
+      Math.round(unitGroupAmount * groups)
+    );
+  }
+
+  function preorderCheckoutUnitPrice(it){
+    const qty = preorderStockQtyValue(it);
+    const originalTotal = preorderOriginalTotalAmount(it);
+
+    const depositAmount = Math.max(
+      0,
+      Math.round(Number(it?.deposit_amount || 0) || 0)
+    );
+
+    const savedPrice = Math.max(
+      0,
+      Math.floor(Number(it?.arrived_price || 0) || 0)
+    );
+
+    const alreadySent = !!String(
+      it?.checkout_cart_token ||
+      it?.cart_token ||
+      it?.checkout_url ||
+      ""
+    ).trim() ||
+    String(it?.preorder_status || "") === "已通知";
+
+    // 已發送的新版資料，arrived_price 是每件單價。
+    if (savedPrice > 0 && alreadySent) {
+      return savedPrice;
     }
 
-    if (savedAmount > 0) return savedAmount;
+    /*
+     * 舊版 arrived_price 可能存整張商品總額。
+     * 例如 savedPrice=1388、qty=3：
+     * 1388 × 3 明顯大於原總額，所以不能當作每瓶單價。
+     */
+    if (
+      savedPrice > 0 &&
+      (
+        qty <= 1 ||
+        originalTotal <= 0 ||
+        savedPrice * qty <= originalTotal
+      )
+    ) {
+      return savedPrice;
+    }
 
-    return Math.round(unitGroupAmount * groups);
+    // 有定金時，先扣除定金，再平均成每件整數單價。
+    const remainingAmount = Math.max(
+      0,
+      originalTotal - depositAmount
+    );
+
+    return Math.max(
+      1,
+      Math.floor(
+        remainingAmount / Math.max(1, qty)
+      )
+    );
   }
 
     function preorderQtyText(it){
@@ -1822,19 +1872,19 @@ renderList();
                 </div>
 
                 <div class="col-4">
-                  <label for="fArrivedPrice">商品總額（未扣定金）</label>
+                  <label for="fArrivedPrice">本次結帳每件單價（整數／已扣定金）</label>
                   <input
                     id="fArrivedPrice"
                     type="number"
                     min="1"
                     step="1"
-                    value="${esc(val(preorderTotalAmount(it)))}"
+                    value="${esc(val(preorderCheckoutUnitPrice(it)))}"
                   >
                 </div>
               </div>
 
               <div class="small-note">
-                數量請填實際要扣除的庫存數量，例如 3／6／10；價格請填這張預購單的商品總額，不是每瓶單價。
+                數量請填實際要扣除的庫存數量；單價請填每瓶／每件的本次結帳整數價；有定金時，此單價必須是扣除定金後的單價。例如 3 瓶填 462 元，客人本次應付就是 462 × 3＝1,386 元。
               </div>
 
               <div class="arrival-summary" id="arrivalPaySummary"></div>
@@ -1858,7 +1908,7 @@ renderList();
               <input
                 id="fArrivedPrice"
                 type="hidden"
-                value="${esc(val(preorderTotalAmount(it)))}"
+                value="${esc(val(preorderCheckoutUnitPrice(it)))}"
               >
             `
       }
@@ -1894,28 +1944,46 @@ renderList();
 
     const qty = Math.max(
       0,
-      Math.floor(Number($("fArrivedQty")?.value || 0) || 0)
+      Math.floor(
+        Number($("fArrivedQty")?.value || 0) || 0
+      )
     );
 
-    const totalAmount = Math.max(
+    const unitPrice = Math.max(
       0,
-      Math.round(Number($("fArrivedPrice")?.value || 0) || 0)
+      Math.floor(
+        Number($("fArrivedPrice")?.value || 0) || 0
+      )
     );
 
     const depositAmount = Math.max(
       0,
-      Math.round(Number($("fDepositAmount")?.value || 0) || 0)
+      Math.round(
+        Number($("fDepositAmount")?.value || 0) || 0
+      )
     );
 
-    const payableAmount = Math.max(0, totalAmount - depositAmount);
+    const payableAmount = Math.max(
+      0,
+      unitPrice * qty
+    );
+
+    const actualTotalAmount =
+      depositAmount + payableAmount;
 
     summary.innerHTML = [
       `實際扣庫存：<b>${esc(qty)}</b> 件`,
-      `商品總額：<b>${esc(money(totalAmount))}</b>`,
+      `每件單價：<b>${esc(money(unitPrice))}</b>`,
+
       depositAmount > 0
         ? `已收定金：<b>${esc(money(depositAmount))}</b>`
         : "",
-      `本次應付：<b>${esc(money(payableAmount))}</b>`
+
+      `本次應付：<b>${esc(money(payableAmount))}</b>`,
+
+      depositAmount > 0
+        ? `實際收款合計：<b>${esc(money(actualTotalAmount))}</b>`
+        : ""
     ].filter(Boolean).join("｜");
   }
   
@@ -2055,10 +2123,16 @@ if ($("fArrivedName") && p.name) {
   async function sendArrivalCheckout(recordId){
     if (!recordId) return;
 
-    const sku = String($("fSku")?.value || "").trim();
-    const qty = Math.floor(Number($("fArrivedQty")?.value || 0) || 0);
-    const totalAmount = Math.round(
-      Number($("fArrivedPrice")?.value || 0) || 0
+    const sku = String(
+      $("fSku")?.value || ""
+    ).trim();
+
+    const qty = Number(
+      $("fArrivedQty")?.value || 0
+    );
+
+    const unitPrice = Number(
+      $("fArrivedPrice")?.value || 0
     );
 
     if (!sku) {
@@ -2075,8 +2149,15 @@ if ($("fArrivedName") && p.name) {
       return;
     }
 
-    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
-      detailMsg("請輸入正確的商品總額，金額必須大於 0", "err");
+    if (
+      !Number.isInteger(unitPrice) ||
+      unitPrice <= 0
+    ) {
+      detailMsg(
+        "請輸入正確的本次結帳每件單價，必須是 1 以上整數",
+        "err"
+      );
+
       $("fArrivedPrice")?.focus();
       return;
     }
@@ -2098,8 +2179,19 @@ if ($("fArrivedName") && p.name) {
       Math.round(Number(it?.deposit_amount || 0) || 0)
     );
 
-    const payStatus = String(it?.payment_status || "");
-    const payableAmount = Math.max(0, totalAmount - depositAmount);
+    const payStatus = String(
+      it?.payment_status || ""
+    );
+
+    /*
+     * 輸入欄位已經是「扣完定金後」的本次結帳單價，
+     * 所以這裡不能再扣一次定金。
+     */
+    const payableAmount =
+      unitPrice * qty;
+
+    const actualTotalAmount =
+      depositAmount + payableAmount;
 
     if (depositAmount > 0 && payStatus !== "已確認定金") {
       detailMsg(
@@ -2122,11 +2214,17 @@ if ($("fArrivedName") && p.name) {
       "",
       `SKU：${sku}`,
       `實際扣庫存：${qty} 件`,
-      `商品總額：${money(totalAmount)}`,
+      `本次結帳每件單價：${money(unitPrice)}`,
+
       depositAmount > 0
         ? `已收定金：${money(depositAmount)}`
         : "",
-      `本次應付：${money(payableAmount)}`
+
+      `本次應付：${money(payableAmount)}`,
+
+      depositAmount > 0
+        ? `實際收款合計：${money(actualTotalAmount)}`
+        : ""
     ].filter(Boolean).join("\n");
 
     if (!confirm(confirmText)) {
@@ -2158,7 +2256,7 @@ if ($("fArrivedName") && p.name) {
           $("fArrivedRecordId")?.value || "",
 
         arrived_qty: String(qty),
-        arrived_price: String(totalAmount)
+        arrived_price: String(unitPrice)
       });
 
       detailMsg(
