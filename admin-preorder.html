@@ -2246,7 +2246,7 @@ if ($("fArrivedName") && p.name) {
 
       detailMsg("建立購物車並發送 LINE 中…");
 
-      await api("/op/preorders/send-arrival-checkout", {
+      const res = await api("/op/preorders/send-arrival-checkout", {
         op_key: OP,
         record_id: recordId,
 
@@ -2259,9 +2259,29 @@ if ($("fArrivedName") && p.name) {
         arrived_price: String(unitPrice)
       });
 
+      /*
+       * 後台只有在後端明確回傳 line_sent=true 時才顯示成功。
+       * 避免購物車建立成功，但 LINE 沒有真的送出時被誤判為成功。
+       */
+      if (res?.line_sent !== true) {
+        throw new Error(
+          res?.message ||
+          res?.error ||
+          "LINE 未確認發送成功"
+        );
+      }
+
+      const sentTarget = String(
+        res.line_display_name ||
+        res.customer_name ||
+        ""
+      ).trim();
+
       detailMsg(
-        "已通知到貨，並已發送預購到貨結帳卡。",
-        "ok"
+        res.warning
+          ? `LINE 已發送${sentTarget ? `給 ${sentTarget}` : ""}，但有警告：${res.warning}`
+          : `已通知到貨，並已發送預購到貨結帳卡${sentTarget ? `給 ${sentTarget}` : ""}。`,
+        res.warning ? "err" : "ok"
       );
 
       await loadList();
