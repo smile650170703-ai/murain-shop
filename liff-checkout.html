@@ -3278,40 +3278,82 @@ if (after && after.friendFlag === true) {
 
   return false;
 }
-async function loadCheckoutMemberBySession(profile = null){
+async function loadCheckoutMemberBySession(
+  profile = null
+){
   try {
-    const r = await fetch(`${API}/line/member-info`, {
-      credentials: 'include'
-    });
-    const j = await r.json().catch(() => ({}));
+    const r = await fetch(
+      `${API}/line/member-info?include_credit=0`,
+      {
+        credentials: 'include'
+      }
+    );
 
-    if (!r.ok || !j?.ok) return false;
+    const j = await r
+      .json()
+      .catch(() => ({}));
 
-    const uid = memberInfoLineUserId(j);
-    if (!uid) return false;
-
-    const isWebCart = isWebCartType(CART_CUSTOMER_TYPE);
-    const cartOwner = String(CART_LINE_USER_ID || '').trim();
-
-    // ✅ 官網 web 車只要用後端 cookie session 判斷。
-    // 如果 cart 已有 owner，就確認 session uid 必須等於 owner。
-    // 如果是舊 cart 沒 owner，先允許載入；送出訂單時後端會補 owner。
-    if (isWebCart && cartOwner && cartOwner !== uid) {
-      console.warn('[checkout] web cart owner mismatch', {
-        sessionUid: uid,
-        cartOwner
-      });
+    if (!r.ok || !j?.ok) {
       return false;
     }
 
-    return await loadCheckoutMemberByUid(uid, profile);
+    const uid =
+      memberInfoLineUserId(j);
+
+    if (!uid) {
+      return false;
+    }
+
+    const isWebCart =
+      isWebCartType(
+        CART_CUSTOMER_TYPE
+      );
+
+    const cartOwner = String(
+      CART_LINE_USER_ID || ''
+    ).trim();
+
+    // 官網購物車若已有車主，
+    // 目前登入會員必須與車主完全相同。
+    if (
+      isWebCart &&
+      cartOwner &&
+      cartOwner !== uid
+    ) {
+      console.warn(
+        '[checkout] web cart owner mismatch',
+        {
+          sessionUid: uid,
+          cartOwner
+        }
+      );
+
+      return false;
+    }
+
+    // 直接沿用已取得的會員資料，
+    // 避免接著又呼叫一次 member-info。
+    return await loadCheckoutMemberByUid(
+      uid,
+      profile,
+      j
+    );
+
   } catch (e) {
-    console.log('session member-info error', e);
+    console.log(
+      'session member-info error',
+      e
+    );
+
     return false;
   }
 }
 
-async function loadCheckoutMemberByUid(uidForApi, profile = null){
+async function loadCheckoutMemberByUid(
+  uidForApi,
+  profile = null,
+  prefetchedMemberInfo = null
+){
   uidForApi = String(uidForApi || '').trim();
   if (!uidForApi) return false;
 
@@ -3320,36 +3362,71 @@ async function loadCheckoutMemberByUid(uidForApi, profile = null){
   // ✅ 存起來：回購物車 / 重試時更穩
   try { localStorage.setItem('murain_line_user_id', uidForApi); } catch (e) {}
 
-  // 1) 會員資料（名字 / 電話 / 地址）用 member-info
+  // 1) 會員姓名／電話／地址。
+  // Session 流程如果已經讀過，就直接沿用，不再重複查詢。
   try {
-    const r = await fetch(`${API}/line/member-info?user_id=${encodeURIComponent(uidForApi)}`, {
-      credentials: 'include'
-    });
-    const j = await r.json().catch(() => ({}));
-    console.log("member-info 回來長這樣:", j);
+    let r = null;
+    let j = prefetchedMemberInfo;
 
-if (r.ok && j && j.ok) {
-  j._from = 'member-info';
-  MEMBER_INFO = j;
+    if (!j) {
+      r = await fetch(
+        `${API}/line/member-info?user_id=${encodeURIComponent(uidForApi)}&include_credit=0`,
+        {
+          credentials: 'include'
+        }
+      );
 
-  // ✅ 結帳前不能只看「LINE user_id 找得到」。
-  // 一定要確認會員資料完整：email + phone + name。
-  // 不完整就交回 member.html 補資料，完成後再回原 cart_token。
-  if (!isCheckoutMemberProfileComplete(j)) {
-    redirectCheckoutToMemberProfileGate();
-    return false;
-  }
+      j = await r
+        .json()
+        .catch(() => ({}));
+    }
 
-  applyMemberInfoToForm(j);
-} else if (r.status === 404 || j?.error === "not_found") {
-      // ✅ 未綁定：先去綁定，再回原頁
+    console.log(
+      "member-info 回來長這樣:",
+      j
+    );
+
+    const memberInfoOk = !!(
+      j &&
+      j.ok &&
+      (!r || r.ok)
+    );
+
+    if (memberInfoOk) {
+      j._from = 'member-info';
+      MEMBER_INFO = j;
+
+      // 姓名、電話、Email 必須完整，
+      // 否則仍照原本流程回會員中心補資料。
+      if (
+        !isCheckoutMemberProfileComplete(j)
+      ) {
+        redirectCheckoutToMemberProfileGate();
+        return false;
+      }
+
+      applyMemberInfoToForm(j);
+
+    } else if (
+      (r && r.status === 404) ||
+      j?.error === "not_found"
+    ) {
       redirectToMemberBind();
       return false;
+
     } else {
-      console.log("member-info not ok:", r.status, j);
+      console.log(
+        "member-info not ok:",
+        r ? r.status : "prefetched",
+        j
+      );
     }
+
   } catch (e) {
-    console.log('member-info error', e);
+    console.log(
+      'member-info error',
+      e
+    );
   }
 
   // 2) ✅ 購物金餘額：用 credit-balance（唯一真相）
