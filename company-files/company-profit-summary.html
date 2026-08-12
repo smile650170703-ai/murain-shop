@@ -292,7 +292,7 @@
 }
 .summary-extra-grid{
   display:grid;
-  grid-template-columns:1fr 1fr;
+  grid-template-columns:1fr;
   gap:16px;
   margin:0 0 18px;
 }
@@ -974,50 +974,6 @@ strong.amount-green{
 </div>
 
 <div class="summary-extra-grid">
-  <div class="summary-extra-card">
-    <div class="summary-extra-head">
-      <div>
-        <div class="summary-extra-title">401申報核對結果</div>
-        <div class="hint">顯示發票核對頁已存檔的 401 報表結果。</div>
-      </div>
-      <div class="summary-extra-actions">
-        <a class="btn-mini btn blue" href="/company-files/company-invoice-check.html">前往發票核對</a>
-      </div>
-    </div>
-
-    <div class="summary-mini-kpis">
-      <div class="summary-mini-kpi">
-        <div class="k">最新期別</div>
-        <div class="v" id="tax401LatestPeriod">-</div>
-      </div>
-      <div class="summary-mini-kpi">
-        <div class="k">核對結果</div>
-        <div class="v" id="tax401LatestStatus">-</div>
-      </div>
-      <div class="summary-mini-kpi">
-        <div class="k">申報應納稅額</div>
-        <div class="v" id="tax401LatestPayable">NT$ 0</div>
-      </div>
-    </div>
-
-    <div class="summary-extra-table-wrap">
-      <table class="summary-extra-table">
-        <thead>
-          <tr>
-            <th>期別</th>
-            <th>銷售額</th>
-            <th>銷項稅</th>
-            <th>進項稅</th>
-            <th>應納稅額</th>
-            <th>結果</th>
-          </tr>
-        </thead>
-        <tbody id="tax401SummaryRows">
-          <tr><td colspan="6" class="empty">載入中...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
 
   <div class="summary-extra-card">
     <div class="summary-extra-head">
@@ -1094,7 +1050,6 @@ if (sessionStorage.getItem(STORAGE_OK) !== "1") {
 const API_LIST = "https://api.murain.tw/op/company/profit-summary/list";
 const API_DETAIL = "https://api.murain.tw/op/company/profit-summary/detail";
 const API_ACTION = "https://api.murain.tw/op/company/profit-summary/action";
-const API_TAX401_LIST = "https://api.murain.tw/op/company/tax401/list";
 const API_LOAN_MORTGAGE_LIST = "https://api.murain.tw/op/company/loan-mortgage/list";
 
 const $ = (id) => document.getElementById(id);
@@ -1306,52 +1261,6 @@ function firstFieldNum(f, names = []) {
     if (n) return n;
   }
   return 0;
-}
-
-function tax401ResultTag(v) {
-  const s = String(v || "").trim();
-  if (s === "正確" || s === "已確認") return `<span class="tag ok">${escHtml(s)}</span>`;
-  if (s === "有差異") return `<span class="tag danger">${escHtml(s)}</span>`;
-  return `<span class="tag warn">${escHtml(s || "未核對")}</span>`;
-}
-
-async function loadTax401Overview() {
-  const tbody = $("tax401SummaryRows");
-  if (!tbody) return;
-
-  tbody.innerHTML = `<tr><td colspan="6" class="empty">載入中...</td></tr>`;
-
-  try {
-    const data = await apiGet(API_TAX401_LIST, { max: 8 });
-    const rows = Array.isArray(data.rows) ? data.rows : [];
-
-    if (!rows.length) {
-      $("tax401LatestPeriod").textContent = "-";
-      $("tax401LatestStatus").textContent = "-";
-      $("tax401LatestPayable").textContent = money(0);
-      tbody.innerHTML = `<tr><td colspan="6" class="empty">目前沒有 401 申報核對紀錄。</td></tr>`;
-      return;
-    }
-
-    const latest = rows[0];
-
-    $("tax401LatestPeriod").textContent = latest.periodLabel || latest.periodKey || "-";
-    $("tax401LatestStatus").innerHTML = tax401ResultTag(latest.checkResult || latest.checkStatus || "");
-    $("tax401LatestPayable").textContent = money(latest.declaredPayableTax || 0);
-
-    tbody.innerHTML = rows.map(r => `
-      <tr>
-        <td>${escHtml(r.periodLabel || r.periodKey || "-")}</td>
-        <td>${money(r.declaredSalesAmount || 0)}</td>
-        <td>${money(r.declaredOutputTax || 0)}</td>
-        <td>${money(r.declaredInputTax || 0)}</td>
-        <td>${money(r.declaredPayableTax || 0)}</td>
-        <td>${tax401ResultTag(r.checkResult || r.checkStatus || "")}</td>
-      </tr>
-    `).join("");
-  } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="6" class="empty">❌ ${escHtml(err.message || err)}</td></tr>`;
-  }
 }
 
 function normalizeLoanMortgageMaster(rec, repayments = []) {
@@ -1852,10 +1761,7 @@ async function loadRows({ keepScroll = false } = {}) {
     allRows = Array.isArray(data.rows) ? data.rows : [];
      renderHeroTotal();
     renderRows();
-    await Promise.all([
-      loadTax401Overview(),
-      loadLoanMortgageOverview()
-    ]);
+await loadLoanMortgageOverview();
     $("msg").textContent = `✅ 載入 ${allRows.length} 筆`;
     $("msg").className = "msg ok";
     if (keepScroll) {
