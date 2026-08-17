@@ -2612,7 +2612,60 @@ function toDatetimeLocal(v){
     return fallback;
   }
 }
+function formatOrderItemsWithSku(f = {}) {
+  const arr = safeJsonParse(
+    f.items_json || f.ItemsJson || f['items_json'] || '',
+    []
+  );
 
+  // 新版訂單：直接從 items_json 顯示完整 SKU / 品名 / 數量 / 單價
+  if (Array.isArray(arr) && arr.length) {
+    return arr.map(it => {
+      const sku = String(
+        it.sku ||
+        it.SKU ||
+        it.Sku ||
+        it.SkuNo ||
+        ''
+      ).trim();
+
+      const name = String(
+        it.name ||
+        it.Name ||
+        it.product_name ||
+        it.ProductName ||
+        sku ||
+        '商品'
+      ).trim();
+
+      const qty = Number(
+        it.qty ??
+        it.Qty ??
+        it.quantity ??
+        it.Quantity ??
+        1
+      ) || 1;
+
+      const price = Number(
+        it.price ??
+        it.Price ??
+        it.unit_price ??
+        it.UnitPrice ??
+        0
+      ) || 0;
+
+      return `・${name}${sku ? `｜SKU：${sku}` : ''} x ${qty}（NT$ ${price.toLocaleString('zh-TW')}）`;
+    }).join('\n');
+  }
+
+  // 舊資料沒有 items_json 時，維持原本顯示，不讓頁面壞掉
+  return String(
+    f.items_text ||
+    f.Items_text ||
+    f['items_text'] ||
+    ''
+  );
+}
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
