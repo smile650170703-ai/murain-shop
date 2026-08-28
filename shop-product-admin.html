@@ -812,6 +812,83 @@
   }
 }
 
+
+/* ===== 一般商品完整介紹｜商城同款即時預覽 ===== */
+.publish-admin-preview-card{
+  margin-top:2px;
+  padding:16px 18px 18px;
+  border-radius:20px;
+  background:#fff;
+  border:1px solid rgba(118,82,70,.10);
+  box-shadow:0 8px 20px rgba(82,54,43,.045);
+}
+
+.publish-admin-preview-title{
+  color:#3b2923;
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:.04em;
+}
+
+.publish-admin-preview-sub{
+  margin-top:3px;
+  color:#9b8b83;
+  font-size:10px;
+  line-height:1.6;
+}
+
+.publish-preview-desc{
+  margin-top:13px;
+  padding-top:13px;
+  border-top:1px solid rgba(120,90,78,.10);
+  color:#6f5d59;
+  font-family:"Noto Sans TC",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+  font-size:14.5px;
+  line-height:2.05;
+  letter-spacing:.01em;
+}
+
+.publish-preview-desc:empty::before{
+  content:"尚未填寫完整商品介紹。";
+  color:#9b8b83;
+}
+
+.publish-preview-desc .desc-heading{
+  margin:18px 0 10px;
+  color:#4d3c39;
+  font-size:16px;
+  font-weight:700;
+}
+
+.publish-preview-desc .desc-line{
+  margin:0 0 10px;
+}
+
+.publish-preview-desc .desc-bullet{
+  margin:0 0 8px;
+  padding-left:1em;
+  text-indent:-1em;
+}
+
+.publish-preview-desc .publish-desc-gap{
+  height:10px;
+}
+
+@media (max-width:767px){
+  .publish-admin-preview-card{
+    padding:13px 14px 15px;
+  }
+
+  .publish-preview-desc{
+    font-size:13.5px;
+    line-height:2;
+  }
+
+  .publish-preview-desc .desc-heading{
+    font-size:15px;
+  }
+}
+
 </style>
 <script src="/config.js?v=20260627-auth-fix"></script>
 </head>
@@ -952,6 +1029,16 @@
 • 可日常外出、約會、聚餐多場景搭配。
 • 容量實用，收納手機與隨身小物剛剛好。"></textarea>
   <div class="hint">建議固定格式：先寫【規格】，再寫【重點整理】；可用條列，方便商品頁直接顯示。</div>
+</div>
+
+<div class="field w12">
+  <div class="publish-admin-preview-card">
+    <div class="publish-admin-preview-title">商城商品介紹即時預覽</div>
+    <div class="publish-admin-preview-sub">
+      依正式商品頁的介紹格式即時顯示；修改上方文字後，下方會立即更新，不需要儲存或重新整理商城。
+    </div>
+    <div id="publishDescriptionPreview" class="publish-preview-desc"></div>
+  </div>
 </div>
 
 <div class="field w6">
@@ -1616,6 +1703,7 @@ async function fillFormFromExisting(item){
   renderPendingDetailOrder();
   renderImagePreviews();
   renderDetailImagePreviews();
+  renderPublishDescriptionPreview();
 
   $('btnPublish').disabled = !state.draftRecordId;
 
@@ -3525,6 +3613,97 @@ $('btnUploadPreorderImages').addEventListener('click', uploadPreorderImages);
 $('btnSavePreorderProduct').addEventListener('click', savePreorderProduct);
 $('btnSavePreorderProductBottom').addEventListener('click', savePreorderProduct);
 
+
+// ===== 一般商品完整介紹｜正式商品頁同款即時預覽 =====
+// 規則直接對齊 product.html 的 formatDetailDesc：
+// 【規格】、【重點／亮點／整理】、•／・／- 條列與空白行。
+
+function formatPublishDescriptionHtmlAdmin(text){
+  const lines = String(text || '').split(/\r?\n/);
+  let sectionMode = '';
+  let keyNo = 0;
+
+  return lines.map(line => {
+    const raw = String(line || '').trim();
+    const s = escHtml(raw);
+
+    if (!s) {
+      return '<div class="publish-desc-gap"></div>';
+    }
+
+    const m = s.match(/^【(.+?)】$/);
+
+    if (m) {
+      const title = m[1];
+
+      if (/重點|亮點|整理/.test(title)) {
+        sectionMode = 'key';
+        keyNo = 0;
+        return `<div class="desc-heading lux-key-heading">${title}</div>`;
+      }
+
+      if (/規格|商品規格/.test(title)) {
+        sectionMode = 'spec';
+        return `<div class="desc-heading lux-spec-heading">${title}</div>`;
+      }
+
+      sectionMode = '';
+      return `<div class="desc-heading">${title}</div>`;
+    }
+
+    if (/^[•・\-]/.test(raw)) {
+      const cleaned = escHtml(
+        raw.replace(/^[•・\-\s]+/, '').trim()
+      );
+
+      if (sectionMode === 'key') {
+        keyNo += 1;
+        const no = String(keyNo).padStart(2, '0');
+
+        return `
+          <div
+            class="desc-bullet lux-key-bullet"
+            style="--lux-no:'${no}'"
+          >${cleaned}</div>
+        `;
+      }
+
+      return `<div class="desc-bullet">${s}</div>`;
+    }
+
+    if (sectionMode === 'spec') {
+      return `<div class="desc-line lux-spec-line">${s}</div>`;
+    }
+
+    return `<div class="desc-line">${s}</div>`;
+  }).join('');
+}
+
+function renderPublishDescriptionPreview(){
+  const textarea = $('desc');
+  const preview = $('publishDescriptionPreview');
+
+  if (!textarea || !preview) return;
+
+  preview.innerHTML = formatPublishDescriptionHtmlAdmin(
+    textarea.value || ''
+  );
+}
+
+const publishDescriptionEl = $('desc');
+
+if (publishDescriptionEl) {
+  publishDescriptionEl.addEventListener(
+    'input',
+    renderPublishDescriptionPreview
+  );
+
+  publishDescriptionEl.addEventListener(
+    'change',
+    renderPublishDescriptionPreview
+  );
+}
+
 // ===== 預購商品介紹｜商城同款即時預覽 =====
 
 function highlightPreorderDescLineAdmin(text){
@@ -3683,6 +3862,7 @@ if (preDescriptionEl) {
 
 
 // 初次載入
+renderPublishDescriptionPreview();
 renderPreorderImagePreview();
 renderPreorderDescriptionPreview();
 
