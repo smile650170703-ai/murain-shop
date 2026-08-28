@@ -4293,6 +4293,79 @@ function collectPreviewImages(product){
   return out;
 }
 
+function normalizePreviewGalleryMedia(v){
+  let list = v;
+
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list);
+    } catch (_) {
+      list = [];
+    }
+  }
+
+  if (!Array.isArray(list)) return [];
+
+  return list.map(raw => {
+    const item =
+      raw && typeof raw === 'object'
+        ? raw
+        : {};
+
+    const type =
+      String(item.type || '').trim().toLowerCase() === 'video'
+        ? 'video'
+        : 'image';
+
+    if (type === 'video') {
+      const src = String(
+        item.video_url ||
+        item.videoUrl ||
+        item.src ||
+        ''
+      ).trim();
+
+      const thumb = String(
+        item.thumb_url ||
+        item.poster_url ||
+        item.posterUrl ||
+        item.image_url ||
+        ''
+      ).trim();
+
+      if (!src) return null;
+
+      return {
+        type:'video',
+        src,
+        poster: thumb,
+        thumb
+      };
+    }
+
+    const src = String(
+      item.image_url ||
+      item.url ||
+      item.src ||
+      item.thumb_url ||
+      ''
+    ).trim();
+
+    if (!/^https?:\/\//i.test(src)) return null;
+
+    return {
+      type:'image',
+      src,
+      poster:'',
+      thumb: String(
+        item.thumb_url ||
+        item.thumb ||
+        src
+      ).trim() || src
+    };
+  }).filter(Boolean);
+}
+
 function collectPreviewMedia(product){
   const images = collectPreviewImages(product);
 
@@ -4319,12 +4392,46 @@ function collectPreviewMedia(product){
     ''
   ).trim();
 
-  /*
-   * 這張是影片自動擷取的商城封面。
-   * 商城列表可以使用，但影片輪播不能再顯示一次。
-   */
   const homepageImage = previewImage(product);
 
+  const galleryMedia = normalizePreviewGalleryMedia(
+    product?.gallery_media ||
+    product?.galleryMedia ||
+    product?.fields?.gallery_media ||
+    []
+  );
+
+  const media = [];
+
+  /*
+   * 新版資料：
+   * 封面仍獨立，後面依 gallery_media 的圖片／影片順序顯示。
+   */
+  if (galleryMedia.length) {
+    if (mediaType === 'video' && videoUrl) {
+      media.push({
+        type:'video',
+        src: videoUrl,
+        poster:'',
+        thumb: homepageImage
+      });
+    } else if (homepageImage) {
+      media.push({
+        type:'image',
+        src: homepageImage,
+        poster:'',
+        thumb: homepageImage
+      });
+    }
+
+    media.push(...galleryMedia);
+    return media;
+  }
+
+  /*
+   * 舊資料相容：
+   * 沒有 gallery_media 時完全沿用原本 images 邏輯。
+   */
   const mediaImageKey = (url) => {
     const s = String(url || '').trim();
     if (!s) return '';
@@ -4347,50 +4454,38 @@ function collectPreviewMedia(product){
         })
       : images;
 
-  const media = [];
-
-  /*
-   * 影片商品第 1 格只顯示影片。
-   */
   if (mediaType === 'video' && videoUrl) {
     media.push({
-      type: 'video',
+      type:'video',
       src: videoUrl,
-      poster: '',
+      poster:'',
       thumb: homepageImage
     });
   }
 
-  /*
-   * 影片商品後面只接真正商品多圖。
-   * 圖片商品則保留首圖＋商品多圖。
-   */
   displayImages.forEach(url => {
     if (!url) return;
 
     media.push({
-      type: 'image',
+      type:'image',
       src: url,
-      poster: '',
+      poster:'',
       thumb: url
     });
   });
 
-  /*
-   * 舊的純圖片商品沒有正式多圖時，
-   * 至少保留一張商城圖片。
-   */
   if (!media.length && homepageImage) {
     media.push({
-      type: 'image',
+      type:'image',
       src: homepageImage,
-      poster: '',
+      poster:'',
       thumb: homepageImage
     });
   }
 
   return media;
 }
+
 
 function setPreviewMedia(product){
   previewMedia = collectPreviewMedia(product);
