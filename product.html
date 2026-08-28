@@ -574,6 +574,30 @@
     .tab-pane{display:none}
     .tab-pane.active{display:block}
     .desc-body{font-size:14px;line-height:1.95;color:#6f5d59}
+
+    .detail-image-list{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:14px;
+      margin-top:20px;
+    }
+
+    .detail-image-item{
+      width:100%;
+      overflow:hidden;
+      border-radius:18px;
+      background:#f7f4f2;
+      border:1px solid rgba(120,90,86,.08);
+    }
+
+    .detail-image-item img{
+      display:block;
+      width:100%;
+      height:auto;
+      object-fit:contain;
+      background:#f7f4f2;
+    }
+
     .desc-heading{margin:18px 0 8px;font-size:15px;font-weight:700;color:#5a4643}
     .desc-line{margin:0 0 8px}
     .desc-bullet{margin:0 0 8px;padding-left:1em;text-indent:-1em}
@@ -3780,6 +3804,7 @@ body.product-detail-page.is-hair-product-page .qty-box{
 
           <div class="tab-pane active" id="tab-intro">
             <div class="desc-body" id="detailDesc"></div>
+            <div class="detail-image-list" id="detailImages"></div>
             <div class="spec-list" id="specList"></div>
           </div>
         </section>
@@ -4045,6 +4070,122 @@ function getProductBindUrl(){
       }catch(e){}
     }
 
+    function normalizeProductGalleryMedia(v){
+      let list = v;
+
+      if (typeof list === 'string') {
+        try {
+          list = JSON.parse(list);
+        } catch (_) {
+          list = [];
+        }
+      }
+
+      if (!Array.isArray(list)) return [];
+
+      return list.map(raw => {
+        const item =
+          raw && typeof raw === 'object'
+            ? raw
+            : {};
+
+        const type =
+          String(item.type || '').trim().toLowerCase() === 'video'
+            ? 'video'
+            : 'image';
+
+        if (type === 'video') {
+          const src = String(
+            item.video_url ||
+            item.videoUrl ||
+            item.src ||
+            ''
+          ).trim();
+
+          const thumb = imageUrlFromValue(
+            item.thumb_url ||
+            item.poster_url ||
+            item.posterUrl ||
+            item.image_url ||
+            item.thumb ||
+            ''
+          );
+
+          if (!src) return null;
+
+          return {
+            type:'video',
+            src,
+            poster: thumb || '',
+            thumb: thumb || ''
+          };
+        }
+
+        const src = imageUrlFromValue(
+          item.image_url ||
+          item.url ||
+          item.src ||
+          item.thumb_url ||
+          item.thumb ||
+          ''
+        );
+
+        if (!src) return null;
+
+        return {
+          type:'image',
+          src,
+          poster:'',
+          thumb: imageUrlFromValue(
+            item.thumb_url ||
+            item.thumb ||
+            src
+          ) || src
+        };
+      }).filter(Boolean);
+    }
+
+    function normalizeProductDetailImages(v){
+      let list = v;
+
+      if (typeof list === 'string') {
+        try {
+          list = JSON.parse(list);
+        } catch (_) {
+          list = [];
+        }
+      }
+
+      if (!Array.isArray(list)) return [];
+
+      const out = [];
+      const seen = new Set();
+
+      list.forEach(item => {
+        const url =
+          item && typeof item === 'object' && !Array.isArray(item)
+            ? validImageUrl(
+                firstNonEmpty(
+                  item.image_url,
+                  item.url,
+                  item.src,
+                  item.thumb_url
+                )
+              )
+            : imageUrlFromValue(item);
+
+        if (!url) return;
+
+        const key = url.split('?')[0];
+        if (seen.has(key)) return;
+
+        seen.add(key);
+        out.push(url);
+      });
+
+      return out;
+    }
+
     function normalizeProduct(p){
       const dedupImages = collectProductImageUrls(p);
       const mainImage = imageUrlFromValue(p.image_url) || imageUrlFromValue(p.image) || imageUrlFromValue(p.thumb_url) || dedupImages[0] || '';
@@ -4070,7 +4211,19 @@ function getProductBindUrl(){
         ''
       ).trim();
 
-          /*
+      const galleryMedia = normalizeProductGalleryMedia(
+        p.gallery_media ||
+        p.galleryMedia ||
+        []
+      );
+
+      const detailImages = normalizeProductDetailImages(
+        p.detail_images ||
+        p.detailImages ||
+        []
+      );
+
+      /*
        * 系統會為影片自動產生一張封面截圖。
        * 這張圖只提供商城列表與影片縮圖使用，
        * 影片商品的正式輪播不能再把它當成另一張商品圖。
@@ -4100,46 +4253,63 @@ function getProductBindUrl(){
       const media = [];
 
       /*
-       * 影片商品：
-       * 第 1 格只有影片。
+       * 新版資料：
+       * 封面仍獨立，封面後直接依 gallery_media 的圖片／影片順序顯示。
        */
-      if (coverMediaType === 'video' && coverVideoUrl) {
-        media.push({
-          type: 'video',
-          src: coverVideoUrl,
-          poster: '',
-          thumb: mainImage
+      if (galleryMedia.length) {
+        if (coverMediaType === 'video' && coverVideoUrl) {
+          media.push({
+            type:'video',
+            src: coverVideoUrl,
+            poster:'',
+            thumb: mainImage
+          });
+        } else if (mainImage) {
+          media.push({
+            type:'image',
+            src: mainImage,
+            poster:'',
+            thumb: mainImage
+          });
+        }
+
+        media.push(...galleryMedia);
+
+      } else {
+        /*
+         * 舊資料相容：
+         * 沒有 gallery_media 時，完全沿用原本 images 輪播邏輯。
+         */
+        if (coverMediaType === 'video' && coverVideoUrl) {
+          media.push({
+            type:'video',
+            src: coverVideoUrl,
+            poster:'',
+            thumb: mainImage
+          });
+        }
+
+        displayImages.forEach(url => {
+          if (!url) return;
+
+          media.push({
+            type:'image',
+            src: url,
+            poster:'',
+            thumb: url
+          });
         });
       }
 
-      /*
-       * 影片商品：後面只接真正的商品多圖。
-       * 圖片商品：第 1 張首圖＋後面的商品多圖。
-       */
-      displayImages.forEach(url => {
-        if (!url) return;
-
-        media.push({
-          type: 'image',
-          src: url,
-          poster: '',
-          thumb: url
-        });
-      });
-
-      /*
-       * 舊的純圖片商品沒有 images 時，
-       * 至少保留首圖。
-       */
       if (!media.length && mainImage) {
         media.push({
-          type: 'image',
+          type:'image',
           src: mainImage,
-          poster: '',
+          poster:'',
           thumb: mainImage
         });
       }
-      
+
       return {
         raw: p,
         sku: firstNonEmpty(p.sku, p.id),
@@ -4154,6 +4324,8 @@ function getProductBindUrl(){
         images: dedupImages,
 
         media,
+        galleryMedia,
+        detailImages,
         coverMediaType,
         coverVideoUrl,
         description: firstNonEmpty(p.description, p.desc, p.content, p.body),
@@ -4173,7 +4345,7 @@ function getProductBindUrl(){
           p.fields?.['前台已售數'],
           p.fields?.['已售數']
         )),
-                stockQty: toNumberLike(firstNonEmpty(
+        stockQty: toNumberLike(firstNonEmpty(
           p.stockQty,
           p.stock_qty,
           p.stock,
@@ -4189,6 +4361,7 @@ function getProductBindUrl(){
         hasMemberPrice: p.has_member_price === true || p.hasMemberPrice === true,
       };
     }
+
 
   function buildSpecRows(product){
   const rows = [];
@@ -4642,7 +4815,32 @@ function stepImage(delta){
 }
 
     function renderTabs(product){
-      $('detailDesc').innerHTML = formatDetailDesc(product.description || '【商品介紹】\n這裡可放妳 Airtable 商品描述、尺寸、顏色、材質、重點整理。');
+      $('detailDesc').innerHTML = formatDetailDesc(
+        product.description ||
+        '【商品介紹】\n這裡可放妳 Airtable 商品描述、尺寸、顏色、材質、重點整理。'
+      );
+
+      const detailImages = Array.isArray(product.detailImages)
+        ? product.detailImages
+        : [];
+
+      const wrap = $('detailImages');
+
+      if (wrap) {
+        wrap.innerHTML = detailImages.map((url, idx) => `
+          <div class="detail-image-item">
+            <img
+              src="${escapeHtml(url)}"
+              alt="${escapeHtml((product.title || '商品') + ' 詳細介紹 ' + (idx + 1))}"
+              loading="lazy"
+            >
+          </div>
+        `).join('');
+
+        wrap.style.display = detailImages.length
+          ? 'grid'
+          : 'none';
+      }
     }
 
 function formatRelatedPriceHtml(item){
