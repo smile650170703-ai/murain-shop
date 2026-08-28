@@ -955,6 +955,16 @@
 </div>
 
 <div class="field w6">
+  <label for="detailFiles">完整商品介紹圖片</label>
+  <input id="detailFiles" type="file" accept="image/*" multiple>
+  <div class="hint">
+    可一次選多張商品細節圖／尺寸圖／材質圖。選完可調整順序；重新選擇並上傳時會整批取代目前介紹圖片。
+  </div>
+  <div id="detailOrderWrap" class="gallery-order-wrap"></div>
+  <div id="detailPreviewWrap" class="thumbs"></div>
+</div>
+
+<div class="field w6">
   <label for="coverFile">第一個媒體（圖片或 MP4 影片）</label>
   <input
     id="coverFile"
@@ -967,9 +977,11 @@
 </div>
 
 <div class="field w6">
-  <label for="galleryFiles">多圖上傳</label>
-  <input id="galleryFiles" type="file" accept="image/*" multiple>
-  <div class="hint">可一次選多張。封面圖請另外用上方封面欄位指定。選完後可在下方調整多圖順序。</div>
+  <label for="galleryFiles">多媒體上傳（圖片或 MP4 影片）</label>
+  <input id="galleryFiles" type="file" accept="image/*,video/mp4,.mp4" multiple>
+  <div class="hint">
+    可混合選擇圖片與 MP4 影片，影片每支上限 50MB。封面請用上方欄位指定；選完後可在下方調整順序。重新選擇並上傳時會整批取代目前多媒體。
+  </div>
   <div id="galleryOrderWrap" class="gallery-order-wrap"></div>
 </div>
           </div>
@@ -986,7 +998,7 @@
         <div class="subcard sticky-side preview-panel">
           <div class="topbar">
             <div class="pill">PREVIEW</div>
-            <div class="hint">第一張可為圖片或影片，後面維持商品多圖</div>
+            <div class="hint">第一張為封面，後面可混合圖片與 MP4 影片</div>
           </div>
           <div class="thumbs" id="previewWrap"></div>
                 </div>
@@ -1325,6 +1337,7 @@ const FIXED_SITE_POPUP_SHOW_PAGES = [
 const ROUTES = {
   auth: API_BASE + '/op/auth',
   productSearch: API_BASE + '/op/shop/product-search',
+  productDetail: API_BASE + '/product/',
   categories: API_BASE + '/op/shop/categories',
   uploadImages: API_BASE + '/op/shop/upload-images',
     uploadVideo: API_BASE + '/op/shop/upload-video',
@@ -1348,13 +1361,21 @@ const state = {
   // video = MP4 + 自動產生的 poster 圖片
   coverMedia: null,
 
- pendingGalleryFiles: [],
+  // 封面後面的正式商品多媒體，可混合圖片與 MP4 影片
+  galleryMedia: [],
 
-/*
- * false：這次沒有明確替換多圖，後端保留原多圖。
- * true：這次已選擇新的多圖，以新多圖取代舊多圖。
- */
-galleryStateReady: false,
+  // 下方完整商品介紹圖片
+  detailImages: [],
+
+  pendingGalleryFiles: [],
+  pendingDetailFiles: [],
+
+  /*
+   * false：這次沒有明確替換多媒體／介紹圖片，後端保留舊資料。
+   * true：這次已重新選擇並上傳，以新資料整批取代。
+   */
+  galleryStateReady: false,
+  detailStateReady: false,
   draftRecordId: '',
   selectedProductRecordId: '',
   selectedProductData: null,
@@ -1459,72 +1480,149 @@ function renderSearchResults(items){
   wrap.appendChild(table);
 }
 
-function fillFormFromExisting(item){
+async function fillFormFromExisting(item){
   state.selectedProductRecordId = item.record_id || '';
   state.selectedProductData = item || null;
   state.draftRecordId = item.record_id || '';
 
-$('sku').value = item.sku || '';
-$('name').value = item.name || '';
-$('aiDesc').value = item.ai_desc || '';
-$('desc').value = item.description || '';
-$('price').value = item.price || '';
-$('listPrice').value = item.list_price || '';
-$('stockQty').value = item.stock_qty || '';
-$('source').value = item.source || '自有';
+  setStatus('saveMsg', '商品完整媒體載入中...');
 
-$('color').value = item.color || '';
-$('size').value = item.size || '';
-$('material').value = item.material || '';
+  let detailProduct = {};
 
-$('coverFile').value = '';
-$('galleryFiles').value = '';
-state.pendingGalleryFiles = [];
-state.galleryStateReady = false;
-renderPendingGalleryOrder();
+  try {
+    const detailData = await jfetch(
+      ROUTES.productDetail + encodeURIComponent(item.sku || ''),
+      { method:'GET' }
+    );
 
-state.uploadedImages = [];
-state.coverMedia = null;
+    detailProduct =
+      detailData?.product ||
+      detailData?.item ||
+      detailData?.data ||
+      {};
+  } catch (_) {
+    detailProduct = {};
+  }
 
-const existingPoster =
-  item.image_id ||
-  item.thumb_url ||
-  item.image_url
-    ? {
-        image_id: item.image_id || '',
-        thumb_url: item.thumb_url || item.image_url || '',
-        image_url: item.image_url || item.thumb_url || ''
-      }
-    : null;
+  $('sku').value = item.sku || '';
+  $('name').value = item.name || '';
+  $('aiDesc').value = item.ai_desc || detailProduct.ai_desc || '';
+  $('desc').value = item.description || detailProduct.description || '';
+  $('price').value = item.price || '';
+  $('listPrice').value = item.list_price || detailProduct.list_price || '';
+  $('stockQty').value = item.stock_qty || '';
+  $('source').value = item.source || '自有';
 
-if (existingPoster) {
-  state.uploadedImages = [existingPoster];
+  $('color').value = item.color || detailProduct.color || '';
+  $('size').value = item.size || detailProduct.size || '';
+  $('material').value = item.material || detailProduct.material || '';
 
-  const isVideo =
-    String(item.cover_media_type || '').toLowerCase() === 'video' &&
-    String(item.cover_video_url || '').trim();
+  $('coverFile').value = '';
+  $('galleryFiles').value = '';
+  $('detailFiles').value = '';
 
-  state.coverMedia = {
-    type: isVideo ? 'video' : 'image',
+  state.pendingGalleryFiles = [];
+  state.pendingDetailFiles = [];
 
-    image_id: existingPoster.image_id,
-    image_url: existingPoster.image_url,
-    thumb_url: existingPoster.thumb_url,
+  state.galleryStateReady = false;
+  state.detailStateReady = false;
 
-    video_url: isVideo
-      ? String(item.cover_video_url || '').trim()
-      : '',
+  state.uploadedImages = [];
+  state.coverMedia = null;
+  state.galleryMedia = normalizeAdminGalleryMedia(
+    detailProduct.gallery_media ||
+    detailProduct.galleryMedia ||
+    []
+  );
+  state.detailImages = normalizeAdminDetailImages(
+    detailProduct.detail_images ||
+    detailProduct.detailImages ||
+    []
+  );
 
-    video_key: isVideo
-      ? String(item.cover_video_key || '').trim()
-      : ''
-  };
-}
+  const existingPoster =
+    item.image_id ||
+    item.thumb_url ||
+    item.image_url ||
+    detailProduct.image_id ||
+    detailProduct.thumb_url ||
+    detailProduct.image_url
+      ? {
+          image_id:
+            item.image_id ||
+            detailProduct.image_id ||
+            imageIdFromCloudflareUrl(
+              item.image_url ||
+              detailProduct.image_url ||
+              ''
+            ) ||
+            '',
+          thumb_url:
+            item.thumb_url ||
+            detailProduct.thumb_url ||
+            item.image_url ||
+            detailProduct.image_url ||
+            '',
+          image_url:
+            item.image_url ||
+            detailProduct.image_url ||
+            item.thumb_url ||
+            detailProduct.thumb_url ||
+            ''
+        }
+      : null;
 
-renderImagePreviews();
+  if (existingPoster) {
+    state.uploadedImages = [existingPoster];
+
+    const isVideo =
+      String(
+        item.cover_media_type ||
+        detailProduct.cover_media_type ||
+        ''
+      ).toLowerCase() === 'video' &&
+      String(
+        item.cover_video_url ||
+        detailProduct.cover_video_url ||
+        ''
+      ).trim();
+
+    state.coverMedia = {
+      type: isVideo ? 'video' : 'image',
+
+      image_id: existingPoster.image_id,
+      image_url: existingPoster.image_url,
+      thumb_url: existingPoster.thumb_url,
+
+      video_url: isVideo
+        ? String(
+            item.cover_video_url ||
+            detailProduct.cover_video_url ||
+            ''
+          ).trim()
+        : '',
+
+      video_key: isVideo
+        ? String(
+            item.cover_video_key ||
+            detailProduct.cover_video_key ||
+            ''
+          ).trim()
+        : ''
+    };
+  }
+
+  renderPendingGalleryOrder();
+  renderPendingDetailOrder();
+  renderImagePreviews();
+  renderDetailImagePreviews();
 
   $('btnPublish').disabled = !state.draftRecordId;
-  setStatus('saveMsg', '已帶入現有商品。商品名稱／簡稱可修改；SKU、商品來源、售價與庫存仍鎖定。可編輯官網介紹、原價、規格與圖片。');
+
+  setStatus(
+    'saveMsg',
+    `已帶入現有商品。多媒體 ${state.galleryMedia.length} 個，完整介紹圖片 ${state.detailImages.length} 張。SKU、商品來源、售價與庫存仍鎖定。`
+  );
 }
     async function jfetch(url, options = {}){
       const res = await fetch(url, {
@@ -1751,6 +1849,15 @@ function isMp4VideoFile(file){
   );
 }
 
+function isImageFile(file){
+  if (!file) return false;
+
+  return (
+    String(file.type || '').toLowerCase().startsWith('image/') ||
+    /\.(?:jpe?g|png|webp|gif|avif)$/i.test(String(file.name || ''))
+  );
+}
+
 function renderCategoryOptions(){
   const catSel = $('catCode');
   const subSel = $('subCode');
@@ -1789,24 +1896,244 @@ function renderSubcategoryOptions(){
         subSel.appendChild(opt);
       });
     }
-function renderPendingGalleryOrder(){
-  const wrap = $('galleryOrderWrap');
+function imageIdFromCloudflareUrl(url){
+  const s = String(url || '').trim();
+  if (!s) return '';
+
+  let m = s.match(/imagedelivery\.net\/[^/]+\/([^/?#]+)\//i);
+  if (!m) {
+    m = s.match(/\/cdn-cgi\/imagedelivery\/[^/]+\/([^/?#]+)\//i);
+  }
+
+  if (!m) return '';
+
+  try {
+    return decodeURIComponent(m[1]);
+  } catch (_) {
+    return m[1] || '';
+  }
+}
+
+function normalizeAdminGalleryMedia(v){
+  let list = v;
+
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list);
+    } catch (_) {
+      list = [];
+    }
+  }
+
+  if (!Array.isArray(list)) return [];
+
+  return list.map(raw => {
+    const item =
+      raw && typeof raw === 'object'
+        ? raw
+        : {};
+
+    const type =
+      String(item.type || '').trim().toLowerCase() === 'video'
+        ? 'video'
+        : 'image';
+
+    if (type === 'video') {
+      const videoUrl = String(
+        item.video_url ||
+        item.videoUrl ||
+        item.src ||
+        ''
+      ).trim();
+
+      const posterUrl = String(
+        item.poster_url ||
+        item.posterUrl ||
+        item.thumb_url ||
+        item.thumb ||
+        item.image_url ||
+        ''
+      ).trim();
+
+      const posterImageId = String(
+        item.poster_image_id ||
+        item.posterImageId ||
+        item.image_id ||
+        imageIdFromCloudflareUrl(posterUrl) ||
+        ''
+      ).trim();
+
+      if (!videoUrl) return null;
+
+      return {
+        type:'video',
+        video_url: videoUrl,
+        video_key: String(
+          item.video_key ||
+          item.videoKey ||
+          ''
+        ).trim(),
+        poster_image_id: posterImageId,
+        poster_url: posterUrl,
+        thumb_url: String(
+          item.thumb_url ||
+          item.thumb ||
+          posterUrl ||
+          ''
+        ).trim()
+      };
+    }
+
+    const imageUrl = String(
+      item.image_url ||
+      item.url ||
+      item.src ||
+      item.thumb_url ||
+      ''
+    ).trim();
+
+    const imageId = String(
+      item.image_id ||
+      imageIdFromCloudflareUrl(imageUrl) ||
+      ''
+    ).trim();
+
+    if (!imageUrl && !imageId) return null;
+
+    return {
+      type:'image',
+      image_id: imageId,
+      image_url: imageUrl,
+      thumb_url: String(
+        item.thumb_url ||
+        item.thumb ||
+        imageUrl ||
+        ''
+      ).trim()
+    };
+  }).filter(Boolean);
+}
+
+function normalizeAdminDetailImages(v){
+  let list = v;
+
+  if (typeof list === 'string') {
+    try {
+      list = JSON.parse(list);
+    } catch (_) {
+      list = [];
+    }
+  }
+
+  if (!Array.isArray(list)) return [];
+
+  return list.map(raw => {
+    if (typeof raw === 'string') {
+      const url = String(raw || '').trim();
+
+      return url
+        ? {
+            image_id: imageIdFromCloudflareUrl(url),
+            image_url: url,
+            thumb_url: url
+          }
+        : null;
+    }
+
+    const item =
+      raw && typeof raw === 'object'
+        ? raw
+        : {};
+
+    const imageUrl = String(
+      item.image_url ||
+      item.url ||
+      item.src ||
+      item.thumb_url ||
+      ''
+    ).trim();
+
+    const imageId = String(
+      item.image_id ||
+      imageIdFromCloudflareUrl(imageUrl) ||
+      ''
+    ).trim();
+
+    if (!imageUrl && !imageId) return null;
+
+    return {
+      image_id: imageId,
+      image_url: imageUrl,
+      thumb_url: String(
+        item.thumb_url ||
+        item.thumb ||
+        imageUrl ||
+        ''
+      ).trim()
+    };
+  }).filter(Boolean);
+}
+
+function galleryMediaForPayload(item){
+  if (!item || typeof item !== 'object') return null;
+
+  if (item.type === 'video') {
+    const posterImageId = String(
+      item.poster_image_id ||
+      imageIdFromCloudflareUrl(
+        item.poster_url ||
+        item.thumb_url ||
+        ''
+      ) ||
+      ''
+    ).trim();
+
+    return {
+      type:'video',
+      video_url: String(item.video_url || '').trim(),
+      video_key: String(item.video_key || '').trim(),
+      poster_image_id: posterImageId
+    };
+  }
+
+  return {
+    type:'image',
+    image_id: String(
+      item.image_id ||
+      imageIdFromCloudflareUrl(
+        item.image_url ||
+        item.thumb_url ||
+        ''
+      ) ||
+      ''
+    ).trim()
+  };
+}
+
+function renderPendingFileOrder(wrapId, files, labelPrefix, onMove){
+  const wrap = $(wrapId);
   if (!wrap) return;
 
   wrap.innerHTML = '';
 
-  const files = Array.isArray(state.pendingGalleryFiles) ? state.pendingGalleryFiles : [];
-  if (!files.length) return;
+  const list = Array.isArray(files) ? files : [];
+  if (!list.length) return;
 
-  files.forEach((file, idx) => {
+  list.forEach((file, idx) => {
     const row = document.createElement('div');
     row.className = 'gallery-order-row';
 
+    const kind = isMp4VideoFile(file)
+      ? '影片'
+      : '圖片';
+
     row.innerHTML = `
-      <div class="gallery-order-name">多圖 ${idx + 1}｜${file.name || '未命名圖片'}</div>
+      <div class="gallery-order-name">
+        ${labelPrefix} ${idx + 1}｜${kind}｜${escHtml(file.name || '未命名檔案')}
+      </div>
       <div class="gallery-order-actions">
         <button type="button" class="gallery-order-btn" data-dir="-1" ${idx === 0 ? 'disabled' : ''}>上移</button>
-        <button type="button" class="gallery-order-btn" data-dir="1" ${idx === files.length - 1 ? 'disabled' : ''}>下移</button>
+        <button type="button" class="gallery-order-btn" data-dir="1" ${idx === list.length - 1 ? 'disabled' : ''}>下移</button>
       </div>
     `;
 
@@ -1814,56 +2141,110 @@ function renderPendingGalleryOrder(){
       btn.addEventListener('click', () => {
         const dir = Number(btn.dataset.dir || 0);
         const next = idx + dir;
-        if (next < 0 || next >= state.pendingGalleryFiles.length) return;
 
-        const arr = state.pendingGalleryFiles.slice();
+        if (next < 0 || next >= list.length) return;
+
+        const arr = list.slice();
         const tmp = arr[idx];
         arr[idx] = arr[next];
         arr[next] = tmp;
 
-        state.pendingGalleryFiles = arr;
-        renderPendingGalleryOrder();
+        onMove(arr);
       });
     });
 
     wrap.appendChild(row);
   });
 }
+
+function renderPendingGalleryOrder(){
+  renderPendingFileOrder(
+    'galleryOrderWrap',
+    state.pendingGalleryFiles,
+    '多媒體',
+    arr => {
+      state.pendingGalleryFiles = arr;
+      renderPendingGalleryOrder();
+    }
+  );
+}
+
+function renderPendingDetailOrder(){
+  renderPendingFileOrder(
+    'detailOrderWrap',
+    state.pendingDetailFiles,
+    '介紹圖',
+    arr => {
+      state.pendingDetailFiles = arr;
+      renderPendingDetailOrder();
+    }
+  );
+}
+
 function renderImagePreviews(){
   const wrap = $('previewWrap');
+  if (!wrap) return;
+
   wrap.innerHTML = '';
 
-  if (!state.uploadedImages.length) return;
+  const media = [];
 
-  state.uploadedImages.forEach((img, idx) => {
+  if (state.coverMedia) {
+    media.push({
+      ...state.coverMedia,
+      is_cover:true
+    });
+  }
+
+  (Array.isArray(state.galleryMedia) ? state.galleryMedia : [])
+    .forEach(item => {
+      media.push({
+        ...item,
+        is_cover:false
+      });
+    });
+
+  if (!media.length) return;
+
+  media.forEach((item, idx) => {
     const card = document.createElement('div');
     card.className = 'thumb-card';
 
-    const isCoverVideo =
-      idx === 0 &&
-      state.coverMedia?.type === 'video' &&
-      state.coverMedia?.video_url;
+    if (item.type === 'video' && item.video_url) {
+      const poster = String(
+        item.poster_url ||
+        item.thumb_url ||
+        item.image_url ||
+        ''
+      ).trim();
 
-    if (isCoverVideo) {
       card.innerHTML = `
         <video
-          src="${escHtml(state.coverMedia.video_url)}"
-          poster="${escHtml(state.coverMedia.thumb_url || state.coverMedia.image_url || '')}"
+          src="${escHtml(item.video_url)}"
+          ${poster ? `poster="${escHtml(poster)}"` : ''}
           muted
           playsinline
           controls
           preload="metadata"
         ></video>
-        <div class="thumb-cap">封面影片</div>
+        <div class="thumb-cap">
+          ${item.is_cover ? '封面影片' : '多媒體 ' + idx + '｜影片'}
+        </div>
       `;
     } else {
+      const imageUrl = String(
+        item.thumb_url ||
+        item.image_url ||
+        ''
+      ).trim();
+
       card.innerHTML = `
         <img
-          src="${escHtml(img.thumb_url || img.image_url || '')}"
-          alt="圖片 ${idx + 1}"
+          src="${escHtml(imageUrl)}"
+          alt="${item.is_cover ? '封面圖' : '多媒體圖片 ' + idx}"
         >
         <div class="thumb-cap">
-          ${idx === 0 ? '封面圖' : '多圖 ' + idx}
+          ${item.is_cover ? '封面圖' : '多媒體 ' + idx + '｜圖片'}
         </div>
       `;
     }
@@ -1871,6 +2252,33 @@ function renderImagePreviews(){
     wrap.appendChild(card);
   });
 }
+
+function renderDetailImagePreviews(){
+  const wrap = $('detailPreviewWrap');
+  if (!wrap) return;
+
+  wrap.innerHTML = '';
+
+  const list = Array.isArray(state.detailImages)
+    ? state.detailImages
+    : [];
+
+  list.forEach((img, idx) => {
+    const card = document.createElement('div');
+    card.className = 'thumb-card';
+
+    card.innerHTML = `
+      <img
+        src="${escHtml(img.thumb_url || img.image_url || '')}"
+        alt="完整商品介紹圖片 ${idx + 1}"
+      >
+      <div class="thumb-cap">介紹圖 ${idx + 1}</div>
+    `;
+
+    wrap.appendChild(card);
+  });
+}
+
 function switchShopAdminTab(tab){
   const isSort = tab === 'sort';
   const isPopup = tab === 'popup';
@@ -2583,6 +2991,54 @@ setStatus('loginMsg', '');
       }
     }
 
+async function uploadGalleryMediaFile(file){
+  if (!file) throw new Error('missing_gallery_file');
+
+  if (isMp4VideoFile(file)) {
+    if (file.size > 50 * 1024 * 1024) {
+      throw new Error(`影片「${file.name || '未命名'}」不可超過 50MB`);
+    }
+
+    const posterFile = await createVideoPosterFile(file);
+    const poster = (await uploadImageFiles([posterFile]))[0] || null;
+
+    if (!poster?.image_id) {
+      throw new Error('gallery_video_poster_upload_failed');
+    }
+
+    const video = await uploadVideoFile(file);
+
+    return {
+      type:'video',
+      video_url: video.video_url || '',
+      video_key: video.video_key || '',
+      poster_image_id: poster.image_id || '',
+      poster_url: poster.image_url || poster.thumb_url || '',
+      thumb_url: poster.thumb_url || poster.image_url || ''
+    };
+  }
+
+  if (
+    String(file.type || '').startsWith('video/') &&
+    !isMp4VideoFile(file)
+  ) {
+    throw new Error(`影片「${file.name || '未命名'}」目前只接受 MP4`);
+  }
+
+  const img = (await uploadImageFiles([file]))[0] || null;
+
+  if (!img?.image_id) {
+    throw new Error('gallery_image_upload_failed');
+  }
+
+  return {
+    type:'image',
+    image_id: img.image_id || '',
+    image_url: img.image_url || '',
+    thumb_url: img.thumb_url || img.image_url || ''
+  };
+}
+
 async function uploadImages(){
   const coverFile = $('coverFile').files[0] || null;
 
@@ -2590,161 +3046,155 @@ async function uploadImages(){
     ? state.pendingGalleryFiles
     : Array.from($('galleryFiles').files || []);
 
-  const oldCover = state.uploadedImages[0] || null;
+  const detailFiles = state.pendingDetailFiles.length
+    ? state.pendingDetailFiles
+    : Array.from($('detailFiles').files || []);
 
-  const oldGallery = state.galleryStateReady
-  ? state.uploadedImages.slice(1)
-  : [];
+  const hasNewFiles =
+    !!coverFile ||
+    galleryFiles.length > 0 ||
+    detailFiles.length > 0;
 
-const galleryWasSelected =
-  galleryFiles.length > 0;
-
-  if (!coverFile && !galleryFiles.length) {
-    setStatus('saveMsg', '請先選擇圖片或影片', true);
-    return [];
+  if (!hasNewFiles) {
+    setStatus('saveMsg', '請先選擇要上傳的圖片或影片', true);
+    return false;
   }
 
-  if (!coverFile && !oldCover) {
+  if (!coverFile && !state.coverMedia) {
     setStatus(
       'saveMsg',
-      '請先選擇第一個媒體。多圖不能直接成為封面。',
+      '請先選擇第一個媒體。多媒體不能直接成為封面。',
       true
     );
-    return [];
+    return false;
   }
 
   if (coverFile && coverFile.size > 50 * 1024 * 1024) {
     setStatus('saveMsg', '第一個媒體不可超過 50MB', true);
-    return [];
+    return false;
   }
-
-  const isVideo = coverFile && isMp4VideoFile(coverFile);
 
   if (
     coverFile &&
     String(coverFile.type || '').startsWith('video/') &&
-    !isVideo
+    !isMp4VideoFile(coverFile)
   ) {
     setStatus('saveMsg', '商品影片目前只接受 MP4', true);
-    return [];
+    return false;
   }
 
-  setStatus(
-    'saveMsg',
-    isVideo
-      ? '影片封面產生與上傳中...'
-      : '圖片上傳中...'
-  );
+  const invalidDetail = detailFiles.find(file => {
+    return !isImageFile(file);
+  });
 
-  if (isVideo) {
-    const posterFile = await createVideoPosterFile(coverFile);
+  if (invalidDetail) {
+    setStatus(
+      'saveMsg',
+      `完整商品介紹圖片只接受圖片：${invalidDetail.name || '未命名檔案'}`,
+      true
+    );
+    return false;
+  }
 
-    const imageUploads = await uploadImageFiles([
-      posterFile,
-      ...galleryFiles
-    ]);
+  setStatus('saveMsg', '商品媒體上傳中...');
 
-    const poster = imageUploads[0] || null;
-    const uploadedGallery = imageUploads.slice(1);
+  if (coverFile) {
+    const coverIsVideo = isMp4VideoFile(coverFile);
 
-    if (!poster?.image_id) {
-      throw new Error('video_poster_upload_failed');
-    }
+    if (coverIsVideo) {
+      const posterFile = await createVideoPosterFile(coverFile);
+      const poster = (await uploadImageFiles([posterFile]))[0] || null;
 
-    const uploadedVideo = await uploadVideoFile(coverFile);
+      if (!poster?.image_id) {
+        throw new Error('video_poster_upload_failed');
+      }
 
-    state.coverMedia = {
-      type: 'video',
+      const uploadedVideo = await uploadVideoFile(coverFile);
 
-      image_id: poster.image_id || '',
-      image_url: poster.image_url || '',
-      thumb_url: poster.thumb_url || poster.image_url || '',
-
-      video_url: uploadedVideo.video_url || '',
-      video_key: uploadedVideo.video_key || ''
-    };
-
-const finalGallery = galleryWasSelected
-  ? uploadedGallery
-  : oldGallery;
-
-state.uploadedImages = [
-  poster,
-  ...finalGallery
-];
-
-  } else if (coverFile) {
-    const uploaded = await uploadImageFiles([
-      coverFile,
-      ...galleryFiles
-    ]);
-
-    const cover = uploaded[0] || null;
-
-    if (!cover?.image_id) {
-      throw new Error('cover_image_upload_failed');
-    }
-
-    state.coverMedia = {
-      type: 'image',
-
-      image_id: cover.image_id || '',
-      image_url: cover.image_url || '',
-      thumb_url: cover.thumb_url || cover.image_url || '',
-
-      video_url: '',
-      video_key: ''
-    };
-
-  const uploadedGallery = uploaded.slice(1);
-
-const finalGallery = galleryWasSelected
-  ? uploadedGallery
-  : oldGallery;
-
-state.uploadedImages = [
-  cover,
-  ...finalGallery
-];
-
-  } else {
-    const uploadedGallery = await uploadImageFiles(galleryFiles);
-
-    state.uploadedImages = [
-      oldCover,
-      ...uploadedGallery
-    ].filter(Boolean);
-
-    if (!state.coverMedia && oldCover) {
       state.coverMedia = {
-        type: 'image',
-        image_id: oldCover.image_id || '',
-        image_url: oldCover.image_url || '',
-        thumb_url: oldCover.thumb_url || oldCover.image_url || '',
-        video_url: '',
-        video_key: ''
+        type:'video',
+        image_id: poster.image_id || '',
+        image_url: poster.image_url || '',
+        thumb_url: poster.thumb_url || poster.image_url || '',
+        video_url: uploadedVideo.video_url || '',
+        video_key: uploadedVideo.video_key || ''
+      };
+
+    } else {
+      const cover = (await uploadImageFiles([coverFile]))[0] || null;
+
+      if (!cover?.image_id) {
+        throw new Error('cover_image_upload_failed');
+      }
+
+      state.coverMedia = {
+        type:'image',
+        image_id: cover.image_id || '',
+        image_url: cover.image_url || '',
+        thumb_url: cover.thumb_url || cover.image_url || '',
+        video_url:'',
+        video_key:''
       };
     }
   }
-if (galleryWasSelected) {
-  state.galleryStateReady = true;
-}
+
+  if (galleryFiles.length > 0) {
+    const nextGallery = [];
+
+    for (const file of galleryFiles) {
+      nextGallery.push(
+        await uploadGalleryMediaFile(file)
+      );
+    }
+
+    state.galleryMedia = nextGallery;
+    state.galleryStateReady = true;
+  }
+
+  if (detailFiles.length > 0) {
+    const uploadedDetail = await uploadImageFiles(detailFiles);
+
+    if (uploadedDetail.length !== detailFiles.length) {
+      throw new Error('detail_image_upload_incomplete');
+    }
+
+    state.detailImages = uploadedDetail.map(img => ({
+      image_id: img.image_id || '',
+      image_url: img.image_url || '',
+      thumb_url: img.thumb_url || img.image_url || ''
+    }));
+
+    state.detailStateReady = true;
+  }
+
+  state.uploadedImages = state.coverMedia
+    ? [{
+        image_id: state.coverMedia.image_id || '',
+        image_url: state.coverMedia.image_url || '',
+        thumb_url: state.coverMedia.thumb_url || state.coverMedia.image_url || ''
+      }]
+    : [];
+
   $('coverFile').value = '';
   $('galleryFiles').value = '';
+  $('detailFiles').value = '';
 
   state.pendingGalleryFiles = [];
+  state.pendingDetailFiles = [];
+
   renderPendingGalleryOrder();
+  renderPendingDetailOrder();
   renderImagePreviews();
+  renderDetailImagePreviews();
 
   setStatus(
     'saveMsg',
-    state.coverMedia?.type === 'video'
-      ? `影片上傳完成，多圖 ${Math.max(0, state.uploadedImages.length - 1)} 張`
-      : `圖片上傳完成，共 ${state.uploadedImages.length} 張`
+    `媒體上傳完成：封面 1 個、多媒體 ${state.galleryMedia.length} 個、完整介紹圖片 ${state.detailImages.length} 張。`
   );
 
-  return state.uploadedImages;
+  return true;
 }
+
 
 function buildDraftPayload(){
   const poster = state.uploadedImages[0] || null;
@@ -2754,19 +3204,48 @@ function buildDraftPayload(){
     (
       poster
         ? {
-            type: 'image',
+            type:'image',
             image_id: poster.image_id || '',
             image_url: poster.image_url || '',
             thumb_url: poster.thumb_url || poster.image_url || '',
-            video_url: '',
-            video_key: ''
+            video_url:'',
+            video_key:''
           }
         : null
     );
 
-  const gallery = state.uploadedImages
-    .slice(1)
-    .map(x => x.image_id)
+  const galleryPayload = (
+    Array.isArray(state.galleryMedia)
+      ? state.galleryMedia
+      : []
+  )
+    .map(galleryMediaForPayload)
+    .filter(Boolean);
+
+  const galleryImageIds = galleryPayload
+    .map(item => {
+      return item.type === 'video'
+        ? item.poster_image_id
+        : item.image_id;
+    })
+    .filter(Boolean);
+
+  const detailImageIds = (
+    Array.isArray(state.detailImages)
+      ? state.detailImages
+      : []
+  )
+    .map(img => {
+      return String(
+        img.image_id ||
+        imageIdFromCloudflareUrl(
+          img.image_url ||
+          img.thumb_url ||
+          ''
+        ) ||
+        ''
+      ).trim();
+    })
     .filter(Boolean);
 
   return {
@@ -2777,13 +3256,13 @@ function buildDraftPayload(){
       state.draftRecordId ||
       '',
 
-name: $('name').value.trim(),
+    name: $('name').value.trim(),
 
-ai_desc: $('aiDesc').value.trim(),
-description: $('desc').value.trim(),
-list_price: Number($('listPrice').value || 0) || 0,
+    ai_desc: $('aiDesc').value.trim(),
+    description: $('desc').value.trim(),
+    list_price: Number($('listPrice').value || 0) || 0,
 
-color: $('color').value.trim(),
+    color: $('color').value.trim(),
     size: $('size').value.trim(),
     material: $('material').value.trim(),
 
@@ -2803,12 +3282,26 @@ color: $('color').value.trim(),
         ? cover.video_key || ''
         : '',
 
-gallery_image_ids:
-  state.galleryStateReady
-    ? gallery
-    : undefined
+    // 舊 ProductImages 相容資料：影片使用自己的 poster image_id
+    gallery_image_ids:
+      state.galleryStateReady
+        ? galleryImageIds
+        : undefined,
+
+    // 新版正式多媒體順序：圖片／影片可混合
+    gallery_media:
+      state.galleryStateReady
+        ? galleryPayload
+        : undefined,
+
+    // 下方完整商品介紹圖片
+    detail_image_ids:
+      state.detailStateReady
+        ? detailImageIds
+        : undefined
   };
 }
+
 
 function validateDraftPayload(payload){
   if (!payload.record_id) {
@@ -2840,9 +3333,14 @@ async function ensureImagesUploadedIfNeeded(){
   const hasFilesSelected =
     ($('coverFile').files.length > 0) ||
     ($('galleryFiles').files.length > 0) ||
+    ($('detailFiles').files.length > 0) ||
     (
       Array.isArray(state.pendingGalleryFiles) &&
       state.pendingGalleryFiles.length > 0
+    ) ||
+    (
+      Array.isArray(state.pendingDetailFiles) &&
+      state.pendingDetailFiles.length > 0
     );
 
   // 沒有新選檔案，代表沿用目前已上傳媒體
@@ -2850,13 +3348,7 @@ async function ensureImagesUploadedIfNeeded(){
     return true;
   }
 
-  const uploaded = await uploadImages();
-
-  // uploadImages 驗證失敗時會回傳空陣列
-  return (
-    Array.isArray(uploaded) &&
-    uploaded.length > 0
-  );
+  return await uploadImages();
 }
 
 async function saveDraft(){
@@ -2996,6 +3488,11 @@ async function publishNow(){
     $('galleryFiles').addEventListener('change', () => {
   state.pendingGalleryFiles = Array.from($('galleryFiles').files || []);
   renderPendingGalleryOrder();
+});
+
+$('detailFiles').addEventListener('change', () => {
+  state.pendingDetailFiles = Array.from($('detailFiles').files || []);
+  renderPendingDetailOrder();
 });
     $('btnUploadImages').addEventListener('click', async () => {
       try {
